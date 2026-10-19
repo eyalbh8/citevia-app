@@ -1,0 +1,523 @@
+import { useState, type FormEvent } from 'react';
+import {
+  CalendarClock,
+  Info,
+  LoaderCircle,
+  Plus,
+  RefreshCw,
+  Save,
+  Trash2,
+} from 'lucide-react';
+import type { Brand, Page, Project, ScanRun } from '@citevia/core';
+import { idempotentPost, request, useApi } from './api';
+import { Badge, Empty, ErrorNotice, formatDate, Spinner } from './components';
+
+export default function SettingsView({
+  path,
+  revision,
+  onSaved,
+  notify,
+  nextScanAt,
+}: {
+  path: string;
+  revision: number;
+  nextScanAt?: string | null;
+  onSaved: () => void;
+  notify: (text: string) => void;
+}) {
+  const {
+    data: project,
+    error,
+    loading,
+  } = useApi<Project>(`${path}/settings`, revision);
+  const runs = useApi<Page<ScanRun>>(`${path}/runs`, revision);
+  return (
+    <>
+      <ErrorNotice error={error} />
+      {loading && !project ? (
+        <Spinner label="Loading project settings…" />
+      ) : (
+        project && (
+          <>
+            <div className="settings-grid">
+              <ProjectForm
+                key={`${project.id}-${project.version}`}
+                project={project}
+                path={path}
+                onSaved={onSaved}
+                notify={notify}
+              />
+              <aside className="card">
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">Your weekly rhythm</h2>
+                    <p className="card-description">
+                      One clear snapshot. Every week.
+                    </p>
+                  </div>
+                </div>
+                <div className="card-content">
+                  <div className="setting-note">
+                    <CalendarClock size={17} />
+                    <span>
+                      Every Monday at <strong>06:00</strong>
+                      <br />
+                      {project.timezone}
+                      <br />
+                      {project.enabled
+                        ? `Next scan: ${formatDate(project.nextScanAt || nextScanAt, true)}`
+                        : 'Weekly schedule is paused.'}
+                    </span>
+                  </div>
+                  <div className="scan-options">
+                    Up to 50 active prompts per project. Changing a prompt or
+                    your brand settings creates a new comparison baseline.
+                  </div>
+                  {project.scheduleStatus && (
+                    <div style={{ marginTop: 14 }}>
+                      <Badge
+                        value={
+                          project.scheduleStatus === 'synced'
+                            ? 'completed'
+                            : project.scheduleStatus === 'error'
+                              ? 'failed'
+                              : 'queued'
+                        }
+                        label={`Schedule ${project.scheduleStatus}`}
+                      />
+                    </div>
+                  )}
+                  <h3
+                    className="drawer-section-title"
+                    style={{ marginBottom: 13 }}
+                  >
+                    Recent scans
+                  </h3>
+                  <ErrorNotice error={runs.error} />
+                  <div className="run-history">
+                    {runs.data?.items
+                      .slice(0, 6)
+                      .map((run) => (
+                        <RunHistoryRow
+                          key={run.id}
+                          run={run}
+                          path={path}
+                          owner={project.role === 'owner'}
+                          onSaved={onSaved}
+                          notify={notify}
+                        />
+                      ))}
+                    {!runs.data?.items.length && (
+                      <p className="card-description">No scans yet.</p>
+                    )}
+                  </div>
+                  <h3 className="drawer-section-title">Collection settings</h3>
+                  <p className="scan-options">
+                    Answer model: {project.generationModel}
+                    <br />
+                    Analysis model: {project.extractionModel}
+                    <br />
+                    Parser: {project.parserVersion}
+                    <br />
+                    Web search is enabled for every answer.
+                  </p>
+                </div>
+              </aside>
+            </div>
+            <section className="card">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">Your prompt portfolio</h2>
+                  <p className="card-description">
+                    Add, edit and archive prompts in the dedicated Prompts
+                    screen.
+                  </p>
+                </div>
+                <a className="button button-outline" href="#prompts">
+                  Manage prompts
+                </a>
+              </div>
+            </section>
+          </>
+        )
+      )}
+    </>
+  );
+}
+
+function ProjectForm({
+  project,
+  path,
+  onSaved,
+  notify,
+}: {
+  project: Project;
+  path: string;
+  onSaved: () => void;
+  notify: (text: string) => void;
+}) {
+  const [name, setName] = useState(project.name),
+    [brandName, setBrandName] = useState(project.brand.name);
+  const [aliases, setAliases] = useState(project.brand.aliases.join(', ')),
+    [domains, setDomains] = useState(project.brand.domains.join(', '));
+  const [country, setCountry] = useState(project.country),
+    [language, setLanguage] = useState(project.language),
+    [timezone, setTimezone] = useState(project.timezone),
+    [enabled, setEnabled] = useState(project.enabled);
+  const [competitors, setCompetitors] = useState<Brand[]>(project.competitors);
+  const [saving, setSaving] = useState(false),
+    [error, setError] = useState<Error>();
+  const owner = project.role === 'owner';
+  const split = (value: string) => [
+    ...new Set(
+      value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!owner) return;
+    setSaving(true);
+    setError(undefined);
+    try {
+      await request<Project>(`${path}/settings`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          version: project.version,
+          name: name.trim(),
+          brand: {
+            ...project.brand,
+            name: brandName.trim(),
+            aliases: split(aliases),
+            domains: split(domains),
+          },
+          competitors,
+          country: country.toUpperCase(),
+          language,
+          timezone,
+          enabled,
+        }),
+      });
+      notify('Project settings saved. Changes apply to the next scan.');
+      onSaved();
+    } catch (error) {
+      setError(error as Error);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <section className="card">
+      <div className="card-header">
+        <div>
+          <h2 className="card-title">Brand & workspace</h2>
+          <p className="card-description">
+            Tell Citevia what to look for in the answers
+          </p>
+        </div>
+      </div>
+      <form className="card-content" onSubmit={(event) => void submit(event)}>
+        <ErrorNotice error={error} />
+        {!owner && (
+          <div className="setting-note" style={{ marginBottom: 18 }}>
+            <Info size={14} />
+            <span>
+              You have view access. A project owner can change these settings.
+            </span>
+          </div>
+        )}
+        <fieldset
+          disabled={!owner || saving}
+          style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+        >
+          <div className="form-stack">
+            <div className="field-row">
+              <label className="field">
+                Project name
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                  maxLength={100}
+                />
+              </label>
+              <label className="field">
+                Brand name
+                <input
+                  value={brandName}
+                  onChange={(event) => setBrandName(event.target.value)}
+                  required
+                  maxLength={100}
+                />
+              </label>
+            </div>
+            <label className="field">
+              Brand aliases
+              <input
+                value={aliases}
+                onChange={(event) => setAliases(event.target.value)}
+                placeholder="Alternative names, abbreviations"
+              />
+              <small>
+                Separate aliases with commas. Include only names that clearly
+                refer to your brand.
+              </small>
+            </label>
+            <label className="field">
+              Your domains
+              <input
+                value={domains}
+                onChange={(event) => setDomains(event.target.value)}
+                placeholder="example.com, example.co.uk"
+              />
+              <small>
+                Separate domains with commas. These identify your owned sources.
+              </small>
+            </label>
+            <div className="field-row">
+              <label className="field">
+                Country
+                <input
+                  value={country}
+                  onChange={(event) =>
+                    setCountry(event.target.value.toUpperCase())
+                  }
+                  required
+                  minLength={2}
+                  maxLength={2}
+                  placeholder="US"
+                />
+                <small>Two-letter country code for search location.</small>
+              </label>
+              <label className="field">
+                Language code
+                <input
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value)}
+                  required
+                  maxLength={20}
+                  pattern="[a-z]{2,3}(-[A-Za-z0-9]{2,8})*"
+                  placeholder="en"
+                />
+                <small>Language code such as en, de, or en-GB.</small>
+              </label>
+            </div>
+            <label className="field">
+              Timezone
+              <input
+                value={timezone}
+                onChange={(event) => setTimezone(event.target.value)}
+                required
+                list="timezones"
+              />
+              <datalist id="timezones">
+                {[
+                  'UTC',
+                  'America/New_York',
+                  'America/Los_Angeles',
+                  'Europe/London',
+                  'Europe/Berlin',
+                  'Asia/Nicosia',
+                  'Asia/Jerusalem',
+                  'Asia/Dubai',
+                  'Asia/Singapore',
+                  'Australia/Sydney',
+                ].map((value) => (
+                  <option value={value} key={value} />
+                ))}
+              </datalist>
+              <small>
+                A valid IANA timezone, used for the Monday 06:00 schedule.
+              </small>
+            </label>
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(event) => setEnabled(event.target.checked)}
+              />
+              Weekly scanning enabled
+            </label>
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 11,
+                }}
+              >
+                <span className="field">Tracked competitors</span>
+                {owner && (
+                  <button
+                    className="button button-quiet"
+                    type="button"
+                    disabled={competitors.length >= 5}
+                    onClick={() =>
+                      setCompetitors((previous) => [
+                        ...previous,
+                        {
+                          id: crypto.randomUUID(),
+                          name: '',
+                          aliases: [],
+                          domains: [],
+                        },
+                      ])
+                    }
+                  >
+                    <Plus size={12} />
+                    Add competitor
+                  </button>
+                )}
+              </div>
+              {competitors.map((competitor, index) => (
+                <div
+                  key={competitor.id}
+                  style={{
+                    padding: '12px',
+                    border: '1px solid #eee5f5',
+                    borderRadius: 8,
+                    marginBottom: 9,
+                  }}
+                >
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: 9 }}
+                  >
+                    <label className="field" style={{ flex: 1 }}>
+                      Name
+                      <input
+                        required
+                        value={competitor.name}
+                        onChange={(event) =>
+                          setCompetitors((previous) =>
+                            previous.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, name: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    {owner && (
+                      <button
+                        className="icon-button"
+                        type="button"
+                        style={{ marginTop: 18 }}
+                        aria-label={`Remove competitor ${competitor.name || index + 1}`}
+                        onClick={() =>
+                          setCompetitors((previous) =>
+                            previous.filter(
+                              (_, itemIndex) => itemIndex !== index,
+                            ),
+                          )
+                        }
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                  <label className="field" style={{ marginTop: 10 }}>
+                    Aliases (comma separated)
+                    <input
+                      defaultValue={competitor.aliases.join(', ')}
+                      onBlur={(event) =>
+                        setCompetitors((previous) =>
+                          previous.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? { ...item, aliases: split(event.target.value) }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+              ))}
+              {!competitors.length && (
+                <p className="card-description">
+                  Optional. Track other brands mentioned in the same answers.
+                </p>
+              )}
+            </div>
+            {owner && (
+              <div className="form-actions">
+                <button
+                  className="button button-primary"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <LoaderCircle size={13} className="spinner" />
+                  ) : (
+                    <Save size={13} />
+                  )}
+                  {saving ? 'Saving…' : 'Save settings'}
+                </button>
+              </div>
+            )}
+          </div>
+        </fieldset>
+      </form>
+    </section>
+  );
+}
+
+function RunHistoryRow({
+  run,
+  path,
+  owner,
+  onSaved,
+  notify,
+}: {
+  run: ScanRun;
+  path: string;
+  owner: boolean;
+  onSaved: () => void;
+  notify: (text: string) => void;
+}) {
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState<Error>();
+  async function retry() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await idempotentPost(
+        `${path}/runs/${encodeURIComponent(run.id)}/retry-failed`,
+      );
+      notify('Failed prompts were queued for another attempt.');
+      onSaved();
+    } catch (error) {
+      setError(error as Error);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div>
+      <div className="run-history-row">
+        <div>
+          <strong>{formatDate(run.createdAt)}</strong>
+          <small>
+            {run.succeededCount} / {run.totalCount} analyzed
+          </small>
+        </div>
+        <Badge value={run.status} />
+        {owner && ['partial', 'failed'].includes(run.status) && (
+          <button
+            className="icon-button"
+            disabled={busy}
+            title="Retry failed prompts"
+            aria-label={`Retry failed prompts from ${formatDate(run.createdAt)}`}
+            onClick={() => void retry()}
+          >
+            <RefreshCw size={13} className={busy ? 'spinner' : ''} />
+          </button>
+        )}
+      </div>
+      <ErrorNotice error={error} />
+    </div>
+  );
+}

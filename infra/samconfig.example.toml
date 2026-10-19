@@ -1,0 +1,11 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "citevia-production"
+region = "eu-west-1"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+fail_on_empty_changeset = false
+# Copy to infra/samconfig.toml and fill in real values. Secret ARN only, never a key.
+parameter_overrides = "FrontendOrigin=https://app.example.com CognitoDomainPrefix=your-company-citevia OpenAiSecretArn=arn:aws:secretsmanager:eu-west-1:123456789012:secret:citevia/openai-ABCDEF EnableDevOrigin=false"

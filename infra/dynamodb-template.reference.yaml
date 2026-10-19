@@ -1,0 +1,544 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Citevia weekly ChatGPT scans - separate API and scanner Lambdas.
+
+Parameters:
+  FrontendOrigin:
+    Type: String
+    Description: Production HTTPS origin without a trailing slash, such as https://app.example.com.
+    AllowedPattern: 'https://[A-Za-z0-9.-]+(:[0-9]+)?'
+  DevOrigin:
+    Type: String
+    Default: http://localhost:5173
+    AllowedPattern: 'http://localhost:[0-9]+'
+  EnableDevOrigin:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable localhost CORS and OAuth redirects only for a development stack.
+  CognitoDomainPrefix:
+    Type: String
+    Description: Globally unique Cognito login domain prefix; lowercase letters, numbers and hyphens.
+    MinLength: 3
+    MaxLength: 63
+    AllowedPattern: '[a-z0-9][a-z0-9-]*[a-z0-9]'
+  OpenAiSecretArn:
+    Type: String
+    Description: Existing Secrets Manager secret ARN containing OPENAI_API_KEY (JSON) or a raw API key. The secret must use the default aws/secretsmanager KMS key.
+    AllowedPattern: 'arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  GenerationModel:
+    Type: String
+    Default: gpt-4.1-2025-04-14
+    Description: Responses API model supporting the web_search tool. Validate access in your OpenAI project before enabling schedules.
+  ExtractionModel:
+    Type: String
+    Default: gpt-4.1-mini-2025-04-14
+    Description: Responses API model supporting strict structured output.
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Optional operations email; confirm the SNS subscription after deployment.
+  ScannerReservedConcurrency:
+    Type: Number
+    Default: 5
+    MinValue: 5
+    MaxValue: 100
+    Description: Queue concurrency is 3; at least 2 extra slots remain available for reconciliation.
+
+Conditions:
+  IncludeDevOrigin: !Equals [!Ref EnableDevOrigin, 'true']
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    Handler: index.handler
+    Environment:
+      Variables:
+        APP_MODE: aws
+        CONFIG_TABLE: !Ref ConfigTable
+        RUNS_TABLE: !Ref RunsTable
+        RESULTS_TABLE: !Ref ResultsTable
+        EVIDENCE_BUCKET: !Ref EvidenceBucket
+        QUEUE_URL: !Ref ScanQueue
+        QUEUE_ARN: !GetAtt ScanQueue.Arn
+        RETENTION_DAYS: '400'
+
+Resources:
+  ConfigTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: pk, AttributeType: S}
+        - {AttributeName: sk, AttributeType: S}
+        - {AttributeName: gsi1pk, AttributeType: S}
+        - {AttributeName: gsi1sk, AttributeType: S}
+      KeySchema:
+        - {AttributeName: pk, KeyType: HASH}
+        - {AttributeName: sk, KeyType: RANGE}
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - {AttributeName: gsi1pk, KeyType: HASH}
+            - {AttributeName: gsi1sk, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+      TimeToLiveSpecification: {AttributeName: expiresAt, Enabled: true}
+
+  RunsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: projectId, AttributeType: S}
+        - {AttributeName: runId, AttributeType: S}
+        - {AttributeName: activeKey, AttributeType: S}
+        - {AttributeName: createdAt, AttributeType: S}
+      KeySchema:
+        - {AttributeName: projectId, KeyType: HASH}
+        - {AttributeName: runId, KeyType: RANGE}
+      GlobalSecondaryIndexes:
+        - IndexName: ActiveRunsIndex
+          KeySchema:
+            - {AttributeName: activeKey, KeyType: HASH}
+            - {AttributeName: createdAt, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+      TimeToLiveSpecification: {AttributeName: expiresAt, Enabled: true}
+
+  ResultsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: runKey, AttributeType: S}
+        - {AttributeName: promptId, AttributeType: S}
+      KeySchema:
+        - {AttributeName: runKey, KeyType: HASH}
+        - {AttributeName: promptId, KeyType: RANGE}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+      SSESpecification: {SSEEnabled: true}
+      TimeToLiveSpecification: {AttributeName: expiresAt, Enabled: true}
+
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: EvidenceRetention
+            Status: Enabled
+            ExpirationInDays: 400
+            NoncurrentVersionExpiration: {NoncurrentDays: 30}
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt EvidenceBucket.Arn
+              - !Sub '${EvidenceBucket.Arn}/*'
+            Condition:
+              Bool: {aws:SecureTransport: 'false'}
+
+  ScanDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  ScanQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 1800
+      MessageRetentionPeriod: 345600
+      ReceiveMessageWaitTimeSeconds: 20
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ScanDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  QueueTransportPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref ScanQueue, !Ref ScanDeadLetterQueue]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: '*'
+            Action: sqs:*
+            Resource: [!GetAtt ScanQueue.Arn, !GetAtt ScanDeadLetterQueue.Arn]
+            Condition:
+              Bool: {aws:SecureTransport: 'false'}
+
+  ProjectScheduleGroup:
+    Type: AWS::Scheduler::ScheduleGroup
+
+  SchedulerQueueRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: scheduler.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref 'AWS::AccountId'}
+              ArnEquals: {aws:SourceArn: !GetAtt ProjectScheduleGroup.Arn}
+      Policies:
+        - PolicyName: SendScanJobs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: [!GetAtt ScanQueue.Arn, !GetAtt ScanDeadLetterQueue.Arn]
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolTier: ESSENTIALS
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      UsernameConfiguration: {CaseSensitive: false}
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - {Name: verified_email, Priority: 1}
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      SupportedIdentityProviders: [COGNITO]
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      CallbackURLs:
+        - !Sub '${FrontendOrigin}/auth/callback'
+        - !If [IncludeDevOrigin, !Sub '${DevOrigin}/auth/callback', !Ref 'AWS::NoValue']
+      LogoutURLs:
+        - !Sub '${FrontendOrigin}/'
+        - !If [IncludeDevOrigin, !Sub '${DevOrigin}/', !Ref 'AWS::NoValue']
+      DefaultRedirectURI: !Sub '${FrontendOrigin}/auth/callback'
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 1
+      TokenValidityUnits: {AccessToken: minutes, IdToken: minutes, RefreshToken: days}
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref CognitoDomainPrefix
+      ManagedLoginVersion: 2
+
+  LoginBranding:
+    Type: AWS::Cognito::ManagedLoginBranding
+    DependsOn: UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref UserPoolClient
+      UseCognitoProvidedValues: true
+
+  ApiAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref FrontendOrigin
+          - !If [IncludeDevOrigin, !Ref DevOrigin, !Ref 'AWS::NoValue']
+        AllowHeaders: [Authorization, Content-Type, Idempotency-Key]
+        AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+        MaxAge: 600
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: '$request.header.Authorization'
+            AuthorizationScopes: [openid]
+            JwtConfiguration:
+              audience: [!Ref UserPoolClient]
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${UserPool}'
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogs.Arn
+        Format: '{"requestId":"$context.requestId","status":"$context.status","routeKey":"$context.routeKey","responseLength":"$context.responseLength","integrationError":"$context.integrationErrorMessage"}'
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/api/
+      MemorySize: 512
+      Timeout: 29
+      Environment:
+        Variables:
+          ALLOWED_ORIGIN: !Ref FrontendOrigin
+          SCHEDULER_ROLE_ARN: !GetAtt SchedulerQueueRole.Arn
+          SCHEDULE_GROUP: !Ref ProjectScheduleGroup
+          DLQ_ARN: !GetAtt ScanDeadLetterQueue.Arn
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:BatchGetItem, dynamodb:BatchWriteItem, dynamodb:ConditionCheckItem]
+              Resource:
+                - !GetAtt ConfigTable.Arn
+                - !Sub '${ConfigTable.Arn}/index/*'
+                - !GetAtt RunsTable.Arn
+                - !Sub '${RunsTable.Arn}/index/*'
+                - !GetAtt ResultsTable.Arn
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub '${EvidenceBucket.Arn}/*'
+            # Missing-object probes return 404 only when the caller can list this bucket.
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt EvidenceBucket.Arn
+            - Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt ScanQueue.Arn
+            - Effect: Allow
+              Action: [scheduler:CreateSchedule, scheduler:UpdateSchedule, scheduler:DeleteSchedule, scheduler:GetSchedule]
+              Resource: !Sub 'arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/${ProjectScheduleGroup}/*'
+            - Effect: Allow
+              Action: iam:PassRole
+              Resource: !GetAtt SchedulerQueueRole.Arn
+              Condition:
+                StringEquals: {iam:PassedToService: scheduler.amazonaws.com}
+      Events:
+        Root:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: /, Method: ANY, PayloadFormatVersion: '2.0'}
+        Proxy:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: '/{proxy+}', Method: ANY, PayloadFormatVersion: '2.0'}
+
+  ScannerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/scanner/
+      MemorySize: 1024
+      Timeout: 300
+      ReservedConcurrentExecutions: !Ref ScannerReservedConcurrency
+      Environment:
+        Variables:
+          OPENAI_SECRET_ARN: !Ref OpenAiSecretArn
+          OPENAI_GENERATION_MODEL: !Ref GenerationModel
+          OPENAI_EXTRACTION_MODEL: !Ref ExtractionModel
+          DLQ_ARN: !GetAtt ScanDeadLetterQueue.Arn
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Query, dynamodb:BatchGetItem, dynamodb:BatchWriteItem, dynamodb:ConditionCheckItem]
+              Resource:
+                - !GetAtt ConfigTable.Arn
+                - !Sub '${ConfigTable.Arn}/index/*'
+                - !GetAtt RunsTable.Arn
+                - !Sub '${RunsTable.Arn}/index/*'
+                - !GetAtt ResultsTable.Arn
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub '${EvidenceBucket.Arn}/*'
+            # Checkpoint reads must distinguish an absent object from access denied.
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt EvidenceBucket.Arn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref OpenAiSecretArn
+            - Effect: Allow
+              Action: [sqs:SendMessage, sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:ChangeMessageVisibility]
+              Resource: !GetAtt ScanQueue.Arn
+      Events:
+        ScanJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ScanQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes: [ReportBatchItemFailures]
+            ScalingConfig: {MaximumConcurrency: 3}
+        Reconcile:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Input: '{"kind":"reconcile"}'
+            Enabled: true
+
+  ApiFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
+      RetentionInDays: 14
+
+  ScannerFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ScannerFunction}'
+      RetentionInDays: 14
+
+  Alerts:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scan messages exhausted retries or schedule delivery failed. Inspect the DLQ and reconcile run status before retrying.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - {Name: QueueName, Value: !GetAtt ScanDeadLetterQueue.QueueName}
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+
+  QueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scan queue has work more than two hours old; inspect throttling, provider errors and concurrency.
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - {Name: QueueName, Value: !GetAtt ScanQueue.QueueName}
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 7200
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+
+  ApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: API Lambda unhandled errors.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref ApiFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+
+  ScannerErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scanner Lambda unhandled errors or timeouts. Handled item failures are also visible in scan results and the DLQ alarm.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref ScannerFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
+  UserPoolId:
+    Value: !Ref UserPool
+  CognitoClientId:
+    Value: !Ref UserPoolClient
+  CognitoDomain:
+    Value: !Sub 'https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com'
+  RedirectUri:
+    Value: !Sub '${FrontendOrigin}/auth/callback'
+  LogoutUri:
+    Value: !Sub '${FrontendOrigin}/'
+  ConfigTableName:
+    Value: !Ref ConfigTable
+  RunsTableName:
+    Value: !Ref RunsTable
+  ResultsTableName:
+    Value: !Ref ResultsTable
+  EvidenceBucketName:
+    Value: !Ref EvidenceBucket
+  ScanQueueUrl:
+    Value: !Ref ScanQueue
+  ScanQueueArn:
+    Value: !GetAtt ScanQueue.Arn
+  DeadLetterQueueUrl:
+    Value: !Ref ScanDeadLetterQueue
+  DeadLetterQueueArn:
+    Value: !GetAtt ScanDeadLetterQueue.Arn
+  ScheduleGroupName:
+    Value: !Ref ProjectScheduleGroup
+  SchedulerRoleArn:
+    Value: !GetAtt SchedulerQueueRole.Arn
+  ApiFunctionName:
+    Value: !Ref ApiFunction
+  ScannerFunctionName:
+    Value: !Ref ScannerFunction

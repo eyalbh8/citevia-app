@@ -1,0 +1,135 @@
+.prompts-overview {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  padding: 22px 26px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+}
+.prompts-overview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.prompts-overview strong {
+  font-size: 26px;
+  font-family: 'Manrope', sans-serif;
+}
+.prompts-overview strong small {
+  font-size: 15px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.prompts-overview span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.prompts-overview .prompts-overview-note {
+  margin-left: auto;
+  font-size: 12px;
+  color: #777588;
+  line-height: 1.8;
+}
+.journey-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.journey-filters button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  font-size: 12px;
+}
+.journey-filters button.selected {
+  background: var(--purple-soft);
+  border-color: #d6cefa;
+  color: var(--purple);
+  font-weight: 600;
+}
+.journey-filters span {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #f4f3f9;
+}
+.prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.prompt-filters {
+  flex-wrap: wrap;
+}
+.prompts-table .prompt-cell {
+  min-width: 290px;
+  max-width: 480px;
+}
+.prompts-table .prompt-name {
+  display: block;
+  white-space: normal;
+  line-height: 1.65;
+}
+.prompt-measurement-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  color: #8f819e;
+}
+.prompt-notice {
+  padding: 0 25px 15px;
+  font-size: 12px;
+  color: #777588;
+}
+.prompt-archived .prompt-name {
+  color: #888698;
+}
+.prompt-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.provider-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  border: 1px solid #ead8b1;
+  background: #fffaf0;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #82602d;
+}
+@media (max-width: 700px) {
+  .prompts-overview {
+    flex-wrap: wrap;
+    gap: 20px;
+    padding: 20px;
+  }
+  .prompts-overview .prompts-overview-note {
+    width: 100%;
+    margin-left: 0;
+  }
+  .journey-filters button {
+    padding: 9px 11px;
+  }
+  .prompts-table .prompt-cell {
+    min-width: 250px;
+  }
+  .prompt-actions {
+    gap: 4px;
+  }
+}

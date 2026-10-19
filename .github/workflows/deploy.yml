@@ -1,0 +1,115 @@
+name: Deploy AWS backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment containing reviewed deployment variables
+        type: environment
+        required: true
+      stack_name:
+        description: CloudFormation stack name
+        type: string
+        default: citevia-production
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}-${{ inputs.stack_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      STACK_NAME: ${{ inputs.stack_name }}
+      ARTIFACT_BUCKET: ${{ vars.ARTIFACT_BUCKET }}
+      CLOUDFORMATION_ROLE_ARN: ${{ vars.CLOUDFORMATION_ROLE_ARN }}
+      FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
+      COGNITO_DOMAIN_PREFIX: ${{ vars.COGNITO_DOMAIN_PREFIX }}
+      OPENAI_SECRET_ARN: ${{ vars.OPENAI_SECRET_ARN }}
+      GENERATION_MODEL: ${{ vars.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14' }}
+      EXTRACTION_MODEL: ${{ vars.OPENAI_EXTRACTION_MODEL || 'gpt-4.1-mini-2025-04-14' }}
+      ONBOARDING_MODEL: ${{ vars.OPENAI_ONBOARDING_MODEL || 'gpt-4.1-2025-04-14' }}
+      ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+      SAM_CLI_TELEMETRY: '0'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Check deployment configuration
+        shell: bash
+        env:
+          DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          for setting in AWS_REGION STACK_NAME ARTIFACT_BUCKET CLOUDFORMATION_ROLE_ARN FRONTEND_ORIGIN COGNITO_DOMAIN_PREFIX OPENAI_SECRET_ARN DEPLOY_ROLE_ARN; do
+            if [[ -z "${!setting}" ]]; then
+              echo "Missing GitHub environment variable: $setting" >&2
+              exit 1
+            fi
+          done
+          [[ "$STACK_NAME" =~ ^[A-Za-z][A-Za-z0-9-]{0,79}$ ]]
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: aws-actions/setup-sam@v3
+        with:
+          use-installer: true
+      - name: Validate template
+        run: sam validate --template-file infra/template.yaml --lint
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: citevia-deploy-${{ github.run_id }}
+      - name: Deploy reviewed backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          sam deploy \
+            --template-file infra/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --s3-bucket "$ARTIFACT_BUCKET" \
+            --s3-prefix "$STACK_NAME" \
+            --role-arn "$CLOUDFORMATION_ROLE_ARN" \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "FrontendOrigin=$FRONTEND_ORIGIN" \
+              "CognitoDomainPrefix=$COGNITO_DOMAIN_PREFIX" \
+              "OpenAiSecretArn=$OPENAI_SECRET_ARN" \
+              "GenerationModel=$GENERATION_MODEL" \
+              "ExtractionModel=$EXTRACTION_MODEL" \
+              "OnboardingModel=$ONBOARDING_MODEL" \
+              "AlertEmail=$ALERT_EMAIL" \
+              'EnableDevOrigin=false'
+      - name: Migrate the private PostgreSQL schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          scanner_name="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ScannerFunctionName'].OutputValue | [0]" --output text)"
+          aws lambda invoke --function-name "$scanner_name" --cli-binary-format raw-in-base64-out --payload '{"kind":"database:migrate"}' /tmp/citevia-migration-result.json > /tmp/citevia-migration-metadata.json
+          node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync("/tmp/citevia-migration-metadata.json","utf8"));const r=JSON.parse(fs.readFileSync("/tmp/citevia-migration-result.json","utf8"));if(m.FunctionError||!r.migrated)throw new Error("Database migration failed");console.log("PostgreSQL migrations complete");'
+      - name: Show public configuration outputs
+        shell: bash
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs' \
+            --output json

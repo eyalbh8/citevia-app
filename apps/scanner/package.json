@@ -1,0 +1,16 @@
+{
+  "name": "@citevia/scanner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "esbuild src/handler.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/handler.cjs"
+  },
+  "dependencies": {
+    "@citevia/core": "*",
+    "@citevia/storage": "*"
+  }
+}

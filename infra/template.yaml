@@ -1,0 +1,615 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Citevia weekly ChatGPT scans - separate API and scanner Lambdas.
+
+Parameters:
+  FrontendOrigin:
+    Type: String
+    Description: Production HTTPS origin without a trailing slash, such as https://app.example.com.
+    AllowedPattern: 'https://[A-Za-z0-9.-]+(:[0-9]+)?'
+  DevOrigin:
+    Type: String
+    Default: http://localhost:5173
+    AllowedPattern: 'http://localhost:[0-9]+'
+  EnableDevOrigin:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable localhost CORS and OAuth redirects only for a development stack.
+  CognitoDomainPrefix:
+    Type: String
+    Description: Globally unique Cognito login domain prefix; lowercase letters, numbers and hyphens.
+    MinLength: 3
+    MaxLength: 63
+    AllowedPattern: '[a-z0-9][a-z0-9-]*[a-z0-9]'
+  OpenAiSecretArn:
+    Type: String
+    Description: Existing Secrets Manager secret ARN containing OPENAI_API_KEY (JSON) or a raw API key. The secret must use the default aws/secretsmanager KMS key.
+    AllowedPattern: 'arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  GenerationModel:
+    Type: String
+    Default: gpt-4.1-2025-04-14
+    Description: Responses API model supporting the web_search tool. Validate access in your OpenAI project before enabling schedules.
+  ExtractionModel:
+    Type: String
+    Default: gpt-4.1-mini-2025-04-14
+    Description: Responses API model supporting strict structured output.
+  OnboardingModel:
+    Type: String
+    Default: gpt-4.1-2025-04-14
+  AuroraEngineVersion:
+    Type: String
+    Default: "16.9"
+  MaxAccountsPerOwner:
+    Type: Number
+    Default: 100
+    MinValue: 1
+    MaxValue: 10000
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Optional operations email; confirm the SNS subscription after deployment.
+  QueueConcurrency:
+    Type: Number
+    Default: 10
+    MinValue: 2
+    MaxValue: 98
+  ScannerReservedConcurrency:
+    Type: Number
+    Default: 12
+    MinValue: 5
+    MaxValue: 100
+    Description: Set at least two greater than QueueConcurrency to reserve reconciliation capacity.
+
+Conditions:
+  IncludeDevOrigin: !Equals [!Ref EnableDevOrigin, 'true']
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    Handler: index.handler
+    Environment:
+      Variables:
+        APP_MODE: aws
+        DATABASE_HOST: !GetAtt Database.Endpoint.Address
+        DATABASE_SECRET_ARN: !GetAtt Database.MasterUserSecret.SecretArn
+        DATABASE_NAME: citevia
+        MAX_ACCOUNTS_PER_OWNER: !Ref MaxAccountsPerOwner
+        SCAN_RUN_DEADLINE_HOURS: '24'
+        EVIDENCE_BUCKET: !Ref EvidenceBucket
+        QUEUE_URL: !Ref ScanQueue
+        QUEUE_ARN: !GetAtt ScanQueue.Arn
+        RETENTION_DAYS: '400'
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.48.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  InternetAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref InternetGateway}
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.48.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.48.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.48.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+  PublicRoutes:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref Vpc}
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetAttachment
+    Properties: {RouteTableId: !Ref PublicRoutes, DestinationCidrBlock: 0.0.0.0/0, GatewayId: !Ref InternetGateway}
+  PublicAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PublicSubnet, RouteTableId: !Ref PublicRoutes}
+  NatAddress:
+    Type: AWS::EC2::EIP
+    Properties: {Domain: vpc}
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: InternetAttachment
+    Properties: {AllocationId: !GetAtt NatAddress.AllocationId, SubnetId: !Ref PublicSubnet}
+  PrivateRoutes:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref Vpc}
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties: {RouteTableId: !Ref PrivateRoutes, DestinationCidrBlock: 0.0.0.0/0, NatGatewayId: !Ref NatGateway}
+  PrivateAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PrivateSubnetA, RouteTableId: !Ref PrivateRoutes}
+  PrivateAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref PrivateSubnetB, RouteTableId: !Ref PrivateRoutes}
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Citevia Lambda outbound connectivity
+      VpcId: !Ref Vpc
+      SecurityGroupEgress: [{IpProtocol: '-1', CidrIp: 0.0.0.0/0}]
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL accepts Citevia Lambdas only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref LambdaSecurityGroup}
+  DatabaseSubnets:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private PostgreSQL subnets
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+  DatabaseParameters:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: Require TLS
+      Family: aurora-postgresql16
+      Parameters: {rds.force_ssl: '1'}
+  Database:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: !Ref AuroraEngineVersion
+      DatabaseName: citevia
+      MasterUsername: citevia_owner
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref DatabaseSubnets
+      DBClusterParameterGroupName: !Ref DatabaseParameters
+      VpcSecurityGroupIds: [!Ref DatabaseSecurityGroup]
+      StorageEncrypted: true
+      BackupRetentionPeriod: 14
+      DeletionProtection: true
+      ServerlessV2ScalingConfiguration: {MinCapacity: 1, MaxCapacity: 8}
+  DatabaseWriter:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref Database
+      DBInstanceClass: db.serverless
+      Engine: aurora-postgresql
+      PubliclyAccessible: false
+      AutoMinorVersionUpgrade: true
+
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: EvidenceRetention
+            Status: Enabled
+            NoncurrentVersionExpiration: {NoncurrentDays: 30}
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt EvidenceBucket.Arn
+              - !Sub '${EvidenceBucket.Arn}/*'
+            Condition:
+              Bool: {aws:SecureTransport: 'false'}
+
+  ScanDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  ScanQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 1800
+      MessageRetentionPeriod: 345600
+      ReceiveMessageWaitTimeSeconds: 20
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ScanDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  QueueTransportPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref ScanQueue, !Ref ScanDeadLetterQueue]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: '*'
+            Action: sqs:*
+            Resource: [!GetAtt ScanQueue.Arn, !GetAtt ScanDeadLetterQueue.Arn]
+            Condition:
+              Bool: {aws:SecureTransport: 'false'}
+
+  ProjectScheduleGroup:
+    Type: AWS::Scheduler::ScheduleGroup
+
+  SchedulerQueueRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: scheduler.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref 'AWS::AccountId'}
+              ArnEquals: {aws:SourceArn: !GetAtt ProjectScheduleGroup.Arn}
+      Policies:
+        - PolicyName: SendScanJobs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: [!GetAtt ScanQueue.Arn, !GetAtt ScanDeadLetterQueue.Arn]
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolTier: ESSENTIALS
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      UsernameConfiguration: {CaseSensitive: false}
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - {Name: verified_email, Priority: 1}
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      SupportedIdentityProviders: [COGNITO]
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      CallbackURLs:
+        - !Sub '${FrontendOrigin}/auth/callback'
+        - !If [IncludeDevOrigin, !Sub '${DevOrigin}/auth/callback', !Ref 'AWS::NoValue']
+      LogoutURLs:
+        - !Sub '${FrontendOrigin}/'
+        - !If [IncludeDevOrigin, !Sub '${DevOrigin}/', !Ref 'AWS::NoValue']
+      DefaultRedirectURI: !Sub '${FrontendOrigin}/auth/callback'
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 1
+      TokenValidityUnits: {AccessToken: minutes, IdToken: minutes, RefreshToken: days}
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref CognitoDomainPrefix
+      ManagedLoginVersion: 2
+
+  LoginBranding:
+    Type: AWS::Cognito::ManagedLoginBranding
+    DependsOn: UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref UserPoolClient
+      UseCognitoProvidedValues: true
+
+  ApiAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref FrontendOrigin
+          - !If [IncludeDevOrigin, !Ref DevOrigin, !Ref 'AWS::NoValue']
+        AllowHeaders: [Authorization, Content-Type, Idempotency-Key]
+        AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+        MaxAge: 600
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: '$request.header.Authorization'
+            AuthorizationScopes: [openid]
+            JwtConfiguration:
+              audience: [!Ref UserPoolClient]
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${UserPool}'
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogs.Arn
+        Format: '{"requestId":"$context.requestId","status":"$context.status","routeKey":"$context.routeKey","responseLength":"$context.responseLength","integrationError":"$context.integrationErrorMessage"}'
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/api/
+      ReservedConcurrentExecutions: 20
+      VpcConfig:
+        SecurityGroupIds: [!Ref LambdaSecurityGroup]
+        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      MemorySize: 512
+      Timeout: 29
+      Environment:
+        Variables:
+          ALLOWED_ORIGIN: !Ref FrontendOrigin
+          SCHEDULER_ROLE_ARN: !GetAtt SchedulerQueueRole.Arn
+          SCHEDULE_GROUP: !Ref ProjectScheduleGroup
+          DLQ_ARN: !GetAtt ScanDeadLetterQueue.Arn
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt Database.MasterUserSecret.SecretArn
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub '${EvidenceBucket.Arn}/*'
+            # Missing-object probes return 404 only when the caller can list this bucket.
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt EvidenceBucket.Arn
+            - Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt ScanQueue.Arn
+            - Effect: Allow
+              Action: [scheduler:CreateSchedule, scheduler:UpdateSchedule, scheduler:DeleteSchedule, scheduler:GetSchedule]
+              Resource: !Sub 'arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/${ProjectScheduleGroup}/*'
+            - Effect: Allow
+              Action: iam:PassRole
+              Resource: !GetAtt SchedulerQueueRole.Arn
+              Condition:
+                StringEquals: {iam:PassedToService: scheduler.amazonaws.com}
+      Events:
+        Root:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: /, Method: ANY, PayloadFormatVersion: '2.0'}
+        Proxy:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: '/{proxy+}', Method: ANY, PayloadFormatVersion: '2.0'}
+
+  ScannerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../dist/scanner/
+      VpcConfig:
+        SecurityGroupIds: [!Ref LambdaSecurityGroup]
+        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      MemorySize: 1024
+      Timeout: 300
+      ReservedConcurrentExecutions: !Ref ScannerReservedConcurrency
+      Environment:
+        Variables:
+          OPENAI_SECRET_ARN: !Ref OpenAiSecretArn
+          OPENAI_GENERATION_MODEL: !Ref GenerationModel
+          OPENAI_EXTRACTION_MODEL: !Ref ExtractionModel
+          OPENAI_ONBOARDING_MODEL: !Ref OnboardingModel
+          SCHEDULER_ROLE_ARN: !GetAtt SchedulerQueueRole.Arn
+          SCHEDULE_GROUP: !Ref ProjectScheduleGroup
+          DLQ_ARN: !GetAtt ScanDeadLetterQueue.Arn
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt Database.MasterUserSecret.SecretArn
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub '${EvidenceBucket.Arn}/*'
+            # Checkpoint reads must distinguish an absent object from access denied.
+            - Effect: Allow
+              Action: s3:ListBucket
+              Resource: !GetAtt EvidenceBucket.Arn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref OpenAiSecretArn
+            - Effect: Allow
+              Action: [scheduler:CreateSchedule, scheduler:UpdateSchedule, scheduler:GetSchedule]
+              Resource: !Sub 'arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/${ProjectScheduleGroup}/*'
+            - Effect: Allow
+              Action: iam:PassRole
+              Resource: !GetAtt SchedulerQueueRole.Arn
+              Condition:
+                StringEquals: {iam:PassedToService: scheduler.amazonaws.com}
+            - Effect: Allow
+              Action: [sqs:SendMessage, sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:ChangeMessageVisibility]
+              Resource: !GetAtt ScanQueue.Arn
+      Events:
+        ScanJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ScanQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes: [ReportBatchItemFailures]
+            ScalingConfig: {MaximumConcurrency: !Ref QueueConcurrency}
+        Reconcile:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Input: '{"kind":"reconcile"}'
+            Enabled: true
+
+  ApiFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
+      RetentionInDays: 14
+
+  ScannerFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ScannerFunction}'
+      RetentionInDays: 14
+
+  Alerts:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlertEmail
+
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scan messages exhausted retries or schedule delivery failed. Inspect the DLQ and reconcile run status before retrying.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - {Name: QueueName, Value: !GetAtt ScanDeadLetterQueue.QueueName}
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+
+  QueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scan queue has work more than two hours old; inspect throttling, provider errors and concurrency.
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - {Name: QueueName, Value: !GetAtt ScanQueue.QueueName}
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 7200
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+
+  ApiErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: API Lambda unhandled errors.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref ApiFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+
+  ScannerErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scanner Lambda unhandled errors or timeouts. Handled item failures are also visible in scan results and the DLQ alarm.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref ScannerFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
+  UserPoolId:
+    Value: !Ref UserPool
+  CognitoClientId:
+    Value: !Ref UserPoolClient
+  CognitoDomain:
+    Value: !Sub 'https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com'
+  RedirectUri:
+    Value: !Sub '${FrontendOrigin}/auth/callback'
+  LogoutUri:
+    Value: !Sub '${FrontendOrigin}/'
+  DatabaseHost:
+    Value: !GetAtt Database.Endpoint.Address
+  DatabaseSecretArn:
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
+  DatabaseName:
+    Value: citevia
+  EvidenceBucketName:
+    Value: !Ref EvidenceBucket
+  ScanQueueUrl:
+    Value: !Ref ScanQueue
+  ScanQueueArn:
+    Value: !GetAtt ScanQueue.Arn
+  DeadLetterQueueUrl:
+    Value: !Ref ScanDeadLetterQueue
+  DeadLetterQueueArn:
+    Value: !GetAtt ScanDeadLetterQueue.Arn
+  ScheduleGroupName:
+    Value: !Ref ProjectScheduleGroup
+  SchedulerRoleArn:
+    Value: !GetAtt SchedulerQueueRole.Arn
+  ApiFunctionName:
+    Value: !Ref ApiFunction
+  ScannerFunctionName:
+    Value: !Ref ScannerFunction
