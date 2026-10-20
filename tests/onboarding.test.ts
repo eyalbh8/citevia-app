@@ -9,6 +9,7 @@ import {
   type OnboardingJob,
   type CapturedAnswer,
 } from '@citevia/core';
+import { portfolioGenerationSchema } from '../apps/scanner/src/onboarding-prompts.js';
 import {
   MemoryRepository,
   MemoryArtifacts,
@@ -395,6 +396,14 @@ describe('automated account onboarding', () => {
     const prompts = (await fixture.prompts(job, book)).prompts.map(
       ({ text, stage, topic, branded }) => ({ text, stage, topic, branded }),
     );
+    const sections = Object.fromEntries(
+      JOURNEY_STAGES.map((stage) => [
+        stage,
+        prompts
+          .filter((prompt) => prompt.stage === stage)
+          .map(({ stage: _stage, ...prompt }) => prompt),
+      ]),
+    );
     const extract = vi.fn(async (_request: unknown) => ({
       response: {
         id: 'native',
@@ -402,9 +411,7 @@ describe('automated account onboarding', () => {
         output: [
           {
             type: 'message',
-            content: [
-              { type: 'output_text', text: JSON.stringify({ prompts }) },
-            ],
+            content: [{ type: 'output_text', text: JSON.stringify(sections) }],
           },
         ],
       },
@@ -418,6 +425,11 @@ describe('automated account onboarding', () => {
     const request = extract.mock.calls[0][0] as {
       input: Record<string, unknown>;
       instructions: string;
+      schema: {
+        properties: Record<string, any>;
+        required: string[];
+        additionalProperties: boolean;
+      };
     };
     expect(request.input).toMatchObject({
       market: 'GB',
@@ -434,17 +446,41 @@ describe('automated account onboarding', () => {
       },
     });
     expect(generated.prompts).toHaveLength(50);
-    for (const stage of JOURNEY_STAGES)
+    for (const stage of JOURNEY_STAGES) {
+      expect(request.schema.properties[stage]).toMatchObject({
+        type: 'array',
+        minItems: JOURNEY_PROMPT_COUNTS[stage],
+        maxItems: JOURNEY_PROMPT_COUNTS[stage],
+      });
+      expect(
+        request.schema.properties[stage].items.properties,
+      ).not.toHaveProperty('stage');
       expect(
         generated.prompts.filter((prompt) => prompt.stage === stage),
       ).toHaveLength(JOURNEY_PROMPT_COUNTS[stage]);
+    }
+    expect(request.schema.required).toEqual([...JOURNEY_STAGES]);
+    expect(request.schema.additionalProperties).toBe(false);
     expect(request.instructions).toContain(
       'source authority as its central purpose',
     );
     expect(request.instructions).not.toContain('at least 60% unbranded');
     expect(generated.receipt).toMatchObject({
-      instructionsVersion: 'citevia-onboarding-v3',
+      instructionsVersion: 'citevia-onboarding-v4',
     });
+    // Regression: the real failure had 13/12/12/13, even though the total was 50.
+    // A provider returning that split must still stop after one paid attempt.
+    sections.convert.push(sections.prefer.pop()!);
+    await expect(
+      new OpenAIOnboardingProvider({ answer: vi.fn(), extract }).prompts(
+        job,
+        book,
+      ),
+    ).rejects.toMatchObject({
+      code: 'onboarding_coverage_invalid',
+      retryable: false,
+    });
+    expect(extract).toHaveBeenCalledTimes(2); // One success above and one rejected attempt; no internal retry.
     const duplicate = structuredClone(prompts);
     duplicate[1].text = duplicate[0].text;
     expect(() =>
@@ -542,6 +578,31 @@ describe('automated account onboarding', () => {
     ];
     await expect(provider.brandbook(job, research)).rejects.toMatchObject({
       code: 'brandbook_evidence_invalid',
+    });
+  });
+});
+
+describe('portfolio response schema allocation', () => {
+  it('reserves zero generated Understand slots when a legacy account already supplied all thirteen', () => {
+    const manual = Array.from({ length: 13 }, (_, index) => ({
+      text: `Existing question ${index}`,
+      stage: 'understand' as const,
+    }));
+    const allocation = journeyAllocation(manual);
+    expect(allocation).toEqual({
+      understand: 0,
+      prefer: 13,
+      trust: 12,
+      convert: 12,
+    });
+    const schema = portfolioGenerationSchema(allocation);
+    expect(schema.properties.understand).toMatchObject({
+      minItems: 0,
+      maxItems: 0,
+    });
+    expect(schema.properties.prefer).toMatchObject({
+      minItems: 13,
+      maxItems: 13,
     });
   });
 });

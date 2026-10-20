@@ -15,14 +15,14 @@ No per-account CLI or database editing is required. Descope authenticates people
 
 ## Generation instructions
 
-The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v3`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
+The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v4`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
 
 - Understand: whether AI understands the brand’s business, offerings, audiences and use cases.
 - Prefer: discovery, shortlists, alternatives, comparisons and tradeoffs.
 - Trust: whether AI treats the brand’s expertise and published information as credible source material.
 - Convert: commercial evaluation and next steps, without inventing prices, offers or action URLs.
 
-Allocation is **13 Understand, 13 Prefer, 12 Trust, 12 Convert**. All questions are generated automatically using the researched brandbook. Branded and unbranded questions are mixed according to each tactic, without a fixed unbranded percentage. Questions should be neutral, realistic, distinct and repeatable. It cannot be relied on to predict actual brand visibility or guarantee semantic diversity; live output quality must still be checked with the configured model.
+Allocation is **13 Understand, 13 Prefer, 12 Trust, 12 Convert**. Generation requests four named arrays with exact minimum/maximum item counts in the provider's strict response schema, then the server assigns stages from those array names and validates the flattened portfolio independently. Legacy saved manual prompts reduce only the remaining per-section allocation. All questions are generated automatically using the researched brandbook. Branded and unbranded questions are mixed according to each tactic, without a fixed unbranded percentage. Questions should be neutral, realistic, distinct and repeatable. It cannot be relied on to predict actual brand visibility or guarantee semantic diversity; live output quality must still be checked with the configured model.
 
 The application rejects unknown sections, the wrong count/allocation, duplicate normalized questions, invalid records and unverifiable brandbook evidence. Model refusals, incomplete output and provider failures do not silently activate an account. Generated prompts and the brandbook are editable after setup. Editing a prompt increments its version; old scan snapshots remain unchanged.
 

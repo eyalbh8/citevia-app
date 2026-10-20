@@ -1,4 +1,6 @@
-export const ONBOARDING_INSTRUCTIONS_VERSION = 'citevia-onboarding-v3';
+import { JOURNEY_STAGES, type JourneyStage } from '@citevia/core';
+
+export const ONBOARDING_INSTRUCTIONS_VERSION = 'citevia-onboarding-v4';
 export const RESEARCH_INSTRUCTIONS = `Research the company identified by the supplied name and website for an accurate brandbook.
 Visit the supplied official website with web search. The operator supplies only the company name, website, region and language;
 discover the factual company context from the website and verified sources. Distinguish similarly named companies. Use the supplied market and language.
@@ -24,6 +26,8 @@ At least one relevant evidence_catalog entry must be selected. If the evidence i
 export const PORTFOLIO_INSTRUCTIONS = `You design a repeatable AI visibility measurement portfolio for ONE supplied company.
 Generate exactly the requested remaining_count prompts, respecting the exact per-section allocation. Preserve all supplied manual prompts;
 never return them again. Return JSON only, matching the schema. Use natural buyer language in the requested language/market.
+Return four arrays named understand, prefer, trust and convert, each with exactly its section_allocation count.
+Place each question in its matching section. Each item contains only text, topic and branded; the server assigns its stage from the array name.
 The supplied section_goals define the measurement tactic for the actual brand_name. These goals guide prompt design;
 they are NOT literal questions to copy into the portfolio. The only section values are understand, prefer, trust, convert:
 UNDERSTAND — Does AI understand what the brand does? Test whether answers correctly identify the company's business,
@@ -82,17 +86,24 @@ export const BRANDBOOK_SCHEMA = object({
   },
   unknowns: strings,
 });
-export const PORTFOLIO_SCHEMA = object({
-  prompts: {
-    type: 'array',
-    items: object({
-      text: str,
-      stage: {
-        type: 'string',
-        enum: ['understand', 'prefer', 'trust', 'convert'],
-      },
-      topic: str,
-      branded: { type: 'boolean' },
-    }),
-  },
-});
+export function portfolioGenerationSchema(
+  allocation: Record<JourneyStage, number>,
+) {
+  return object(
+    Object.fromEntries(
+      JOURNEY_STAGES.map((stage) => [
+        stage,
+        {
+          type: 'array',
+          minItems: allocation[stage],
+          maxItems: allocation[stage],
+          items: object({
+            text: str,
+            topic: str,
+            branded: { type: 'boolean' },
+          }),
+        },
+      ]),
+    ),
+  );
+}

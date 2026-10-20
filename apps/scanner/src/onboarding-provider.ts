@@ -24,7 +24,7 @@ import {
   BRANDBOOK_INSTRUCTIONS,
   ONBOARDING_INSTRUCTIONS_VERSION,
   PORTFOLIO_INSTRUCTIONS,
-  PORTFOLIO_SCHEMA,
+  portfolioGenerationSchema,
   RESEARCH_INSTRUCTIONS,
 } from './onboarding-prompts.js';
 import {
@@ -257,17 +257,18 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
           instructionsVersion: ONBOARDING_INSTRUCTIONS_VERSION,
         },
       };
+    const allocation = journeyAllocation(job.input.manualPrompts);
     const receipt = await this.provider.extract({
       model: this.model,
       instructions: PORTFOLIO_INSTRUCTIONS,
-      schema: PORTFOLIO_SCHEMA,
+      schema: portfolioGenerationSchema(allocation),
       input: {
         brandbook,
         market: job.input.country,
         language: job.input.language,
         manual_prompts: job.input.manualPrompts,
         remaining_count: 50 - job.input.manualPrompts.length,
-        section_allocation: journeyAllocation(job.input.manualPrompts),
+        section_allocation: allocation,
         brand_name: job.input.name,
         section_goals: Object.fromEntries(
           JOURNEY_STAGES.map((stage) => [
@@ -278,8 +279,23 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
       },
     });
     try {
+      const items = z
+        .array(generatedPromptSchema.omit({ stage: true }))
+        .max(50);
+      const sections = z
+        .object({
+          understand: items,
+          prefer: items,
+          trust: items,
+          convert: items,
+        })
+        .strict()
+        .parse(json(receipt));
+      const generated = JOURNEY_STAGES.flatMap((stage) =>
+        sections[stage].map((prompt) => ({ ...prompt, stage })),
+      );
       return {
-        prompts: validatePortfolio(job, brandbook, json(receipt)),
+        prompts: validatePortfolio(job, brandbook, { prompts: generated }),
         receipt: {
           instructionsVersion: ONBOARDING_INSTRUCTIONS_VERSION,
           ...receipt,
