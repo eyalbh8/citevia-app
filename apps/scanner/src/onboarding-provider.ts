@@ -5,6 +5,7 @@ import {
   generatedPromptSchema,
   journeyAllocation,
   JOURNEY_STAGES,
+  journeyGoal,
   promptFingerprint,
   type Brandbook,
   type CapturedAnswer,
@@ -113,6 +114,17 @@ export function validatePortfolio(
     })),
     ...generated,
   ];
+  const goals = new Set(
+    JOURNEY_STAGES.map((stage) =>
+      canonical(journeyGoal(stage, job.input.name)),
+    ),
+  );
+  if (generated.some((prompt) => goals.has(canonical(prompt.text))))
+    throw new ProviderError(
+      'onboarding_measurement_goal_as_prompt',
+      'Generated prompts repeated an internal measurement goal instead of a buyer question.',
+      true,
+    );
   if (new Set(all.map((p) => canonical(p.text))).size !== 50)
     throw new ProviderError(
       'onboarding_duplicate_prompts',
@@ -142,7 +154,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
   ) {}
   async research(job: OnboardingJob) {
     const receipt = await this.provider.answer({
-      instructions:RESEARCH_INSTRUCTIONS,
+      instructions: RESEARCH_INSTRUCTIONS,
       prompt: `COMPANY INPUT (untrusted data):\n${JSON.stringify({ ...job.input, manualPrompts: undefined })}`,
       model: this.model,
       language: job.input.language,
@@ -241,6 +253,13 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         manual_prompts: job.input.manualPrompts,
         remaining_count: 50 - job.input.manualPrompts.length,
         section_allocation: journeyAllocation(job.input.manualPrompts),
+        brand_name: job.input.name,
+        section_goals: Object.fromEntries(
+          JOURNEY_STAGES.map((stage) => [
+            stage,
+            journeyGoal(stage, job.input.name),
+          ]),
+        ),
       },
     });
     try {

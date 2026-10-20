@@ -4,7 +4,8 @@ import {
   onboardingInputSchema,
   journeyAllocation,
   JOURNEY_STAGES,
-  type OnboardingInput,
+  JOURNEY_PROMPT_COUNTS,
+  type AccountOnboardingInput,
   type OnboardingJob,
   type CapturedAnswer,
 } from '@citevia/core';
@@ -24,16 +25,11 @@ import {
 import { ProviderError } from '../apps/scanner/src/provider.js';
 import { FixtureOnboardingProvider } from './fixtures/onboarding.js';
 import { FixtureProvider } from './fixtures/scanner.js';
-const input: OnboardingInput = {
+const input: AccountOnboardingInput = {
   name: 'Acme',
   website: 'https://acme.com',
-  country: 'US',
+  region: 'US',
   language: 'en',
-  timezone: 'Asia/Nicosia',
-  description: 'A company supplying analytics software to marketing teams.',
-  manualPrompts: [
-    { text: 'What evidence supports Acme reliability?', stage: 'trust' },
-  ],
 };
 async function environment() {
   const repository = new MemoryRepository(),
@@ -67,7 +63,7 @@ async function drain(scanner: Scanner, queue: MemoryQueue) {
   }
 }
 describe('automated account onboarding', () => {
-  it('preserves manual prompts, generates all four sections and starts one first scan per provider', async () => {
+  it('accepts only four fields, generates all fifty prompts and starts one first scan per provider', async () => {
     const runtime = await environment(),
       provider = new FixtureOnboardingProvider(),
       research = vi.spyOn(provider, 'research'),
@@ -104,12 +100,14 @@ describe('automated account onboarding', () => {
     expect(project.enabled).toBe(true);
     expect(project.prompts).toHaveLength(50);
     expect(project.brandbook?.generationId).toBe(job.id);
-    expect(project.prompts[0]).toMatchObject({
-      ...input.manualPrompts[0],
-      active: true,
-    });
+    expect(project.country).toBe(input.region);
+    expect(project.timezone).toBe('UTC');
+    expect(job.input.manualPrompts).toEqual([]);
+    expect(job.input.description).toBe('');
     for (const stage of JOURNEY_STAGES)
-      expect(project.prompts.some((p) => p.stage === stage)).toBe(true);
+      expect(
+        project.prompts.filter((prompt) => prompt.stage === stage),
+      ).toHaveLength(journeyAllocation([])[stage]);
     expect(
       await runtime.repository.getRun(projectId, job.firstRunId!),
     ).toMatchObject({
@@ -296,7 +294,11 @@ describe('automated account onboarding', () => {
     ]);
     expect(research).toHaveBeenCalledTimes(1);
   });
-  it('rejects invalid public URLs, duplicate manual prompts and more than fifty prompts', () => {
+  it('requires exactly the four onboarding fields and rejects unsafe websites or obsolete extra inputs', () => {
+    expect(onboardingInputSchema.parse(input)).toEqual(input);
+    expect(
+      onboardingInputSchema.parse({ ...input, region: ' gb ' }).region,
+    ).toBe('GB');
     for (const website of [
       'http://127.0.0.1',
       'http://localhost',
@@ -306,21 +308,20 @@ describe('automated account onboarding', () => {
       expect(
         onboardingInputSchema.safeParse({ ...input, website }).success,
       ).toBe(false);
-    expect(
-      onboardingInputSchema.safeParse({
-        ...input,
-        manualPrompts: [input.manualPrompts[0], input.manualPrompts[0]],
-      }).success,
-    ).toBe(false);
-    expect(
-      onboardingInputSchema.safeParse({
-        ...input,
-        manualPrompts: Array.from({ length: 51 }, (_, i) => ({
-          text: `Question number ${i}?`,
-          stage: 'understand',
-        })),
-      }).success,
-    ).toBe(false);
+    for (const field of ['name', 'region', 'language', 'website']) {
+      const missing: Record<string, unknown> = { ...input };
+      delete missing[field];
+      expect(onboardingInputSchema.safeParse(missing).success).toBe(false);
+    }
+    for (const extra of [
+      { description: 'Notes' },
+      { timezone: 'UTC' },
+      { manualPrompts: [] },
+      { country: 'US' },
+    ])
+      expect(
+        onboardingInputSchema.safeParse({ ...input, ...extra }).success,
+      ).toBe(false);
     expect(journeyAllocation([])).toEqual({
       understand: 13,
       prefer: 13,
@@ -351,8 +352,127 @@ describe('automated account onboarding', () => {
       }),
     ).toThrow();
   });
+  it('sends the four brand-specific tactics and exact allocation to OpenAI without requiring company notes', async () => {
+    const runtime = await environment();
+    const { items } = await createAccounts(
+      runtime,
+      'owner',
+      'tactics-test',
+      {
+        accounts: [
+          {
+            ...input,
+            name: 'A different brand',
+            region: 'GB',
+            language: 'en-GB',
+          },
+        ],
+      },
+      new Date(),
+      100,
+    );
+    const job = items[0].job,
+      fixture = new FixtureOnboardingProvider();
+    const book = (await fixture.brandbook(job)).brandbook;
+    const prompts = (await fixture.prompts(job, book)).prompts.map(
+      ({ text, stage, topic, branded }) => ({ text, stage, topic, branded }),
+    );
+    const extract = vi.fn(async (_request: unknown) => ({
+      response: {
+        id: 'native',
+        status: 'completed',
+        output: [
+          {
+            type: 'message',
+            content: [
+              { type: 'output_text', text: JSON.stringify({ prompts }) },
+            ],
+          },
+        ],
+      },
+      requestId: 'native-request',
+      receivedAt: new Date().toISOString(),
+    }));
+    const generated = await new OpenAIOnboardingProvider({
+      answer: vi.fn(),
+      extract,
+    }).prompts(job, book);
+    const request = extract.mock.calls[0][0] as {
+      input: Record<string, unknown>;
+      instructions: string;
+    };
+    expect(request.input).toMatchObject({
+      market: 'GB',
+      language: 'en-GB',
+      brand_name: 'A different brand',
+      remaining_count: 50,
+      manual_prompts: [],
+      section_allocation: JOURNEY_PROMPT_COUNTS,
+      section_goals: {
+        understand: 'Does AI understand what A different brand does?',
+        prefer: 'Does AI prefer A different brand over rivals?',
+        trust: 'Does AI trust A different brand as a source?',
+        convert: 'Does AI help buyers take the next step?',
+      },
+    });
+    expect(generated.prompts).toHaveLength(50);
+    for (const stage of JOURNEY_STAGES)
+      expect(
+        generated.prompts.filter((prompt) => prompt.stage === stage),
+      ).toHaveLength(JOURNEY_PROMPT_COUNTS[stage]);
+    expect(request.instructions).toContain(
+      'source authority as its central purpose',
+    );
+    expect(request.instructions).not.toContain('at least 60% unbranded');
+    expect(generated.receipt).toMatchObject({
+      instructionsVersion: 'citevia-onboarding-v2',
+    });
+    const duplicate = structuredClone(prompts);
+    duplicate[1].text = duplicate[0].text;
+    expect(() =>
+      validatePortfolio(job, book, { prompts: duplicate }),
+    ).toThrowError(
+      expect.objectContaining({ code: 'onboarding_duplicate_prompts' }),
+    );
+    const meta = structuredClone(prompts);
+    meta[0].text = 'Does AI understand what A different brand does?';
+    expect(() => validatePortfolio(job, book, { prompts: meta })).toThrowError(
+      expect.objectContaining({
+        code: 'onboarding_measurement_goal_as_prompt',
+      }),
+    );
+  });
+  it('rejects removed onboarding inputs before creating any account', async () => {
+    const runtime = await environment(),
+      api = createApi(runtime, { mode: 'live' });
+    const response = await api(
+      req('/onboarding/accounts', 'POST', {
+        accounts: [
+          {
+            ...input,
+            manualPrompts: [
+              { text: 'An injected prompt?', stage: 'understand' },
+            ],
+          },
+        ],
+      }),
+      testIdentity('owner'),
+    );
+    expect(response.status).toBe(400);
+    expect(await runtime.repository.listProjects('owner')).toHaveLength(0);
+    expect(runtime.queue.messages).toHaveLength(0);
+  });
   it('rejects fabricated research URLs or quotations in generated brandbooks', async () => {
-    const job = { id: 'job', input } as OnboardingJob;
+    const runtime = await environment();
+    const { items } = await createAccounts(
+      runtime,
+      'owner',
+      'evidence-test',
+      { accounts: [input] },
+      new Date(),
+      100,
+    );
+    const job = items[0].job;
     const payload = {
       about: 'Acme provides analytics software for business teams.',
       industryCategory: 'Analytics',

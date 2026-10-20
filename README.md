@@ -14,7 +14,7 @@ npm run dev
 
 Open **http://127.0.0.1:5173**. Configure Descope in `.env` to sign in; without it the client shows its login configuration screen. Both local and AWS runs require real Descope sessions. See [user access and first-admin setup](docs/AUTHENTICATION.md). The API listens on `127.0.0.1:3001`. Startup creates an empty persistent PostgreSQL database under `.local-data/real/`; no sample accounts, answers, brandbooks or scans are inserted. Previous sample stores are preserved separately and refused by the application. With no provider credentials, the app opens but account generation and scans stay disabled.
 
-Set `OPENAI_API_KEY`, `PERPLEXITY_API_KEY` and `GEMINI_API_KEY` (or their `*_SECRET_ARN` alternatives) in root `.env` and restart to enable real calls. OpenAI also creates brandbooks/prompts and analyzes every provider’s answers. After establishing the first system administrator, open **Accounts → New account** with an actual company website and context. Supply existing questions under Understand, Prefer, Trust and Convert, or generate all 50. Research → brandbook → prompts → first scan runs automatically. CSV/JSON import supports up to 25 accounts per request.
+Set `OPENAI_API_KEY`, `PERPLEXITY_API_KEY` and `GEMINI_API_KEY` (or their `*_SECRET_ARN` alternatives) in root `.env` and restart to enable real calls. OpenAI also creates brandbooks/prompts and analyzes every provider’s answers. After establishing the first system administrator, open **Accounts → New account** and enter only the brand name, region, language and website URL. The system researches the website, creates its brandbook and generates all 50 prompts: 13 Understand, 13 Prefer, 12 Trust and 12 Convert. Research → brandbook → prompts → first scan runs automatically. CSV/JSON import supports up to 25 accounts per request.
 
 **Prompts** provides journey sections, search, topic/status/branded filters, editing, bulk addition, archive/reactivation, CSV export and visibility/rank/sentiment/citations from the selected real scan. Edits create versions; historical answers remain preserved and never become measurements of changed questions.
 
@@ -65,7 +65,7 @@ npm run bootstrap -- --help
 
 `build` emits `dist/api/index.mjs`, `dist/scanner/index.mjs`, and `apps/client/dist/`. Deployment uses two Lambda functions, API Gateway, Descope authentication, private Aurora PostgreSQL, S3, SQS and EventBridge Scheduler. Amplify hosts the static client. See [deployment instructions](docs/DEPLOYMENT.md) for database migrations, AWS configuration and recovery.
 
-No live AWS resources or provider calls are created by installation, tests or builds. Production credentials and account-specific deployment values must be supplied before deployment. The default schedule is Monday 06:00 in the project timezone; changing settings updates it through the API. The recovery schedule only resumes existing jobs and does not create extra weekly scans.
+No live AWS resources or provider calls are created by installation, tests or builds. Production credentials and account-specific deployment values must be supplied before deployment. New accounts default to Monday 06:00 UTC; changing settings updates it through the API. The recovery schedule only resumes existing jobs and does not create extra weekly scans.
 
 ## API
 

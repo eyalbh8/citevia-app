@@ -1,0 +1,9 @@
+customHeaders:
+  - pattern: '/'
+    headers:
+      - key: Cache-Control
+        value: 'no-cache, max-age=0, s-maxage=0, must-revalidate'
+  - pattern: '/index.html'
+    headers:
+      - key: Cache-Control
+        value: 'no-cache, max-age=0, s-maxage=0, must-revalidate'

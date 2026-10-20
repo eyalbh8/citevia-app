@@ -346,6 +346,13 @@ export interface Brandbook {
   version: number;
   generationId: string;
 }
+export interface AccountOnboardingInput {
+  name: string;
+  region: string;
+  language: string;
+  website: string;
+}
+/** Persisted worker context. Older jobs may retain manual prompts and company notes. */
 export interface OnboardingInput {
   name: string;
   website: string;

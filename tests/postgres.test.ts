@@ -105,11 +105,8 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
     const input = {
       name: 'Postgres Acme',
       website: 'https://acme.com',
-      country: 'US',
+      region: 'US',
       language: 'en',
-      timezone: 'UTC',
-      description: 'Analytics products for growing businesses.',
-      manualPrompts: [],
     };
     const { items } = await createAccounts(
       runtime,
@@ -147,7 +144,7 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
         ])
       ).rows[0],
     ).toMatchObject({
-      about: input.description,
+      about: expect.stringContaining(input.name),
       key_features: ['Sample offering'],
     });
     expect(

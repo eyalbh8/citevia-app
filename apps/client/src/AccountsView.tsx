@@ -7,10 +7,25 @@ import {
   Plus,
   RefreshCw,
 } from 'lucide-react';
-import type { OnboardingInput, OnboardingJob, Project } from '@citevia/core';
-import { JOURNEY_STAGES } from '@citevia/core';
-import { downloadCsv, idempotentPost, useApi, query } from './api';
+import type {
+  AccountOnboardingInput,
+  OnboardingJob,
+  Project,
+} from '@citevia/core';
+import {
+  JOURNEY_STAGES,
+  JOURNEY_PROMPT_COUNTS,
+  journeyGoal,
+} from '@citevia/core';
+import {
+  downloadCsv,
+  idempotentPost,
+  useApi,
+  query,
+  onboardAccounts,
+} from './api';
 import { parseAccountImport } from './account-import';
+import LanguageSelect from './LanguageSelect';
 import { Badge, Empty, ErrorNotice, Spinner } from './components';
 type Account = Project & {
   activePromptCount?: number;
@@ -73,56 +88,18 @@ export default function AccountsView({
   }, [pending]);
   const [name, setName] = useState(''),
     [website, setWebsite] = useState(''),
-    [country, setCountry] = useState('US'),
+    [region, setRegion] = useState('US'),
     [language, setLanguage] = useState('en'),
-    [timezone, setTimezone] = useState(
-      Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-    ),
-    [description, setDescription] = useState('');
-  const [manual, setManual] = useState({
-      understand: '',
-      prefer: '',
-      trust: '',
-      convert: '',
-    }),
     [bulkText, setBulkText] = useState('');
-  const count = Object.values(manual).flatMap((value) =>
-    value.split('\n').filter((line) => line.trim()),
-  ).length;
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(undefined);
     try {
-      let accounts: OnboardingInput[];
-      if (bulk)
-        accounts = parseAccountImport(bulkText, {
-          country,
-          language,
-          timezone,
-        });
-      else
-        accounts = [
-          {
-            name,
-            website,
-            country: country.toUpperCase(),
-            language,
-            timezone,
-            description,
-            manualPrompts: JOURNEY_STAGES.flatMap((stage) =>
-              manual[stage]
-                .split('\n')
-                .map((text) => text.trim())
-                .filter(Boolean)
-                .map((text) => ({ text, stage })),
-            ),
-          },
-        ];
-      const result = await idempotentPost<{
-        items: { project: Project }[];
-        limitReached: boolean;
-      }>('/onboarding/accounts', { accounts });
+      const accounts: AccountOnboardingInput[] = bulk
+        ? parseAccountImport(bulkText)
+        : [{ name, website, region, language }];
+      const result = await onboardAccounts(accounts);
       if (result.limitReached) {
         if (bulk)
           setBulkText(
@@ -138,7 +115,7 @@ export default function AccountsView({
         return;
       }
       notify(
-        `${result.items.length} account${result.items.length === 1 ? '' : 's'} queued. Citevia will create the brandbook, complete the 50 prompts, start a scan and schedule weekly scans.`,
+        `${result.items.length} account${result.items.length === 1 ? '' : 's'} queued. Citevia will create the brandbook, generate all 50 prompts, start a scan and schedule weekly scans.`,
       );
       setRevision((value) => value + 1);
       onChanged();
@@ -147,9 +124,7 @@ export default function AccountsView({
       setCursors([undefined]);
       setName('');
       setWebsite('');
-      setDescription('');
       setBulkText('');
-      setManual({ understand: '', prefer: '', trust: '', convert: '' });
     } catch (error) {
       setError(error as Error);
     } finally {
@@ -193,8 +168,9 @@ export default function AccountsView({
             <div>
               <h2 className="card-title">Set up accounts</h2>
               <p className="card-description">
-                Prompts you supply are kept. AI fills the remaining places, up
-                to 50.
+                Enter the brand name, region, language and URL. Citevia
+                researches the website and generates the brandbook and all 50
+                prompts.
               </p>
             </div>
             <div className="tab-buttons">
@@ -240,16 +216,6 @@ export default function AccountsView({
                       />
                     </label>
                   </div>
-                  <label className="field">
-                    Company context
-                    <textarea
-                      rows={3}
-                      maxLength={10000}
-                      placeholder="Offerings, audience, positioning, important constraints. Citevia also researches the official website."
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                    />
-                  </label>
                 </>
               ) : (
                 <label className="field">
@@ -260,17 +226,13 @@ export default function AccountsView({
                     className="code-input"
                     value={bulkText}
                     onChange={(e) => setBulkText(e.target.value)}
-                    placeholder={
-                      'name,website,description\nCompany name,https://company.com,Company context'
-                    }
+                    placeholder={'name,region,language,website'}
                   />
                   <small>
-                    1–25 accounts per batch. CSV columns: name, website,
-                    description, country, language, timezone, understand,
-                    prefer, trust, convert. Use newlines or | between prompts in
-                    a section. JSON can include manualPrompts: [
-                    {'{"text":"A buyer question?","stage":"understand"}'}].
-                    Missing options use the defaults below.
+                    1–25 accounts per batch. Each CSV row or JSON object needs
+                    only name, region, language and website. Use a two-letter
+                    region code, such as US or GB, and a language code, such as
+                    en.
                   </small>
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <button
@@ -279,18 +241,7 @@ export default function AccountsView({
                       onClick={() =>
                         downloadCsv(
                           'citevia-accounts-template.csv',
-                          [
-                            'name',
-                            'website',
-                            'description',
-                            'country',
-                            'language',
-                            'timezone',
-                            'understand',
-                            'prefer',
-                            'trust',
-                            'convert',
-                          ],
+                          ['name', 'region', 'language', 'website'],
                           [],
                         )
                       }
@@ -322,67 +273,55 @@ export default function AccountsView({
                   </div>
                 </label>
               )}
-              <div className="field-row">
-                <label className="field">
-                  Market
-                  <input
-                    required
-                    value={country}
-                    minLength={2}
-                    maxLength={2}
-                    onChange={(e) => setCountry(e.target.value.toUpperCase())}
-                  />
-                </label>
-                <label className="field">
-                  Language
-                  <input
-                    required
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
-                  />
-                </label>
-              </div>
-              <label className="field">
-                Timezone
-                <input
-                  required
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                />
-                <small>
-                  Weekly scans run Monday at 06:00 in this timezone.
-                </small>
-              </label>
               {!bulk && (
-                <>
-                  <div className="manual-prompts-heading">
-                    <h3>
-                      Existing prompts <span>{count}/50</span>
-                    </h3>
-                    <p>
-                      Optional. One prompt per line in its section. Leave empty
-                      to generate all 50.
-                    </p>
-                  </div>
-                  <div className="journey-grid">
-                    {JOURNEY_STAGES.map((stage) => (
-                      <label className="field" key={stage}>
-                        <span className="journey-label">{stage}</span>
-                        <textarea
-                          rows={5}
-                          value={manual[stage]}
-                          onChange={(e) =>
-                            setManual((previous) => ({
-                              ...previous,
-                              [stage]: e.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </>
+                <div className="field-row">
+                  <label className="field">
+                    Region
+                    <input
+                      required
+                      value={region}
+                      minLength={2}
+                      maxLength={2}
+                      pattern="[A-Za-z]{2}"
+                      placeholder="US"
+                      onChange={(e) => setRegion(e.target.value.toUpperCase())}
+                    />
+                    <small>
+                      Two-letter country/region code, such as US or GB.
+                    </small>
+                  </label>
+                  <label className="field">
+                    Language
+                    <LanguageSelect value={language} onChange={setLanguage} />
+                    <small>
+                      Choose the language for research and generated prompts.
+                    </small>
+                  </label>
+                </div>
               )}
+              <div className="generated-portfolio">
+                <h3>50 prompts, four tactics</h3>
+                <div className="journey-grid">
+                  {JOURNEY_STAGES.map((stage) => (
+                    <div className="journey-tactic" key={stage}>
+                      <strong className="journey-label">
+                        {stage}
+                        <span>{JOURNEY_PROMPT_COUNTS[stage]} prompts</span>
+                      </strong>
+                      <p>
+                        {journeyGoal(
+                          stage,
+                          !bulk && name.trim() ? name.trim() : 'the brand',
+                        )}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <p className="card-description">
+                  Weekly scans start automatically on Monday at 06:00 UTC. You
+                  can change the timezone in Settings after setup.
+                </p>
+              </div>
               <div className="setting-note">
                 {providerReady
                   ? 'Submitting starts OpenAI research and generation calls. After validation, the first scans start on all three providers and weekly tracking is enabled automatically.'
@@ -392,7 +331,7 @@ export default function AccountsView({
                 <button
                   type="submit"
                   className="button button-primary"
-                  disabled={!providerReady || busy || count > 50}
+                  disabled={!providerReady || busy}
                 >
                   {busy ? (
                     <LoaderCircle className="spinner" size={14} />

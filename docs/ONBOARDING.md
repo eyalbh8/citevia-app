@@ -2,27 +2,27 @@
 
 ## Implemented flow
 
-An authenticated operator opens **Accounts → New account**, supplies a name, official website, market, language, timezone and optional company context. Existing prompts can be pasted into Understand, Prefer, Trust and Convert sections. Bulk import accepts CSV or JSON, up to 25 accounts per request. The CSV template is downloadable in the form. Each created account is owned by its creator; a different user's account IDs do not grant access.
+A system administrator opens **Accounts → New account** and supplies exactly four fields: brand name, region, language and official website URL. Region is a two-letter country/region code and language is a code such as en or en-GB. Research discovers the company context automatically; onboarding does not accept notes, manual prompts or a timezone. Bulk CSV/JSON uses the same four fields, up to 25 accounts per request. New accounts default to Monday 06:00 UTC; owners can change the timezone later in Settings. Each account is owned by its creator, and system administrators can assign users to it.
 
 The system persists the account, membership and onboarding job atomically, with weekly scanning disabled. It then queues these steps:
 
 1. **Research:** OpenAI Responses with web search researches the company and saves the native response and sources.
 2. **Brandbook:** a separate strict JSON generation creates the iGEO-style company profile from that research. Evidence quotations must occur verbatim in the research, and URLs must occur in its native sources. Missing facts remain empty/null and appear under Needs verification.
-3. **Prompts:** a separate strict JSON generation preserves every supplied prompt and fills the remaining places to exactly 50. Each prompt has a journey section, topic, branded flag, generation ID and version.
+3. **Prompts:** a separate strict JSON generation creates exactly 50 questions using the four brand-specific tactics. Each prompt has a journey section, topic, branded flag, generation ID and version.
 4. **Activate:** save the brandbook and validated portfolio, enable the weekly schedule in the account's timezone, and enqueue an idempotent first scan. The Accounts screen shows progress and recoverable failures; Dashboard shows scan progress.
 
 No per-account CLI or database editing is required. Descope authenticates people and their verified profiles are saved in the existing iGEO `users` table. Only database-backed system administrators can create customer brand accounts. `user_accounts` assigns Viewer/Owner access; new users have no account access. Descope controls the login flow and allowed signup methods. See [authentication and user management](AUTHENTICATION.md). Billing and invitation delivery are separate concerns.
 
 ## Generation instructions
 
-The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v1`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
+The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v2`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
 
-- Understand: category, problem, use cases, audience and requirements.
+- Understand: whether AI understands the brand’s business, offerings, audiences and use cases.
 - Prefer: discovery, shortlists, alternatives, comparisons and tradeoffs.
-- Trust: proof, credibility, limitations, reviews and risk.
+- Trust: whether AI treats the brand’s expertise and published information as credible source material.
 - Convert: commercial evaluation and next steps, without inventing prices, offers or action URLs.
 
-With no manual prompts, allocation is **13 Understand, 13 Prefer, 12 Trust, 12 Convert**. Supplied prompts keep their assigned sections; the remaining places are allocated to the least represented sections. Supplied text is not rewritten. The generator is instructed to create neutral, buyer-realistic, distinct and repeatable questions, generally favoring unbranded discovery. It cannot be relied on to predict actual brand visibility or guarantee semantic diversity; live output quality must still be checked with the configured model.
+Allocation is **13 Understand, 13 Prefer, 12 Trust, 12 Convert**. All questions are generated automatically using the researched brandbook. Branded and unbranded questions are mixed according to each tactic, without a fixed unbranded percentage. Questions should be neutral, realistic, distinct and repeatable. It cannot be relied on to predict actual brand visibility or guarantee semantic diversity; live output quality must still be checked with the configured model.
 
 The application rejects unknown sections, the wrong count/allocation, duplicate normalized questions, invalid records and unverifiable brandbook evidence. Model refusals, incomplete output and provider failures do not silently activate an account. Generated prompts and the brandbook are editable after setup. Editing a prompt increments its version; old scan snapshots remain unchanged.
 
@@ -69,3 +69,31 @@ AWS gives scans a 24-hour deadline to tolerate bulk onboarding and weekly queue 
 `npm run dev` starts an empty persistent PostgreSQL database (PGlite) with the production SQL migrations/repository. There are no runtime fixtures or automatic legacy JSON imports. With OpenAI credentials configured it executes real research, brandbook/portfolio generation and the first scan; without credentials those actions are disabled. Tests use isolated fixtures, never application records. See [local instructions](LOCAL_DEVELOPMENT.md) and [AWS instructions](DEPLOYMENT.md).
 
 New accounts persist three scan provider configurations. Activation sends one idempotent kickoff, which creates one provider-specific run per configuration using the same frozen prompts, brand and locale. Each has its own native `scans`, `prompt_responses` and `results` records and private evidence. `firstRunId` identifies the primary run; sibling runs share `groupId`. Provider settings live in the workflow JSON and in native `account_settings.ai_engines`; no iGEO schema changes or historical rewrites are needed. OpenAI remains the onboarding and evidence-analysis provider.
+
+## Prompt tactics
+
+The system generates exactly 50 unique questions for the researched brand and requested region/language:
+
+- **Understand (13):** Does AI understand what the brand does? Questions test its business, offerings, audiences, use cases and category.
+- **Prefer (13):** Does AI prefer the brand over rivals? Neutral discovery, shortlists, comparisons, alternatives and tradeoffs allow AI to choose.
+- **Trust (12):** Does AI trust the brand as a source? Questions test expertise, credible official guidance, evidence and authority as a source. Reviews and product reliability do not replace source authority.
+- **Convert (12):** Does AI help buyers take the next step? Questions support relevant buying, product/service selection, booking, seller discovery, contact or quotes. The researched business determines applicable actions; demos/trials are not assumed.
+
+These are design goals, not literal prompts sent to scan providers. Generation uses a mix of brand-named and category questions suited to each tactic; a blanket unbranded quota is no longer used. The generator must not invent products, rivals, claims, prices or action URLs. Validation requires 50 unique questions, exact section counts, valid sections and no copied internal measurement goals before activation. A failed stage records its receipt and retries within the existing limits. Existing saved onboarding jobs retain their internal context for recovery; already-created brandbooks/prompts are not rewritten.
+
+The public API accepts only:
+
+```json
+{
+  "accounts": [
+    {
+      "name": "YOUR_BRAND_NAME",
+      "region": "US",
+      "language": "en",
+      "website": "https://YOUR_OFFICIAL_DOMAIN"
+    }
+  ]
+}
+```
+
+Use `POST /v1/onboarding/accounts` with an authenticated system-administrator session and an `Idempotency-Key`. The server maps region to the existing country field and adds internal UTC scheduling and empty legacy context; the operator enters no extra fields. Prompts can be edited after setup in the dedicated Prompts screen.

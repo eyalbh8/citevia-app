@@ -7,6 +7,7 @@ import {
   DEFAULT_PERPLEXITY_PRESET,
   DEFAULT_GEMINI_MODEL,
   type OnboardingJob,
+  type OnboardingInput,
   type Project,
 } from '@citevia/core';
 import type { Runtime } from '@citevia/storage';
@@ -26,7 +27,16 @@ export async function createAccounts(
   const input = onboardingRequestSchema.parse(raw),
     items: { project: Project; job: OnboardingJob }[] = [];
   // Independent per-item keys make a retry repair a partially accepted bulk request.
-  for (const [index, account] of input.accounts.entries()) {
+  for (const [index, submitted] of input.accounts.entries()) {
+    const account: OnboardingInput = {
+      name: submitted.name,
+      website: submitted.website,
+      country: submitted.region,
+      language: submitted.language,
+      timezone: 'UTC',
+      description: '',
+      manualPrompts: [],
+    };
     const id = hash(`${userId}:${requestId}:${index}`).slice(0, 32),
       projectId = `account_${id}`,
       jobId = `onboard_${id}`,

@@ -8,7 +8,27 @@ export const JOURNEY_STAGES = [
   'convert',
 ] as const;
 export const journeyStageSchema = z.enum(JOURNEY_STAGES);
-export const promptFingerprint=(value:string)=>value.normalize('NFKC').toLocaleLowerCase().replace(/[\p{P}\p{S}]/gu,' ').replace(/\s+/g,' ').trim();
+export const JOURNEY_PROMPT_COUNTS = {
+  understand: 13,
+  prefer: 13,
+  trust: 12,
+  convert: 12,
+} as const;
+export function journeyGoal(stage: JourneyStage, name: string): string {
+  return {
+    understand: `Does AI understand what ${name} does?`,
+    prefer: `Does AI prefer ${name} over rivals?`,
+    trust: `Does AI trust ${name} as a source?`,
+    convert: `Does AI help buyers take the next step?`,
+  }[stage];
+}
+export const promptFingerprint = (value: string) =>
+  value
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[\p{P}\p{S}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 const textList = z.array(z.string().trim().min(1).max(1000)).max(30);
 const publicUrl = z
   .string()
@@ -30,44 +50,17 @@ export const onboardingInputSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
     website: publicUrl,
-    country: z.string().regex(/^[A-Z]{2}$/),
-    language: z.string().regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/),
-    timezone: z
+    region: z
       .string()
-      .max(100)
-      .refine((value) => {
-        try {
-          new Intl.DateTimeFormat('en', { timeZone: value });
-          return true;
-        } catch {
-          return false;
-        }
-      }, 'Invalid timezone'),
-    description: z.string().trim().max(10000).default(''),
-    manualPrompts: z
-      .array(
-        z
-          .object({
-            text: z.string().trim().min(5).max(2000),
-            stage: journeyStageSchema,
-          })
-          .strict(),
-      )
-      .max(50)
-      .default([]),
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{2}$/),
+    language: z
+      .string()
+      .trim()
+      .regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/),
   })
-  .strict()
-  .superRefine((input, context) => {
-    const texts = input.manualPrompts.map((prompt) =>
-      promptFingerprint(prompt.text),
-    );
-    if (new Set(texts).size !== texts.length)
-      context.addIssue({
-        code: 'custom',
-        path: ['manualPrompts'],
-        message: 'Manual prompts must be unique',
-      });
-  });
+  .strict();
 export const generatedBrandbookSchema = z
   .object({
     about: z.string().trim().min(20).max(10000),

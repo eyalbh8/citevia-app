@@ -1,40 +1,59 @@
 import { expect, it } from 'vitest';
 import { csvRows, parseAccountImport } from './account-import';
-const defaults = { country: 'US', language: 'en', timezone: 'UTC' };
-it('imports quoted company names, descriptions and multiple categorized prompts', () => {
+it('imports only the four onboarding fields and supports quoted names and URLs', () => {
   const accounts = parseAccountImport(
-    'name,website,description,trust,convert\r\n"Acme, Inc.",https://acme.com,"Says ""hello"".","Is Acme reliable?\nWhat evidence supports Acme?",How can I request a quote?',
-    defaults,
+    'name,region,language,website\r\n"Acme, Inc.",us,en,https://acme.com',
   );
-  expect(accounts[0]).toMatchObject({
-    name: 'Acme, Inc.',
-    description: 'Says "hello".',
-    ...defaults,
-  });
-  expect(accounts[0].manualPrompts).toEqual([
-    { text: 'Is Acme reliable?', stage: 'trust' },
-    { text: 'What evidence supports Acme?', stage: 'trust' },
-    { text: 'How can I request a quote?', stage: 'convert' },
+  expect(accounts).toEqual([
+    {
+      name: 'Acme, Inc.',
+      region: 'US',
+      language: 'en',
+      website: 'https://acme.com',
+    },
   ]);
-});
-it('rejects broken or misleading imports and applies JSON defaults', () => {
-  expect(() => csvRows('"unfinished')).toThrow();
-  expect(() =>
-    parseAccountImport('name,url\nAcme,https://acme.com', defaults),
-  ).toThrow();
-  expect(() =>
-    parseAccountImport('name,website\nAcme,https://acme.com,extra', defaults),
-  ).toThrow();
   expect(
     parseAccountImport(
-      '[{"name":"Acme","website":"https://acme.com"}]',
-      defaults,
-    )[0],
-  ).toEqual({
-    name: 'Acme',
-    website: 'https://acme.com',
-    description: '',
-    manualPrompts: [],
-    ...defaults,
-  });
+      '[{"name":"Acme","region":"GB","language":"en-GB","website":"https://acme.com"}]',
+    )[0].region,
+  ).toBe('GB');
+});
+it('rejects incomplete, obsolete or misleading imports instead of inventing region or language defaults', () => {
+  expect(() => csvRows('"unfinished')).toThrow();
+  for (const csv of [
+    'name,website\nAcme,https://acme.com',
+    'name,region,language,url\nAcme,US,en,https://acme.com',
+    'name,region,language,website\nAcme,US,en,https://acme.com,extra',
+    'name,region,language,website,description\nAcme,US,en,https://acme.com,Notes',
+    'name,region,language,website\nAcme,,en,https://acme.com',
+  ])
+    expect(() => parseAccountImport(csv)).toThrow();
+  expect(() =>
+    parseAccountImport('[{"name":"Acme","website":"https://acme.com"}]'),
+  ).toThrow();
+  expect(() =>
+    parseAccountImport(
+      JSON.stringify([
+        {
+          name: 'Acme',
+          region: 'US',
+          language: 'en',
+          website: 'https://acme.com',
+          manualPrompts: [],
+        },
+      ]),
+    ),
+  ).toThrow();
+  expect(() =>
+    parseAccountImport(
+      JSON.stringify(
+        Array.from({ length: 26 }, () => ({
+          name: 'Acme',
+          region: 'US',
+          language: 'en',
+          website: 'https://acme.com',
+        })),
+      ),
+    ),
+  ).toThrow();
 });
