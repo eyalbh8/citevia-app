@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Forward the private Citevia database to localhost for DBeaver.
+# Usage: ./db_tunnel prod
+set -euo pipefail
+
+if [[ "${1:-}" != "prod" ]]; then
+  echo "Usage: ./db_tunnel prod" >&2
+  exit 1
+fi
+
+profile="${AWS_PROFILE:-citevia}"
+region="${AWS_REGION:-us-east-1}"
+stack="citevia-production"
+local_port="${LOCAL_PORT:-15432}"
+remote_port="5432"
+
+if ! command -v aws >/dev/null 2>&1; then
+  echo "The AWS CLI is not installed." >&2
+  exit 1
+fi
+if ! command -v session-manager-plugin >/dev/null 2>&1; then
+  echo "The Session Manager plugin is not installed. Install it, then run this again:" >&2
+  echo "  brew install --cask session-manager-plugin" >&2
+  exit 1
+fi
+if lsof -nP -iTCP:"${local_port}" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "Local port ${local_port} is already in use. Stop that process or set LOCAL_PORT." >&2
+  exit 1
+fi
+
+output_value() {
+  aws cloudformation describe-stacks \
+    --stack-name "${stack}" \
+    --region "${region}" \
+    --profile "${profile}" \
+    --query "Stacks[0].Outputs[?OutputKey=='${1}'].OutputValue | [0]" \
+    --output text
+}
+
+host="$(output_value DatabaseHost)"
+instance="$(output_value DatabaseTunnelInstanceId)"
+if [[ -z "${host}" || "${host}" == "None" || -z "${instance}" || "${instance}" == "None" ]]; then
+  echo "Stack ${stack} has no database tunnel yet. Deploy infra/template.yaml, then run this again." >&2
+  exit 1
+fi
+
+status="$(aws ssm describe-instance-information \
+  --region "${region}" \
+  --profile "${profile}" \
+  --filters "Key=InstanceIds,Values=${instance}" \
+  --query "InstanceInformationList[0].PingStatus" \
+  --output text)"
+if [[ "${status}" != "Online" ]]; then
+  echo "Tunnel instance ${instance} is not online in Session Manager (status: ${status})." >&2
+  exit 1
+fi
+
+echo "Database tunnel is open on 127.0.0.1:${local_port}."
+echo "In DBeaver use host 127.0.0.1, port ${local_port}, database citevia, user citevia_owner, and SSL mode require."
+echo "Leave this window running. Press Ctrl+C to close the tunnel."
+
+exec aws ssm start-session \
+  --target "${instance}" \
+  --region "${region}" \
+  --profile "${profile}" \
+  --document-name AWS-StartPortForwardingSessionToRemoteHost \
+  --parameters "host=${host},portNumber=${remote_port},localPortNumber=${local_port}"

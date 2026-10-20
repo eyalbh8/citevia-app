@@ -39,7 +39,7 @@ async function environment() {
   const repository = new MemoryRepository(),
     artifacts = new MemoryArtifacts(),
     queue = new MemoryQueue();
-  const user=await repository.syncUser(testIdentity('owner'));
+  const user = await repository.syncUser(testIdentity('owner'));
   await repository.bootstrapAdmin(user.id);
   return { repository, artifacts, queue };
 }
@@ -67,7 +67,7 @@ async function drain(scanner: Scanner, queue: MemoryQueue) {
   }
 }
 describe('automated account onboarding', () => {
-  it('preserves manual prompts, generates all four sections and starts exactly one first scan', async () => {
+  it('preserves manual prompts, generates all four sections and starts one first scan per provider', async () => {
     const runtime = await environment(),
       provider = new FixtureOnboardingProvider(),
       research = vi.spyOn(provider, 'research'),
@@ -123,15 +123,21 @@ describe('automated account onboarding', () => {
     expect(schedule).toHaveBeenCalledTimes(1);
     expect(
       (
-        await api(req('/onboarding/accounts', 'POST', { accounts: [input] }), testIdentity('owner'))
+        await api(
+          req('/onboarding/accounts', 'POST', { accounts: [input] }),
+          testIdentity('owner'),
+        )
       ).status,
     ).toBe(202);
     await drain(scanner, runtime.queue);
-    expect(await runtime.repository.listRuns(projectId)).toHaveLength(1);
+    expect(await runtime.repository.listRuns(projectId)).toHaveLength(3);
     expect(research).toHaveBeenCalledTimes(1);
     expect(
       (
-        await api(req(`/projects/${projectId}/brandbook`), testIdentity('another-owner'))
+        await api(
+          req(`/projects/${projectId}/brandbook`),
+          testIdentity('another-owner'),
+        )
       ).status,
     ).toBe(404);
     const conflict = await api(

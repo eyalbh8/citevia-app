@@ -10,10 +10,9 @@ import { localPostgres } from '../packages/storage/src/local-postgres.js';
 import { createAuthenticatedApi } from '../apps/api/src/handler.js';
 import { createDescopeIdentityProvider } from '../apps/api/src/descope.js';
 import { Scanner } from '../apps/scanner/src/engine.js';
-import {
-  createOpenAIProviderFromEnv,
-  createResponseProviderFromEnv,
-} from '../apps/scanner/src/openai.js';
+import { createResponseProviderFromEnv } from '../apps/scanner/src/openai.js';
+import { createScanProviderFromEnv } from '../apps/scanner/src/providers.js';
+import { providerAvailability } from '../apps/scanner/src/provider-http.js';
 import { OnboardingEngine } from '../apps/scanner/src/onboarding-engine.js';
 import { OpenAIOnboardingProvider } from '../apps/scanner/src/onboarding-provider.js';
 import { assertRealLocalData } from './local-data.js';
@@ -83,7 +82,7 @@ await assertRealLocalData(db);
 const runtime = { repository, artifacts, queue };
 let scanner: Scanner | undefined;
 if (configured) {
-  const provider = await createOpenAIProviderFromEnv();
+  const provider = createScanProviderFromEnv();
   const onboarding = new OnboardingEngine(
     runtime,
     new OpenAIOnboardingProvider(await createResponseProviderFromEnv()),
@@ -94,6 +93,7 @@ if (configured) {
 api = createAuthenticatedApi(runtime, createDescopeIdentityProvider(), {
   mode: 'live',
   providerConfigured: configured,
+  providerAvailability: providerAvailability(),
 });
 // Start empty. Never seed sample accounts or automatically import legacy stores.
 let processing = false;
@@ -140,7 +140,7 @@ const vite = spawn(
   },
 );
 console.log(
-  `API ready at http://127.0.0.1:3001 · ${configured ? 'Real OpenAI calls are enabled' : 'OpenAI is not configured; generation and scans are disabled'} · Data: ${base}`,
+  `API ready at http://127.0.0.1:3001 · Native provider availability: ${JSON.stringify(providerAvailability())} · Data: ${base}`,
 );
 let stopping = false;
 function stop() {

@@ -1,6 +1,6 @@
 # Run Citevia locally
 
-Run all commands from the `citevia-app` repository root. Requires Node.js 22.12+ and npm; Node.js 24 is also supported. No Docker, AWS account or hosted database is needed for local development with a direct OpenAI key.
+Run all commands from the `citevia-app` repository root. Requires Node.js 22.12+ and npm; Node.js 24 is also supported. No Docker, AWS account or hosted database is needed for local development with direct provider keys.
 
 ## Install and start
 
@@ -28,15 +28,15 @@ npm run dev
 
 Open **Users** to assign customers as Viewer or Owner, or grant additional system administrators. The bootstrap command requires an already saved Descope identity and closes once an administrator exists. See [authentication and permissions](AUTHENTICATION.md). Local records remain separate from AWS records.
 
-## Configure OpenAI and onboard a real account
+## Configure providers and onboard a real account
 
-Edit the root `.env` in your editor and set `OPENAI_API_KEY` to your OpenAI project key. Alternatively set `OPENAI_SECRET_ARN`; that requires an AWS identity permitted to read the secret and its region. The secret can contain the raw key or JSON with an `OPENAI_API_KEY` property. Do not use a `VITE_*` variable for any secret. Restart `npm run dev` after changing `.env`.
+Edit the root `.env` and set `OPENAI_API_KEY`, `PERPLEXITY_API_KEY` and `GEMINI_API_KEY` to real provider keys. OpenAI remains required for onboarding and answer analysis. Alternatively use `OPENAI_SECRET_ARN`, `PERPLEXITY_SECRET_ARN` and `GEMINI_SECRET_ARN`; that requires an AWS identity permitted to read the secret and its region. The secret can contain the raw key or JSON with the matching `*_API_KEY` property. Do not use a `VITE_*` variable for any secret. Restart `npm run dev` after changing `.env`.
 
-The model settings are `OPENAI_ONBOARDING_MODEL`, `OPENAI_GENERATION_MODEL` and `OPENAI_EXTRACTION_MODEL`. The checked-in defaults are compatibility candidates, not evidence of model access or output quality in your OpenAI project. Configure models your project can access and validate them before production. A configured key enables requests; it does not prove the key, billing or model entitlement is valid.
+The model settings are `OPENAI_ONBOARDING_MODEL`, `OPENAI_GENERATION_MODEL`, `OPENAI_EXTRACTION_MODEL`, `PERPLEXITY_PRESET` and `GEMINI_GENERATION_MODEL`. The checked-in defaults are compatibility candidates, not evidence of model access or output quality in your provider accounts. Configure models your project can access and validate them before production. A configured key enables requests; it does not prove the key, billing or model entitlement is valid.
 
 1. As a system administrator, open **Accounts → New account** and enter the actual company name, official website, market, language, timezone and useful company context.
 2. Supply existing prompts in Understand, Prefer, Trust and Convert, or leave the sections empty to generate all 50. For multiple accounts, use CSV/JSON import, up to 25 accounts per request. The CSV download contains column headers only; fill it with real accounts.
-3. Submit. The worker performs real web research, generates an evidenced brandbook, completes the prompt portfolio to 50, saves everything and starts the first scan. This makes billable OpenAI calls. Track each stage in Accounts; inspect failure details and retry there after correcting credentials, balance or rate limits.
+3. Submit. The worker performs real web research, generates an evidenced brandbook, completes the prompt portfolio to 50, saves everything and starts the first scan on each enabled provider. This makes billable provider and OpenAI analysis calls. Track each stage in Accounts; inspect failure details and retry there after correcting credentials, balance or rate limits.
 4. Open **Brandbook** to inspect researched facts, sources and unknowns. Open **Prompts** to inspect the four sections, search/filter by topic/status/branded, edit questions, add several at once, archive/reactivate and export. Only 50 prompts may be active. Saving edits creates a new version and preserves historical answers.
 5. Use **Dashboard**, **Mentions** and **Sources** for the resulting measurements and native evidence. The Prompts screen shows the selected scan's single observation per unchanged prompt; missing/failed analysis remains blank. Older versions remain available in Mentions. **Run scan** collects new answers after edits.
 
@@ -70,3 +70,7 @@ These checks use isolated test fixtures and create no application accounts or AP
 - **Need an independent workspace:** set `LOCAL_DATA_DIR=.local-data/another-real-workspace` in `.env` before restarting. This creates a separate empty store; it does not delete or reset existing data.
 
 See [AWS deployment](DEPLOYMENT.md) for the two Lambdas, private Aurora database, queue, weekly schedules, Descope and client hosting, and [onboarding/database mapping](ONBOARDING.md) for storage details.
+
+## Provider validation
+
+See [PROVIDERS.md](PROVIDERS.md) for one-provider-at-a-time live validation commands. Each invocation makes at most ten paid collection and ten OpenAI analysis calls. Tests remain isolated; runtime never substitutes sample responses. New accounts enable all three providers, while existing accounts opt in through Settings. No local weekly timer is registered; onboarding and manual scans execute through the local worker. AWS registers weekly schedules.

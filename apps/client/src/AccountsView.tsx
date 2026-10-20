@@ -385,8 +385,8 @@ export default function AccountsView({
               )}
               <div className="setting-note">
                 {providerReady
-                  ? 'Submitting starts OpenAI research and generation calls. After validation, the first scan starts and weekly tracking is enabled automatically.'
-                  : 'Configure OpenAI in .env and restart the server before creating accounts.'}
+                  ? 'Submitting starts OpenAI research and generation calls. After validation, the first scans start on all three providers and weekly tracking is enabled automatically.'
+                  : 'Configure OpenAI, Perplexity and Gemini in .env and restart the server before creating accounts.'}
               </div>
               <div className="form-actions">
                 <button

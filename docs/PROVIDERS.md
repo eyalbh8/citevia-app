@@ -1,0 +1,82 @@
+# Native scan providers
+
+Each account owns one portfolio of up to 50 active prompts. A weekly or manual kickoff freezes the prompts, brand, competitors, locale, provider list and models, then creates a separate run for each enabled provider. All three providers produce up to 150 answers and 150 separate analysis calls per account per week. Onboarding research, generation and retries add calls. Provider APIs are billed separately.
+
+New accounts enable ChatGPT, Perplexity and Gemini. Existing accounts with no `scanProviders` setting retain OpenAI only. An owner or system administrator can enable providers and edit their models/presets in **Settings → Scan providers**. Saving changes applies to future kickoffs; captured answers and historical snapshots are preserved. At least one provider must remain enabled.
+
+The top-bar **AI provider** selector applies to Dashboard, Prompts, Mentions and Sources. Those screens show one provider’s selected scan, with independent trends, visibility denominators, rank, sentiment, citations and retrieved sources. **Run scan** runs every enabled provider, regardless of the provider currently being viewed. Failed collection/analysis remains a gap; one failed provider does not cancel another provider’s run. Retries reuse an already captured answer instead of making another collection call.
+
+## Configure local credentials
+
+Put real credentials in the root `.env`, using an editor. Never put keys in `VITE_*`, commit them, or paste them into shared logs.
+
+```dotenv
+OPENAI_API_KEY=YOUR_OPENAI_KEY
+PERPLEXITY_API_KEY=YOUR_PERPLEXITY_KEY
+GEMINI_API_KEY=YOUR_GEMINI_KEY
+OPENAI_GENERATION_MODEL=gpt-4.1-2025-04-14
+OPENAI_EXTRACTION_MODEL=gpt-4.1-mini-2025-04-14
+PERPLEXITY_PRESET=fast@2026-10-16.0
+GEMINI_GENERATION_MODEL=gemini-3.8-flash
+```
+
+Alternatively set `OPENAI_SECRET_ARN`, `PERPLEXITY_SECRET_ARN` and `GEMINI_SECRET_ARN`. A secret accepts a raw key or JSON with the corresponding `*_API_KEY` field. Local Secrets Manager access needs an AWS identity with permission to read those exact secrets. Direct keys need no AWS access. Restart `npm run dev` after configuration changes. Descope configuration and login are also required; see [local setup](LOCAL_DEVELOPMENT.md).
+
+OpenAI remains required for generating brandbooks/prompts and for structured evidence analysis of every provider’s captured answer. Analysis uses the original saved answer only, with no tools/search, and validates every evidence quote and rank/sentiment span. Perplexity and Gemini collection calls go directly to their native APIs. They never use OpenAI to impersonate another provider. There is no fallback to a different collection provider.
+
+`GET /v1/runtime` reports the presence of server key/secret configuration without exposing values. It does not prove valid billing, permissions or model access. Manual admission checks all enabled providers and OpenAI analysis before enqueueing. New-account onboarding checks all three because its initial scans enable all three. A scheduled job with invalid/missing credentials records a provider-specific failure through the normal retry/deadline process.
+
+## Native APIs and evidence
+
+- **ChatGPT:** OpenAI Responses API with required web search, native URL annotations and returned search sources. The existing OpenAI collection/extraction behavior is retained.
+- **Perplexity:** `POST https://api.perplexity.ai/v1/agent`, with a versioned `preset`, neutral user question, language preference and the web search tool. The preset’s native citation/search instructions are preserved. The full response, actual preset/model, text, annotations, native source references, search results and usage are retained. Inline numeric or typed `[id]` citations map to the API’s returned search-result IDs, never their array order. Repeated references are preserved; conflicting IDs are not assigned an invented URL. Retrieved-only sources remain separate from citations.
+- **Gemini:** `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with `googleSearch`. Grounding chunks populate retrieved sources; grounding supports populate citations. Native UTF-8 byte offsets are converted to JS text offsets and checked against the native segment text. Unusable offsets retain the citation URL with a null text range. Thought parts are excluded from the displayed answer. Refusals and token-limit endings remain distinct from complete answers. Search suggestions returned by Google appear in a sandboxed iframe with scripts disabled. Query counts are stored separately from search-call counts.
+
+The checked-in Gemini and Perplexity defaults are candidates taken from current documentation, **not live-validated configuration**. Run the commands below using your accounts before production. Prefer versioned presets/model IDs; a moving alias can change underlying behavior. The native returned model/version remains in each capture for audit. Comparisons require the same provider, configured model/preset, extraction model, parser, brand/competitors, locale and matching prompt versions.
+
+Native receipts are stored privately before analysis, with separate S3 paths for every provider run. PostgreSQL keeps the unchanged iGEO schema: `account_settings.ai_engines` records configurations; `scans` gets one record per provider run; `prompt_responses.provider` and `results.provider` contain `openai`, `perplexity` or `gemini`. Workflow JSON stores `snapshot.provider`, the frozen `scanProviders` and `groupId`. Historical snapshots with no provider mean OpenAI. No schema migration or rewrite of historical data is required.
+
+Google may return Google-hosted redirect URLs for citations. Citevia preserves those exact native links and aggregates their returned URL hosts; it does not guess a publisher domain from a title or fetch arbitrary citation destinations. The native receipt is the authority for attribution. API observations also differ from personalized consumer ChatGPT, Perplexity or Gemini browser sessions.
+
+## Reporting API
+
+All endpoints require a verified Descope session and the same account access checks as before.
+
+```text
+GET /v1/projects/{id}/dashboard?provider=gemini
+GET /v1/projects/{id}/runs?provider=perplexity
+GET /v1/projects/{id}/responses?provider=gemini
+GET /v1/projects/{id}/sources?provider=perplexity
+GET /v1/projects/{id}/dashboard?provider=gemini&runId={geminiRunId}
+```
+
+`provider` accepts `openai`, `perplexity` and `gemini`. An explicit run from a different requested provider is rejected. Dashboard trends and week-over-week comparisons only use the selected provider. `POST /v1/projects/{id}/runs` still requires an `Idempotency-Key`; it returns the primary `runId` plus `runs: [{provider, runId}]` for the enabled providers. The worker freezes the authoritative configuration when it creates the primary manifest. Sibling runs share `groupId`, and interrupted kickoff delivery repairs fan-out using that frozen snapshot. Owners can retry failed prompts from an individual run in Settings.
+
+## Live validation, prepared for later
+
+Use a text file containing your actual questions, one per line. Each command selects **only one provider**, with 1–10 prompts. It makes real paid collection requests and paid OpenAI extraction requests; it does not insert accounts into the running application or provide fabricated answers.
+
+```sh
+npm run scan:spike -- --help
+npm run scan:spike -- --provider openai --prompts ./prompts.txt --brand "YOUR_BRAND" --domain YOUR_DOMAIN --count 3
+npm run scan:spike -- --provider perplexity --prompts ./prompts.txt --brand "YOUR_BRAND" --domain YOUR_DOMAIN --count 3
+npm run scan:spike -- --provider gemini --prompts ./prompts.txt --brand "YOUR_BRAND" --domain YOUR_DOMAIN --count 3
+```
+
+Inspect the private `.local-data/spike/<timestamp>/report.json` and evidence files. Compare native citation URLs and text ranges, retrieved-only sources, ranked/unranked answers, brand aliases, no-mention cases, sentiment evidence, refusals, completeness, latency and actual billed usage. The command does not automatically repeat failed paid calls. No live calls are run as part of the tests or build.
+
+## AWS
+
+Follow [DEPLOYMENT.md](DEPLOYMENT.md). Create one server-only Secrets Manager secret for each provider and supply `OpenAiSecretArn`, `PerplexitySecretArn` and `GeminiSecretArn` to SAM. Optional model parameters are `GenerationModel`, `ExtractionModel`, `PerplexityPreset` and `GeminiGenerationModel`. New-account defaults are passed to the API Lambda; the scanner receives the same defaults and secret ARNs. The API can see provider ARN configuration but cannot read provider secret values. Only the scanner role has scoped provider secret-read permissions.
+
+There are still exactly two application Lambdas, one shared SQS queue, and one weekly schedule per account. The scanner fans out provider runs, which use the same leases, idempotency, S3 checkpointing, failed-job retry, DLQ and reconciliation mechanisms. Queue concurrency is shared across providers; size it for all three providers’ rate limits and the increased volume. No AWS resources are deployed by the implementation/tests.
+
+## Documentation used
+
+- [Perplexity Sonar migration and current supported Agent API](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview): Sonar support ended September 27, 2026; new integrations use Agent API.
+- [Perplexity presets and version pinning](https://docs.perplexity.ai/docs/agent-api/presets).
+- [Perplexity web search and source results](https://docs.perplexity.ai/docs/agent-api/tools/web-search).
+- [Gemini generateContent and grounding segment byte offsets](https://ai.google.dev/api/generate-content).
+- [Gemini Google Search grounding](https://ai.google.dev/gemini-api/docs/google-search).
+
+Documentation was checked October 20, 2026. Context7 tools were unavailable in this session, so official provider documentation was used directly. Availability and charges must be validated with your own provider accounts before enabling production schedules.

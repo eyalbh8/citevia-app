@@ -9,6 +9,14 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { Brand, Page, Project, ScanRun } from '@citevia/core';
+import {
+  projectProviders,
+  PROVIDER_LABELS,
+  SCAN_PROVIDERS,
+  snapshotProvider,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_PERPLEXITY_PRESET,
+} from '@citevia/core';
 import { idempotentPost, request, useApi } from './api';
 import { Badge, Empty, ErrorNotice, formatDate, Spinner } from './components';
 
@@ -113,13 +121,19 @@ export default function SettingsView({
                   </div>
                   <h3 className="drawer-section-title">Collection settings</h3>
                   <p className="scan-options">
-                    Answer model: {project.generationModel}
+                    {projectProviders(project).map((config) => (
+                      <span key={config.provider}>
+                        {PROVIDER_LABELS[config.provider]}: {config.model}
+                        <br />
+                      </span>
+                    ))}
                     <br />
                     Analysis model: {project.extractionModel}
                     <br />
                     Parser: {project.parserVersion}
                     <br />
-                    Web search is enabled for every answer.
+                    Search is enabled for every provider. Gemini decides when to
+                    ground an answer. OpenAI analyzes all captured answers.
                   </p>
                 </div>
               </aside>
@@ -165,6 +179,7 @@ function ProjectForm({
     [timezone, setTimezone] = useState(project.timezone),
     [enabled, setEnabled] = useState(project.enabled);
   const [competitors, setCompetitors] = useState<Brand[]>(project.competitors);
+  const [scanProviders, setScanProviders] = useState(projectProviders(project));
   const [saving, setSaving] = useState(false),
     [error, setError] = useState<Error>();
   const owner = project.role === 'owner';
@@ -198,6 +213,7 @@ function ProjectForm({
           language,
           timezone,
           enabled,
+          scanProviders,
         }),
       });
       notify('Project settings saved. Changes apply to the next scan.');
@@ -340,6 +356,74 @@ function ProjectForm({
               />
               Weekly scanning enabled
             </label>
+            <div className="form-stack">
+              <strong>Scan providers</strong>
+              <p className="card-description">
+                The same portfolio of up to 50 prompts runs on each selected
+                provider. All three means up to 150 answers weekly. API keys are
+                configured on the server.
+              </p>
+              {SCAN_PROVIDERS.map((provider) => {
+                const config = scanProviders.find(
+                  (item) => item.provider === provider,
+                );
+                return (
+                  <div key={provider}>
+                    <label className="toggle-label">
+                      <input
+                        type="checkbox"
+                        checked={!!config}
+                        onChange={(event) =>
+                          setScanProviders((previous) =>
+                            event.target.checked
+                              ? [
+                                  ...previous,
+                                  {
+                                    provider,
+                                    model:
+                                      provider === 'openai'
+                                        ? project.generationModel
+                                        : provider === 'gemini'
+                                          ? DEFAULT_GEMINI_MODEL
+                                          : DEFAULT_PERPLEXITY_PRESET,
+                                  },
+                                ]
+                              : previous.filter(
+                                  (item) => item.provider !== provider,
+                                ),
+                          )
+                        }
+                      />
+                      {PROVIDER_LABELS[provider]}
+                    </label>
+                    {config && (
+                      <label className="field">
+                        {provider === 'perplexity'
+                          ? 'Agent API preset'
+                          : 'Answer model'}
+                        <input
+                          required
+                          maxLength={160}
+                          value={config.model}
+                          onChange={(event) =>
+                            setScanProviders((previous) =>
+                              previous.map((item) =>
+                                item.provider === provider
+                                  ? { ...item, model: event.target.value }
+                                  : item,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                    )}
+                  </div>
+                );
+              })}
+              {!scanProviders.length && (
+                <p role="alert">Select at least one provider.</p>
+              )}
+            </div>
             <div>
               <div
                 style={{
@@ -447,7 +531,7 @@ function ProjectForm({
                 <button
                   className="button button-primary"
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || !scanProviders.length}
                 >
                   {saving ? (
                     <LoaderCircle size={13} className="spinner" />
@@ -499,7 +583,10 @@ function RunHistoryRow({
     <div>
       <div className="run-history-row">
         <div>
-          <strong>{formatDate(run.createdAt)}</strong>
+          <strong>
+            {PROVIDER_LABELS[snapshotProvider(run.snapshot)]} ·{' '}
+            {formatDate(run.createdAt)}
+          </strong>
           <small>
             {run.succeededCount} / {run.totalCount} analyzed
           </small>

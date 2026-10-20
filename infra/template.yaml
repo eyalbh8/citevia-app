@@ -44,6 +44,22 @@ Parameters:
     Type: String
     Description: Existing Secrets Manager secret ARN containing OPENAI_API_KEY (JSON) or a raw API key. The secret must use the default aws/secretsmanager KMS key.
     AllowedPattern: 'arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  PerplexitySecretArn:
+    Type: String
+    Default: ''
+    Description: Existing Secrets Manager secret with PERPLEXITY_API_KEY or a raw key, using aws/secretsmanager encryption. Leave empty until that secret exists.
+    AllowedPattern: '^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  GeminiSecretArn:
+    Type: String
+    Default: ''
+    Description: Existing Secrets Manager secret with GEMINI_API_KEY or a raw key, using aws/secretsmanager encryption. Leave empty until that secret exists.
+    AllowedPattern: '^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  PerplexityPreset:
+    Type: String
+    Default: fast@2026-10-16.0
+  GeminiGenerationModel:
+    Type: String
+    Default: gemini-3.8-flash
   GenerationModel:
     Type: String
     Default: gpt-4.1-2025-04-14
@@ -89,6 +105,8 @@ Conditions:
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
   UseReservedConcurrency: !Equals [!Ref EnableReservedConcurrency, 'true']
   HasApiDomain: !Not [!Equals [!Ref ApiDomainName, '']]
+  HasPerplexitySecret: !Not [!Equals [!Ref PerplexitySecretArn, '']]
+  HasGeminiSecret: !Not [!Equals [!Ref GeminiSecretArn, '']]
 
 Globals:
   Function:
@@ -180,6 +198,7 @@ Resources:
       VpcId: !Ref Vpc
       SecurityGroupIngress:
         - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref LambdaSecurityGroup}
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref DatabaseTunnelSecurityGroup}
   DatabaseSubnets:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
@@ -216,6 +235,40 @@ Resources:
       Engine: aurora-postgresql
       PubliclyAccessible: false
       AutoMinorVersionUpgrade: true
+
+  DatabaseTunnelRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ec2.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+  DatabaseTunnelInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref DatabaseTunnelRole]
+  DatabaseTunnelSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Outbound Session Manager and PostgreSQL for the Citevia database tunnel
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, CidrIp: 10.48.0.0/16}
+  DatabaseTunnel:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t4g.nano
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}'
+      IamInstanceProfile: !Ref DatabaseTunnelInstanceProfile
+      SubnetId: !Ref PrivateSubnetA
+      SecurityGroupIds: [!Ref DatabaseTunnelSecurityGroup]
+      MetadataOptions: {HttpTokens: required, HttpEndpoint: enabled}
+      Tags: [{Key: Name, Value: citevia-database-tunnel}]
 
   EvidenceBucket:
     Type: AWS::S3::Bucket
@@ -396,6 +449,13 @@ Resources:
           DESCOPE_PROJECT_ID: !Ref DescopeProjectId
           DESCOPE_SECRET_ARN: !Ref DescopeSecretArn
           DESCOPE_BASE_URL: !Ref DescopeBaseUrl
+          OPENAI_SECRET_ARN: !Ref OpenAiSecretArn
+          PERPLEXITY_SECRET_ARN: !Ref PerplexitySecretArn
+          GEMINI_SECRET_ARN: !Ref GeminiSecretArn
+          OPENAI_GENERATION_MODEL: !Ref GenerationModel
+          OPENAI_EXTRACTION_MODEL: !Ref ExtractionModel
+          PERPLEXITY_PRESET: !Ref PerplexityPreset
+          GEMINI_GENERATION_MODEL: !Ref GeminiGenerationModel
           ALLOWED_ORIGIN: !Ref FrontendOrigin
           SCHEDULER_ROLE_ARN: !GetAtt SchedulerQueueRole.Arn
           SCHEDULE_GROUP: !Ref ProjectScheduleGroup
@@ -449,6 +509,10 @@ Resources:
           OPENAI_GENERATION_MODEL: !Ref GenerationModel
           OPENAI_EXTRACTION_MODEL: !Ref ExtractionModel
           OPENAI_ONBOARDING_MODEL: !Ref OnboardingModel
+          PERPLEXITY_SECRET_ARN: !Ref PerplexitySecretArn
+          GEMINI_SECRET_ARN: !Ref GeminiSecretArn
+          PERPLEXITY_PRESET: !Ref PerplexityPreset
+          GEMINI_GENERATION_MODEL: !Ref GeminiGenerationModel
           SCHEDULER_ROLE_ARN: !GetAtt SchedulerQueueRole.Arn
           SCHEDULE_GROUP: !Ref ProjectScheduleGroup
           DLQ_ARN: !GetAtt ScanDeadLetterQueue.Arn
@@ -468,7 +532,16 @@ Resources:
               Resource: !GetAtt EvidenceBucket.Arn
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
-              Resource: !Ref OpenAiSecretArn
+              Resource: !If
+                - HasPerplexitySecret
+                - !If
+                  - HasGeminiSecret
+                  - [!Ref OpenAiSecretArn, !Ref PerplexitySecretArn, !Ref GeminiSecretArn]
+                  - [!Ref OpenAiSecretArn, !Ref PerplexitySecretArn]
+                - !If
+                  - HasGeminiSecret
+                  - [!Ref OpenAiSecretArn, !Ref GeminiSecretArn]
+                  - [!Ref OpenAiSecretArn]
             - Effect: Allow
               Action: [scheduler:CreateSchedule, scheduler:UpdateSchedule, scheduler:GetSchedule]
               Resource: !Sub 'arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/${ProjectScheduleGroup}/*'
@@ -595,6 +668,9 @@ Outputs:
     Value: !GetAtt Database.MasterUserSecret.SecretArn
   DatabaseName:
     Value: citevia
+  DatabaseTunnelInstanceId:
+    Description: Private Session Manager target used to forward PostgreSQL to a local port.
+    Value: !Ref DatabaseTunnel
   EvidenceBucketName:
     Value: !Ref EvidenceBucket
   ScanQueueUrl:

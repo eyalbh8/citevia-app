@@ -1,9 +1,14 @@
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { FileArtifacts, MemoryQueue, MemoryRepository } from '@citevia/storage';
-import { promptTextSchema } from '@citevia/core';
+import {
+  promptTextSchema,
+  scanProviderSchema,
+  DEFAULT_PERPLEXITY_PRESET,
+  DEFAULT_GEMINI_MODEL,
+} from '@citevia/core';
 import { Scanner } from '../apps/scanner/src/engine.js';
-import { createOpenAIProviderFromEnv } from '../apps/scanner/src/openai.js';
+import { createScanProviderFromEnv } from '../apps/scanner/src/providers.js';
 import { createBootstrapProject } from './bootstrap.js';
 
 async function main() {
@@ -11,13 +16,15 @@ async function main() {
     args = new Map<string, string>();
   if (argv.includes('--help')) {
     console.log(
-      'Usage: npm run scan:spike -- --prompts ./prompts.txt --brand "Brand" --domain example.com [--count 10]\nMakes up to 10 paid generation + extraction requests. Requires OPENAI_API_KEY or OPENAI_SECRET_ARN. Saves evidence under .local-data/spike/. Review evidence manually before production.',
+      'Usage: npm run scan:spike -- --prompts ./prompts.txt --brand "Brand" --domain example.com [--provider openai|perplexity|gemini] [--count 10]\nMakes up to 10 paid collection + extraction requests on the selected provider only. Requires that provider key and OpenAI for analysis. Saves evidence under .local-data/spike/. Review native citations, offsets, quality and cost before production.',
     );
     return;
   }
   for (let i = 0; i < argv.length; i += 2) {
     if (
-      !['--prompts', '--brand', '--domain', '--count'].includes(argv[i]) ||
+      !['--prompts', '--brand', '--domain', '--count', '--provider'].includes(
+        argv[i],
+      ) ||
       !argv[i + 1]
     )
       throw new Error('Invalid arguments. Use --help.');
@@ -35,7 +42,10 @@ async function main() {
     .slice(0, count)
     .map((text) => promptTextSchema.parse(text));
   if (!prompts.length) throw new Error('No prompts provided');
-  const provider = await createOpenAIProviderFromEnv();
+  const selectedProvider = scanProviderSchema.parse(
+    args.get('--provider') || 'openai',
+  );
+  const provider = createScanProviderFromEnv();
   const base = resolve(
     '.local-data',
     'spike',
@@ -65,10 +75,21 @@ async function main() {
   );
   project.competitors = [];
   project.brand.aliases = [];
+  project.scanProviders = [
+    {
+      provider: selectedProvider,
+      model:
+        selectedProvider === 'openai'
+          ? project.generationModel
+          : selectedProvider === 'perplexity'
+            ? process.env.PERPLEXITY_PRESET || DEFAULT_PERPLEXITY_PRESET
+            : process.env.GEMINI_GENERATION_MODEL || DEFAULT_GEMINI_MODEL,
+    },
+  ];
   await repository.saveProject(project, null);
   const scanner = new Scanner({ repository, artifacts, queue, provider });
   console.log(
-    `Running ${prompts.length} live prompts with ${project.generationModel}; results will be saved locally.`,
+    `Running ${prompts.length} live prompts on ${selectedProvider} (${project.scanProviders[0].model}); results will be saved locally.`,
   );
   await scanner.handle({
     kind: 'kickoff',
@@ -92,7 +113,8 @@ async function main() {
     results = await repository.listResults(project.id, run.id);
   const report = {
     run,
-    generationModel: project.generationModel,
+    generationModel: run.snapshot.generationModel,
+    provider: selectedProvider,
     extractionModel: project.extractionModel,
     results,
     reviewRequired: [

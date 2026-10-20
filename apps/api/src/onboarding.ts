@@ -4,6 +4,8 @@ import {
   onboardingInputSchema,
   PARSER_VERSION,
   WEEKLY_SCHEDULE,
+  DEFAULT_PERPLEXITY_PRESET,
+  DEFAULT_GEMINI_MODEL,
   type OnboardingJob,
   type Project,
 } from '@citevia/core';
@@ -49,6 +51,20 @@ export async function createAccounts(
         process.env.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14',
       extractionModel:
         process.env.OPENAI_EXTRACTION_MODEL || 'gpt-4.1-mini-2025-04-14',
+      scanProviders: [
+        {
+          provider: 'openai',
+          model: process.env.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14',
+        },
+        {
+          provider: 'perplexity',
+          model: process.env.PERPLEXITY_PRESET || DEFAULT_PERPLEXITY_PRESET,
+        },
+        {
+          provider: 'gemini',
+          model: process.env.GEMINI_GENERATION_MODEL || DEFAULT_GEMINI_MODEL,
+        },
+      ],
       parserVersion: PARSER_VERSION,
       version: 1,
       prompts: [],

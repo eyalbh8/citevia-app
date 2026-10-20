@@ -32,7 +32,7 @@ The template provisions a private Aurora PostgreSQL Serverless v2 writer, two pr
 4. A known production HTTPS frontend origin, without a trailing slash. An Amplify branch URL is sufficient; a custom domain is optional.
 5. A Descope project, a published login flow and a server management key permitting the required user lookups. Configure the production frontend origin in that project. The project ID and base URL must match between the browser and API.
 
-Create separate Secrets Manager secrets using the console: one with the raw OpenAI key or JSON containing `OPENAI_API_KEY`, and one with the Descope management key or JSON containing `DESCOPE_MANAGEMENT_KEY`. Use the default `aws/secretsmanager` encryption key. Save the secret ARN for deployment. Do not put the API key in a template, GitHub variable, Amplify environment variable, or Git repository. A customer-managed KMS key requires an additional scoped `kms:Decrypt` permission on the corresponding Lambda role (scanner for OpenAI, API for Descope) and a matching key policy.
+Create four separate Secrets Manager secrets using the console: OpenAI (`OPENAI_API_KEY`), Perplexity (`PERPLEXITY_API_KEY`), Gemini (`GEMINI_API_KEY`) and Descope (`DESCOPE_MANAGEMENT_KEY`). Each secret accepts a raw key or JSON containing that field. Use the default `aws/secretsmanager` encryption key. Save the secret ARN for deployment. Do not put the API key in a template, GitHub variable, Amplify environment variable, or Git repository. A customer-managed KMS key requires an additional scoped `kms:Decrypt` permission on the corresponding Lambda role (scanner for provider keys, API for Descope) and a matching key policy.
 
 ## Build and deploy the backend
 
@@ -53,11 +53,13 @@ The build writes `dist/api/index.mjs` and `dist/scanner/index.mjs`. The template
 - `DescopeProjectId`: the public project ID.
 - `DescopeSecretArn`: the existing server-only user-lookup key secret ARN.
 - `DescopeBaseUrl`: the project API/custom domain URL, default `https://api.descope.com`. Use the matching value in the browser.
-- `OpenAiSecretArn`: the ARN of the existing secret, never its value.
+- `OpenAiSecretArn`, `PerplexitySecretArn` and `GeminiSecretArn`: the existing provider secret ARNs, never their values. Only the scanner can read provider secret values. The API receives their ARNs to report configuration availability.
+- `PerplexityPreset`: defaults to `fast@2026-10-16.0`, a pinned Agent API preset. Validate this version with your account before deployment.
+- `GeminiGenerationModel`: defaults to `gemini-3.8-flash`. Validate Google Search grounding, billing and model access with your Gemini API project.
 - `GenerationModel` and `ExtractionModel`: defaults are `gpt-4.1-2025-04-14` and `gpt-4.1-mini-2025-04-14`. Check availability with your OpenAI project before accepting them.
 - `AlertEmail`: an optional operations email. After deployment, confirm the SNS subscription email; alarms exist without an email, but notifications do not.
 - `EnableDevOrigin`: keep `false` in production. A development stack can use `true` with `DevOrigin=http://localhost:5173` to permit localhost OAuth callbacks and CORS.
-- `QueueConcurrency`: defaults to 10 concurrent SQS workers. Set it within your actual OpenAI rate limits.
+- `QueueConcurrency`: defaults to 10 concurrent SQS workers. Set it within the rate limits of all three providers; scanner concurrency is shared.
 - `ScannerReservedConcurrency`: defaults to 12; keep it at least two higher than `QueueConcurrency`. The API reserves 20 invocations; each Lambda pool uses at most two database connections. The AWS account must have sufficient concurrency quota.
 - `OnboardingModel`: research, brandbook and portfolio model, independent of answer/extraction models.
 - `MaxAccountsPerOwner`: default 100; configurable up to 10,000. This is an ownership cap, not a throughput promise.
@@ -157,8 +159,8 @@ Refresh the workspace. As a system administrator, use **Accounts → New account
 - `AWS_DEPLOY_ROLE_ARN`: an IAM role trusted through GitHub OIDC.
 - `CLOUDFORMATION_ROLE_ARN`: the separate CloudFormation execution role.
 - `ARTIFACT_BUCKET`: an existing private S3 bucket for deployment bundles in the target region.
-- `FRONTEND_ORIGIN`, `DESCOPE_PROJECT_ID`, `DESCOPE_SECRET_ARN`, and `OPENAI_SECRET_ARN`: the backend parameter values above.
-- Optional `DESCOPE_BASE_URL`, `OPENAI_GENERATION_MODEL`, `OPENAI_EXTRACTION_MODEL`, `OPENAI_ONBOARDING_MODEL`, and `ALERT_EMAIL`.
+- `FRONTEND_ORIGIN`, `DESCOPE_PROJECT_ID`, `DESCOPE_SECRET_ARN`, `OPENAI_SECRET_ARN`, `PERPLEXITY_SECRET_ARN` and `GEMINI_SECRET_ARN`: the backend parameter values above.
+- Optional `DESCOPE_BASE_URL`, `OPENAI_GENERATION_MODEL`, `OPENAI_EXTRACTION_MODEL`, `OPENAI_ONBOARDING_MODEL`, `PERPLEXITY_PRESET`, `GEMINI_GENERATION_MODEL` and `ALERT_EMAIL`.
 
 Adapt `infra/github-oidc-trust.example.json` for your account, repository, and exact GitHub environment. Bind the role trust to that exact repository/environment and `sts.amazonaws.com` audience. Do not store long-lived AWS keys in GitHub.
 
@@ -208,3 +210,7 @@ Template validation and local tests cannot prove account quotas, IAM delegation,
 - [Descope session management](https://docs.descope.com/sessions/management/web)
 - [Amplify SPA rewrites](https://docs.aws.amazon.com/amplify/latest/userguide/redirect-rewrite-examples.html)
 - [GitHub OIDC with AWS credentials action](https://github.com/aws-actions/configure-aws-credentials)
+
+## Provider rollout and cost
+
+Read [PROVIDERS.md](PROVIDERS.md) before enabling schedules. A new 50-prompt account produces up to 150 collections plus 150 analysis calls weekly; research and generation add onboarding calls. Existing accounts keep OpenAI-only settings until explicitly changed. Provider failures and retries are independent; no provider silently falls back to another. Deployments still contain exactly two application Lambdas. Configure all three provider secret ARNs for the deployment, then choose enabled providers per account.

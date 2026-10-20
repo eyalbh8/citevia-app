@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { normalizeDomain } from './urls.js';
 import { journeyStageSchema } from './onboarding.js';
+import { scanProvidersSchema } from './providers.js';
 export const identifier = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,100}$/, 'Invalid identifier');
@@ -44,6 +45,7 @@ export const settingsSchema = z
       .optional(),
     timezone: timeZoneSchema.optional(),
     enabled: z.boolean().optional(),
+    scanProviders: scanProvidersSchema.optional(),
   })
   .strict();
 export const promptTextSchema = z.string().trim().min(3).max(2000);

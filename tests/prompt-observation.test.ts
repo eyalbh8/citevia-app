@@ -80,7 +80,10 @@ describe('prompt measurement provenance', () => {
     expect(
       promptObservation(
         prompt,
-        { ...project, generationModel: 'changed-model' },
+        {
+          ...project,
+          scanProviders: [{ provider: 'openai', model: 'changed-model' }],
+        },
         run,
         result,
       ),

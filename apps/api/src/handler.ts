@@ -5,6 +5,7 @@ import type {
 import { createAwsRuntime, type Runtime } from '@citevia/storage';
 import { createApi, type ApiOptions } from './app.js';
 import { syncProjectSchedule } from './scheduler.js';
+import { providerAvailability } from '../../scanner/src/provider-http.js';
 import {
   authenticationFailure,
   createDescopeIdentityProvider,
@@ -21,7 +22,8 @@ export function createAuthenticatedApi(
     lookupUser: (email) => identity.lookup(email),
   });
   return async (request: Request): Promise<Response> => {
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
+    if (request.method === 'OPTIONS')
+      return new Response(null, { status: 204 });
     if (new URL(request.url).pathname === '/health' && request.method === 'GET')
       return app(request);
     try {
@@ -38,7 +40,11 @@ export async function handler(
   app ||= createAuthenticatedApi(
     createAwsRuntime(),
     createDescopeIdentityProvider(),
-    { mode: 'live', syncSchedule: syncProjectSchedule },
+    {
+      mode: 'live',
+      syncSchedule: syncProjectSchedule,
+      providerAvailability: providerAvailability(),
+    },
   );
   const headers = new Headers();
   Object.entries(event.headers || {}).forEach(([key, value]) => {

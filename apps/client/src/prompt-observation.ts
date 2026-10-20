@@ -1,4 +1,4 @@
-import { sameMethod } from '@citevia/core';
+import { sameMethod, projectProviders, snapshotProvider } from '@citevia/core';
 import type { Project, Prompt, PromptResult, ScanRun } from '@citevia/core';
 
 /** An older answer must never become a measurement of an edited prompt. */
@@ -23,7 +23,10 @@ export function promptObservation(
       ...run.snapshot,
       brand: project.brand,
       competitors: project.competitors,
-      generationModel: project.generationModel,
+      generationModel:
+        projectProviders(project).find(
+          (config) => config.provider === snapshotProvider(run.snapshot),
+        )?.model ?? '',
       extractionModel: project.extractionModel,
       parserVersion: project.parserVersion,
       country: project.country,

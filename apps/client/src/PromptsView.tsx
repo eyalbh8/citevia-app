@@ -195,7 +195,8 @@ export default function PromptsView({
           <span>Archived prompts</span>
         </div>
         <div className="prompts-overview-note">
-          One ChatGPT answer per active prompt each week.
+          One answer per active prompt on each enabled provider every week.
+          Metrics show the selected provider.
           <br />
           {run
             ? `Measurements from ${formatDate(run.createdAt, true)}.`
@@ -229,7 +230,7 @@ export default function PromptsView({
           <div>
             <h2 className="card-title">Your prompts</h2>
             <p className="card-description">
-              Manage the questions your customers ask ChatGPT
+              Manage the questions your customers ask AI assistants
             </p>
           </div>
           <div className="prompt-actions">

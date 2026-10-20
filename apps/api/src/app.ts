@@ -12,6 +12,12 @@ import {
   sameCohort,
   sameMethod,
   settingsSchema,
+  projectProviders,
+  snapshotProvider,
+  scanProviderSchema,
+  SCAN_PROVIDERS,
+  PROVIDER_LABELS,
+  type ScanProvider,
   type Analysis,
   type CapturedAnswer,
   type Dashboard,
@@ -27,7 +33,7 @@ import { AccessError, type Runtime } from '@citevia/storage';
 import { verifiedIdentitySchema, type VerifiedIdentity } from '@citevia/core';
 import { AuthenticationError } from './descope.js';
 import { adminRoute } from './admin.js';
-import { runIdFor } from '../../scanner/src/engine.js';
+import { runIdFor, providerRunIdFor } from '../../scanner/src/engine.js';
 import { brandbookUpdateSchema } from '@citevia/core';
 import { createAccounts } from './onboarding.js';
 
@@ -44,6 +50,7 @@ export interface ApiOptions {
   lookupUser?: (email: string) => Promise<VerifiedIdentity>;
   mode: 'live';
   providerConfigured?: boolean;
+  providerAvailability?: Record<ScanProvider, boolean>;
   syncSchedule?: (project: Project) => Promise<void>;
   now?: () => Date;
 }
@@ -195,14 +202,32 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       if (path === '/v1/runtime' && method === 'GET')
         return response({
           providerConfigured: options.providerConfigured !== false,
+          providers:
+            options.providerAvailability ??
+            Object.fromEntries(
+              SCAN_PROVIDERS.map((provider) => [
+                provider,
+                options.providerConfigured !== false,
+              ]),
+            ),
           mode: 'live',
         });
-      const requireProvider = () => {
+      const requireProvider = (providers: ScanProvider[] = ['openai']) => {
         if (options.providerConfigured === false)
           throw new HttpError(
             503,
             'OPENAI_NOT_CONFIGURED',
             'Configure OPENAI_API_KEY or OPENAI_SECRET_ARN and restart the server to enable generation and scans.',
+          );
+        const required = [...new Set(['openai' as const, ...providers])];
+        const missing = required.filter(
+          (provider) => options.providerAvailability?.[provider] === false,
+        );
+        if (missing.length)
+          throw new HttpError(
+            503,
+            'PROVIDER_NOT_CONFIGURED',
+            `Configure API credentials for ${missing.map((provider) => PROVIDER_LABELS[provider]).join(', ')} before scanning. OpenAI is also used for answer analysis.`,
           );
       };
       if (path === '/v1/projects' && method === 'GET') {
@@ -222,7 +247,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         });
       }
       if (path === '/v1/onboarding/accounts' && method === 'POST') {
-        requireProvider();
+        requireProvider([...SCAN_PROVIDERS]);
         const key = request.headers.get('idempotency-key');
         if (!key || !/^[A-Za-z0-9_-]{8,100}$/.test(key))
           throw new HttpError(
@@ -261,6 +286,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       const stored = await repository.getProject(projectId);
       if (!stored) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
       const project = { ...stored, role: member.role };
+      const providerFilter = query.has('provider')
+        ? scanProviderSchema.parse(query.get('provider'))
+        : undefined;
       if (!['GET', 'HEAD'].includes(method) && member.role !== 'owner')
         throw new HttpError(
           403,
@@ -271,8 +299,18 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         const runId = id || query.get('runId');
         const run = runId
           ? await repository.getRun(projectId, identifier.parse(runId))
-          : (await repository.listRuns(projectId, 1))[0];
+          : (await repository.listRuns(projectId, 180)).find(
+              (run) =>
+                !providerFilter ||
+                snapshotProvider(run.snapshot) === providerFilter,
+            );
         if (!run) throw new HttpError(404, 'RUN_NOT_FOUND', 'No scan found');
+        if (providerFilter && snapshotProvider(run.snapshot) !== providerFilter)
+          throw new HttpError(
+            400,
+            'PROVIDER_MISMATCH',
+            'The selected scan belongs to a different provider.',
+          );
         return run;
       };
       if (
@@ -281,7 +319,15 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           tail === 'onboarding/retry' ||
           /^runs\/[^/]+\/retry-failed$/.test(tail))
       )
-        requireProvider();
+        requireProvider(
+          tail === 'onboarding/retry' || tail === 'runs'
+            ? projectProviders(stored).map((config) => config.provider)
+            : [
+                snapshotProvider(
+                  (await selectedRun(tail.split('/')[1])).snapshot,
+                ),
+              ],
+        );
       if (tail === 'settings' && method === 'GET') return response(project);
       if (tail === 'onboarding' && method === 'GET')
         return response({
@@ -557,7 +603,16 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         return response(updated);
       }
       if (tail === 'runs' && method === 'GET')
-        return response(paginate(await repository.listRuns(projectId), query));
+        return response(
+          paginate(
+            (await repository.listRuns(projectId, 180)).filter(
+              (run) =>
+                !providerFilter ||
+                snapshotProvider(run.snapshot) === providerFilter,
+            ),
+            query,
+          ),
+        );
       if (tail === 'runs' && method === 'POST') {
         const key = request.headers.get('idempotency-key');
         if (!key || !/^[A-Za-z0-9_-]{8,100}$/.test(key))
@@ -615,7 +670,28 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           );
         }
         await queue.send([message]);
-        return response({ runId }, 202);
+        const configs = existing
+          ? (existing.snapshot.scanProviders ?? [
+              {
+                provider: snapshotProvider(existing.snapshot),
+                model: existing.snapshot.generationModel,
+              },
+            ])
+          : projectProviders(stored);
+        return response(
+          {
+            runId,
+            runs: configs.map((config) => ({
+              provider: config.provider,
+              runId: providerRunIdFor(
+                runId,
+                config.provider,
+                configs[0].provider,
+              ),
+            })),
+          },
+          202,
+        );
       }
       const retryMatch = tail.match(/^runs\/([^/]+)\/retry-failed$/);
       if (retryMatch && method === 'POST') {
@@ -663,10 +739,20 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       if (runMatch && method === 'GET')
         return response(await selectedRun(runMatch[1]));
       if (tail === 'dashboard' && method === 'GET') {
-        const runs = await repository.listRuns(projectId, 60);
+        const allRuns = await repository.listRuns(projectId, 180);
         const current = query.get('runId')
           ? await selectedRun()
-          : runs[0] || null;
+          : allRuns.find(
+              (run) =>
+                snapshotProvider(run.snapshot) ===
+                (providerFilter ?? projectProviders(stored)[0].provider),
+            ) || null;
+        const selectedProvider = current
+          ? snapshotProvider(current.snapshot)
+          : (providerFilter ?? projectProviders(stored)[0].provider);
+        const runs = allRuns.filter(
+          (run) => snapshotProvider(run.snapshot) === selectedProvider,
+        );
         const currentSummary = current ? await summary(current) : null;
         const recent = runs.slice(0, 12);
         const trend = [];

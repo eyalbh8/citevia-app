@@ -6,6 +6,7 @@ export const project: Project = {
   id: 'project-1', name: 'Acme', brand: target, competitors: [competitor], country: 'US', language: 'en', timezone: 'America/New_York',
   scheduleExpression: 'cron(0 8 ? * MON *)', enabled: true, generationModel: 'answer-snapshot', extractionModel: 'extract-snapshot', parserVersion: 'test-v1',
   version: 1, createdAt: instant, updatedAt: instant,
+  scanProviders: [{ provider: 'openai', model: 'answer-snapshot' }],
   prompts: ['Which analytics products are good?', 'Which product has clear reports?'].map((text, index) => ({ id: `prompt-${index + 1}`, text, active: true, branded: false, version: 1, createdAt: instant, updatedAt: instant })),
 };
 export const snapshot: RunSnapshot = { projectName: project.name, brand: project.brand, competitors: project.competitors, prompts: project.prompts, country: project.country, language: project.language, timezone: project.timezone, generationModel: project.generationModel, extractionModel: project.extractionModel, parserVersion: project.parserVersion, configVersion: 1 };

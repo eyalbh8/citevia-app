@@ -38,6 +38,10 @@ jobs:
       DESCOPE_SECRET_ARN: ${{ vars.DESCOPE_SECRET_ARN }}
       DESCOPE_BASE_URL: ${{ vars.DESCOPE_BASE_URL || 'https://api.descope.com' }}
       OPENAI_SECRET_ARN: ${{ vars.OPENAI_SECRET_ARN }}
+      PERPLEXITY_SECRET_ARN: ${{ vars.PERPLEXITY_SECRET_ARN }}
+      GEMINI_SECRET_ARN: ${{ vars.GEMINI_SECRET_ARN }}
+      PERPLEXITY_PRESET: ${{ vars.PERPLEXITY_PRESET || 'fast@2026-10-16.0' }}
+      GEMINI_GENERATION_MODEL: ${{ vars.GEMINI_GENERATION_MODEL || 'gemini-3.8-flash' }}
       GENERATION_MODEL: ${{ vars.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14' }}
       EXTRACTION_MODEL: ${{ vars.OPENAI_EXTRACTION_MODEL || 'gpt-4.1-mini-2025-04-14' }}
       ONBOARDING_MODEL: ${{ vars.OPENAI_ONBOARDING_MODEL || 'gpt-4.1-2025-04-14' }}
@@ -57,7 +61,7 @@ jobs:
           DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
         run: |
           set -euo pipefail
-          for setting in AWS_REGION STACK_NAME ARTIFACT_BUCKET CLOUDFORMATION_ROLE_ARN FRONTEND_ORIGIN DESCOPE_PROJECT_ID DESCOPE_SECRET_ARN OPENAI_SECRET_ARN DEPLOY_ROLE_ARN; do
+          for setting in AWS_REGION STACK_NAME ARTIFACT_BUCKET CLOUDFORMATION_ROLE_ARN FRONTEND_ORIGIN DESCOPE_PROJECT_ID DESCOPE_SECRET_ARN OPENAI_SECRET_ARN PERPLEXITY_SECRET_ARN GEMINI_SECRET_ARN DEPLOY_ROLE_ARN; do
             if [[ -z "${!setting}" ]]; then
               echo "Missing GitHub environment variable: $setting" >&2
               exit 1
@@ -98,6 +102,10 @@ jobs:
               "DescopeSecretArn=$DESCOPE_SECRET_ARN" \
               "DescopeBaseUrl=$DESCOPE_BASE_URL" \
               "OpenAiSecretArn=$OPENAI_SECRET_ARN" \
+              "PerplexitySecretArn=$PERPLEXITY_SECRET_ARN" \
+              "GeminiSecretArn=$GEMINI_SECRET_ARN" \
+              "PerplexityPreset=$PERPLEXITY_PRESET" \
+              "GeminiGenerationModel=$GEMINI_GENERATION_MODEL" \
               "GenerationModel=$GENERATION_MODEL" \
               "ExtractionModel=$EXTRACTION_MODEL" \
               "OnboardingModel=$ONBOARDING_MODEL" \

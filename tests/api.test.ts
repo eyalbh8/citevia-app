@@ -7,6 +7,12 @@ import type {
   PromptResult,
   ResponseDetail,
   SourceRow,
+  ScanRun,
+} from '@citevia/core';
+import {
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_PERPLEXITY_PRESET,
+  snapshotProvider,
 } from '@citevia/core';
 import {
   MemoryArtifacts,
@@ -97,6 +103,149 @@ async function fixture(
   }
   return { ...runtime, project, call, scan };
 }
+
+describe('multi-provider reporting and admission', () => {
+  async function configure(f: Awaited<ReturnType<typeof fixture>>) {
+    const stored = (await f.repository.getProject(f.project.id))!;
+    await f.repository.saveProject(
+      {
+        ...stored,
+        version: stored.version + 1,
+        scanProviders: [
+          { provider: 'openai', model: stored.generationModel },
+          { provider: 'perplexity', model: DEFAULT_PERPLEXITY_PRESET },
+          { provider: 'gemini', model: DEFAULT_GEMINI_MODEL },
+        ],
+      },
+      stored.version,
+    );
+  }
+  it('selects each provider independently and compares only that provider’s prior scans', async () => {
+    const f = await fixture();
+    await configure(f);
+    await f.scan(new Date('2026-10-12T06:00:00.000Z'));
+    await f.scan(DATE);
+    for (const provider of ['openai', 'perplexity', 'gemini']) {
+      const dashboard = await read<Dashboard>(
+        await f.call(`${BASE}/dashboard?provider=${provider}`),
+      );
+      expect(snapshotProvider(dashboard.run!.snapshot)).toBe(provider);
+      expect(dashboard.trend).toHaveLength(2);
+      expect(dashboard.comparison.comparableCount).toBe(3);
+      const previous = await f.repository.getRun(
+        f.project.id,
+        dashboard.comparison.previousRunId!,
+      );
+      expect(snapshotProvider(previous!.snapshot)).toBe(provider);
+      const runs = await read<Page<ScanRun>>(
+        await f.call(`${BASE}/runs?provider=${provider}`),
+      );
+      expect(runs.items).toHaveLength(2);
+      expect(
+        runs.items.every((run) => snapshotProvider(run.snapshot) === provider),
+      ).toBe(true);
+      const results = await read<Page<PromptResult>>(
+        await f.call(`${BASE}/responses?provider=${provider}`),
+      );
+      expect(
+        results.items.every((result) => result.runId === dashboard.run!.id),
+      ).toBe(true);
+    }
+    const run = (await f.repository.listRuns(f.project.id)).find(
+      (run) => snapshotProvider(run.snapshot) === 'gemini',
+    )!;
+    expect(
+      (await f.call(`${BASE}/dashboard?runId=${run.id}&provider=openai`))
+        .status,
+    ).toBe(400);
+    expect((await f.call(`${BASE}/dashboard?provider=unknown`)).status).toBe(
+      400,
+    );
+    expect(
+      (await f.call(`${BASE}/dashboard?provider=gemini`, {}, 'unrelated-user'))
+        .status,
+    ).toBe(404);
+  });
+  it('returns one deterministic run ID per enabled provider for a manual scan request', async () => {
+    const f = await fixture();
+    await configure(f);
+    const init = jsonRequest('POST', undefined, {
+      'Idempotency-Key': 'all-providers-123',
+    });
+    const first = await read<{
+      runId: string;
+      runs: { provider: string; runId: string }[];
+    }>(await f.call(`${BASE}/runs`, init));
+    const second = await read<typeof first>(await f.call(`${BASE}/runs`, init));
+    expect(second).toEqual(first);
+    expect(first.runs).toHaveLength(3);
+    expect(new Set(first.runs.map((item) => item.runId)).size).toBe(3);
+    expect(first.runs[0].runId).toBe(first.runId);
+  });
+  it('rejects unconfigured enabled providers before enqueueing or charging a request', async () => {
+    const f = await fixture(undefined, {
+      providerAvailability: { openai: true, perplexity: false, gemini: true },
+    });
+    await configure(f);
+    const response = await f.call(
+      `${BASE}/runs`,
+      jsonRequest('POST', undefined, { 'Idempotency-Key': 'missing-provider' }),
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'PROVIDER_NOT_CONFIGURED' },
+    });
+    expect(f.queue.messages).toHaveLength(0);
+    // Missing providers do not prevent read access or a legacy OpenAI-only account.
+    expect((await f.call(`${BASE}/settings`)).status).toBe(200);
+    const stored = (await f.repository.getProject(f.project.id))!;
+    await f.repository.saveProject(
+      {
+        ...stored,
+        version: stored.version + 1,
+        scanProviders: [{ provider: 'openai', model: stored.generationModel }],
+      },
+      stored.version,
+    );
+    expect(
+      (
+        await f.call(
+          `${BASE}/runs`,
+          jsonRequest('POST', undefined, { 'Idempotency-Key': 'openai-only' }),
+        )
+      ).status,
+    ).toBe(202);
+  });
+  it('validates provider settings and preserves owner/viewer access rules', async () => {
+    const f = await fixture();
+    for (const scanProviders of [
+      [],
+      [{ provider: 'other', model: 'anything' }],
+      [
+        { provider: 'gemini', model: 'one' },
+        { provider: 'gemini', model: 'two' },
+      ],
+    ])
+      expect(
+        (
+          await f.call(
+            `${BASE}/settings`,
+            jsonRequest('PATCH', { version: 1, scanProviders }),
+          )
+        ).status,
+      ).toBe(400);
+    const patch = jsonRequest('PATCH', {
+      version: 1,
+      scanProviders: [{ provider: 'gemini', model: DEFAULT_GEMINI_MODEL }],
+    });
+    expect((await f.call(`${BASE}/settings`, patch, VIEWER)).status).toBe(403);
+    expect((await f.call(`${BASE}/settings`, patch)).status).toBe(200);
+    const saved = (await f.repository.getProject(f.project.id))!;
+    expect(saved.scanProviders).toEqual([
+      { provider: 'gemini', model: DEFAULT_GEMINI_MODEL },
+    ]);
+  });
+});
 
 describe('API authentication and customer isolation', () => {
   it('requires an identity, hides nonmember projects and denies viewer mutations', async () => {
@@ -484,6 +633,7 @@ describe('API results, sources and comparisons', () => {
         ...original,
         version: original.version + 1,
         generationModel: 'different-model',
+        scanProviders: [{ provider: 'openai', model: 'different-model' }],
       },
       original.version,
     );

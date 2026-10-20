@@ -1,5 +1,7 @@
 import {
   isTerminal,
+  projectProviders,
+  snapshotProvider,
   type Analysis,
   type CapturedAnswer,
   type Membership,
@@ -114,12 +116,12 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     );
     await tx.query(
       `INSERT INTO account_settings(id,account_id,scan_period,ai_engines,regions,competitors_names,prompt_limit,region_limit,scan_interval_limit,scan_schedule_time,updated_at)
-      VALUES($1,$2,7,ARRAY[$3::jsonb],$4,$5::jsonb,50,1,7,$6,$7)
-      ON CONFLICT(account_id) DO UPDATE SET regions=excluded.regions,competitors_names=excluded.competitors_names,scan_schedule_time=excluded.scan_schedule_time,updated_at=excluded.updated_at`,
+      VALUES($1,$2,7,ARRAY(SELECT value FROM jsonb_array_elements($3::jsonb)),$4,$5::jsonb,50,1,7,$6,$7)
+      ON CONFLICT(account_id) DO UPDATE SET ai_engines=excluded.ai_engines,regions=excluded.regions,competitors_names=excluded.competitors_names,scan_schedule_time=excluded.scan_schedule_time,updated_at=excluded.updated_at`,
       [
         uuidFor(`${p.id}:settings`),
         id,
-        JSON.stringify({ provider: 'openai', model: p.generationModel }),
+        JSON.stringify(projectProviders(p)),
         [p.country],
         JSON.stringify(p.competitors.map((c) => c.name)),
         p.timezone,
@@ -578,7 +580,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         );
       await tx.query(
         `INSERT INTO prompt_responses(id,account_id,topic_id,prompt_id,scan_id,purpose,response,json_response,sources,model,timestamp,country,region,usage,s3_key,status,provider,visibility,response_rank,failed_reason,updated_at)
-      VALUES($1,$2,$3,$4,$5,'LLM_SCAN',$6,$7::jsonb,ARRAY(SELECT value FROM jsonb_array_elements($8::jsonb)),$9,$10,$11,$11,$12::jsonb,$13,$16,'openai',$14,$15,$17,now())
+      VALUES($1,$2,$3,$4,$5,'LLM_SCAN',$6,$7::jsonb,ARRAY(SELECT value FROM jsonb_array_elements($8::jsonb)),$9,$10,$11,$11,$12::jsonb,$13,$16,$18,$14,$15,$17,now())
       ON CONFLICT(id) DO UPDATE SET response=excluded.response,json_response=excluded.json_response,sources=excluded.sources,usage=excluded.usage,status=excluded.status,visibility=excluded.visibility,response_rank=excluded.response_rank,failed_reason=excluded.failed_reason,updated_at=now()`,
         [
           responseId,
@@ -624,6 +626,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
             ? 'COMPLETED'
             : result.status.toUpperCase(),
           result.error?.code || null,
+          snapshotProvider(run.snapshot),
         ],
       );
       await tx.query(
@@ -639,7 +642,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         if (!entity) continue;
         await tx.query(
           `INSERT INTO results(id,account_id,topic_id,topic,prompt_id,prompt,is_company_in_prompt,prompt_type,prompt_ranking,rank,entity,original_entity,reason,linkable,company_sources,company_site_url,company_domain,feel,url_sources,provider,model,timestamp,scan_id,region,country)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$10,$11,$12,ARRAY[]::jsonb[],$13,$14,$15,ARRAY(SELECT value FROM jsonb_array_elements($16::jsonb)),'openai',$17,$18,$19,$20,$20)`,
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$10,$11,$12,ARRAY[]::jsonb[],$13,$14,$15,ARRAY(SELECT value FROM jsonb_array_elements($16::jsonb)),$21,$17,$18,$19,$20,$20)`,
           [
             uuidFor(`${result.responseId}:${brand.brandId}`),
             accountId,
@@ -661,6 +664,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
             answer.createdAt,
             scanId,
             run.snapshot.country,
+            snapshotProvider(run.snapshot),
           ],
         );
       }

@@ -37,6 +37,13 @@ import type {
   ScanRun,
   OnboardingJob,
   User,
+  ScanProvider,
+} from '@citevia/core';
+import {
+  projectProviders,
+  PROVIDER_LABELS,
+  SCAN_PROVIDERS,
+  snapshotProvider,
 } from '@citevia/core';
 import { downloadCsv, idempotentPost, query, useApi } from './api';
 import {
@@ -103,7 +110,7 @@ const views = {
   },
   sources: {
     title: 'Sources',
-    description: 'Explore the websites and pages behind ChatGPT’s answers.',
+    description: 'Explore the websites and pages behind your AI answers.',
     icon: Globe2,
   },
   settings: {
@@ -198,6 +205,7 @@ function Workspace() {
     [mobileOpen, setMobileOpen] = useState(false);
   const [projectId, setProjectId] = useState(storedProject),
     [runId, setRunId] = useState('');
+  const [provider, setProvider] = useState<ScanProvider>('openai');
   const [revision, setRevision] = useState(0),
     [projectsRevision, setProjectsRevision] = useState(0);
   const [selectedResponse, setSelectedResponse] = useState<string>(),
@@ -223,7 +231,7 @@ function Workspace() {
     ? `/projects/${encodeURIComponent(currentProject.id)}`
     : null;
   const dashboard = useApi<Dashboard>(
-    path ? `${path}/dashboard${query({ runId })}` : null,
+    path ? `${path}/dashboard${query({ runId, provider })}` : null,
     revision,
   );
   const runs = useApi<Page<ScanRun>>(path ? `${path}/runs` : null, revision);
@@ -247,8 +255,25 @@ function Workspace() {
   const hasActiveRun = Boolean(
     activeRun || pendingRunId || settingUp || waitingForFirstRun,
   );
-  const runtime = useApi<{ providerConfigured: boolean }>('/runtime', revision);
-  const providerReady = runtime.data?.providerConfigured === true;
+  const runtime = useApi<{
+    providerConfigured: boolean;
+    providers: Record<ScanProvider, boolean>;
+  }>('/runtime', revision);
+  const enabledProviders = project
+    ? projectProviders(project)
+    : SCAN_PROVIDERS.map((provider) => ({ provider, model: '' }));
+  const providerReady =
+    runtime.data?.providerConfigured === true &&
+    runtime.data.providers.openai &&
+    enabledProviders.every(
+      (config) => runtime.data!.providers[config.provider],
+    );
+  const onboardingReady =
+    runtime.data?.providerConfigured === true &&
+    SCAN_PROVIDERS.every((provider) => runtime.data!.providers[provider]);
+  const missingProviders = runtime.data
+    ? SCAN_PROVIDERS.filter((provider) => !runtime.data!.providers[provider])
+    : [];
   const activePrompts =
     project?.prompts.filter((prompt) => prompt.active).length || 0;
   const owner = project?.role === 'owner';
@@ -277,10 +302,22 @@ function Workspace() {
       pendingRunId &&
       runs.data?.items.some((item) => item.id === pendingRunId)
     ) {
-      setRunId(pendingRunId);
+      const primary = runs.data.items.find((item) => item.id === pendingRunId)!;
+      const enabled =
+        primary.snapshot.scanProviders?.some(
+          (config) => config.provider === provider,
+        ) ?? snapshotProvider(primary.snapshot) === provider;
+      const selected = runs.data.items.find(
+        (item) =>
+          (item.groupId ?? item.id) === pendingRunId &&
+          snapshotProvider(item.snapshot) === provider,
+      );
+      if (enabled && !selected) return;
+      setRunId(selected?.id ?? primary.id);
+      setProvider(snapshotProvider((selected ?? primary).snapshot));
       setPendingRunId(undefined);
     }
-  }, [pendingRunId, runs.data]);
+  }, [pendingRunId, runs.data, provider]);
   useEffect(() => {
     document.title = `${views[view].title} · Citevia`;
   }, [view]);
@@ -313,7 +350,10 @@ function Workspace() {
     setStarting(true);
     setActionError(undefined);
     try {
-      const result = await idempotentPost<{ runId: string }>(`${path}/runs`);
+      const result = await idempotentPost<{
+        runId: string;
+        runs: { provider: ScanProvider; runId: string }[];
+      }>(`${path}/runs`);
       setPendingRunId(result.runId);
       refresh();
       setToast('Scan queued. Answers will appear as collection progresses.');
@@ -539,7 +579,29 @@ function Workspace() {
           <div className="topbar-right">
             <span className="platform-pill">
               <Sparkles size={12} />
-              ChatGPT
+              <select
+                aria-label="AI provider"
+                value={provider}
+                onChange={(event) => {
+                  setProvider(event.target.value as ScanProvider);
+                  setRunId('');
+                  setSelectedResponse(undefined);
+                  setPendingRunId(undefined);
+                }}
+                style={{
+                  border: 0,
+                  background: 'transparent',
+                  color: 'inherit',
+                  font: 'inherit',
+                  maxWidth: 120,
+                }}
+              >
+                {SCAN_PROVIDERS.map((value) => (
+                  <option key={value} value={value}>
+                    {PROVIDER_LABELS[value]}
+                  </option>
+                ))}
+              </select>
             </span>
             <span className="topbar-divider" />
             <button
@@ -578,11 +640,15 @@ function Workspace() {
                     }}
                   >
                     <option value="">Latest scan</option>
-                    {runs.data?.items.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {formatDate(item.createdAt, true)} · {item.status}
-                      </option>
-                    ))}
+                    {runs.data?.items
+                      .filter(
+                        (item) => snapshotProvider(item.snapshot) === provider,
+                      )
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {formatDate(item.createdAt, true)} · {item.status}
+                        </option>
+                      ))}
                   </select>
                 </label>
               )}
@@ -605,12 +671,12 @@ function Workspace() {
                   }
                   title={
                     !providerReady
-                      ? 'Configure OpenAI to enable scans'
+                      ? 'Configure API credentials for all enabled providers to enable scans'
                       : !activePrompts
                         ? 'Add an active prompt in Prompts first'
                         : hasActiveRun
                           ? 'A scan is already in progress'
-                          : 'Start a scan of your active prompts'
+                          : 'Scan active prompts on every enabled provider'
                   }
                 >
                   {starting || hasActiveRun ? (
@@ -627,13 +693,20 @@ function Workspace() {
               )}
             </div>
           </div>
-          {runtime.data?.providerConfigured === false && (
+          {missingProviders.length > 0 && (
             <div className="provider-banner" role="status">
               <Info size={16} />
               <span>
-                <strong>OpenAI is not configured.</strong> Add OPENAI_API_KEY or
-                OPENAI_SECRET_ARN to .env and restart the local server. Account
-                generation and scans are disabled until configured.
+                <strong>
+                  Provider setup needed:{' '}
+                  {missingProviders
+                    .map((value) => PROVIDER_LABELS[value])
+                    .join(', ')}
+                  .
+                </strong>{' '}
+                Configure their server API keys or Secrets Manager ARNs. OpenAI
+                also generates brandbooks and prompts and analyzes answers.
+                Scans require credentials for every enabled provider.
               </span>
             </div>
           )}
@@ -670,7 +743,7 @@ function Workspace() {
           ) : view === 'accounts' ? (
             <AccountsView
               canCreate={systemAdmin}
-              providerReady={providerReady}
+              providerReady={onboardingReady}
               onOpen={(id) => {
                 changeProject(id);
                 setProjectsRevision((value) => value + 1);
@@ -809,7 +882,7 @@ function Workspace() {
                 <footer className="page-footer">
                   <span>
                     <Cloud size={11} />
-                    Powered by OpenAI API answers with web search
+                    Native ChatGPT, Perplexity and Gemini API answers
                   </span>
                   <span>
                     <ShieldCheck size={11} />

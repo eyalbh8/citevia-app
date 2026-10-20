@@ -160,11 +160,34 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
     ).toHaveLength(50);
     const rows = (
       await db.query(
-        'SELECT response,sources,json_response,status FROM prompt_responses WHERE account_id=$1',
+        'SELECT response,sources,json_response,status,provider FROM prompt_responses WHERE account_id=$1',
         [accountId],
       )
     ).rows;
-    expect(rows).toHaveLength(50);
+    expect(rows).toHaveLength(150);
+    for (const provider of ['openai', 'perplexity', 'gemini'])
+      expect(rows.filter((row) => row.provider === provider)).toHaveLength(50);
+    expect(
+      (
+        await db.query(
+          'SELECT DISTINCT provider FROM results WHERE account_id=$1',
+          [accountId],
+        )
+      ).rows
+        .map((row) => row.provider)
+        .sort(),
+    ).toEqual(['gemini', 'openai', 'perplexity']);
+    const settings = (
+      await db.query(
+        'SELECT ai_engines FROM account_settings WHERE account_id=$1',
+        [accountId],
+      )
+    ).rows[0];
+    expect(
+      (settings.ai_engines as { provider: string }[]).map(
+        (config) => config.provider,
+      ),
+    ).toEqual(['openai', 'perplexity', 'gemini']);
     expect(
       rows.every(
         (row) =>
@@ -187,7 +210,7 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
           accountId,
         ])
       ).rows,
-    ).toHaveLength(50);
+    ).toHaveLength(150);
     expect(await repository.getMembership(project.id, 'other-user')).toBeNull();
     expect(await repository.listProjects('other-user')).toHaveLength(0);
   }, 30000);
