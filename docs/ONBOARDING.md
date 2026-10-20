@@ -7,7 +7,7 @@ A system administrator opens **Accounts → New account** and supplies exactly f
 The system persists the account, membership and onboarding job atomically, with weekly scanning disabled. It then queues these steps:
 
 1. **Research:** OpenAI Responses with web search researches the company and saves the native response and sources.
-2. **Brandbook:** a separate strict JSON generation creates the iGEO-style company profile from that research. Evidence quotations must occur verbatim in the research, and URLs must occur in its native sources. Missing facts remain empty/null and appear under Needs verification.
+2. **Brandbook:** a separate strict JSON generation creates the iGEO-style company profile from that research. The model selects IDs from a server-built catalog of citation-linked research excerpts. The server copies each exact quote and its native URL; it never accepts a generated or paraphrased evidence quote. Selected evidence and all returned URLs are validated before saving. Missing facts remain empty/null and appear under Needs verification.
 3. **Prompts:** a separate strict JSON generation creates exactly 50 questions using the four brand-specific tactics. Each prompt has a journey section, topic, branded flag, generation ID and version.
 4. **Activate:** save the brandbook and validated portfolio, enable the weekly schedule in the account's timezone, and enqueue an idempotent first scan. The Accounts screen shows progress and recoverable failures; Dashboard shows scan progress.
 
@@ -15,7 +15,7 @@ No per-account CLI or database editing is required. Descope authenticates people
 
 ## Generation instructions
 
-The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v2`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
+The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v3`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
 
 - Understand: whether AI understands the brand’s business, offerings, audiences and use cases.
 - Prefer: discovery, shortlists, alternatives, comparisons and tradeoffs.
@@ -49,7 +49,7 @@ Failed/refused/incomplete outcomes are also saved in `prompt_responses`. A faile
 
 ## Recovery and scale
 
-Jobs have conditional leases, four attempts per stage, saved research/brandbook/prompt checkpoints and a 24-hour onboarding deadline. A retry reuses valid checkpoints, rather than repeating earlier paid calls. A retry of activation never overwrites a portfolio already applied by that job. Eight explicit owner retries are allowed; duplicate retry request IDs do not reset work again. The scheduled recovery tick repairs expired leases and interrupted queue dispatch.
+Jobs have conditional leases, saved research/brandbook/prompt checkpoints and a 24-hour onboarding deadline. Each model stage makes at most one automatic API attempt. Any model, validation or checkpoint-write failure stops the job and requires explicit owner retry. Infrastructure-only work can retry up to four times without purchasing another model response. A retry reuses valid checkpoints, rather than repeating earlier paid calls. A retry of activation never overwrites a portfolio already applied by that job. Eight explicit owner retries are allowed; duplicate retry request IDs do not reset work again. Before a model call, the worker persists a unique call intent. An expired lease with an unresolved intent stops with onboarding_call_uncertain instead of silently purchasing another response. A saved checkpoint is reused without a new call. The scheduled recovery tick repairs interrupted dispatch but never reactivates failed/stopped jobs.
 
 Creation requires an idempotency key. Repeating a request after an ambiguous failure repairs the same per-item jobs. Reusing a key with different company details is rejected. Owner account limits are enforced inside a database transaction. The AWS default is 100 accounts per owner (`MaxAccountsPerOwner`, configurable to 10,000), 10 concurrent SQS workers, 12 reserved scanner invocations, and 20 reserved API invocations. Each Lambda opens at most two database connections. Coordinate increased worker counts with the OpenAI project's actual rate limits, database capacity and expected scan duration; these defaults are configuration, not a throughput benchmark.
 
@@ -97,3 +97,11 @@ The public API accepts only:
 ```
 
 Use `POST /v1/onboarding/accounts` with an authenticated system-administrator session and an `Idempotency-Key`. The server maps region to the existing country field and adds internal UTC scheduling and empty legacy context; the operator enters no extra fields. Prompts can be edited after setup in the dedicated Prompts screen.
+
+## Stop and explicit retry
+
+An owner or system administrator can select **Stop setup** in Accounts or call `POST /v1/projects/{id}/onboarding/stop`. The persisted stopped state fences late model completions, stale queue deliveries and recovery. An already in-flight provider request may finish and incur its cost; its saved receipt can be preserved, but it cannot start the next stage. API calls to start scans or enable a weekly schedule are rejected until onboarding has completed. The scanner independently checks the same status, including stale scheduled messages.
+
+A generation/validation failure stops automatically after that attempt. The UI displays the reason and makes it clear that no further generation/scanning begins automatically. **Retry setup** calls the existing owner-only retry endpoint, clears the old call intent, and resumes from saved valid checkpoints. Up to eight explicit retry intents are allowed. A new retry is a deliberate paid action where the failed stage needs another response; duplicate HTTP/SQS deliveries do not reset the intent.
+
+For brandbooks, research evidence must have a valid native citation range, source URL and exact saved quote. If no usable evidence exists, the worker stops before purchasing the brandbook call. Invalid evidence IDs, free-form quotes, unvisited URLs, malformed JSON or invalid portfolio counts stop rather than repeatedly asking the model to repair its own output. Failed native receipts are saved under unique attempt IDs; a diagnostic storage failure does not cause another model call.

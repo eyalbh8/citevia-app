@@ -74,3 +74,5 @@ See [AWS deployment](DEPLOYMENT.md) for the two Lambdas, private Aurora database
 ## Provider validation
 
 See [PROVIDERS.md](PROVIDERS.md) for one-provider-at-a-time live validation commands. Each invocation makes at most ten paid collection and ten OpenAI analysis calls. Tests remain isolated; runtime never substitutes sample responses. New accounts enable all three providers, while existing accounts opt in through Settings. No local weekly timer is registered; onboarding and manual scans execute through the local worker. AWS registers weekly schedules.
+
+Onboarding model failures now stop after one attempt. Accounts offers **Stop setup** for running work and **Retry setup** for an explicit retry from saved progress. A request already in flight may finish, but no later stage starts after Stop. Research evidence is selected by ID and copied by the server to prevent quote-paraphrasing failures. See [onboarding stop/recovery](ONBOARDING.md).

@@ -376,7 +376,7 @@ export interface OnboardingJob {
   inputHash: string;
   input: OnboardingInput;
   step: OnboardingStep;
-  status: 'queued' | 'running' | 'failed' | 'completed';
+  status: 'queued' | 'running' | 'failed' | 'stopped' | 'completed';
   version: number;
   attempts: number;
   leaseOwner?: string;
@@ -388,6 +388,11 @@ export interface OnboardingJob {
   brandbookKey?: string;
   promptsKey?: string;
   firstRunId?: string;
+  paidCall?: {
+    id: string;
+    step: 'research' | 'brandbook' | 'prompts';
+    startedAt: string;
+  };
   error?: { code: string; message: string };
   retryRequestIds: string[];
 }

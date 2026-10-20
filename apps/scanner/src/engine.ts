@@ -119,6 +119,19 @@ export class Scanner {
       const project = await repository.getProject(message.projectId);
       if (!project || (!project.enabled && message.trigger !== 'manual'))
         return;
+      if (project.onboardingJobId) {
+        const setup = await repository.getOnboarding(
+          project.id,
+          project.onboardingJobId,
+        );
+        if (!setup || ['failed', 'stopped'].includes(setup.status)) return;
+        if (setup.status !== 'completed')
+          throw new ProviderError(
+            'onboarding_pending',
+            'Account setup must complete before scanning.',
+            true,
+          );
+      }
       const prompts = project.prompts.filter((prompt) => prompt.active);
       if (!prompts.length || prompts.length > 50)
         throw new ProviderError(

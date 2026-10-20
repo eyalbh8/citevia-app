@@ -22,12 +22,16 @@ import {
 } from './provider.js';
 import {
   BRANDBOOK_INSTRUCTIONS,
-  BRANDBOOK_SCHEMA,
   ONBOARDING_INSTRUCTIONS_VERSION,
   PORTFOLIO_INSTRUCTIONS,
   PORTFOLIO_SCHEMA,
   RESEARCH_INSTRUCTIONS,
 } from './onboarding-prompts.js';
+import {
+  researchEvidenceCatalog,
+  brandbookGenerationSchema,
+  resolveBrandbookEvidence,
+} from './onboarding-evidence.js';
 export interface OnboardingProvider {
   research(job: OnboardingJob): Promise<CapturedAnswer>;
   brandbook(
@@ -49,7 +53,7 @@ export class OnboardingOutputError extends ProviderError {
       error instanceof ProviderError
         ? error.message
         : 'The generated account output did not pass validation.',
-      error instanceof ProviderError ? error.retryable : true,
+      false,
       receipt.requestId,
     );
   }
@@ -177,18 +181,28 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
     }
   }
   async brandbook(job: OnboardingJob, research: CapturedAnswer) {
+    const catalog = researchEvidenceCatalog(research);
+    if (!catalog.length)
+      throw new ProviderError(
+        'research_evidence_missing',
+        'Saved research has no usable citation-linked evidence. Automatic generation stopped before another API call.',
+        false,
+      );
     const receipt = await this.provider.extract({
       model: this.model,
       instructions: BRANDBOOK_INSTRUCTIONS,
-      schema: BRANDBOOK_SCHEMA,
+      schema: brandbookGenerationSchema(catalog),
       input: {
         company: job.input,
         research: research.text,
         sources: [...research.citations, ...research.sources],
+        evidence_catalog: catalog,
       },
     });
     try {
-      const parsed = generatedBrandbookSchema.parse(json(receipt));
+      const parsed = generatedBrandbookSchema.parse(
+        resolveBrandbookEvidence(json(receipt), catalog),
+      );
       const allowed = new Set(
         [...research.citations, ...research.sources].map(
           (source) => source.url,
@@ -208,7 +222,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         throw new ProviderError(
           'brandbook_evidence_invalid',
           'Generated brandbook evidence could not be verified against the research.',
-          true,
+          false,
         );
       const brandbook: Brandbook = {
         ...parsed,
@@ -226,6 +240,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         brandbook,
         receipt: {
           instructionsVersion: ONBOARDING_INSTRUCTIONS_VERSION,
+          evidenceCatalog: catalog,
           ...receipt,
         },
       };

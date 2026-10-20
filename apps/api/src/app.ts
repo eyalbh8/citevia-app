@@ -335,6 +335,53 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             ? await repository.getOnboarding(projectId, stored.onboardingJobId)
             : null,
         });
+      if (tail === 'onboarding/stop' && method === 'POST') {
+        const job = stored.onboardingJobId
+          ? await repository.getOnboarding(projectId, stored.onboardingJobId)
+          : null;
+        if (!job)
+          throw new HttpError(404, 'NOT_FOUND', 'Onboarding job not found');
+        if (!['queued', 'running'].includes(job.status))
+          return response({ job });
+        const stopped = {
+          ...job,
+          status: 'stopped' as const,
+          version: job.version + 1,
+          leaseOwner: undefined,
+          leaseExpiresAt: undefined,
+          updatedAt: now().toISOString(),
+          error: {
+            code: 'stopped',
+            message:
+              'Setup stopped. Saved progress is preserved. An API request already in flight may finish; no later setup steps will start.',
+          },
+        };
+        if (!(await repository.saveOnboarding(stopped, job.version)))
+          throw new HttpError(
+            409,
+            'VERSION_CONFLICT',
+            'Setup changed. Refresh and stop it again.',
+          );
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const latest = await repository.getProject(projectId);
+          if (!latest || latest.onboardingJobId !== job.id || !latest.enabled)
+            break;
+          const paused = {
+            ...latest,
+            enabled: false,
+            scheduleStatus: 'pending' as const,
+            version: latest.version + 1,
+          };
+          if (!(await repository.saveProject(paused, latest.version))) continue;
+          try {
+            await options.syncSchedule?.(paused);
+          } catch {
+            /* The persisted stop also gates scanner admission. */
+          }
+          break;
+        }
+        return response({ job: stopped });
+      }
       if (tail === 'onboarding/retry' && method === 'POST') {
         const key = request.headers.get('idempotency-key');
         if (!key || !/^[A-Za-z0-9_-]{8,100}$/.test(key))
@@ -352,7 +399,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           await queue.send([{ kind: 'onboard', projectId, jobId: job.id }]);
           return response({ job }, 202);
         }
-        if (job.status !== 'failed')
+        if (!['failed', 'stopped'].includes(job.status))
           throw new HttpError(
             409,
             'ONBOARDING_ACTIVE',
@@ -374,6 +421,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           error: undefined,
           leaseOwner: undefined,
           leaseExpiresAt: undefined,
+          paidCall: undefined,
         };
         if (!(await repository.saveOnboarding(next, job.version)))
           throw new HttpError(
@@ -434,6 +482,17 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       }
       if (tail === 'settings' && method === 'PATCH') {
         const input = settingsSchema.parse(await body(request));
+        if (
+          input.enabled &&
+          stored.onboardingJobId &&
+          (await repository.getOnboarding(projectId, stored.onboardingJobId))
+            ?.status !== 'completed'
+        )
+          throw new HttpError(
+            409,
+            'ONBOARDING_INCOMPLETE',
+            'Finish account setup before enabling weekly scans.',
+          );
         if (input.version !== stored.version)
           throw new HttpError(
             409,
@@ -614,6 +673,16 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           ),
         );
       if (tail === 'runs' && method === 'POST') {
+        if (
+          stored.onboardingJobId &&
+          (await repository.getOnboarding(projectId, stored.onboardingJobId))
+            ?.status !== 'completed'
+        )
+          throw new HttpError(
+            409,
+            'ONBOARDING_INCOMPLETE',
+            'Account setup is incomplete or stopped. Complete setup before starting scans.',
+          );
         const key = request.headers.get('idempotency-key');
         if (!key || !/^[A-Za-z0-9_-]{8,100}$/.test(key))
           throw new HttpError(

@@ -13,6 +13,7 @@ import {
 import { ProviderError } from './provider.js';
 import { runIdFor } from './engine.js';
 const leaseMs = 12 * 60_000;
+class LostLease extends Error {}
 export class OnboardingEngine {
   constructor(
     private runtime: Runtime,
@@ -27,7 +28,7 @@ export class OnboardingEngine {
     const job = await repository.getOnboarding(projectId, jobId);
     if (
       !job ||
-      ['completed', 'failed'].includes(job.status) ||
+      !['queued', 'running'].includes(job.status) ||
       (job.leaseExpiresAt &&
         Date.parse(job.leaseExpiresAt) > this.now().getTime())
     )
@@ -54,11 +55,38 @@ export class OnboardingEngine {
     };
     if (!(await repository.saveOnboarding(current, job.version))) return;
     const root = `projects/${projectId}/onboarding/${jobId}`;
+    const generateOnce = async (
+      key: string,
+      operation: () => Promise<unknown>,
+    ) => {
+      if (await artifacts.get(key)) return;
+      if (job.paidCall || job.attempts > 0)
+        throw new ProviderError(
+          'onboarding_call_uncertain',
+          'A previous API attempt has no saved result. Automatic calls stopped to avoid duplicate charges. Review and retry explicitly.',
+          false,
+        );
+      const pending: OnboardingJob = {
+        ...current,
+        paidCall: {
+          id: randomUUID(),
+          step: job.step as 'research' | 'brandbook' | 'prompts',
+          startedAt: this.now().toISOString(),
+        },
+        version: current.version + 1,
+      };
+      if (!(await repository.saveOnboarding(pending, current.version)))
+        throw new LostLease();
+      current = pending;
+      const latest = await repository.getOnboarding(projectId, jobId);
+      if (latest?.version !== current.version || latest.status !== 'running')
+        throw new LostLease();
+      await artifacts.put(key, await operation());
+    };
     try {
       if (current.step === 'research') {
         const key = `${root}/research.json`;
-        if (!(await artifacts.get(key)))
-          await artifacts.put(key, await this.provider.research(current));
+        await generateOnce(key, () => this.provider.research(current));
         current = { ...current, researchKey: key, step: 'brandbook' };
       } else if (current.step === 'brandbook') {
         const research = await artifacts.get<CapturedAnswer>(
@@ -66,11 +94,9 @@ export class OnboardingEngine {
         );
         if (!research) throw new Error('Missing research checkpoint');
         const key = `${root}/brandbook.json`;
-        if (!(await artifacts.get(key)))
-          await artifacts.put(
-            key,
-            await this.provider.brandbook(current, research),
-          );
+        await generateOnce(key, () =>
+          this.provider.brandbook(current, research),
+        );
         current = { ...current, brandbookKey: key, step: 'prompts' };
       } else if (current.step === 'prompts') {
         const book = await artifacts.get<{ brandbook: Brandbook }>(
@@ -78,11 +104,9 @@ export class OnboardingEngine {
         );
         if (!book) throw new Error('Missing brandbook checkpoint');
         const key = `${root}/prompts.json`;
-        if (!(await artifacts.get(key)))
-          await artifacts.put(
-            key,
-            await this.provider.prompts(current, book.brandbook),
-          );
+        await generateOnce(key, () =>
+          this.provider.prompts(current, book.brandbook),
+        );
         current = { ...current, promptsKey: key, step: 'activate' };
       } else if (current.step === 'activate') {
         const book = await artifacts.get<{ brandbook: Brandbook }>(
@@ -93,6 +117,15 @@ export class OnboardingEngine {
           );
         if (!book || portfolio?.prompts.length !== 50)
           throw new Error('Invalid onboarding checkpoints');
+        const assertActive = async () => {
+          const latest = await repository.getOnboarding(projectId, jobId);
+          if (
+            latest?.version !== current.version ||
+            latest.status !== 'running'
+          )
+            throw new LostLease();
+        };
+        await assertActive();
         let project = await repository.getProject(projectId);
         if (!project || project.onboardingJobId !== jobId)
           throw new ProviderError(
@@ -128,6 +161,7 @@ export class OnboardingEngine {
         // Synchronize the latest saved settings, with CAS to prevent an old job overwriting a newer schedule.
         let synced = false;
         for (let i = 0; i < 3; i++) {
+          await assertActive();
           const latest = await repository.getProject(projectId);
           if (!latest) throw new Error('Account missing');
           await this.syncSchedule(latest);
@@ -146,6 +180,7 @@ export class OnboardingEngine {
           }
         }
         if (!synced) throw new Error('Concurrent schedule updates');
+        await assertActive();
         const message = {
           kind: 'kickoff' as const,
           projectId,
@@ -173,18 +208,38 @@ export class OnboardingEngine {
       delete next.leaseOwner;
       delete next.leaseExpiresAt;
       delete next.error;
-      if (
-        (await repository.saveOnboarding(next, current.version)) &&
-        next.status !== 'completed'
-      )
+      delete next.paidCall;
+      const saved = await repository.saveOnboarding(next, current.version);
+      if (!saved) await this.pauseFailedSetup(projectId, jobId);
+      if (saved && next.status !== 'completed')
         await queue.send([{ kind: 'onboard', projectId, jobId }]);
     } catch (error) {
-      if (error instanceof OnboardingOutputError)
-        await artifacts.put(
-          `${root}/${job.step}-attempt-${current.attempts}.json`,
-          error.receipt,
-        );
-      const retryable = !(error instanceof ProviderError) || error.retryable;
+      if (error instanceof LostLease) {
+        await this.pauseFailedSetup(projectId, jobId);
+        return;
+      }
+      if (error instanceof OnboardingOutputError) {
+        try {
+          await artifacts.put(
+            `${root}/attempts/${current.paidCall?.id ?? randomUUID()}/${job.step}.json`,
+            error.receipt,
+          );
+        } catch {
+          console.error(
+            JSON.stringify({
+              event: 'onboarding_receipt_save_failed',
+              projectId,
+              jobId,
+              step: job.step,
+            }),
+          );
+        }
+      }
+      // Once an API call is reserved, any failure requires explicit retry. A lost
+      // checkpoint or expired lease cannot silently purchase another response.
+      const retryable =
+        !current.paidCall &&
+        (!(error instanceof ProviderError) || error.retryable);
       const next = {
         ...current,
         status:
@@ -206,11 +261,10 @@ export class OnboardingEngine {
       next.step = job.step;
       delete next.leaseOwner;
       delete next.leaseExpiresAt;
-      if (
-        (await repository.saveOnboarding(next, current.version)) &&
-        next.status === 'queued'
-      )
-        throw error;
+      if (await repository.saveOnboarding(next, current.version)) {
+        if (next.status === 'queued') throw error;
+        await this.pauseFailedSetup(projectId, jobId);
+      } else await this.pauseFailedSetup(projectId, jobId);
     }
   }
   private async fail(job: OnboardingJob, code: string, message: string) {
@@ -226,10 +280,39 @@ export class OnboardingEngine {
       },
       job.version,
     );
+    await this.pauseFailedSetup(job.projectId, job.id);
+  }
+  private async pauseFailedSetup(projectId: string, jobId: string) {
+    try {
+      const job = await this.runtime.repository.getOnboarding(projectId, jobId);
+      if (!job || !['failed', 'stopped'].includes(job.status)) return;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const project = await this.runtime.repository.getProject(projectId);
+        if (!project || project.onboardingJobId !== jobId || !project.enabled)
+          return;
+        const paused = {
+          ...project,
+          enabled: false,
+          scheduleStatus: 'pending' as const,
+          version: project.version + 1,
+        };
+        if (
+          !(await this.runtime.repository.saveProject(paused, project.version))
+        )
+          continue;
+        await this.syncSchedule(paused);
+        return;
+      }
+    } catch {
+      console.error(
+        JSON.stringify({ event: 'onboarding_pause_pending', projectId, jobId }),
+      );
+    }
+    // Scanner admission independently checks the terminal onboarding status.
   }
   async deadLetter(projectId: string, jobId: string) {
     const job = await this.runtime.repository.getOnboarding(projectId, jobId);
-    if (job && !['failed', 'completed'].includes(job.status))
+    if (job && ['queued', 'running'].includes(job.status))
       await this.fail(
         job,
         'queue_delivery_exhausted',

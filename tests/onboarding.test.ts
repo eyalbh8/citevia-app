@@ -146,7 +146,7 @@ describe('automated account onboarding', () => {
     );
     expect(conflict.status).toBe(409);
   });
-  it('resumes a failed prompt generation from its saved research and brandbook', async () => {
+  it('stops a failed generation and resumes from saved research only after explicit retry', async () => {
     const runtime = await environment(),
       provider = new FixtureOnboardingProvider(),
       research = vi.spyOn(provider, 'research'),
@@ -174,7 +174,25 @@ describe('automated account onboarding', () => {
     await drain(scanner, runtime.queue);
     expect(research).toHaveBeenCalledTimes(1);
     expect(book).toHaveBeenCalledTimes(1);
+    expect(calls).toBe(1);
+    const item = created.items[0];
+    expect(
+      (await runtime.repository.getOnboarding(item.project.id, item.job.id))
+        ?.status,
+    ).toBe('failed');
+    const api = createApi(runtime, { mode: 'live' });
+    expect(
+      (
+        await api(
+          req(`/projects/${item.project.id}/onboarding/retry`, 'POST'),
+          testIdentity('owner'),
+        )
+      ).status,
+    ).toBe(202);
+    await drain(scanner, runtime.queue);
     expect(calls).toBe(2);
+    expect(research).toHaveBeenCalledTimes(1);
+    expect(book).toHaveBeenCalledTimes(1);
     expect(
       (
         await runtime.repository.getOnboarding(
@@ -184,7 +202,7 @@ describe('automated account onboarding', () => {
       )?.status,
     ).toBe('completed');
   });
-  it('bounds retries, exposes the failure, and lets the owner repair the same job', async () => {
+  it('stops after one failed API call, exposes the failure, and lets the owner retry', async () => {
     const runtime = await environment(),
       provider = new FixtureOnboardingProvider(),
       original = provider.research.bind(provider);
@@ -208,7 +226,7 @@ describe('automated account onboarding', () => {
     await drain(scanner, runtime.queue);
     expect(
       await runtime.repository.getOnboarding(item.project.id, item.job.id),
-    ).toMatchObject({ status: 'failed', attempts: 4, step: 'research' });
+    ).toMatchObject({ status: 'failed', attempts: 1, step: 'research' });
     vi.mocked(provider.research).mockImplementation(original);
     const api = createApi(runtime, { mode: 'live' });
     expect(
@@ -425,7 +443,7 @@ describe('automated account onboarding', () => {
     );
     expect(request.instructions).not.toContain('at least 60% unbranded');
     expect(generated.receipt).toMatchObject({
-      instructionsVersion: 'citevia-onboarding-v2',
+      instructionsVersion: 'citevia-onboarding-v3',
     });
     const duplicate = structuredClone(prompts);
     duplicate[1].text = duplicate[0].text;
@@ -512,6 +530,16 @@ describe('automated account onboarding', () => {
     const research: CapturedAnswer =
       await new FixtureOnboardingProvider().research(job);
     research.sources = [{ url: 'https://acme.com' }];
+    research.citations = [
+      {
+        id: 'native',
+        blockId: research.blocks[0].id,
+        url: 'https://acme.com',
+        title: 'Official',
+        start: 0,
+        end: research.text.length,
+      },
+    ];
     await expect(provider.brandbook(job, research)).rejects.toMatchObject({
       code: 'brandbook_evidence_invalid',
     });

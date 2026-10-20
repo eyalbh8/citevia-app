@@ -141,6 +141,17 @@ export default function AccountsView({
       setError(error as Error);
     }
   }
+  async function stop(id: string) {
+    setError(undefined);
+    try {
+      await idempotentPost(`/projects/${id}/onboarding/stop`);
+      setRevision((value) => value + 1);
+      onChanged();
+      notify('Setup stopped. Saved progress is preserved.');
+    } catch (error) {
+      setError(error as Error);
+    }
+  }
   return (
     <>
       <div className="accounts-intro">
@@ -413,7 +424,7 @@ export default function AccountsView({
                     <div>
                       <Badge
                         value={
-                          job.status === 'failed'
+                          ['failed', 'stopped'].includes(job.status)
                             ? 'failed'
                             : job.status === 'completed'
                               ? 'completed'
@@ -422,8 +433,8 @@ export default function AccountsView({
                         label={
                           job.status === 'completed'
                             ? 'Ready'
-                            : job.status === 'failed'
-                              ? 'Setup needs attention'
+                            : ['failed', 'stopped'].includes(job.status)
+                              ? 'Setup stopped'
                               : `Creating ${job.step === 'research' ? 'company research' : job.step === 'brandbook' ? 'brandbook' : job.step === 'prompts' ? 'prompts' : 'schedule & first scan'}`
                         }
                       />
@@ -453,6 +464,13 @@ export default function AccountsView({
                     {job.error && (
                       <p className="account-error">{job.error.message}</p>
                     )}
+                    {['failed', 'stopped'].includes(job.status) && (
+                      <p className="card-description">
+                        No more generation calls or scans will start
+                        automatically. Retry setup explicitly to continue from
+                        saved progress.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <p className="card-description">
@@ -462,15 +480,27 @@ export default function AccountsView({
                   </p>
                 )}
                 <div className="account-actions">
-                  {job?.status === 'failed' && account.role === 'owner' && (
-                    <button
-                      className="button button-outline"
-                      onClick={() => void retry(account.id)}
-                    >
-                      <RefreshCw size={12} />
-                      Retry setup
-                    </button>
-                  )}
+                  {job &&
+                    ['queued', 'running'].includes(job.status) &&
+                    account.role === 'owner' && (
+                      <button
+                        className="button button-outline"
+                        onClick={() => void stop(account.id)}
+                      >
+                        Stop setup
+                      </button>
+                    )}
+                  {job &&
+                    ['failed', 'stopped'].includes(job.status) &&
+                    account.role === 'owner' && (
+                      <button
+                        className="button button-outline"
+                        onClick={() => void retry(account.id)}
+                      >
+                        <RefreshCw size={12} />
+                        Retry setup
+                      </button>
+                    )}
                   <button
                     className="button button-outline"
                     onClick={() => onOpen(account.id)}
