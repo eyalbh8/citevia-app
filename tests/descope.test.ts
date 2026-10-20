@@ -23,7 +23,7 @@ function environment() {
     email: 'person@test.example',
     verifiedEmail: true,
     name: 'Verified profile',
-    status: 'active',
+    status: 'enabled',
     test: false,
   };
   const validate = vi.fn(async () => ({
@@ -36,6 +36,23 @@ function environment() {
   return { profile, validate, user, provider };
 }
 describe('Descope authentication boundary', () => {
+  it('answers the browser preflight before requiring a session', async () => {
+    const f = environment();
+    const app = createAuthenticatedApi(
+      {
+        repository: new MemoryRepository(),
+        queue: new MemoryQueue(),
+        artifacts: new MemoryArtifacts(),
+      },
+      f.provider,
+      { mode: 'live' },
+    );
+    const response = await app(
+      new Request('https://test/v1/me', { method: 'OPTIONS' }),
+    );
+    expect(response.status).toBe(204);
+    expect(f.validate).not.toHaveBeenCalled();
+  });
   it('validates the project audience, loads the matching profile server-side and ignores token roles', async () => {
     const f = environment(),
       repository = new MemoryRepository();

@@ -21,6 +21,7 @@ export function createAuthenticatedApi(
     lookupUser: (email) => identity.lookup(email),
   });
   return async (request: Request): Promise<Response> => {
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204 });
     if (new URL(request.url).pathname === '/health' && request.method === 'GET')
       return app(request);
     try {

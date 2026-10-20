@@ -44,7 +44,7 @@ export class DescopeIdentityProvider implements IdentityProvider {
     private load: () => Promise<DescopeAdapter>,
   ) {}
   private identity(profile: Profile): VerifiedIdentity {
-    if (profile.status !== 'active' || !profile.verifiedEmail || profile.test)
+    if (profile.status !== 'enabled' || !profile.verifiedEmail || profile.test)
       throw new AuthenticationError(
         403,
         'IDENTITY_NOT_ACTIVE',
