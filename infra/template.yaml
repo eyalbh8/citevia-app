@@ -68,10 +68,16 @@ Parameters:
     MinValue: 5
     MaxValue: 100
     Description: Set at least two greater than QueueConcurrency to reserve reconciliation capacity.
+  EnableReservedConcurrency:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Reserve API and scanner concurrency. Turn off when the account limit cannot leave 10 unreserved executions.
 
 Conditions:
   IncludeDevOrigin: !Equals [!Ref EnableDevOrigin, 'true']
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  UseReservedConcurrency: !Equals [!Ref EnableReservedConcurrency, 'true']
 
 Globals:
   Function:
@@ -265,11 +271,18 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: RequireTLS
+          - Sid: RequireTlsOnScanQueue
             Effect: Deny
             Principal: '*'
             Action: sqs:*
-            Resource: [!GetAtt ScanQueue.Arn, !GetAtt ScanDeadLetterQueue.Arn]
+            Resource: !GetAtt ScanQueue.Arn
+            Condition:
+              Bool: {aws:SecureTransport: 'false'}
+          - Sid: RequireTlsOnDeadLetterQueue
+            Effect: Deny
+            Principal: '*'
+            Action: sqs:*
+            Resource: !GetAtt ScanDeadLetterQueue.Arn
             Condition:
               Bool: {aws:SecureTransport: 'false'}
 
@@ -324,7 +337,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../dist/api/
-      ReservedConcurrentExecutions: 20
+      ReservedConcurrentExecutions: !If [UseReservedConcurrency, 20, !Ref 'AWS::NoValue']
       VpcConfig:
         SecurityGroupIds: [!Ref LambdaSecurityGroup]
         SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
@@ -381,7 +394,7 @@ Resources:
         SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
       MemorySize: 1024
       Timeout: 300
-      ReservedConcurrentExecutions: !Ref ScannerReservedConcurrency
+      ReservedConcurrentExecutions: !If [UseReservedConcurrency, !Ref ScannerReservedConcurrency, !Ref 'AWS::NoValue']
       Environment:
         Variables:
           OPENAI_SECRET_ARN: !Ref OpenAiSecretArn
