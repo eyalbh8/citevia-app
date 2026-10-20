@@ -91,6 +91,12 @@
 .prompt-archived .prompt-name {
   color: #888698;
 }
+.metric-change.improved {
+  color: #238354;
+}
+.metric-change.declined {
+  color: #b54456;
+}
 .prompt-fieldset {
   border: 0;
   padding: 0;

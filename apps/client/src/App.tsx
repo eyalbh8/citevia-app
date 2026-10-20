@@ -389,10 +389,16 @@ function Workspace() {
           metrics.visibility.denominator,
         ],
         [
-          'Average explicit rank',
+          'Average rank',
           metrics.averageRank.value,
           metrics.averageRank.numerator,
           metrics.averageRank.denominator,
+        ],
+        [
+          'Sentiment score (0-100)',
+          metrics.sentimentScore?.value,
+          metrics.sentimentScore?.numerator,
+          metrics.sentimentScore?.denominator,
         ],
         ['Captured answers', metrics.captured, '', run.totalCount],
         ['Analyzed answers', metrics.analyzed, '', run.totalCount],
@@ -647,6 +653,7 @@ function Workspace() {
                       .map((item) => (
                         <option key={item.id} value={item.id}>
                           {formatDate(item.createdAt, true)} · {item.status}
+                          {item.reanalysisOf ? ' · Reanalysis' : ''}
                         </option>
                       ))}
                   </select>

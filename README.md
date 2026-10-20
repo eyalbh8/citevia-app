@@ -50,7 +50,7 @@ The first administrator is established explicitly after their first Descope sign
 
 Collection requests web search and saves the original response before extraction. The answering request does not receive the tracked brand unless it is already in the saved question. A separate structured extraction request receives brand context and the saved answer, without tools. Extracted quotes and spans are checked against the answer. Native citations, repeated citation occurrences and retrieved-but-not-cited sources are retained separately.
 
-Visibility is brand mentions divided by successfully analyzed answers. A valid answer without a mention is zero visibility; failed collection/extraction is missing measurement. Explicit recommendation rank and first-mention order are different fields. Sentiment is positive/neutral/negative/mixed/unknown, or N/A without a mention. Domain coverage counts distinct complete answers citing a domain, so it cannot exceed 100%. Every dashboard metric carries its denominator. Week-to-week changes use matching prompts and methodology.
+Visibility is brand mentions divided by successfully analyzed answers. A valid answer without a mention is zero visibility; failed collection/extraction is missing measurement. Rank follows iGEO: the company’s position by first appearance among all identified companies, including untracked alternatives. Explicit numbered recommendation rank remains a separate field. Sentiment is scored from 0 to 100 using iGEO’s formula: positive 100, neutral/mixed 50, negative 0. Unknown or absent brands have a null score. The original sentiment label and exact evidence remain saved. Domain coverage counts distinct complete answers citing a domain, so it cannot exceed 100%. Every dashboard metric carries its denominator. Week-to-week changes use matching prompts and methodology.
 
 These are **native API observations with search enabled**, not identical reproductions of personalized consumer chat sessions. Each provider has separate runs, citations, dashboard trends and comparison baselines. One observation per prompt per provider per week is a sample, not a guaranteed ranking.
 
@@ -76,6 +76,7 @@ The base path is `/v1`. `POST /onboarding/accounts` creates accounts; `GET /proj
 The scanner snapshots active prompts and configuration, then dispatches one SQS job per prompt. Conditional leases and SQL transactions prevent duplicate accepted results/counters. A durable checkpoint lets parsing retries reuse the answer. There are four bounded processing attempts, a 24-hour AWS run deadline (three hours locally) and recovery every 15 minutes. Partial runs remain visible; old answers never fill failed weeks. At-least-once delivery cannot guarantee exactly-once provider billing after an ambiguous network failure.
 
 PostgreSQL records and current evidence objects have no automatic deletion policy. Aurora retains 14 days of backups; S3 retains noncurrent versions for 30 days and logs for 14 days. The infrastructure encrypts storage and requires TLS. Billing, other AI providers, publishing and complex organization administration remain outside this MVP.
+
 # citevia-app
 
 ## Three-provider scans

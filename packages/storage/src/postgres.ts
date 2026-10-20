@@ -2,6 +2,8 @@ import {
   isTerminal,
   projectProviders,
   snapshotProvider,
+  brandRank,
+  brandSentimentScore,
   type Analysis,
   type CapturedAnswer,
   type Membership,
@@ -599,7 +601,9 @@ export class PostgresRepository extends PostgresUsers implements Repository {
                 ].find((item) => item.id === brand.brandId);
                 return {
                   company: identity?.name,
-                  rank: brand.explicitRank,
+                  rank: brandRank(brand),
+                  explicitRank: brand.explicitRank,
+                  sentimentScore: brandSentimentScore(brand),
                   company_site_url: identity?.domains[0]
                     ? `https://${identity.domains[0]}`
                     : null,
@@ -607,6 +611,11 @@ export class PostgresRepository extends PostgresUsers implements Repository {
                 };
               }),
             analysis,
+            companiesByAppearance: analysis?.companies || [],
+            sentimentScore:
+              result.status === 'succeeded'
+                ? brandSentimentScore(result.target)
+                : null,
             error: result.error || null,
             providerResponseId: answer?.providerResponseId,
             blocks: answer?.blocks || [],
@@ -621,7 +630,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
           JSON.stringify(answer?.usage || result.usage || null),
           result.captureKey || null,
           result.target?.mentioned ? 100 : 0,
-          result.target?.explicitRank ?? null,
+          result.status === 'succeeded' ? brandRank(result.target) : null,
           result.status === 'succeeded'
             ? 'COMPLETED'
             : result.status.toUpperCase(),
@@ -652,7 +661,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
             result.prompt.text,
             result.prompt.branded,
             result.prompt.stage || 'general',
-            brand.explicitRank ?? 0,
+            brandRank(brand) ?? 0,
             entity.name,
             brand.evidence.map((value) => value.quote).join('\n'),
             !!entity.domains[0],

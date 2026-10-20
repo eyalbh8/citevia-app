@@ -5,6 +5,8 @@ import {
   emptyMetrics,
   identifier,
   metricsFromResults,
+  promptMetrics,
+  brandSentimentScore,
   nextWeeklyScan,
   promptCreateSchema,
   promptUpdateSchema,
@@ -92,7 +94,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
   async function summary(run: ScanRun): Promise<RunSummary> {
     if (run.summaryKey && run.summaryVersion === run.resultVersion) {
       const saved = await artifacts.get<RunSummary>(run.summaryKey);
-      if (saved) return saved;
+      if (saved?.metrics.sentimentScore) return saved;
     }
     const results = await repository.listResults(run.projectId, run.id);
     const items: ResponseDetail[] = [];
@@ -563,6 +565,33 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         );
       if (tail === 'prompts' && method === 'GET')
         return response({ items: stored.prompts, version: stored.version });
+      if (tail === 'prompt-metrics' && method === 'GET') {
+        const run = await selectedRun();
+        const runs = await repository.listRuns(projectId, 180);
+        const previous =
+          runs.find(
+            (candidate) =>
+              candidate.id !== run.id &&
+              candidate.createdAt < run.createdAt &&
+              sameMethod(candidate.snapshot, run.snapshot),
+          ) || null;
+        const [results, prior] = await Promise.all([
+          repository.listResults(projectId, run.id),
+          previous
+            ? repository.listResults(projectId, previous.id)
+            : Promise.resolve([]),
+        ]);
+        return response({
+          items: promptMetrics(stored, run, results, previous, prior),
+          runId: run.id,
+          previousRunId: previous?.id || null,
+          rankDefinition:
+            run.snapshot.parserVersion === 'igeo-evidence-v2'
+              ? 'company_appearance'
+              : 'explicit_recommendation',
+          sentimentScale: { min: 0, max: 100 },
+        });
+      }
       if (tail === 'prompts' && method === 'POST') {
         const input = promptCreateSchema.parse(await body(request));
         const texts = 'texts' in input ? input.texts : [input.text];
@@ -934,7 +963,20 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           items = items.filter((r) =>
             r.prompt.text.toLocaleLowerCase().includes(q),
           );
-        return response(paginate(items, query));
+        return response(
+          paginate(
+            items.map((item) => ({
+              ...item,
+              target: item.target
+                ? {
+                    ...item.target,
+                    sentimentScore: brandSentimentScore(item.target),
+                  }
+                : undefined,
+            })),
+            query,
+          ),
+        );
       }
       const detailMatch = tail.match(/^responses\/([^/]+)$/);
       if (detailMatch && method === 'GET') {

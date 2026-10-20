@@ -8,7 +8,13 @@ import {
   RotateCcw,
   Search,
 } from 'lucide-react';
-import { JOURNEY_STAGES } from '@citevia/core';
+import {
+  JOURNEY_STAGES,
+  brandRank,
+  brandSentimentScore,
+  type PromptMetricsRow,
+} from '@citevia/core';
+import { MetricChange, SentimentScore } from './ScoreBadge';
 import type {
   JourneyStage,
   Page,
@@ -53,6 +59,10 @@ export default function PromptsView({
     run ? `${path}/responses${query({ runId: run.id, limit: 100 })}` : null,
     revision,
   );
+  const scores = useApi<{ items: PromptMetricsRow[] }>(
+    run ? `${path}/prompt-metrics${query({ runId: run.id })}` : null,
+    revision,
+  );
   const [search, setSearch] = useState(''),
     [stage, setStage] = useState(''),
     [status, setStatus] = useState('active');
@@ -89,6 +99,10 @@ export default function PromptsView({
       run,
       observations.data?.items.find((r) => r.promptId === p.id),
     );
+  const scoresFor = (p: Prompt) =>
+    resultFor(p)
+      ? scores.data?.items.find((row) => row.id === p.id)
+      : undefined;
   let filtered = prompts.filter(
     (p) =>
       (!stage || p.stage === stage) &&
@@ -105,9 +119,15 @@ export default function PromptsView({
       : sort === 'section'
         ? JOURNEY_STAGES.indexOf(a.stage!) - JOURNEY_STAGES.indexOf(b.stage!)
         : sort === 'rank'
-          ? (resultFor(a)?.target?.explicitRank ?? Infinity) -
-            (resultFor(b)?.target?.explicitRank ?? Infinity)
-          : a.createdAt.localeCompare(b.createdAt),
+          ? (brandRank(resultFor(a)?.target) ?? Infinity) -
+            (brandRank(resultFor(b)?.target) ?? Infinity)
+          : sort === 'sentiment'
+            ? (brandSentimentScore(resultFor(b)?.target) ?? -1) -
+              (brandSentimentScore(resultFor(a)?.target) ?? -1)
+            : sort === 'visibility'
+              ? (scoresFor(b)?.avgVisibility ?? -1) -
+                (scoresFor(a)?.avgVisibility ?? -1)
+              : a.createdAt.localeCompare(b.createdAt),
   );
   const currentPage = Math.min(
     page,
@@ -153,9 +173,17 @@ export default function PromptsView({
         'Version',
         'Scan date',
         'Visibility (%)',
-        'Explicit rank',
+        'Rank',
+        'Sentiment score (0-100)',
         'Sentiment',
+        'Explicit recommendation rank',
         'Citations',
+        'Region',
+        'Language',
+        'Date added',
+        'Visibility change (%)',
+        'Rank change (%)',
+        'Sentiment change (%)',
       ],
       filtered.map((p) => {
         const r = resultFor(p),
@@ -170,9 +198,17 @@ export default function PromptsView({
           p.version,
           r ? run?.createdAt : undefined,
           target ? (target.mentioned ? 100 : 0) : null,
-          target?.explicitRank,
+          brandRank(target),
+          brandSentimentScore(target),
           target?.sentiment,
+          target?.explicitRank,
           r?.capturedAt ? r.citationCount : null,
+          project!.country,
+          project!.language,
+          p.createdAt,
+          scoresFor(p)?.visibilityChange,
+          scoresFor(p)?.rankChange,
+          scoresFor(p)?.sentimentChange,
         ];
       }),
     );
@@ -182,6 +218,7 @@ export default function PromptsView({
     <>
       <ErrorNotice error={account.error || error} />
       <ErrorNotice error={observations.error} />
+      <ErrorNotice error={scores.error} />
       <div className="prompts-overview">
         <div>
           <strong>
@@ -203,6 +240,13 @@ export default function PromptsView({
             : 'Results appear after your first scan.'}
         </div>
       </div>
+      {run && run.snapshot.parserVersion !== 'igeo-evidence-v2' && (
+        <p className="provider-banner">
+          This older scan uses explicit recommendation ranks. Company-appearance
+          ranks require reanalysis of its saved answers. Numeric sentiment
+          scores use the existing validated analysis.
+        </p>
+      )}
       <div className="journey-filters" aria-label="Prompt sections">
         {[
           { value: '', label: 'All sections' },
@@ -313,6 +357,8 @@ export default function PromptsView({
             <option value="text">Prompt A–Z</option>
             <option value="section">Section</option>
             <option value="rank">Rank</option>
+            <option value="sentiment">Sentiment score</option>
+            <option value="visibility">Visibility</option>
           </select>
         </div>
         {!filtered.length ? (
@@ -337,6 +383,9 @@ export default function PromptsView({
                     <th>Visibility</th>
                     <th>Rank</th>
                     <th>Sentiment</th>
+                    <th>Region</th>
+                    <th>Language</th>
+                    <th>Date added</th>
                     <th>Citations</th>
                     <th>Actions</th>
                   </tr>
@@ -395,27 +444,27 @@ export default function PromptsView({
                                 {labelize(result.status)}
                               </small>
                             )}
+                            <MetricChange
+                              value={scoresFor(p)?.visibilityChange}
+                            />
                           </td>
                           <td>
                             <span className="rank">
-                              {target?.explicitRank != null
-                                ? `#${target.explicitRank}`
+                              {brandRank(target) != null
+                                ? `#${brandRank(target)}`
                                 : '—'}
                             </span>
+                            <MetricChange value={scoresFor(p)?.rankChange} />
                           </td>
                           <td>
-                            {target ? (
-                              <Badge
-                                value={
-                                  target.mentioned
-                                    ? target.sentiment
-                                    : 'not_applicable'
-                                }
-                              />
-                            ) : (
-                              '—'
-                            )}
+                            <SentimentScore brand={target} />
+                            <MetricChange
+                              value={scoresFor(p)?.sentimentChange}
+                            />
                           </td>
+                          <td>{project.country}</td>
+                          <td>{project.language}</td>
+                          <td>{formatDate(p.createdAt)}</td>
                           <td>
                             {result?.capturedAt ? result.citationCount : '—'}
                           </td>
@@ -486,9 +535,10 @@ export default function PromptsView({
       </section>
       <p className="scan-options">
         Visibility is 100% or 0% for the single answer in the selected weekly
-        scan. Missing or failed analysis stays blank. Rank requires an explicit
-        recommendation position. Editing a prompt creates a new version; past
-        answers remain in Mentions.
+        scan. Missing or failed analysis stays blank. Rank is company appearance
+        order, matching iGEO. Sentiment is scored from 0 to 100; unknown or
+        absent brands have no sentiment score. Editing a prompt creates a new
+        version; past answers remain in Mentions.
       </p>
       {(adding || editing) && (
         <PromptEditor

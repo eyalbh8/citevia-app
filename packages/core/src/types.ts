@@ -87,6 +87,7 @@ export type RunStatus =
   | 'partial'
   | 'failed';
 export interface ScanRun {
+  reanalysisOf?: string;
   groupId?: string;
   projectId: string;
   id: string;
@@ -127,6 +128,9 @@ export interface BrandAnalysis {
   brandId: string;
   mentioned: boolean;
   explicitRank: number | null;
+  /** iGEO rank among all identified companies, including untracked alternatives. */
+  appearanceRank?: number | null;
+  sentimentScore?: number | null;
   mentionOrder: number | null;
   sentiment: Sentiment;
   evidence: EvidenceSpan[];
@@ -142,6 +146,7 @@ export interface Usage {
 }
 export interface Analysis {
   brands: BrandAnalysis[];
+  companies?: { name: string; rank: number; evidence: EvidenceSpan }[];
   parserVersion: string;
   model: string;
   createdAt: string;
@@ -223,6 +228,7 @@ export interface Metric {
 export interface Metrics {
   visibility: Metric;
   averageRank: Metric;
+  sentimentScore: Metric;
   captured: number;
   analyzed: number;
   mentioned: number;
@@ -312,7 +318,7 @@ export const TERMINAL_STATUSES: ResultStatus[] = [
 export const isTerminal = (status: ResultStatus) =>
   TERMINAL_STATUSES.includes(status);
 export const RETENTION_DAYS = 400;
-export const PARSER_VERSION = 'brand-evidence-v1';
+export const PARSER_VERSION = 'igeo-evidence-v2';
 
 export interface Brandbook {
   about: string;

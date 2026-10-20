@@ -9,11 +9,13 @@ import type {
   SourceRow,
 } from './types.js';
 import { domainForUrl, isOwnedDomain, normalizeUrl, sourceId } from './urls.js';
+import { brandRank, brandSentimentScore } from './scoring.js';
 
 export function emptyMetrics(): Metrics {
   return {
     visibility: { value: null, numerator: 0, denominator: 0 },
     averageRank: { value: null, numerator: 0, denominator: 0 },
+    sentimentScore: { value: null, numerator: 0, denominator: 0 },
     captured: 0,
     analyzed: 0,
     mentioned: 0,
@@ -41,13 +43,15 @@ export function metricsFromResults(results: PromptResult[]): Metrics {
     const target = result.target;
     if (target.mentioned) metrics.mentioned++;
     metrics.sentiment[target.mentioned ? target.sentiment : 'not_applicable']++;
-    if (
-      target.mentioned &&
-      target.explicitRank !== null &&
-      target.explicitRank > 0
-    ) {
+    const score = brandSentimentScore(target);
+    if (score !== null) {
+      metrics.sentimentScore.numerator += score;
+      metrics.sentimentScore.denominator++;
+    }
+    const rank = brandRank(target);
+    if (rank !== null && rank > 0) {
       metrics.ranked++;
-      metrics.averageRank.numerator += target.explicitRank;
+      metrics.averageRank.numerator += rank;
     }
   }
   metrics.visibility = {
@@ -60,6 +64,11 @@ export function metricsFromResults(results: PromptResult[]): Metrics {
   metrics.averageRank.denominator = metrics.ranked;
   metrics.averageRank.value = metrics.ranked
     ? metrics.averageRank.numerator / metrics.ranked
+    : null;
+  metrics.sentimentScore.value = metrics.sentimentScore.denominator
+    ? Math.round(
+        metrics.sentimentScore.numerator / metrics.sentimentScore.denominator,
+      )
     : null;
   return metrics;
 }

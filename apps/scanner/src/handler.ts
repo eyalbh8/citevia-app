@@ -13,6 +13,7 @@ import { OpenAIOnboardingProvider } from './onboarding-provider.js';
 import { OnboardingEngine } from './onboarding-engine.js';
 import { syncProjectSchedule } from '../../api/src/scheduler.js';
 import { ProviderError } from './provider.js';
+import { reanalyzeCapturedRun } from './reanalysis.js';
 
 const id = z
   .string()
@@ -120,8 +121,31 @@ export const handler = async (
     | SQSEvent
     | ScanMessage
     | { kind: 'database:migrate' }
+    | {
+        kind: 'scan:reanalyze';
+        projectId: string;
+        runId: string;
+        requestId: string;
+      }
     | { kind: 'users:bootstrap-admin'; userId: string },
 ) => {
+  if ('kind' in event && event.kind === 'scan:reanalyze') {
+    const input = z
+      .object({
+        kind: z.literal('scan:reanalyze'),
+        projectId: id,
+        runId: id,
+        requestId: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/),
+      })
+      .strict()
+      .parse(event);
+    return reanalyzeCapturedRun(
+      createAwsRuntime(),
+      input.projectId,
+      input.runId,
+      input.requestId,
+    );
+  }
   // SQS payload validation rejects maintenance events. Only direct IAM-authorized invocation can migrate.
   if ('kind' in event && event.kind === 'database:migrate') {
     await migrateDatabase(productionDatabase());

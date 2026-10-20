@@ -1,4 +1,5 @@
-import { PROVIDER_LABELS, snapshotProvider } from '@citevia/core';
+import { PROVIDER_LABELS, snapshotProvider, brandRank } from '@citevia/core';
+import { SentimentScore } from './ScoreBadge';
 import type { ReactNode } from 'react';
 import {
   BookOpen,
@@ -76,6 +77,12 @@ function DetailContent({ data }: { data: ResponseDetail }) {
           </strong>
         </div>
         <div>
+          <small>Rank among companies</small>
+          <strong>
+            {brandRank(target) != null ? `#${brandRank(target)}` : '—'}
+          </strong>
+        </div>
+        <div>
           <small>Explicit rank</small>
           <strong>
             {target?.explicitRank ? `#${target.explicitRank}` : 'Not ranked'}
@@ -89,13 +96,7 @@ function DetailContent({ data }: { data: ResponseDetail }) {
         </div>
         <div>
           <small>Sentiment</small>
-          {target ? (
-            <Badge
-              value={target.mentioned ? target.sentiment : 'not_applicable'}
-            />
-          ) : (
-            <strong>—</strong>
-          )}
+          <SentimentScore brand={target} />
         </div>
       </div>
       {result.error && (
@@ -213,6 +214,8 @@ function DetailContent({ data }: { data: ResponseDetail }) {
               sentiment are analyzed with OpenAI. Highlighting is for
               navigation; rank and sentiment come from validated evidence. This
               answer is preserved with its original scan configuration.
+              {run.reanalysisOf &&
+                ' This report reanalyzes saved answers from an earlier scan; no new collection calls were made.'}
             </span>
           </div>
         </>

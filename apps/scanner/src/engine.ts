@@ -325,6 +325,21 @@ export class Scanner {
       const captureKey = current.captureKey ?? captureKeyFor(current);
       answer = await artifacts.get<CapturedAnswer>(captureKey);
       if (!answer) {
+        if (run.reanalysisOf)
+          throw new ProviderError(
+            'saved_answer_missing',
+            'The saved answer is unavailable. Reanalysis never purchases a replacement answer.',
+            false,
+          );
+        if (
+          run.snapshot.parserVersion === 'igeo-evidence-v2' &&
+          existing.attempts > 0
+        )
+          throw new ProviderError(
+            'scan_call_uncertain',
+            'A previous API attempt has no saved answer. Retry explicitly after review.',
+            false,
+          );
         answer = await provider.collect(current.prompt.text, run.snapshot);
         await artifacts.put(captureKey, answer);
       }
@@ -369,6 +384,15 @@ export class Scanner {
       const analysisKey = current.analysisKey ?? analysisKeyFor(current);
       let analysis = await artifacts.get<Analysis>(analysisKey);
       if (!analysis) {
+        if (
+          run.snapshot.parserVersion === 'igeo-evidence-v2' &&
+          existing.attempts > 0
+        )
+          throw new ProviderError(
+            'analysis_call_uncertain',
+            'A previous analysis attempt has no saved result. Retry explicitly after review.',
+            false,
+          );
         analysis = await provider.extract(answer, run.snapshot);
         await artifacts.put(analysisKey, analysis);
       }
@@ -404,6 +428,7 @@ export class Scanner {
       }
       const retryable =
         failure.retryable &&
+        run.snapshot.parserVersion !== 'igeo-evidence-v2' &&
         current.attempts < MAX_ATTEMPTS &&
         Date.parse(run.deadlineAt) > this.now().getTime();
       const next: PromptResult = {
