@@ -7,6 +7,16 @@ Parameters:
     Type: String
     Description: Production HTTPS origin without a trailing slash, such as https://app.example.com.
     AllowedPattern: 'https://[A-Za-z0-9.-]+(:[0-9]+)?'
+  ApiDomainName:
+    Type: String
+    Default: ''
+    Description: Optional public API hostname, such as api.citevia.io. Leave empty to use the API Gateway hostname.
+    AllowedPattern: '^$|[a-z0-9]([a-z0-9.-]*[a-z0-9])?'
+  ApiHostedZoneId:
+    Type: String
+    Default: ''
+    Description: Route 53 hosted zone that should receive the API hostname. Required when ApiDomainName is set.
+    AllowedPattern: '^$|Z[A-Z0-9]+'
   DevOrigin:
     Type: String
     Default: http://localhost:5173
@@ -78,6 +88,7 @@ Conditions:
   IncludeDevOrigin: !Equals [!Ref EnableDevOrigin, 'true']
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
   UseReservedConcurrency: !Equals [!Ref EnableReservedConcurrency, 'true']
+  HasApiDomain: !Not [!Equals [!Ref ApiDomainName, '']]
 
 Globals:
   Function:
@@ -315,6 +326,16 @@ Resources:
     Properties:
       RetentionInDays: 14
 
+  ApiCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: HasApiDomain
+    Properties:
+      DomainName: !Ref ApiDomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref ApiDomainName
+          HostedZoneId: !Ref ApiHostedZoneId
+
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -332,6 +353,33 @@ Resources:
       AccessLogSettings:
         DestinationArn: !GetAtt ApiAccessLogs.Arn
         Format: '{"requestId":"$context.requestId","status":"$context.status","routeKey":"$context.routeKey","responseLength":"$context.responseLength","integrationError":"$context.integrationErrorMessage"}'
+
+  ApiDomain:
+    Type: AWS::ApiGatewayV2::DomainName
+    Condition: HasApiDomain
+    Properties:
+      DomainName: !Ref ApiDomainName
+      DomainNameConfigurations:
+        - CertificateArn: !Ref ApiCertificate
+          EndpointType: REGIONAL
+  ApiMapping:
+    Type: AWS::ApiGatewayV2::ApiMapping
+    Condition: HasApiDomain
+    Properties:
+      ApiId: !Ref HttpApi
+      DomainName: !Ref ApiDomain
+      Stage: $default
+  ApiDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasApiDomain
+    Properties:
+      HostedZoneId: !Ref ApiHostedZoneId
+      Name: !Ref ApiDomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApiDomain.RegionalDomainName
+        HostedZoneId: !GetAtt ApiDomain.RegionalHostedZoneId
+        EvaluateTargetHealth: false
 
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -533,7 +581,10 @@ Resources:
 
 Outputs:
   ApiUrl:
-    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
+    Value: !If
+      - HasApiDomain
+      - !Sub 'https://${ApiDomainName}'
+      - !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
   DescopeProjectId:
     Value: !Ref DescopeProjectId
   DescopeBaseUrl:
