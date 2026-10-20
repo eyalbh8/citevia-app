@@ -8,7 +8,7 @@ describe('bootstrap input and project initialization', () => {
     const print = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await main(['--help']);
-      expect(print).toHaveBeenCalledWith(expect.stringContaining('never creates Cognito users'));
+      expect(print).toHaveBeenCalledWith(expect.stringContaining('never creates users'));
     } finally { print.mockRestore(); }
   });
 

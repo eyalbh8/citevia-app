@@ -22,9 +22,11 @@ type Account = Project & {
 export default function AccountsView({
   onOpen,
   providerReady,
+  canCreate,
   onChanged,
   notify,
 }: {
+  canCreate: boolean;
   providerReady: boolean;
   onOpen: (id: string) => void;
   onChanged: () => void;
@@ -174,16 +176,18 @@ export default function AccountsView({
             brandbook, prepares 50 prompts and starts tracking.
           </p>
         </div>
-        <button
-          className="button button-primary"
-          onClick={() => setShowForm((value) => !value)}
-        >
-          <Plus size={14} />
-          {showForm ? 'Close form' : 'New account'}
-        </button>
+        {canCreate && (
+          <button
+            className="button button-primary"
+            onClick={() => setShowForm((value) => !value)}
+          >
+            <Plus size={14} />
+            {showForm ? 'Close form' : 'New account'}
+          </button>
+        )}
       </div>
       <ErrorNotice error={error || loadError} />
-      {showForm && (
+      {canCreate && showForm && (
         <section className="card onboarding-form">
           <div className="card-header">
             <div>
@@ -421,15 +425,23 @@ export default function AccountsView({
       ) : !data?.items.length ? (
         <section className="card">
           <Empty
-            title="Create your first account"
-            description="Add a website and company name. The system prepares the brandbook, prompts and scanning schedule."
+            title={
+              canCreate ? 'Create your first account' : 'No accounts assigned'
+            }
+            description={
+              canCreate
+                ? 'Add a website and company name. The system prepares the brandbook, prompts and scanning schedule.'
+                : 'A system administrator can assign the accounts you should see.'
+            }
           >
-            <button
-              className="button button-primary"
-              onClick={() => setShowForm(true)}
-            >
-              New account
-            </button>
+            {canCreate && (
+              <button
+                className="button button-primary"
+                onClick={() => setShowForm(true)}
+              >
+                New account
+              </button>
+            )}
           </Empty>
         </section>
       ) : (

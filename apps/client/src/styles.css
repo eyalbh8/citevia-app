@@ -13,3 +13,7 @@
 
 /* Keep all workspace links reachable on shorter displays. */
 .sidebar { overflow-y: auto; }
+.access-section { border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-direction: column; gap: 16px; }
+.user-account-row { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); padding: 12px; border-radius: 9px; }
+.user-account-row strong { flex: 1; font-size: 12px; overflow-wrap: anywhere; }
+.user-account-row select { border: 1px solid var(--line); padding: 8px; background: white; border-radius: 6px; }

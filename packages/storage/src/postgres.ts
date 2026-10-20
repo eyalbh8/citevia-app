@@ -10,16 +10,20 @@ import {
 } from '@citevia/core';
 import type { Repository } from './contracts.js';
 import { uuidFor, type SqlDatabase, type SqlSession } from './sql.js';
+import { AccessError, PostgresUsers } from './users.js';
 
 const data = <T>(rows: Record<string, unknown>[]): T | null =>
   rows.length ? (rows[0].data as T) : null;
-export class PostgresRepository implements Repository {
-  constructor(readonly db: SqlDatabase) {}
+export class PostgresRepository extends PostgresUsers implements Repository {
+  constructor(db: SqlDatabase) {
+    super(db);
+  }
   async listProjectSummaries(
     userId: string,
     options: { offset: number; limit: number; query?: string },
   ) {
-    const from = `FROM citevia_projects p JOIN accounts a ON a.id=p.account_id JOIN user_accounts ua ON ua.account_id=p.account_id JOIN citevia_identities i ON i.user_id=ua.user_id WHERE i.subject=$1 AND ($2='' OR a.title ILIKE '%'||$2||'%' OR array_to_string(a.domains,' ') ILIKE '%'||$2||'%')`;
+    const admin = `EXISTS(SELECT 1 FROM citevia_identities ai JOIN users au ON au.id=ai.user_id WHERE ai.subject=$1 AND ai.provider='descope' AND au.is_system_admin AND NOT ai.disabled)`;
+    const from = `FROM citevia_projects p JOIN accounts a ON a.id=p.account_id LEFT JOIN user_accounts ua ON ua.account_id=p.account_id AND ua.user_id=(SELECT user_id FROM citevia_identities WHERE subject=$1) WHERE (ua.user_id IS NOT NULL OR ${admin}) AND ($2='' OR a.title ILIKE '%'||$2||'%' OR array_to_string(a.domains,' ') ILIKE '%'||$2||'%')`;
     const args = [userId, options.query || ''];
     const total = Number(
       (await this.db.query(`SELECT count(*)::int AS count ${from}`, args))
@@ -27,7 +31,7 @@ export class PostgresRepository implements Repository {
     );
     // Select a small metadata page before reading the larger JSON workflow documents.
     const { rows } = await this.db.query(
-      `WITH selected AS (SELECT p.id,ua.roles ${from} ORDER BY a.created_at DESC,p.id LIMIT $3 OFFSET $4)
+      `WITH selected AS (SELECT p.id,CASE WHEN ${admin} THEN ARRAY['OWNER'] ELSE ua.roles END AS roles ${from} ORDER BY a.created_at DESC,p.id LIMIT $3 OFFSET $4)
       SELECT p.data-'prompts'-'brandbook' AS data,s.roles,
         (SELECT count(*)::int FROM prompts WHERE account_id=p.account_id AND is_active=true) AS prompt_count,
         CASE WHEN j.id IS NOT NULL THEN jsonb_build_object('status',j.status,'step',j.data->>'step','error',j.data->'error','firstRunId',j.data->'firstRunId') ELSE NULL END AS job
@@ -64,15 +68,17 @@ export class PostgresRepository implements Repository {
     );
   }
   async listProjects(userId: string) {
+    const admin = (await this.getUser(userId))?.isSystemAdmin === true;
     const { rows } = await this.db.query(
-      `SELECT p.data, ua.roles FROM citevia_projects p JOIN user_accounts ua ON ua.account_id=p.account_id JOIN citevia_identities i ON i.user_id=ua.user_id WHERE i.subject=$1 ORDER BY p.data->>'createdAt' DESC`,
-      [userId],
+      `SELECT p.data, ua.roles FROM citevia_projects p LEFT JOIN user_accounts ua ON ua.account_id=p.account_id AND ua.user_id=(SELECT user_id FROM citevia_identities WHERE subject=$1) WHERE ($2 OR ua.user_id IS NOT NULL) ORDER BY p.data->>'createdAt' DESC`,
+      [userId, admin],
     );
     return rows.map((row) => ({
       ...(row.data as Project),
-      role: (row.roles as string[]).includes('OWNER')
-        ? ('owner' as const)
-        : ('viewer' as const),
+      role:
+        admin || ((row.roles as string[]) || []).includes('OWNER')
+          ? ('owner' as const)
+          : ('viewer' as const),
     }));
   }
   private async syncProject(tx: SqlSession, p: Project) {
@@ -204,15 +210,17 @@ export class PostgresRepository implements Repository {
     });
   }
   private async membership(tx: SqlSession, m: Membership) {
-    const userId = uuidFor(`user:${m.userId}`);
-    await tx.query(
-      `INSERT INTO users(id,email,updated_at) VALUES($1,$2,now()) ON CONFLICT(id) DO NOTHING`,
-      [userId, `${userId}@identity.invalid`],
+    const identity = await tx.query(
+      `SELECT user_id FROM citevia_identities WHERE subject=$1 AND provider='descope'`,
+      [m.userId],
     );
-    await tx.query(
-      'INSERT INTO citevia_identities(subject,user_id) VALUES($1,$2) ON CONFLICT(subject) DO NOTHING',
-      [m.userId, userId],
-    );
+    if (!identity.rows[0])
+      throw new AccessError(
+        404,
+        'USER_NOT_FOUND',
+        'Register the verified Descope user before assigning an account.',
+      );
+    const userId = identity.rows[0].user_id;
     await tx.query(
       'INSERT INTO user_accounts(id,user_id,account_id,roles,updated_at) VALUES($1,$2,$3,$4,now()) ON CONFLICT(user_id,account_id) DO UPDATE SET roles=excluded.roles',
       [

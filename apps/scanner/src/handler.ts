@@ -56,8 +56,13 @@ export function createHandler(engine: Scanner, deadLetterArn = process.env.DEAD_
   };
 }
 
-export const handler = async (event: SQSEvent | ScanMessage | {kind:'database:migrate'}) => {
+export const handler = async (event: SQSEvent | ScanMessage | {kind:'database:migrate'} | {kind:'users:bootstrap-admin';userId:string}) => {
   // SQS payload validation rejects maintenance events. Only direct IAM-authorized invocation can migrate.
   if('kind'in event&&event.kind==='database:migrate'){await migrateDatabase(productionDatabase());return {migrated:true};}
+  if('kind'in event&&event.kind==='users:bootstrap-admin'){
+    const input=z.object({kind:z.literal('users:bootstrap-admin'),userId:z.string().uuid()}).strict().parse(event);
+    await createAwsRuntime().repository.bootstrapAdmin(input.userId);
+    return {adminBootstrapped:true};
+  }
   return createHandler(awsScanner())(event);
 };

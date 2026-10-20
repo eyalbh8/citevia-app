@@ -15,13 +15,21 @@ Parameters:
     Type: String
     Default: 'false'
     AllowedValues: ['true', 'false']
-    Description: Enable localhost CORS and OAuth redirects only for a development stack.
-  CognitoDomainPrefix:
+    Description: Enable localhost CORS only for a development stack.
+  DescopeProjectId:
     Type: String
-    Description: Globally unique Cognito login domain prefix; lowercase letters, numbers and hyphens.
-    MinLength: 3
-    MaxLength: 63
-    AllowedPattern: '[a-z0-9][a-z0-9-]*[a-z0-9]'
+    Description: Descope project ID used by both the React SDK and API session validation.
+    MinLength: 1
+    MaxLength: 100
+    AllowedPattern: '[A-Za-z0-9_-]+'
+  DescopeSecretArn:
+    Type: String
+    Description: Existing Secrets Manager secret with DESCOPE_MANAGEMENT_KEY (or a raw key), using aws/secretsmanager encryption. API uses it only for user lookup.
+    AllowedPattern: 'arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  DescopeBaseUrl:
+    Type: String
+    Default: https://api.descope.com
+    AllowedPattern: 'https://[A-Za-z0-9.-]+(:[0-9]+)?'
   OpenAiSecretArn:
     Type: String
     Description: Existing Secrets Manager secret ARN containing OPENAI_API_KEY (JSON) or a raw API key. The secret must use the default aws/secretsmanager KMS key.
@@ -289,66 +297,6 @@ Resources:
                 Action: sqs:SendMessage
                 Resource: [!GetAtt ScanQueue.Arn, !GetAtt ScanDeadLetterQueue.Arn]
 
-  UserPool:
-    Type: AWS::Cognito::UserPool
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      UserPoolTier: ESSENTIALS
-      UsernameAttributes: [email]
-      AutoVerifiedAttributes: [email]
-      UsernameConfiguration: {CaseSensitive: false}
-      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
-      AccountRecoverySetting:
-        RecoveryMechanisms:
-          - {Name: verified_email, Priority: 1}
-      Policies:
-        PasswordPolicy:
-          MinimumLength: 12
-          RequireLowercase: true
-          RequireUppercase: true
-          RequireNumbers: true
-          RequireSymbols: true
-          TemporaryPasswordValidityDays: 7
-
-  UserPoolClient:
-    Type: AWS::Cognito::UserPoolClient
-    Properties:
-      UserPoolId: !Ref UserPool
-      GenerateSecret: false
-      SupportedIdentityProviders: [COGNITO]
-      AllowedOAuthFlowsUserPoolClient: true
-      AllowedOAuthFlows: [code]
-      AllowedOAuthScopes: [openid, email, profile]
-      CallbackURLs:
-        - !Sub '${FrontendOrigin}/auth/callback'
-        - !If [IncludeDevOrigin, !Sub '${DevOrigin}/auth/callback', !Ref 'AWS::NoValue']
-      LogoutURLs:
-        - !Sub '${FrontendOrigin}/'
-        - !If [IncludeDevOrigin, !Sub '${DevOrigin}/', !Ref 'AWS::NoValue']
-      DefaultRedirectURI: !Sub '${FrontendOrigin}/auth/callback'
-      PreventUserExistenceErrors: ENABLED
-      EnableTokenRevocation: true
-      AccessTokenValidity: 60
-      IdTokenValidity: 60
-      RefreshTokenValidity: 1
-      TokenValidityUnits: {AccessToken: minutes, IdToken: minutes, RefreshToken: days}
-
-  UserPoolDomain:
-    Type: AWS::Cognito::UserPoolDomain
-    Properties:
-      UserPoolId: !Ref UserPool
-      Domain: !Ref CognitoDomainPrefix
-      ManagedLoginVersion: 2
-
-  LoginBranding:
-    Type: AWS::Cognito::ManagedLoginBranding
-    DependsOn: UserPoolDomain
-    Properties:
-      UserPoolId: !Ref UserPool
-      ClientId: !Ref UserPoolClient
-      UseCognitoProvidedValues: true
-
   ApiAccessLogs:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -365,15 +313,6 @@ Resources:
         AllowHeaders: [Authorization, Content-Type, Idempotency-Key]
         AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
         MaxAge: 600
-      Auth:
-        DefaultAuthorizer: CognitoJwt
-        Authorizers:
-          CognitoJwt:
-            IdentitySource: '$request.header.Authorization'
-            AuthorizationScopes: [openid]
-            JwtConfiguration:
-              audience: [!Ref UserPoolClient]
-              issuer: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${UserPool}'
       DefaultRouteSettings:
         ThrottlingBurstLimit: 50
         ThrottlingRateLimit: 25
@@ -393,6 +332,9 @@ Resources:
       Timeout: 29
       Environment:
         Variables:
+          DESCOPE_PROJECT_ID: !Ref DescopeProjectId
+          DESCOPE_SECRET_ARN: !Ref DescopeSecretArn
+          DESCOPE_BASE_URL: !Ref DescopeBaseUrl
           ALLOWED_ORIGIN: !Ref FrontendOrigin
           SCHEDULER_ROLE_ARN: !GetAtt SchedulerQueueRole.Arn
           SCHEDULE_GROUP: !Ref ProjectScheduleGroup
@@ -403,7 +345,7 @@ Resources:
           Statement:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
-              Resource: !GetAtt Database.MasterUserSecret.SecretArn
+              Resource: [!GetAtt Database.MasterUserSecret.SecretArn, !Ref DescopeSecretArn]
             - Effect: Allow
               Action: s3:GetObject
               Resource: !Sub '${EvidenceBucket.Arn}/*'
@@ -579,16 +521,10 @@ Resources:
 Outputs:
   ApiUrl:
     Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
-  UserPoolId:
-    Value: !Ref UserPool
-  CognitoClientId:
-    Value: !Ref UserPoolClient
-  CognitoDomain:
-    Value: !Sub 'https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com'
-  RedirectUri:
-    Value: !Sub '${FrontendOrigin}/auth/callback'
-  LogoutUri:
-    Value: !Sub '${FrontendOrigin}/'
+  DescopeProjectId:
+    Value: !Ref DescopeProjectId
+  DescopeBaseUrl:
+    Value: !Ref DescopeBaseUrl
   DatabaseHost:
     Value: !GetAtt Database.Endpoint.Address
   DatabaseSecretArn:

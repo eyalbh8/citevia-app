@@ -23,7 +23,10 @@ import {
   type ScanRun,
   type SourceRow,
 } from '@citevia/core';
-import type { Runtime } from '@citevia/storage';
+import { AccessError, type Runtime } from '@citevia/storage';
+import { verifiedIdentitySchema, type VerifiedIdentity } from '@citevia/core';
+import { AuthenticationError } from './descope.js';
+import { adminRoute } from './admin.js';
 import { runIdFor } from '../../scanner/src/engine.js';
 import { brandbookUpdateSchema } from '@citevia/core';
 import { createAccounts } from './onboarding.js';
@@ -38,7 +41,7 @@ class HttpError extends Error {
   }
 }
 export interface ApiOptions {
-  auth: 'local' | 'aws';
+  lookupUser?: (email: string) => Promise<VerifiedIdentity>;
   mode: 'live';
   providerConfigured?: boolean;
   syncSchedule?: (project: Project) => Promise<void>;
@@ -149,7 +152,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
   }
   return async (
     request: Request,
-    identity?: { userId: string },
+    identity?: VerifiedIdentity,
   ): Promise<Response> => {
     try {
       const url = new URL(request.url),
@@ -158,36 +161,50 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       const path = url.pathname.replace(/\/$/, '');
       if (path === '/health' && method === 'GET')
         return response({ status: 'ok', service: 'citevia-api' });
-      let userId = identity?.userId;
-      if (options.auth === 'local') {
-        if (process.env.AWS_LAMBDA_FUNCTION_NAME)
-          throw new HttpError(
-            500,
-            'INVALID_AUTH_CONFIGURATION',
-            'Local authentication is disabled in Lambda',
-          );
-        if (request.headers.get('authorization') !== 'Bearer local-development')
-          throw new HttpError(401, 'UNAUTHENTICATED', 'Sign in to continue');
-        userId = 'local-user';
-      }
-      if (!userId)
-        throw new HttpError(401, 'UNAUTHENTICATED', 'Sign in to continue');
+      const parsedIdentity = verifiedIdentitySchema.safeParse(identity);
+      if (!parsedIdentity.success)
+        throw new HttpError(
+          401,
+          'UNAUTHENTICATED',
+          'Sign in through Descope to continue.',
+        );
+      const user = await repository.syncUser(parsedIdentity.data, true);
+      if (user.disabled)
+        throw new HttpError(
+          403,
+          'USER_DISABLED',
+          'Your access has been disabled. Contact a system administrator.',
+        );
+      const userId = user.subject;
+      if (path === '/v1/me' && method === 'GET') return response(user);
+      if (path.startsWith('/v1/admin/'))
+        return await adminRoute(request, path, query, {
+          repository,
+          user,
+          lookup: options.lookupUser,
+          body,
+          paging,
+          json: response,
+        });
+      if (path === '/v1/onboarding/accounts' && !user.isSystemAdmin)
+        throw new HttpError(
+          403,
+          'FORBIDDEN',
+          'Only system administrators can create accounts.',
+        );
       if (path === '/v1/runtime' && method === 'GET')
         return response({
           providerConfigured: options.providerConfigured !== false,
           mode: 'live',
         });
-      if (
-        options.providerConfigured === false &&
-        method === 'POST' &&
-        (path === '/v1/onboarding/accounts' ||
-          /\/(runs|onboarding\/retry|retry-failed)$/.test(path))
-      )
-        throw new HttpError(
-          503,
-          'OPENAI_NOT_CONFIGURED',
-          'Configure OPENAI_API_KEY or OPENAI_SECRET_ARN in .env and restart the local server to enable generation and scans.',
-        );
+      const requireProvider = () => {
+        if (options.providerConfigured === false)
+          throw new HttpError(
+            503,
+            'OPENAI_NOT_CONFIGURED',
+            'Configure OPENAI_API_KEY or OPENAI_SECRET_ARN and restart the server to enable generation and scans.',
+          );
+      };
       if (path === '/v1/projects' && method === 'GET') {
         const q = query.get('q') || '';
         if (q.length > 200)
@@ -205,6 +222,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         });
       }
       if (path === '/v1/onboarding/accounts' && method === 'POST') {
+        requireProvider();
         const key = request.headers.get('idempotency-key');
         if (!key || !/^[A-Za-z0-9_-]{8,100}$/.test(key))
           throw new HttpError(
@@ -236,7 +254,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       if (!match) throw new HttpError(404, 'NOT_FOUND', 'Endpoint not found');
       const projectId = identifier.parse(decodeURIComponent(match[1])),
         tail = match[2] || '';
-      const member = await repository.getMembership(projectId, userId);
+      const member = user.isSystemAdmin
+        ? { projectId, userId, role: 'owner' as const }
+        : await repository.getMembership(projectId, userId);
       if (!member) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
       const stored = await repository.getProject(projectId);
       if (!stored) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
@@ -255,6 +275,13 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         if (!run) throw new HttpError(404, 'RUN_NOT_FOUND', 'No scan found');
         return run;
       };
+      if (
+        method === 'POST' &&
+        (tail === 'runs' ||
+          tail === 'onboarding/retry' ||
+          /^runs\/[^/]+\/retry-failed$/.test(tail))
+      )
+        requireProvider();
       if (tail === 'settings' && method === 'GET') return response(project);
       if (tail === 'onboarding' && method === 'GET')
         return response({
@@ -832,7 +859,11 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       }
       throw new HttpError(404, 'NOT_FOUND', 'Endpoint not found');
     } catch (error) {
-      if (error instanceof HttpError)
+      if (
+        error instanceof HttpError ||
+        error instanceof AccessError ||
+        error instanceof AuthenticationError
+      )
         return response(
           { error: { code: error.code, message: error.message } },
           error.status,

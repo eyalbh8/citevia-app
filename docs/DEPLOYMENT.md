@@ -8,31 +8,31 @@ The repository includes an AWS SAM template for exactly two application Lambdas:
 2. Choose the frontend HTTPS origin, create the OpenAI secret in the backend region and verify AWS identity with `aws sts get-caller-identity`.
 3. Build/test and deploy the SAM backend. Record its outputs.
 4. Invoke the scanner database migration and verify its result before creating customers.
-5. Configure and publish the static client with Cognito/API outputs, using Git-connected Amplify or a manual upload below. If the assigned origin changes, redeploy the backend with the final `FrontendOrigin` and rebuild the client.
-6. Create the operator in Cognito, sign in, onboard a real customer, inspect its first scan and confirm its weekly schedule in EventBridge Scheduler.
+5. Configure and publish the static client with Descope/API settings, using Git-connected Amplify or a manual upload below. If the assigned origin changes, redeploy the backend with the final `FrontendOrigin` and rebuild the client.
+6. Sign in through Descope, establish the first system administrator with the IAM bootstrap command, onboard a real customer, assign its users, inspect its first scan and confirm its weekly schedule in EventBridge Scheduler.
 
 The application does not ship customer records or populate AWS from the local database. AWS starts empty. Keep the local `.env`, database files and raw evidence out of client build archives.
 
 ## Architecture and deployment boundaries
 
 - Amplify Hosting serves `apps/client/dist` and redirects application routes to `index.html`.
-- Cognito managed login uses authorization code flow with PKCE. It is an invite-only pool, with a public app client and no client secret. The API requires a JWT access token with `openid` scope and checks project membership on each request.
-- API Gateway HTTP API invokes the API Lambda. The API can manage project schedules but cannot read the OpenAI secret.
+- Descope React SDK provides login and session refresh. Every protected HTTP request is verified by the Descope Node SDK inside the API Lambda, including its project audience, then matched to a real active verified Descope profile. Database users, system-admin flags and account memberships determine access. There is no extra authorizer Lambda and no local bypass. See [authentication](AUTHENTICATION.md).
+- API Gateway HTTP API invokes the API Lambda. The API can manage project schedules and read its separate Descope user-lookup secret, but cannot read the OpenAI secret.
 - Each enabled project has an EventBridge Scheduler schedule that enqueues `{ "kind": "kickoff", "projectId": "…", "scheduledAt": "<aws.scheduler.scheduled-time>" }`. The stable scheduled time makes repeated deliveries refer to the same run.
 - SQS feeds the scanner one message per invocation, with 10 concurrent queue workers by default. A separate EventBridge rule invokes the same scanner with `{ "kind": "reconcile" }` every 15 minutes to recover interrupted work.
-- Aurora PostgreSQL stores the iGEO-compatible tables and versioned workflow state. Both Lambdas connect over TLS from private VPC subnets; a NAT gateway provides outbound OpenAI/AWS access. S3 stores private raw evidence. The database, evidence bucket and Cognito pool are retained on stack deletion.
+- Aurora PostgreSQL stores the iGEO-compatible tables and versioned workflow state. Both Lambdas connect over TLS from private VPC subnets; a NAT gateway provides outbound OpenAI/AWS access. S3 stores private raw evidence. The database and evidence bucket are retained on stack deletion. Descope is configured outside this stack.
 
 The template provisions a private Aurora PostgreSQL Serverless v2 writer, two private subnets across availability zones, one public NAT gateway, and exactly two application Lambdas. Both Lambda bundles include their dependencies and run on Node.js 22 / ARM64. The database is encrypted, deletion-protected and not publicly reachable. The single NAT gateway is a deliberate availability tradeoff for this MVP; production teams can add a NAT gateway per availability zone and an Aurora reader for stronger failover. The previous DynamoDB source is preserved only in `infra/dynamodb-template.reference.yaml`; it is not used by the current application.
 
 ## Prerequisites
 
 1. Node.js 22, AWS CLI v2, and a current AWS SAM CLI with `sam validate --lint` support. Authenticate to the intended AWS account using your organization's normal SSO process.
-2. An AWS region supporting the resources in `infra/template.yaml`, including Cognito managed login. Use the same region for the backend and its Secrets Manager secret.
+2. An AWS region supporting the resources in `infra/template.yaml`, Use the same region for the backend and its Secrets Manager secret.
 3. An OpenAI project with billing and access to the configured Responses API models and web search. Set a project budget in OpenAI before enabling recurring scans. Model access and the generated output must be verified with a real small scan in this account.
 4. A known production HTTPS frontend origin, without a trailing slash. An Amplify branch URL is sufficient; a custom domain is optional.
-5. A unique Cognito domain prefix. A prefix such as `company-citevia-production` becomes `https://company-citevia-production.auth.REGION.amazoncognito.com`.
+5. A Descope project, a published login flow and a server management key permitting the required user lookups. Configure the production frontend origin in that project. The project ID and base URL must match between the browser and API.
 
-Create a Secrets Manager secret using the console, with either the raw OpenAI key or JSON containing `OPENAI_API_KEY`. Use the default `aws/secretsmanager` encryption key. Save the secret ARN for deployment. Do not put the API key in a template, GitHub variable, Amplify environment variable, or Git repository. A customer-managed KMS key requires an additional scoped `kms:Decrypt` permission on the scanner role and a matching key policy.
+Create separate Secrets Manager secrets using the console: one with the raw OpenAI key or JSON containing `OPENAI_API_KEY`, and one with the Descope management key or JSON containing `DESCOPE_MANAGEMENT_KEY`. Use the default `aws/secretsmanager` encryption key. Save the secret ARN for deployment. Do not put the API key in a template, GitHub variable, Amplify environment variable, or Git repository. A customer-managed KMS key requires an additional scoped `kms:Decrypt` permission on the corresponding Lambda role (scanner for OpenAI, API for Descope) and a matching key policy.
 
 ## Build and deploy the backend
 
@@ -50,7 +50,9 @@ sam deploy --template-file infra/template.yaml --guided --capabilities CAPABILIT
 The build writes `dist/api/index.mjs` and `dist/scanner/index.mjs`. The template packages those directories directly; do not run `sam build` over application source or discard the client artifact. Give `sam deploy --guided` a stack name such as `citevia-production`, your region, and these parameter values:
 
 - `FrontendOrigin`: the exact production client origin.
-- `CognitoDomainPrefix`: your unique prefix.
+- `DescopeProjectId`: the public project ID.
+- `DescopeSecretArn`: the existing server-only user-lookup key secret ARN.
+- `DescopeBaseUrl`: the project API/custom domain URL, default `https://api.descope.com`. Use the matching value in the browser.
 - `OpenAiSecretArn`: the ARN of the existing secret, never its value.
 - `GenerationModel` and `ExtractionModel`: defaults are `gpt-4.1-2025-04-14` and `gpt-4.1-mini-2025-04-14`. Check availability with your OpenAI project before accepting them.
 - `AlertEmail`: an optional operations email. After deployment, confirm the SNS subscription email; alarms exist without an email, but notifications do not.
@@ -61,7 +63,7 @@ The build writes `dist/api/index.mjs` and `dist/scanner/index.mjs`. The template
 - `MaxAccountsPerOwner`: default 100; configurable up to 10,000. This is an ownership cap, not a throughput promise.
 - `AuroraEngineVersion`: default 16.9. Verify the PostgreSQL 16 minor is available in your region before deploying. Aurora scales from 1 to 8 ACUs in this template.
 
-Review the CloudFormation change set before executing a production deployment. `infra/samconfig.example.toml` is a non-secret example for repeat deployments. If a deployed frontend URL changes, update `FrontendOrigin` and redeploy so OAuth callback URLs and CORS match exactly.
+Review the CloudFormation change set before executing a production deployment. `infra/samconfig.example.toml` is a non-secret example for repeat deployments. If a deployed frontend URL changes, update `FrontendOrigin` and redeploy so CORS matches exactly, then update the allowed origin in Descope.
 
 View the resulting resource names and public configuration:
 
@@ -77,15 +79,13 @@ aws cloudformation describe-stacks \
 Create an Amplify Hosting app connected to this repository and choose the branch to publish. Use the root `amplify.yml`; it builds only `@citevia/client` and publishes `apps/client/dist`. Choose a build image with Node.js 22. Set these branch environment variables from the stack outputs:
 
 ```dotenv
-VITE_AUTH_MODE=cognito
 VITE_API_URL=https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/v1
-VITE_COGNITO_DOMAIN=https://YOUR_PREFIX.auth.YOUR_REGION.amazoncognito.com
-VITE_COGNITO_CLIENT_ID=YOUR_COGNITO_CLIENT_ID
-VITE_REDIRECT_URI=https://YOUR_FRONTEND_ORIGIN/auth/callback
-VITE_LOGOUT_URI=https://YOUR_FRONTEND_ORIGIN/
+VITE_DESCOPE_PROJECT_ID=YOUR_DESCOPE_PROJECT_ID
+VITE_DESCOPE_BASE_URL=https://api.descope.com
+VITE_DESCOPE_FLOW_ID=YOUR_PUBLISHED_FLOW_ID
 ```
 
-`ApiUrl` is the origin only: append `/v1` for `VITE_API_URL`. `CognitoDomain`, `CognitoClientId`, `RedirectUri`, and `LogoutUri` are stack outputs. Vite values are public and compiled into the browser bundle; rebuild after changing them. Never include AWS credentials or an OpenAI key. Do not use local authentication in a hosted environment.
+`ApiUrl` is the origin only: append `/v1` for `VITE_API_URL`. `DescopeProjectId` and `DescopeBaseUrl` are stack outputs. Set the published flow ID from Descope. These values are public and compiled into the browser bundle; rebuild after changing them. Register the exact Amplify/custom domain in Descope's allowed origins and redirects. Never include AWS credentials, management keys or an OpenAI key in client variables.
 
 In Amplify **Hosting → Rewrites and redirects**, import `infra/amplify-rewrites.json`. It rewrites application routes, including `/auth/callback`, to `/index.html` with status 200 while preserving asset requests. Alternatively, with the app ID already known:
 
@@ -95,13 +95,13 @@ aws amplify update-app \
   --custom-rules file://infra/amplify-rewrites.json
 ```
 
-If Amplify assigned the origin after the first backend deploy, update the backend `FrontendOrigin`, then apply the resulting callback configuration to the Amplify branch and rebuild. Login is expected to fail until these exact URLs match.
+If Amplify assigned the origin after the first backend deploy, update backend `FrontendOrigin`, register that exact origin/redirect in Descope and rebuild the client. Login/API access require the correct project, published flow, origins and server key.
 
 ## Publish the client without a Git repository
 
 If this project is only on your computer, use Amplify's **Deploy without Git** option. The existing Lambda/API stack remains the backend.
 
-1. In `apps/client/.env.production.local`, enter the public `VITE_*` settings above using stack outputs. This file is ignored by Git. `VITE_AUTH_MODE` must be `cognito`.
+1. In `apps/client/.env.production.local`, enter the public `VITE_*` settings above using stack outputs. This file is ignored by Git. Use the matching Descope project and published flow.
 2. From the repository root, build the client and zip the **contents** of its output directory:
 
 ```sh
@@ -113,7 +113,7 @@ cd ../../..
 
 3. In Amplify, choose **Create new app → Deploy without Git**, name the app/production branch, upload `/tmp/citevia-client.zip`, and deploy. For future changes, rebuild and upload a fresh archive to that app/branch.
 4. Apply `infra/amplify-rewrites.json` in Amplify's rewrites/redirects settings so `/auth/callback` reaches `index.html`.
-5. If the assigned Amplify URL differs from the origin used for the backend, redeploy SAM with that exact `FrontendOrigin`, update the callback/logout values in the client environment file and repeat the client build/upload.
+5. If the assigned Amplify URL differs from the origin used for the backend, redeploy SAM with that exact `FrontendOrigin`, register the final origin/redirect in Descope and update the public client settings and repeat the client build/upload.
 
 Manual uploads do not run `amplify.yml` or read Amplify build environment variables. Vite embeds the public configuration during the local build. Never upload the repository root or an archive containing `.env`/local data. See [AWS manual deployment instructions](https://docs.aws.amazon.com/amplify/latest/userguide/manual-deploys.html) and [Vite environment configuration](https://vite.dev/guide/env-and-mode).
 
@@ -135,9 +135,17 @@ Check that the invocation metadata has no `FunctionError` and the result contain
 
 The baseline reproduces the 109 tables modeled by the frozen iGEO Prisma reference. Five workflow tables and a migration ledger supplement it. See [the exact model snapshot, field mapping and limitations](ONBOARDING.md). Run migrations before publishing the client or enabling account creation. A rollback that needs to remove schema requires an operator-authored migration; application updates do not silently drop tables.
 
-In the Cognito console, open the `UserPoolId` from stack outputs and create the intended operator under **Users**, using the actual email and a temporary password. Choose the invitation option according to your own delivery process; this repository sends no invitations. On first sign-in, complete the required password change through managed login. Sign-in needs no existing project membership to create an owned account. A person does not need a preassigned project to use **Accounts → New account**. For each customer supply the official website, name, locale and optional context/prompts, or import up to 25 accounts per CSV/JSON batch. The system creates the owner membership, researched brandbook, 50 categorized prompts, first scan and weekly schedule automatically. No per-customer bootstrap command, database edit or invitation email is required. The Prompts screen then allows portfolio maintenance and links to the original real answers; Dashboard, Mentions and Sources stay empty until scans supply observations.
+Sign in through the configured Descope flow. The API validates the session, fetches the real verified profile and saves it to the iGEO-compatible user tables, with no account access or system role by default. Copy the database user ID shown in the no-accounts workspace. Establish the first system administrator from an IAM-authorized operator terminal:
 
-`npm run bootstrap` remains an advanced operator tool for existing Cognito users and manually configured accounts. Because PostgreSQL is private, run it from an operator environment with authorized VPC/VPN/tunnel access to the database, plus scoped Secrets Manager, Cognito, CloudFormation and Scheduler access. It is not part of normal customer onboarding.
+```sh
+npm run admin:bootstrap -- --stack citevia-production --user-id YOUR_DATABASE_USER_UUID
+```
+
+This invokes the existing scanner Lambda with `users:bootstrap-admin`; queue payload validation rejects that event and HTTP routes do not expose it. The command never creates identities or sends invitations. It requires the target profile to exist from Descope and refuses another bootstrap once an enabled administrator exists. The caller needs `cloudformation:DescribeStacks` and `lambda:InvokeFunction` for the scanner. A repeat targeting the sole existing administrator is safe.
+
+Refresh the workspace. As a system administrator, use **Accounts → New account** for each actual customer, or import up to 25 accounts by CSV/JSON. Research, brandbook, 50 categorized prompts, first scan and weekly scheduling run automatically. Then use **Users** to assign each actual user their accounts as Viewer or Owner. Users are saved on their first sign-in; you can also import an already verified active Descope identity by email. Importing performs lookup and DB persistence, not invitation delivery. See [user management and bootstrap](AUTHENTICATION.md).
+
+`users.is_system_admin` grants all-account access. `user_accounts` stores explicit assignments, enforced before reading any prompts, answers, scans, sources or settings. Ordinary account owners can maintain their assigned accounts but cannot create accounts or assign users. Disabling a saved user blocks API access even with an otherwise valid Descope session. Legacy identity mappings are preserved and never automatically linked by a browser-supplied email; review/reassign legacy customer access as an administrator if upgrading a previously deployed version. This migration does not read or modify iGEO's database or Descope project configuration.
 
 ## GitHub Actions and OIDC
 
@@ -149,8 +157,8 @@ In the Cognito console, open the `UserPoolId` from stack outputs and create the 
 - `AWS_DEPLOY_ROLE_ARN`: an IAM role trusted through GitHub OIDC.
 - `CLOUDFORMATION_ROLE_ARN`: the separate CloudFormation execution role.
 - `ARTIFACT_BUCKET`: an existing private S3 bucket for deployment bundles in the target region.
-- `FRONTEND_ORIGIN`, `COGNITO_DOMAIN_PREFIX`, and `OPENAI_SECRET_ARN`: the backend parameter values above.
-- Optional `OPENAI_GENERATION_MODEL`, `OPENAI_EXTRACTION_MODEL`, `OPENAI_ONBOARDING_MODEL`, and `ALERT_EMAIL`.
+- `FRONTEND_ORIGIN`, `DESCOPE_PROJECT_ID`, `DESCOPE_SECRET_ARN`, and `OPENAI_SECRET_ARN`: the backend parameter values above.
+- Optional `DESCOPE_BASE_URL`, `OPENAI_GENERATION_MODEL`, `OPENAI_EXTRACTION_MODEL`, `OPENAI_ONBOARDING_MODEL`, and `ALERT_EMAIL`.
 
 Adapt `infra/github-oidc-trust.example.json` for your account, repository, and exact GitHub environment. Bind the role trust to that exact repository/environment and `sts.amazonaws.com` audience. Do not store long-lived AWS keys in GitHub.
 
@@ -173,7 +181,7 @@ CloudWatch retains logs for 14 days. Alarms cover non-empty DLQ, queue age over 
 
 Aurora storage is encrypted, has 14 days of backups and requires TLS. RDS manages the database credential in Secrets Manager; the application refreshes its small connection pool/credentials periodically to accommodate rotation. SQL reporting records and current S3 evidence have no automatic deletion. S3 deletes noncurrent versions after 30 days. The legacy `expiresAt` values remain compatibility metadata and are not SQL deletion jobs. Define and test an explicit data-retention policy before adding cleanup. S3 public access is blocked and bucket/queue policies require TLS.
 
-Deleting the stack does not delete the retained Aurora database, evidence, or Cognito users. Aurora deletion protection must be handled explicitly during an intentional shutdown; its retained private networking and credentials also need an operator migration/shutdown plan. For an intentional shutdown, disable project schedules before deletion; the schedule group deletion removes its schedules. Record retained resource names and explicitly apply your data-deletion policy. Recreating a stack does not automatically reconnect retained resources from a previous stack.
+Deleting the stack does not delete the retained Aurora database, evidence, or external Descope users. Aurora deletion protection must be handled explicitly during an intentional shutdown; its retained private networking and credentials also need an operator migration/shutdown plan. For an intentional shutdown, disable project schedules before deletion; the schedule group deletion removes its schedules. Record retained resource names and explicitly apply your data-deletion policy. Recreating a stack does not automatically reconnect retained resources from a previous stack.
 
 ## Production acceptance checks
 
@@ -194,9 +202,9 @@ Template validation and local tests cannot prove account quotas, IAM delegation,
 ## Official references
 
 - [SAM guided deployment](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/using-sam-cli-deploy.html)
-- [SAM JWT authorizer configuration](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-controlling-access-to-apis-oauth2-authorizer.html)
+- [Descope React and Node integration](https://docs.descope.com/getting-started/react/nodejs)
 - [SAM SQS events and partial batch failures](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-function-sqs.html)
 - [Scheduler context attributes](https://docs.aws.amazon.com/scheduler/latest/UserGuide/managing-schedule-context-attributes.html) and [SQS targets](https://docs.aws.amazon.com/scheduler/latest/UserGuide/managing-targets-templated.html)
-- [Cognito managed login setup](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-managed-login.html) and [CloudFormation branding](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-cognito-managedloginbranding.html)
+- [Descope session management](https://docs.descope.com/sessions/management/web)
 - [Amplify SPA rewrites](https://docs.aws.amazon.com/amplify/latest/userguide/redirect-rewrite-examples.html)
 - [GitHub OIDC with AWS credentials action](https://github.com/aws-actions/configure-aws-credentials)

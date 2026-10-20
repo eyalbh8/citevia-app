@@ -7,7 +7,8 @@ import {
   MemoryQueue,
 } from '@citevia/storage';
 import { localPostgres } from '../packages/storage/src/local-postgres.js';
-import { createApi } from '../apps/api/src/app.js';
+import { createAuthenticatedApi } from '../apps/api/src/handler.js';
+import { createDescopeIdentityProvider } from '../apps/api/src/descope.js';
 import { Scanner } from '../apps/scanner/src/engine.js';
 import {
   createOpenAIProviderFromEnv,
@@ -27,7 +28,7 @@ const configured = Boolean(
   process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim(),
 );
 const base = resolve(process.env.LOCAL_DATA_DIR || '.local-data/real');
-let api: ReturnType<typeof createApi> | undefined;
+let api: ReturnType<typeof createAuthenticatedApi> | undefined;
 const server = createServer(async (req, res) => {
   try {
     if (!api) {
@@ -90,8 +91,7 @@ if (configured) {
   );
   scanner = new Scanner({ ...runtime, provider, onboarding });
 }
-api = createApi(runtime, {
-  auth: 'local',
+api = createAuthenticatedApi(runtime, createDescopeIdentityProvider(), {
   mode: 'live',
   providerConfigured: configured,
 });
@@ -128,7 +128,14 @@ const vite = spawn(
   ],
   {
     cwd: resolve('apps/client'),
-    env: { ...process.env, VITE_AUTH_MODE: 'local', VITE_API_URL: '/api/v1' },
+    env: {
+      ...process.env,
+      VITE_DESCOPE_PROJECT_ID: process.env.DESCOPE_PROJECT_ID || '',
+      VITE_DESCOPE_BASE_URL:
+        process.env.DESCOPE_BASE_URL || 'https://api.descope.com',
+      VITE_DESCOPE_FLOW_ID: process.env.DESCOPE_FLOW_ID || 'sign-in',
+      VITE_API_URL: '/api/v1',
+    },
     stdio: 'inherit',
   },
 );

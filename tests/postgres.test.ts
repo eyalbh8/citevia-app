@@ -1,3 +1,4 @@
+import { testIdentity } from './fixtures/users.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { localPostgres } from '../packages/storage/src/local-postgres.js';
 import {
@@ -18,6 +19,8 @@ let db: SqlDatabase, repository: PostgresRepository;
 beforeAll(async () => {
   db = await localPostgres();
   repository = new PostgresRepository(db);
+  await repository.syncUser(testIdentity('paging-owner'));
+  await repository.syncUser(testIdentity('postgres-owner'));
 }, 30000);
 afterAll(async () => {
   await db?.close();
@@ -73,7 +76,7 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
     await migrateDatabase(db);
     expect(
       (await db.query('SELECT name FROM citevia_migrations')).rows,
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     const fields = (
       await db.query(
         `SELECT column_name,data_type FROM information_schema.columns WHERE table_name='prompt_responses'`,

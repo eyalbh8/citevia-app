@@ -1,3 +1,9 @@
+import {
+  AuthProvider,
+  Descope,
+  useDescope,
+  useSession,
+} from '@descope/react-sdk';
 import { useEffect, useState } from 'react';
 import {
   ArrowDownToLine,
@@ -20,6 +26,7 @@ import {
   RefreshCw,
   Settings2,
   ShieldCheck,
+  Users,
   Sparkles,
   X,
 } from 'lucide-react';
@@ -29,15 +36,16 @@ import type {
   Project,
   ScanRun,
   OnboardingJob,
+  User,
 } from '@citevia/core';
 import { downloadCsv, idempotentPost, query, useApi } from './api';
 import {
   authConfigured,
-  initializeAuth,
-  localAuth,
-  signIn,
-  signOut,
+  descopeProjectId,
+  descopeBaseUrl,
+  descopeFlowId,
 } from './auth';
+import UsersView from './UsersView';
 import { Empty, ErrorNotice, formatDate, Logo, Spinner } from './components';
 import { DashboardView } from './DashboardView';
 import MentionsView from './MentionsView';
@@ -56,8 +64,14 @@ type View =
   | 'settings'
   | 'accounts'
   | 'brandbook'
-  | 'prompts';
+  | 'prompts'
+  | 'users';
 const views = {
+  users: {
+    title: 'Users',
+    description: 'Manage users and assign access to customer accounts.',
+    icon: Users,
+  },
   prompts: {
     title: 'Prompts',
     description:
@@ -111,79 +125,67 @@ function storedProject() {
 }
 
 export default function App() {
-  const [auth, setAuth] = useState<boolean>(),
-    [authError, setAuthError] = useState<Error>();
-  useEffect(() => {
-    void initializeAuth()
-      .then(setAuth)
-      .catch((error) => {
-        setAuthError(error);
-        setAuth(false);
-      });
-  }, []);
-  if (auth === undefined)
+  if (!authConfigured) return <Login />;
+  return (
+    <AuthProvider
+      projectId={descopeProjectId}
+      baseUrl={descopeBaseUrl}
+      autoRefresh
+      persistTokens
+    >
+      <SessionGate />
+    </AuthProvider>
+  );
+}
+function SessionGate() {
+  const { isAuthenticated, isSessionLoading, claims } = useSession();
+  if (isSessionLoading)
     return (
       <div className="login-page">
-        <Spinner label="Opening Citevia…" />
+        <Spinner label="Checking your Descope session…" />
       </div>
     );
-  if (!auth) return <Login error={authError} />;
-  return <Workspace />;
+  return isAuthenticated ? (
+    <Workspace key={String(claims?.sub || 'session')} />
+  ) : (
+    <Login />
+  );
 }
-
-function Login({ error }: { error?: Error }) {
-  const [localError, setLocalError] = useState<Error>(),
-    [busy, setBusy] = useState(false);
-  async function login() {
-    setBusy(true);
-    try {
-      await signIn();
-    } catch (error) {
-      setLocalError(error as Error);
-      setBusy(false);
-    }
-  }
+function Login() {
+  const [error, setError] = useState<Error>();
   return (
     <div className="login-page">
       <div className="login-card">
         <Logo />
-        <div className="eyebrow">Know where your brand stands</div>
-        <h1>
-          Your visibility in AI.
-          <br />
-          Clearer every week.
-        </h1>
+        <div className="eyebrow">Your AI visibility workspace</div>
+        <h1>Sign in to Citevia</h1>
         <p>
-          Track how ChatGPT mentions your brand, understand the sentiment, and
-          discover the sources shaping the conversation.
+          Use your Descope account. Your administrator assigns the customer
+          accounts you can access.
         </p>
-        <ErrorNotice error={error || localError} />
+        <ErrorNotice error={error} />
         {authConfigured ? (
-          <button
-            className="button button-primary"
-            disabled={busy}
-            onClick={() => void login()}
-          >
-            {busy ? (
-              <LoaderCircle className="spinner" size={15} />
-            ) : (
-              <LogIn size={15} />
-            )}
-            {busy ? 'Connecting…' : 'Sign in to your workspace'}
-            <ArrowRight size={14} />
-          </button>
+          <Descope
+            flowId={descopeFlowId}
+            onError={() =>
+              setError(
+                new Error('Sign-in could not be completed. Please try again.'),
+              )
+            }
+          />
         ) : (
           <div className="setting-note">
             <Info size={16} />
             <span>
-              Sign-in is not configured yet. Your administrator needs to connect
-              the Cognito user pool and API URL for this deployment.
+              Descope is not configured. Set the project ID and login flow for
+              the client, and the matching project and management key on the
+              server.
             </span>
           </div>
         )}
         <div className="login-footnote">
-          <ShieldCheck size={12} /> Secure workspace access · Your account must
-          be assigned to a project.
+          <ShieldCheck size={12} />
+          Account access is controlled by the system administrator.
         </div>
       </div>
     </div>
@@ -191,6 +193,7 @@ function Login({ error }: { error?: Error }) {
 }
 
 function Workspace() {
+  const { logout } = useDescope();
   const [view, setView] = useState<View>(readView),
     [mobileOpen, setMobileOpen] = useState(false);
   const [projectId, setProjectId] = useState(storedProject),
@@ -202,6 +205,8 @@ function Workspace() {
   const [starting, setStarting] = useState(false),
     [pendingRunId, setPendingRunId] = useState<string>(),
     [actionError, setActionError] = useState<Error>();
+  const me = useApi<User>('/me', revision);
+  const systemAdmin = me.data?.isSystemAdmin === true;
   const projects = useApi<{ items: Project[]; mode: 'live' }>(
     '/projects',
     projectsRevision,
@@ -318,6 +323,18 @@ function Workspace() {
       setStarting(false);
     }
   }
+  useEffect(() => {
+    const update = () => {
+      setRevision((v) => v + 1);
+      setProjectsRevision((v) => v + 1);
+    };
+    window.addEventListener('focus', update);
+    const timer = setInterval(update, 60000);
+    return () => {
+      window.removeEventListener('focus', update);
+      clearInterval(timer);
+    };
+  }, []);
   function exportSummary() {
     if (!dashboard.data || !run) return;
     const { metrics } = dashboard.data;
@@ -353,6 +370,28 @@ function Workspace() {
     );
     setToast('Scan summary exported.');
   }
+  if (me.loading && !me.data)
+    return (
+      <div className="login-page">
+        <Spinner label="Loading your account access…" />
+      </div>
+    );
+  if (me.error)
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <Logo />
+          <h1>Workspace access unavailable</h1>
+          <ErrorNotice error={me.error} retry={refresh} />
+          <button
+            className="button button-outline"
+            onClick={() => void logout()}
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
   return (
     <div className="app">
       <button
@@ -401,6 +440,7 @@ function Workspace() {
               'mentions',
               'sources',
               'brandbook',
+              ...(systemAdmin ? ['users' as const] : []),
             ] as View[]
           ).map((key) => {
             const Icon = views[key].icon;
@@ -451,21 +491,31 @@ function Workspace() {
               {project?.brand.name.slice(0, 2).toUpperCase() || 'CV'}
             </span>
             <div>
-              <div className="profile-name">Your workspace</div>
+              <div className="profile-name">
+                {me.data?.name || me.data?.email || 'Your workspace'}
+              </div>
               <div className="profile-sub">
-                {owner
-                  ? 'Project owner'
-                  : project
-                    ? 'View access'
-                    : localAuth
-                      ? 'Local operator'
-                      : 'Signed in'}
+                {systemAdmin
+                  ? 'System admin'
+                  : owner
+                    ? 'Account owner'
+                    : 'Viewer'}
               </div>
             </div>
             <button
               aria-label="Sign out"
-              title={localAuth ? 'Reload local session' : 'Sign out'}
-              onClick={signOut}
+              title="Sign out"
+              onClick={() =>
+                void logout()
+                  .then(() => {
+                    localStorage.removeItem('citevia.project');
+                  })
+                  .catch(() =>
+                    setActionError(
+                      new Error('Sign-out failed. Please try again.'),
+                    ),
+                  )
+              }
             >
               <LogOut size={14} />
             </button>
@@ -587,6 +637,16 @@ function Workspace() {
               </span>
             </div>
           )}
+          {!currentProject && !systemAdmin && !projects.loading && (
+            <div className="setting-note">
+              <Info size={14} />
+              <span>
+                Signed in as {me.data?.email}. Ask a system administrator to
+                assign your accounts. Your database user ID:{' '}
+                <code>{me.data?.id}</code>
+              </span>
+            </div>
+          )}
           <ErrorNotice error={runtime.error} retry={refresh} />
           <ErrorNotice
             error={projects.error}
@@ -594,8 +654,22 @@ function Workspace() {
           />
           <ErrorNotice error={dashboard.error} retry={refresh} />
           <ErrorNotice error={actionError} />
-          {view === 'accounts' ? (
+          {view === 'users' ? (
+            systemAdmin ? (
+              <UsersView
+                self={me.data!}
+                notify={setToast}
+                onChanged={settingsSaved}
+              />
+            ) : (
+              <Empty
+                title="Administrator access required"
+                description="Only system administrators can manage users."
+              />
+            )
+          ) : view === 'accounts' ? (
             <AccountsView
+              canCreate={systemAdmin}
               providerReady={providerReady}
               onOpen={(id) => {
                 changeProject(id);
@@ -610,8 +684,16 @@ function Workspace() {
           ) : !currentProject && !projects.error ? (
             <div className="card">
               <Empty
-                title="Your workspace is almost ready"
-                description="Create an account to build its brandbook, generate prompts and start weekly tracking."
+                title={
+                  systemAdmin
+                    ? 'Create your first account'
+                    : 'No accounts assigned'
+                }
+                description={
+                  systemAdmin
+                    ? 'Create an account to build its brandbook, generate prompts and start weekly tracking.'
+                    : 'Ask a system administrator to assign your customer accounts. Your account list is private to your login.'
+                }
               >
                 <button
                   className="button button-primary"
@@ -620,12 +702,18 @@ function Workspace() {
                   <RefreshCw size={13} />
                   Refresh access
                 </button>
-                <button
-                  className="button button-primary"
-                  onClick={() => navigate('accounts')}
-                >
-                  Create account
-                </button>
+                {systemAdmin ? (
+                  <button
+                    className="button button-primary"
+                    onClick={() => navigate('accounts')}
+                  >
+                    Create account
+                  </button>
+                ) : (
+                  <p className="scan-options">
+                    Your database user ID: {me.data?.id}
+                  </p>
+                )}
               </Empty>
             </div>
           ) : (

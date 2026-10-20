@@ -138,7 +138,7 @@ export async function migrateDatabase(
     await tx.exec(
       'CREATE TABLE IF NOT EXISTS citevia_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())',
     );
-    for (const name of ['001_igeo.sql', '002_citevia.sql']) {
+    for (const name of ['001_igeo.sql', '002_citevia.sql', '003_descope_users.sql']) {
       const source = await readFile(resolve(directory, name), 'utf8'),
         checksum = createHash('sha256').update(source).digest('hex');
       const { rows } = await tx.query(

@@ -12,9 +12,9 @@ cp .env.example .env
 npm run dev
 ```
 
-Open **http://127.0.0.1:5173**. The API listens on `127.0.0.1:3001`. Startup creates an empty persistent PostgreSQL database under `.local-data/real/`; no sample accounts, answers, brandbooks or scans are inserted. Previous sample stores are preserved separately and refused by the application. With no OpenAI credentials, the app opens but account generation and scans stay disabled.
+Open **http://127.0.0.1:5173**. Configure Descope in `.env` to sign in; without it the client shows its login configuration screen. Both local and AWS runs require real Descope sessions. See [user access and first-admin setup](docs/AUTHENTICATION.md). The API listens on `127.0.0.1:3001`. Startup creates an empty persistent PostgreSQL database under `.local-data/real/`; no sample accounts, answers, brandbooks or scans are inserted. Previous sample stores are preserved separately and refused by the application. With no OpenAI credentials, the app opens but account generation and scans stay disabled.
 
-Set `OPENAI_API_KEY` or `OPENAI_SECRET_ARN` in root `.env` and restart to enable real calls. Open **Accounts → New account** with an actual company website and context. Supply existing questions under Understand, Prefer, Trust and Convert, or generate all 50. Research → brandbook → prompts → first scan runs automatically. CSV/JSON import supports up to 25 accounts per request.
+Set `OPENAI_API_KEY` or `OPENAI_SECRET_ARN` in root `.env` and restart to enable real calls. After establishing the first system administrator, open **Accounts → New account** with an actual company website and context. Supply existing questions under Understand, Prefer, Trust and Convert, or generate all 50. Research → brandbook → prompts → first scan runs automatically. CSV/JSON import supports up to 25 accounts per request.
 
 **Prompts** provides journey sections, search, topic/status/branded filters, editing, bulk addition, archive/reactivation, CSV export and visibility/rank/sentiment/citations from the selected real scan. Edits create versions; historical answers remain preserved and never become measurements of changed questions.
 
@@ -29,9 +29,15 @@ npm run scan:spike -- --prompts ./prompts.txt --brand "YOUR_ACTUAL_BRAND" --doma
 
 This command makes real billable calls and saves native evidence; it does not supply example answers. Configure models your OpenAI project supports and inspect the results before production. No live provider validation or AWS deployment has been performed.
 
+## Users and account access
+
+Descope verifies login. Real verified names, emails and stable provider identities are saved in the iGEO-compatible `users` table and `citevia_identities`; `user_accounts` stores explicit Viewer/Owner assignments. `users.is_system_admin` grants access to every account. Every new user starts with no accounts and no admin role. Only system admins create accounts and manage access in **Users**. Account owners manage their assigned accounts; viewers read results. No shared development token or client-supplied role grants access.
+
+The first administrator is established explicitly after their first Descope sign-in with `npm run admin:bootstrap`. Subsequent administrators and assignments are managed in the UI. See [configuration, bootstrap and permissions](docs/AUTHENTICATION.md).
+
 ## Structure
 
-- `apps/client`: React/Vite client, Cognito PKCE login, screens and answer drawer.
+- `apps/client`: React/Vite client, Descope login, screens and answer drawer.
 - `apps/api`: authenticated HTTP API, project settings and weekly schedule synchronization.
 - `apps/scanner`: Responses API collection, native citations, structured extraction, job leases/retries and reconciliation.
 - `packages/core`: shared contracts, validation, URL normalization and metric definitions.
@@ -57,13 +63,13 @@ npm run build
 npm run bootstrap -- --help
 ```
 
-`build` emits `dist/api/index.mjs`, `dist/scanner/index.mjs`, and `apps/client/dist/`. Deployment uses two Lambda functions, API Gateway, Cognito, private Aurora PostgreSQL, S3, SQS and EventBridge Scheduler. Amplify hosts the static client. See [deployment instructions](docs/DEPLOYMENT.md) for database migrations, AWS configuration and recovery.
+`build` emits `dist/api/index.mjs`, `dist/scanner/index.mjs`, and `apps/client/dist/`. Deployment uses two Lambda functions, API Gateway, Descope authentication, private Aurora PostgreSQL, S3, SQS and EventBridge Scheduler. Amplify hosts the static client. See [deployment instructions](docs/DEPLOYMENT.md) for database migrations, AWS configuration and recovery.
 
 No live AWS resources or provider calls are created by installation, tests or builds. Production credentials and account-specific deployment values must be supplied before deployment. The default schedule is Monday 06:00 in the project timezone; changing settings updates it through the API. The recovery schedule only resumes existing jobs and does not create extra weekly scans.
 
 ## API
 
-The base path is `/v1`. `POST /onboarding/accounts` creates accounts; `GET /projects` lists the user's account summaries. Project endpoints include `/onboarding`, `/onboarding/retry`, `/brandbook`, `/dashboard`, `/runs`, `/responses`, `/responses/:responseId`, `/sources`, `/sources/:sourceId/responses`, `/settings` and `/prompts`. `GET /runtime` reports whether provider configuration is present; it does not test credentials or model access. Creation, manual scans and retries require an `Idempotency-Key`. Mutations require ownership. Raw evidence is never publicly hosted.
+The base path is `/v1`. `POST /onboarding/accounts` creates accounts; `GET /projects` lists the user's account summaries. Project endpoints include `/onboarding`, `/onboarding/retry`, `/brandbook`, `/dashboard`, `/runs`, `/responses`, `/responses/:responseId`, `/sources`, `/sources/:sourceId/responses`, `/settings` and `/prompts`. `GET /me` returns the saved user. `/admin/users` and user account-assignment endpoints require a system administrator. `GET /runtime` reports whether provider configuration is present; it does not test credentials or model access. Creation, manual scans and retries require an `Idempotency-Key`. Mutations require ownership. Raw evidence is never publicly hosted.
 
 ## Reliability and limits
 

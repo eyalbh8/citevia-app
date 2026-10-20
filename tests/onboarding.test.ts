@@ -1,3 +1,4 @@
+import { testIdentity } from './fixtures/users.js';
 import { describe, expect, it, vi } from 'vitest';
 import {
   onboardingInputSchema,
@@ -34,10 +35,12 @@ const input: OnboardingInput = {
     { text: 'What evidence supports Acme reliability?', stage: 'trust' },
   ],
 };
-function environment() {
+async function environment() {
   const repository = new MemoryRepository(),
     artifacts = new MemoryArtifacts(),
     queue = new MemoryQueue();
+  const user=await repository.syncUser(testIdentity('owner'));
+  await repository.bootstrapAdmin(user.id);
   return { repository, artifacts, queue };
 }
 const req = (
@@ -65,7 +68,7 @@ async function drain(scanner: Scanner, queue: MemoryQueue) {
 }
 describe('automated account onboarding', () => {
   it('preserves manual prompts, generates all four sections and starts exactly one first scan', async () => {
-    const runtime = environment(),
+    const runtime = await environment(),
       provider = new FixtureOnboardingProvider(),
       research = vi.spyOn(provider, 'research'),
       brandbook = vi.spyOn(provider, 'brandbook'),
@@ -77,10 +80,10 @@ describe('automated account onboarding', () => {
         provider: new FixtureProvider(),
         onboarding: engine,
       }),
-      api = createApi(runtime, { auth: 'aws', mode: 'live' });
+      api = createApi(runtime, { mode: 'live' });
     const first = await api(
       req('/onboarding/accounts', 'POST', { accounts: [input] }),
-      { userId: 'owner' },
+      testIdentity('owner'),
     );
     expect(first.status).toBe(202);
     const { items } = await first.json(),
@@ -120,9 +123,7 @@ describe('automated account onboarding', () => {
     expect(schedule).toHaveBeenCalledTimes(1);
     expect(
       (
-        await api(req('/onboarding/accounts', 'POST', { accounts: [input] }), {
-          userId: 'owner',
-        })
+        await api(req('/onboarding/accounts', 'POST', { accounts: [input] }), testIdentity('owner'))
       ).status,
     ).toBe(202);
     await drain(scanner, runtime.queue);
@@ -130,21 +131,19 @@ describe('automated account onboarding', () => {
     expect(research).toHaveBeenCalledTimes(1);
     expect(
       (
-        await api(req(`/projects/${projectId}/brandbook`), {
-          userId: 'another-owner',
-        })
+        await api(req(`/projects/${projectId}/brandbook`), testIdentity('another-owner'))
       ).status,
     ).toBe(404);
     const conflict = await api(
       req('/onboarding/accounts', 'POST', {
         accounts: [{ ...input, name: 'Different' }],
       }),
-      { userId: 'owner' },
+      testIdentity('owner'),
     );
     expect(conflict.status).toBe(409);
   });
   it('resumes a failed prompt generation from its saved research and brandbook', async () => {
-    const runtime = environment(),
+    const runtime = await environment(),
       provider = new FixtureOnboardingProvider(),
       research = vi.spyOn(provider, 'research'),
       book = vi.spyOn(provider, 'brandbook');
@@ -182,7 +181,7 @@ describe('automated account onboarding', () => {
     ).toBe('completed');
   });
   it('bounds retries, exposes the failure, and lets the owner repair the same job', async () => {
-    const runtime = environment(),
+    const runtime = await environment(),
       provider = new FixtureOnboardingProvider(),
       original = provider.research.bind(provider);
     vi.spyOn(provider, 'research').mockRejectedValue(
@@ -207,12 +206,12 @@ describe('automated account onboarding', () => {
       await runtime.repository.getOnboarding(item.project.id, item.job.id),
     ).toMatchObject({ status: 'failed', attempts: 4, step: 'research' });
     vi.mocked(provider.research).mockImplementation(original);
-    const api = createApi(runtime, { auth: 'aws', mode: 'live' });
+    const api = createApi(runtime, { mode: 'live' });
     expect(
       (
         await api(
           req(`/projects/${item.project.id}/onboarding/retry`, 'POST'),
-          { userId: 'stranger' },
+          testIdentity('stranger'),
         )
       ).status,
     ).toBe(404);
@@ -220,7 +219,7 @@ describe('automated account onboarding', () => {
       (
         await api(
           req(`/projects/${item.project.id}/onboarding/retry`, 'POST'),
-          { userId: 'owner' },
+          testIdentity('owner'),
         )
       ).status,
     ).toBe(202);
@@ -231,7 +230,7 @@ describe('automated account onboarding', () => {
     ).toBe('completed');
   });
   it('enforces account limits atomically and can repair queue failure with the same request key', async () => {
-    const runtime = environment();
+    const runtime = await environment();
     const outcomes = await Promise.all(
       ['owner-limit-1', 'owner-limit-2'].map((key) =>
         createAccounts(
@@ -246,7 +245,7 @@ describe('automated account onboarding', () => {
     );
     expect(await runtime.repository.listProjects('owner')).toHaveLength(1);
     expect(outcomes.filter((outcome) => outcome.limitReached)).toHaveLength(1);
-    const next = environment(),
+    const next = await environment(),
       send = vi
         .spyOn(next.queue, 'send')
         .mockRejectedValueOnce(new Error('Queue unavailable'));
@@ -273,7 +272,7 @@ describe('automated account onboarding', () => {
     expect(send).toHaveBeenCalledTimes(2);
   });
   it('deduplicates parallel worker deliveries with a conditional lease', async () => {
-    const runtime = environment(),
+    const runtime = await environment(),
       provider = new FixtureOnboardingProvider(),
       research = vi.spyOn(provider, 'research');
     const { items } = await createAccounts(
@@ -324,7 +323,7 @@ describe('automated account onboarding', () => {
     });
   });
   it('rejects duplicate generated prompts and wrong section allocation', async () => {
-    const runtime = environment(),
+    const runtime = await environment(),
       { items } = await createAccounts(
         runtime,
         'owner',

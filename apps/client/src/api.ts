@@ -54,7 +54,7 @@ export function useApi<T>(path: string | null, revision = 0) {
     request<T>(path, { signal: controller.signal }).then(data => {
       if (!controller.signal.aborted) setState({ key: path, data, loading: false });
     }).catch(error => {
-      if (!controller.signal.aborted) setState(previous => ({ key: path, data: previous.key === path ? previous.data : undefined, error, loading: false }));
+      if (!controller.signal.aborted) setState(previous => ({ key: path, data: error instanceof ApiError&&[401,403,404].includes(error.status)?undefined:previous.key === path ? previous.data : undefined, error, loading: false }));
     });
     return () => controller.abort();
   }, [path, revision]);

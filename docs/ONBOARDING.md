@@ -11,7 +11,7 @@ The system persists the account, membership and onboarding job atomically, with 
 3. **Prompts:** a separate strict JSON generation preserves every supplied prompt and fills the remaining places to exactly 50. Each prompt has a journey section, topic, branded flag, generation ID and version.
 4. **Activate:** save the brandbook and validated portfolio, enable the weekly schedule in the account's timezone, and enqueue an idempotent first scan. The Accounts screen shows progress and recoverable failures; Dashboard shows scan progress.
 
-No per-account CLI or database editing is required. Cognito provisions people who can sign in; customer brand accounts are created inside Citevia. This release keeps the existing invite-only login policy. Billing, public signup and invitations are separate concerns.
+No per-account CLI or database editing is required. Descope authenticates people and their verified profiles are saved in the existing iGEO `users` table. Only database-backed system administrators can create customer brand accounts. `user_accounts` assigns Viewer/Owner access; new users have no account access. Descope controls the login flow and allowed signup methods. See [authentication and user management](AUTHENTICATION.md). Billing and invitation delivery are separate concerns.
 
 ## Generation instructions
 
@@ -57,7 +57,7 @@ AWS gives scans a 24-hour deadline to tolerate bulk onboarding and weekly queue 
 
 ## API and local validation
 
-- `POST /v1/onboarding/accounts`: `{ accounts: [...] }`, at most 25; `Idempotency-Key` required. Returns accepted project/job records. A 207 response reports an owner limit reached after some items were accepted.
+- `POST /v1/onboarding/accounts`: system administrator only; `{ accounts: [...] }`, at most 25; `Idempotency-Key` required. Returns accepted project/job records. A 207 response reports an owner limit reached after some items were accepted.
 - `GET /v1/projects`: lightweight account summaries, active prompt counts and onboarding progress, with database-backed `q`, `limit` and `cursor` search/pagination. Account rows do not load every portfolio or brandbook.
 - `GET /v1/projects/:id/onboarding`: persisted job details for account members.
 - `POST /v1/projects/:id/onboarding/retry`: owner-only, idempotent retry of a failed job.

@@ -1,3 +1,4 @@
+import { testIdentity } from './fixtures/users.js';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   Dashboard,
@@ -47,6 +48,8 @@ async function fixture(
   let clock = DATE;
   const project = newProject({ id: 'project-main', prompts, now: clock });
   await repository.saveProject(project, null);
+  await repository.syncUser(testIdentity(OWNER));
+  await repository.syncUser(testIdentity(VIEWER));
   await repository.putMembership({
     projectId: project.id,
     userId: OWNER,
@@ -58,7 +61,6 @@ async function fixture(
     role: 'viewer',
   });
   const api = createApi(runtime, {
-    auth: 'aws',
     mode: 'live',
     now: () => clock,
     ...extra,
@@ -70,7 +72,7 @@ async function fixture(
   ) =>
     api(
       new Request(`https://citevia.test${path}`, init),
-      user ? { userId: user } : undefined,
+      user ? testIdentity(user) : undefined,
     );
   async function scan(at = clock, projectId = project.id) {
     clock = at;
@@ -137,6 +139,7 @@ describe('API authentication and customer isolation', () => {
       prompts: ['Private customer prompt'],
     });
     await f.repository.saveProject(other, null);
+    await f.repository.syncUser(testIdentity('other-owner'));
     await f.repository.putMembership({
       projectId: other.id,
       userId: 'other-owner',
@@ -164,6 +167,7 @@ describe('API authentication and customer isolation', () => {
 describe('real-provider readiness and prompt catalog', () => {
   it('blocks paid work before creating accounts or reserving scans when OpenAI is unconfigured', async () => {
     const f = await fixture(undefined, { providerConfigured: false });
+    await f.repository.bootstrapAdmin((await f.repository.getUser(OWNER))!.id);
     expect(await read(await f.call('/v1/runtime'))).toMatchObject({
       providerConfigured: false,
       mode: 'live',
