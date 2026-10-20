@@ -11,6 +11,7 @@ import {
   aliasOffset,
   containsAlias,
   validateExtraction,
+  verifyRank,
 } from './extraction.js';
 import {
   ProviderError,
@@ -186,18 +187,88 @@ export function parseScoredExtraction(
     brands.some((b) => !Object.hasOwn(parsed.data.brands, b.id))
   )
     bad('Analysis has missing or unknown tracked brands.');
+  const warnings: string[] = [];
   const observations = brands.map((brand) => {
     const row = parsed.data.brands[brand.id];
+    const selected = row.evidenceIds.map(span);
+    // Resolve every supplied reference before normalizing any unsupported claim.
+    if (row.rankEvidenceId !== null) span(row.rankEvidenceId);
+    if (row.sentimentEvidenceId !== null) span(row.sentimentEvidenceId);
+    if (
+      row.mentioned &&
+      !catalog.some((item) => containsAlias(visible(item.quote), brand))
+    ) {
+      warnings.push(
+        `${brand.id}: no literal brand mention in saved answer; measured absence preserved`,
+      );
+      return {
+        brandId: brand.id,
+        mentioned: false,
+        explicitRank: null,
+        sentiment: 'not_applicable' as const,
+        evidence: [],
+        rankEvidence: null,
+        sentimentEvidence: null,
+      };
+    }
+    let evidence = row.mentioned
+      ? selected.filter((item) => containsAlias(visible(item.quote), brand))
+      : selected;
+    let sentimentEvidence =
+      row.sentimentEvidenceId === null ? null : span(row.sentimentEvidenceId);
+    let sentiment = row.sentiment;
+    if (
+      row.mentioned &&
+      !evidence.length &&
+      sentimentEvidence &&
+      containsAlias(visible(sentimentEvidence.quote), brand)
+    )
+      evidence = [sentimentEvidence];
+    if (
+      row.mentioned &&
+      (selected.some((item) => !containsAlias(visible(item.quote), brand)) ||
+        evidence.length > selected.length)
+    )
+      warnings.push(
+        `${brand.id}: mention evidence limited to exact identifying excerpts`,
+      );
+    if (
+      row.mentioned &&
+      (sentiment === 'not_applicable' ||
+        sentiment === 'unknown' ||
+        !sentimentEvidence ||
+        !containsAlias(visible(sentimentEvidence.quote), brand))
+    ) {
+      if (sentiment !== 'unknown')
+        warnings.push(
+          `${brand.id}: unsupported sentiment omitted; score is unknown`,
+        );
+      sentiment = 'unknown';
+      sentimentEvidence = null;
+    }
+    let explicitRank = row.explicitRank;
+    let rankEvidence =
+      row.rankEvidenceId === null ? null : span(row.rankEvidenceId);
+    // A bad secondary recommendation rank must not erase verified presence, appearance rank or sentiment.
+    if (row.mentioned) {
+      try {
+        verifyRank(explicitRank, rankEvidence, brand);
+      } catch {
+        explicitRank = null;
+        rankEvidence = null;
+        warnings.push(
+          `${brand.id}: unverified explicit recommendation rank omitted`,
+        );
+      }
+    }
     return {
       brandId: brand.id,
       mentioned: row.mentioned,
-      explicitRank: row.explicitRank,
-      sentiment: row.sentiment,
-      evidence: row.evidenceIds.map(span),
-      rankEvidence:
-        row.rankEvidenceId === null ? null : span(row.rankEvidenceId),
-      sentimentEvidence:
-        row.sentimentEvidenceId === null ? null : span(row.sentimentEvidenceId),
+      explicitRank,
+      sentiment,
+      evidence,
+      rankEvidence,
+      sentimentEvidence,
     };
   });
   const verified = validateExtraction({ brands: observations }, answer, brands);
@@ -210,19 +281,14 @@ export function parseScoredExtraction(
       trackedId?: string;
     }
   >();
-  for (const company of parsed.data.companies) {
-    const evidence = span(company.evidenceId);
-    const identity: Brand = {
-      id: 'entity',
-      name: company.name,
-      aliases: [],
-      domains: [],
-    };
-    if (!containsAlias(visible(evidence.quote), identity))
-      bad('Company evidence does not identify the selected company.');
-    const tracked = brands.find((b) => containsAlias(company.name, b));
+  const addCompany = (
+    name: string,
+    evidence: EvidenceSpan,
+    tracked?: Brand,
+  ) => {
+    const identity: Brand = { id: 'entity', name, aliases: [], domains: [] };
     const names = tracked
-      ? { ...tracked, aliases: [...tracked.aliases, company.name] }
+      ? { ...tracked, aliases: [...tracked.aliases, name] }
       : identity;
     let position = Infinity,
       offset = 0;
@@ -233,15 +299,63 @@ export function parseScoredExtraction(
     }
     const key = tracked
       ? `tracked:${tracked.id}`
-      : company.name.normalize('NFKC').toLocaleLowerCase();
+      : name.normalize('NFKC').toLocaleLowerCase();
     const previous = entities.get(key);
     if (!previous || position < previous.position)
       entities.set(key, {
-        name: company.name,
+        name,
         position,
         evidence,
         trackedId: tracked?.id,
       });
+  };
+  for (const company of parsed.data.companies) {
+    let evidence = span(company.evidenceId);
+    const identity: Brand = {
+      id: 'entity',
+      name: company.name,
+      aliases: [],
+      domains: [],
+    };
+    const tracked = brands.find((brand) => containsAlias(company.name, brand));
+    if (!containsAlias(visible(evidence.quote), identity)) {
+      const actual = catalog.find((item) =>
+        containsAlias(visible(item.quote), identity),
+      );
+      if (actual) {
+        evidence = span(actual.id);
+        warnings.push(
+          `${company.name}: company evidence resolved to its first exact occurrence`,
+        );
+      } else if (
+        tracked &&
+        !verified.find((row) => row.brandId === tracked.id)!.mentioned &&
+        !catalog.some((item) => containsAlias(visible(item.quote), tracked))
+      ) {
+        warnings.push(
+          `${tracked.id}: unsupported inventory entry omitted; verified brand absence preserved`,
+        );
+        continue;
+      } else bad('Company evidence does not identify the selected company.');
+    }
+    addCompany(company.name, evidence, tracked);
+  }
+  // A verified brand mention is itself proof that this tracked company belongs in the inventory.
+  for (const observation of verified) {
+    if (
+      !observation.mentioned ||
+      entities.has(`tracked:${observation.brandId}`)
+    )
+      continue;
+    const brand = brands.find((item) => item.id === observation.brandId)!;
+    const evidence = observation.evidence[0];
+    const name = [brand.name, ...brand.aliases].find((name) =>
+      containsAlias(visible(evidence.quote), { ...brand, name, aliases: [] }),
+    )!;
+    addCompany(name, evidence, brand);
+    warnings.push(
+      `${brand.id}: company inventory completed from verified mention evidence`,
+    );
   }
   const ordered = [...entities.values()].sort(
     (a, b) => a.position - b.position || a.name.localeCompare(b.name),
@@ -268,6 +382,8 @@ export function parseScoredExtraction(
       evidence: entity.evidence,
     })),
     parserVersion: SCORED_PARSER_VERSION,
+    validationVersion: 'exact-evidence-v2.1',
+    validationWarnings: warnings,
     model: String(receipt.response.model ?? snapshot.extractionModel),
     createdAt: receipt.receivedAt,
     usage: usage(receipt.response),

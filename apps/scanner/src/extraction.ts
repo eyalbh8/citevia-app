@@ -176,7 +176,7 @@ export function verifySpan(
   return { ...span, start: position, end: position + span.quote.length };
 }
 
-function verifyRank(
+export function verifyRank(
   rank: number | null,
   evidence: EvidenceSpan | null,
   brand: Brand,

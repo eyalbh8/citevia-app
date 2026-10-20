@@ -189,7 +189,6 @@ describe('saved answer evidence and full company appearance order', () => {
     for (const companies of [
       [{ name: 'Acme', evidenceId: 999 }],
       [{ name: 'Invented', evidenceId: 0 }],
-      [],
       [{ name: 'Bravo', evidenceId: 0 }],
     ]) {
       expect(() =>
@@ -200,16 +199,154 @@ describe('saved answer evidence and full company appearance order', () => {
         ),
       ).toThrow();
     }
-    expect(() =>
-      parseScoredExtraction(
-        receipt({
-          companies: [{ name: 'Acme', evidenceId: 0 }],
-          brands: { [target.id]: row },
-        }),
-        captured('Source: https://acme.com/about'),
-        scoredSnapshot,
+    const urlOnly = parseScoredExtraction(
+      receipt({
+        companies: [{ name: 'Acme', evidenceId: 0 }],
+        brands: { [target.id]: row },
+      }),
+      captured('Source: https://acme.com/about'),
+      scoredSnapshot,
+    );
+    expect(urlOnly.brands[0]).toMatchObject({
+      mentioned: false,
+      appearanceRank: null,
+      sentimentScore: null,
+    });
+  });
+  it('keeps only identifying mention excerpts and omits an unsupported secondary rank without erasing valid metrics', () => {
+    const answer = captured(
+      'Acme is useful.\nOperational details.\nBravo is another option.',
+    );
+    const result = parseScoredExtraction(
+      receipt({
+        companies: [
+          { name: 'Acme', evidenceId: 0 },
+          { name: 'Bravo', evidenceId: 2 },
+        ],
+        brands: {
+          [target.id]: {
+            ...row,
+            sentiment: 'positive',
+            evidenceIds: [0, 1],
+            explicitRank: 1,
+            rankEvidenceId: 0,
+          },
+        },
+      }),
+      answer,
+      scoredSnapshot,
+    );
+    expect(result.brands[0]).toMatchObject({
+      appearanceRank: 1,
+      explicitRank: null,
+      sentimentScore: 100,
+    });
+    expect(result.brands[0].evidence).toHaveLength(1);
+    expect(result.validationWarnings).toHaveLength(2);
+  });
+  it('completes a missing tracked company inventory entry from already verified mention evidence', () => {
+    const result = parseScoredExtraction(
+      receipt({ companies: [], brands: { [target.id]: row } }),
+      captured('Acme has limitations.'),
+      scoredSnapshot,
+    );
+    expect(result.companies?.map((company) => company.name)).toEqual(['Acme']);
+    expect(result.brands[0]).toMatchObject({
+      appearanceRank: 1,
+      sentimentScore: 0,
+    });
+  });
+  it('preserves verified absence when the inventory contains a tracked brand that does not appear anywhere', () => {
+    const absent = {
+      mentioned: false,
+      sentiment: 'not_applicable',
+      evidenceIds: [],
+      sentimentEvidenceId: null,
+      explicitRank: null,
+      rankEvidenceId: null,
+    };
+    const result = parseScoredExtraction(
+      receipt({
+        companies: [{ name: 'Acme', evidenceId: 0 }],
+        brands: { [target.id]: absent },
+      }),
+      captured('Only general information is provided.'),
+      scoredSnapshot,
+    );
+    expect(result.brands[0]).toMatchObject({
+      mentioned: false,
+      appearanceRank: null,
+      sentimentScore: null,
+    });
+    expect(result.companies).toEqual([]);
+  });
+  it('does not manufacture presence when the model claims a mention but no name or alias occurs in the saved answer', () => {
+    const result = parseScoredExtraction(
+      receipt({
+        companies: [{ name: 'Acme', evidenceId: 0 }],
+        brands: { [target.id]: row },
+      }),
+      captured('Here are several widely recognized trading platforms.'),
+      scoredSnapshot,
+    );
+    expect(result.brands[0]).toMatchObject({
+      mentioned: false,
+      appearanceRank: null,
+      sentiment: 'not_applicable',
+      sentimentScore: null,
+    });
+    expect(
+      result.validationWarnings?.some((value) =>
+        value.includes('no literal brand mention'),
       ),
-    ).toThrow('Company evidence');
+    ).toBe(true);
+  });
+  it('resolves a misplaced company evidence ID to the exact name occurrence rather than inventing a quote', () => {
+    const answer = captured('Acme has limitations.\nBravo is useful.');
+    const result = parseScoredExtraction(
+      receipt({
+        companies: [
+          { name: 'Acme', evidenceId: 1 },
+          { name: 'Bravo', evidenceId: 1 },
+        ],
+        brands: { [target.id]: row },
+      }),
+      answer,
+      scoredSnapshot,
+    );
+    expect(result.companies?.[0].evidence.quote).toBe(
+      answer.blocks[0].text.split('\n')[0],
+    );
+    expect(result.brands[0]).toMatchObject({
+      appearanceRank: 1,
+      sentimentScore: 0,
+    });
+  });
+  it('keeps sentiment unknown when the selected assessment cannot be tied to this brand', () => {
+    const answer = captured('Acme is discussed.\nBravo is excellent.');
+    const result = parseScoredExtraction(
+      receipt({
+        companies: [
+          { name: 'Acme', evidenceId: 0 },
+          { name: 'Bravo', evidenceId: 1 },
+        ],
+        brands: {
+          [target.id]: {
+            ...row,
+            sentiment: 'positive',
+            sentimentEvidenceId: 1,
+          },
+        },
+      }),
+      answer,
+      scoredSnapshot,
+    );
+    expect(result.brands[0]).toMatchObject({
+      appearanceRank: 1,
+      sentiment: 'unknown',
+      sentimentScore: null,
+      sentimentEvidence: null,
+    });
   });
   it('uses schema-bound evidence references and fixed brand keys, without generated quotes or offsets', () => {
     const request = scoredExtractionRequest(

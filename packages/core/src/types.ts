@@ -146,6 +146,8 @@ export interface Usage {
 }
 export interface Analysis {
   brands: BrandAnalysis[];
+  validationVersion?: string;
+  validationWarnings?: string[];
   companies?: { name: string; rank: number; evidence: EvidenceSpan }[];
   parserVersion: string;
   model: string;
