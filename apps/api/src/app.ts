@@ -19,6 +19,10 @@ import {
   scanProviderSchema,
   SCAN_PROVIDERS,
   PROVIDER_LABELS,
+  REPORTING_VERSION,
+  reportingGroups,
+  isBrandedPrompt,
+  MAX_BRANDED_PROMPTS,
   type ScanProvider,
   type Analysis,
   type CapturedAnswer,
@@ -94,7 +98,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
   async function summary(run: ScanRun): Promise<RunSummary> {
     if (run.summaryKey && run.summaryVersion === run.resultVersion) {
       const saved = await artifacts.get<RunSummary>(run.summaryKey);
-      if (saved?.metrics.sentimentScore) return saved;
+      if (saved?.reportingVersion === REPORTING_VERSION) return saved;
     }
     const results = await repository.listResults(run.projectId, run.id);
     const items: ResponseDetail[] = [];
@@ -618,7 +622,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           text,
           version: 1,
           active: true,
-          branded: !!input.branded,
+          branded: isBrandedPrompt(text, stored.brand),
           ...('stage' in input ? { stage: input.stage } : {}),
           topic: input.topic || undefined,
           createdAt: at,
@@ -634,6 +638,17 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           version: stored.version + 1,
           updatedAt: at,
         };
+        if (
+          next.prompts.filter(
+            (p) => p.active && isBrandedPrompt(p.text, stored.brand),
+          ).length > MAX_BRANDED_PROMPTS &&
+          added.some((p) => p.branded)
+        )
+          throw new HttpError(
+            400,
+            'BRANDED_PROMPT_LIMIT',
+            'At most 15 active questions may name the company or an alias.',
+          );
         await persistProject(next, stored.version);
         return response({ items: added, version: next.version }, 201);
       }
@@ -658,7 +673,20 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           version: current.version + 1,
           updatedAt: now().toISOString(),
         };
+        updated.branded = isBrandedPrompt(updated.text, stored.brand);
         const prompts = stored.prompts.map((p) => (p.id === id ? updated : p));
+        const previousBranded = stored.prompts.filter(
+          (p) => p.active && isBrandedPrompt(p.text, stored.brand),
+        ).length;
+        const nextBranded = prompts.filter(
+          (p) => p.active && isBrandedPrompt(p.text, stored.brand),
+        ).length;
+        if (nextBranded > MAX_BRANDED_PROMPTS && nextBranded > previousBranded)
+          throw new HttpError(
+            400,
+            'BRANDED_PROMPT_LIMIT',
+            'At most 15 active questions may name the company or an alias.',
+          );
         if (prompts.filter((p) => p.active).length > 50)
           throw new HttpError(
             400,
@@ -861,6 +889,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             date: run.scheduledAt,
             visibility: s.metrics.visibility.value,
             averageRank: s.metrics.averageRank.value,
+            sentimentScore: s.metrics.sentimentScore.value,
+            citations: s.metrics.citations,
             status: run.status,
             analyzed: s.metrics.analyzed,
             total: run.totalCount,
@@ -925,6 +955,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           metrics: currentSummary?.metrics || emptyMetrics(),
           trend,
           topSources: currentSummary?.domains.slice(0, 5) || [],
+          groups: currentSummary?.groups || reportingGroups(null, []),
           comparison,
           nextScanAt: project.enabled
             ? nextWeeklyScan(project.timezone, now())

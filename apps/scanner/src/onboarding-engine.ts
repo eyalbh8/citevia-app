@@ -5,6 +5,11 @@ import type {
   OnboardingJob,
   Prompt,
 } from '@citevia/core';
+import {
+  isBrandedPrompt,
+  MAX_BRANDED_PROMPTS,
+  isShortBuyerPrompt,
+} from '@citevia/core';
 import type { Runtime } from '@citevia/storage';
 import {
   OnboardingOutputError,
@@ -134,6 +139,21 @@ export class OnboardingEngine {
             false,
           );
         if (project.onboardingAppliedJobId !== jobId) {
+          if (
+            portfolio.prompts.filter((p) =>
+              isBrandedPrompt(p.text, {
+                name: project!.brand.name,
+                aliases: book.brandbook.names,
+                domains: book.brandbook.domains,
+              }),
+            ).length > MAX_BRANDED_PROMPTS ||
+            portfolio.prompts.some((p) => !isShortBuyerPrompt(p.text))
+          )
+            throw new ProviderError(
+              'onboarding_portfolio_policy_changed',
+              'Saved prompts do not meet the short-question / 15-branded limit. Review the saved portfolio before explicitly generating a replacement.',
+              false,
+            );
           const next = {
             ...project,
             brandbook: book.brandbook,

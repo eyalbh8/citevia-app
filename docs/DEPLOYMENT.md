@@ -24,6 +24,26 @@ The application does not ship customer records or populate AWS from the local da
 
 The template provisions a private Aurora PostgreSQL Serverless v2 writer, two private subnets across availability zones, one public NAT gateway, and exactly two application Lambdas. Both Lambda bundles include their dependencies and run on Node.js 22 / ARM64. The database is encrypted, deletion-protected and not publicly reachable. The single NAT gateway is a deliberate availability tradeoff for this MVP; production teams can add a NAT gateway per availability zone and an Aurora reader for stronger failover. The previous DynamoDB source is preserved only in `infra/dynamodb-template.reference.yaml`; it is not used by the current application.
 
+## Refresh an existing account's questions
+
+Deploy the current scanner bundle first. This IAM-only operation purchases one portfolio-generation call using the saved brandbook. It updates 50 prompt versions on the same account and leaves existing reports available. It does not start scans; the next weekly scan uses the replacement questions.
+
+Save this payload as a private JSON file with your actual existing account ID and a unique request ID:
+
+```json
+{"kind":"prompts:refresh","projectId":"EXISTING_ACCOUNT_ID","requestId":"YOUR_UNIQUE_REQUEST_ID"}
+```
+
+```sh
+aws --profile citevia --region us-east-1 lambda invoke \
+  --function-name YOUR_SCANNER_FUNCTION_NAME \
+  --cli-binary-format raw-in-base64-out \
+  --payload file:///absolute/path/refresh-request.json \
+  /tmp/citevia-refresh-result.json
+```
+
+Inspect the response file for `refreshed:true` and `scanStarted:false`, and check that the invocation has no `FunctionError`. Reuse the same request ID after an ambiguous client timeout or apply conflict. An uncertain call without a checkpoint stops; do not change the ID automatically. A new ID deliberately authorizes a new paid generation after inspection. Normal new-account onboarding uses this policy automatically; no maintenance action is needed for new accounts. `npm test` and `npm run build` validate this flow locally without making paid requests. Local real onboarding runs through `npm run dev` as described in [local setup](LOCAL_DEVELOPMENT.md).
+
 ## Prerequisites
 
 1. Node.js 22, AWS CLI v2, and a current AWS SAM CLI with `sam validate --lint` support. Authenticate to the intended AWS account using your organization's normal SSO process.

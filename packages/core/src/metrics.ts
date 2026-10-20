@@ -7,9 +7,49 @@ import type {
   RunSummary,
   ScanRun,
   SourceRow,
+  ReportingGroups,
 } from './types.js';
+import { JOURNEY_STAGES } from './onboarding.js';
 import { domainForUrl, isOwnedDomain, normalizeUrl, sourceId } from './urls.js';
 import { brandRank, brandSentimentScore } from './scoring.js';
+export const REPORTING_VERSION = 2;
+export function reportingGroups(
+  run: ScanRun | null,
+  results: PromptResult[],
+): ReportingGroups {
+  const aggregate = (
+    key: (prompt: RunSnapshot['prompts'][number]) => string,
+    defaults: readonly string[] = [],
+  ) => {
+    const keys = new Set([
+      ...defaults,
+      ...(run?.snapshot.prompts || []).map(key),
+    ]);
+    return [...keys].map((value) => {
+      const ids = new Set(
+        (run?.snapshot.prompts || [])
+          .filter((p) => key(p) === value)
+          .map((p) => p.id),
+      );
+      const {
+        citations: _citations,
+        uniqueDomains: _domains,
+        uniqueUrls: _urls,
+        ...metrics
+      } = metricsFromResults(results.filter((r) => ids.has(r.promptId)));
+      return { key: value, promptCount: ids.size, metrics };
+    });
+  };
+  return {
+    stages: aggregate((p) => p.stage || 'unassigned', JOURNEY_STAGES),
+    topics: aggregate((p) => p.topic || 'General'),
+    branding: aggregate(
+      (p) => (p.branded ? 'branded' : 'unbranded'),
+      ['branded', 'unbranded'],
+    ),
+    intents: aggregate((p) => p.intent || 'unassigned'),
+  };
+}
 
 export function emptyMetrics(): Metrics {
   return {
@@ -110,6 +150,22 @@ export function buildSummary(
     (item) => !!item.result.capturedAt && item.answer?.status === 'completed',
   );
   metrics.captured = captured.length;
+  const responses = new Map(
+    captured.map((item) => [item.result.responseId, item]),
+  );
+  const provenance = (ids: Set<string>, occurrences: number) => {
+    const items = [...ids].map((id) => responses.get(id)!);
+    const dates = items.map((item) => item.answer!.createdAt).sort();
+    return {
+      promptCount: new Set(items.map((item) => item.result.promptId)).size,
+      firstSeenAt: dates[0],
+      lastSeenAt: dates.at(-1)!,
+      usedPercent: captured.length
+        ? (100 * occurrences) / captured.length
+        : null,
+      avgCitations: ids.size ? occurrences / ids.size : null,
+    };
+  };
   function aggregate(kind: 'cited' | 'consulted'): {
     domains: SourceRow[];
     urls: SourceRow[];
@@ -148,6 +204,10 @@ export function buildSummary(
         ? (100 * item.responses.size) / captured.length
         : null,
       responseIds: [...item.responses].sort(),
+      ...provenance(item.responses, item.occurrences),
+      ...(kind === 'consulted'
+        ? { usedPercent: null, avgCitations: null }
+        : {}),
     }));
     const domains = new Map<
       string,
@@ -177,6 +237,10 @@ export function buildSummary(
           ? (100 * item.responses.size) / captured.length
           : null,
         responseIds: [...item.responses].sort(),
+        ...provenance(item.responses, item.occurrences),
+        ...(kind === 'consulted'
+          ? { usedPercent: null, avgCitations: null }
+          : {}),
       }),
     );
     const sort = (a: SourceRow, b: SourceRow) =>
@@ -194,6 +258,8 @@ export function buildSummary(
   metrics.uniqueDomains = cited.domains.length;
   metrics.uniqueUrls = cited.urls.length;
   return {
+    reportingVersion: REPORTING_VERSION,
+    groups: reportingGroups(run, results),
     metrics,
     domains: cited.domains,
     urls: cited.urls,

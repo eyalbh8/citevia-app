@@ -4,6 +4,8 @@ import {
   snapshotProvider,
   brandRank,
   brandSentimentScore,
+  reportingCompanies,
+  reportingCitations,
   type Analysis,
   type CapturedAnswer,
   type Membership,
@@ -163,7 +165,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
           uuidFor(`${p.id}:prompt:${prompt.id}`),
           id,
           prompt.text,
-          prompt.stage || 'general',
+          prompt.intent || prompt.stage || 'general',
           prompt.branded,
           topicId,
           [p.country],
@@ -592,24 +594,10 @@ export class PostgresRepository extends PostgresUsers implements Repository {
           scanId,
           answer?.text || null,
           JSON.stringify({
-            companies: (analysis?.brands || [])
-              .filter((brand) => brand.mentioned)
-              .map((brand) => {
-                const identity = [
-                  run.snapshot.brand,
-                  ...run.snapshot.competitors,
-                ].find((item) => item.id === brand.brandId);
-                return {
-                  company: identity?.name,
-                  rank: brandRank(brand),
-                  explicitRank: brand.explicitRank,
-                  sentimentScore: brandSentimentScore(brand),
-                  company_site_url: identity?.domains[0]
-                    ? `https://${identity.domains[0]}`
-                    : null,
-                  feel: brand.sentiment,
-                };
-              }),
+            companies:
+              result.status === 'succeeded'
+                ? reportingCompanies(analysis, run.snapshot, answer)
+                : [],
             analysis,
             companiesByAppearance: analysis?.companies || [],
             sentimentScore:
@@ -623,7 +611,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
             nativeResponse: answer?.raw || null,
             promptSnapshot: result.prompt,
           }),
-          JSON.stringify(answer?.citations || []),
+          JSON.stringify(reportingCitations(answer)),
           answer?.model || result.model || run.snapshot.generationModel,
           answer?.createdAt || result.completedAt || run.createdAt,
           run.snapshot.country,
@@ -643,37 +631,41 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         [accountId, scanId, promptId],
       );
       if (!analysis || !answer || result.status !== 'succeeded') return;
-      for (const brand of analysis.brands) {
-        if (!brand.mentioned) continue;
-        const entity = [run.snapshot.brand, ...run.snapshot.competitors].find(
-          (value) => value.id === brand.brandId,
-        );
-        if (!entity) continue;
+      for (const company of reportingCompanies(
+        analysis,
+        run.snapshot,
+        answer,
+      )) {
+        // The native schema requires a non-null rank; unranked entities stay in JSON with rank:null.
+        if (company.rank === null) continue;
         await tx.query(
           `INSERT INTO results(id,account_id,topic_id,topic,prompt_id,prompt,is_company_in_prompt,prompt_type,prompt_ranking,rank,entity,original_entity,reason,linkable,company_sources,company_site_url,company_domain,feel,url_sources,provider,model,timestamp,scan_id,region,country)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$10,$11,$12,ARRAY[]::jsonb[],$13,$14,$15,ARRAY(SELECT value FROM jsonb_array_elements($16::jsonb)),$21,$17,$18,$19,$20,$20)`,
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$10,$11,$12,ARRAY(SELECT value FROM jsonb_array_elements($22::jsonb)),$13,$14,$15,ARRAY(SELECT value FROM jsonb_array_elements($16::jsonb)),$21,$17,$18,$19,$20,$20)`,
           [
-            uuidFor(`${result.responseId}:${brand.brandId}`),
+            uuidFor(
+              `${result.responseId}:company:${company.company.toLocaleLowerCase()}`,
+            ),
             accountId,
             topicId,
             result.prompt.topic || 'General',
             promptId,
             result.prompt.text,
             result.prompt.branded,
-            result.prompt.stage || 'general',
-            brandRank(brand) ?? 0,
-            entity.name,
-            brand.evidence.map((value) => value.quote).join('\n'),
-            !!entity.domains[0],
-            entity.domains[0] ? `https://${entity.domains[0]}` : null,
-            entity.domains[0] || null,
-            brand.sentiment,
-            JSON.stringify(answer.citations),
+            result.prompt.intent || result.prompt.stage || 'general',
+            company.rank,
+            company.company,
+            company.reason,
+            !!company.company_site_url,
+            company.company_site_url,
+            company.domain,
+            company.feel,
+            JSON.stringify(reportingCitations(answer)),
             answer.model,
             answer.createdAt,
             scanId,
             run.snapshot.country,
             snapshotProvider(run.snapshot),
+            JSON.stringify(company.sources),
           ],
         );
       }

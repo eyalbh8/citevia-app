@@ -394,14 +394,30 @@ describe('automated account onboarding', () => {
       fixture = new FixtureOnboardingProvider();
     const book = (await fixture.brandbook(job)).brandbook;
     const prompts = (await fixture.prompts(job, book)).prompts.map(
-      ({ text, stage, topic, branded }) => ({ text, stage, topic, branded }),
+      ({ text, stage, topic, branded, intent }) => ({
+        text,
+        stage,
+        topic,
+        branded,
+        intent,
+      }),
     );
     const sections = Object.fromEntries(
       JOURNEY_STAGES.map((stage) => [
         stage,
-        prompts
-          .filter((prompt) => prompt.stage === stage)
-          .map(({ stage: _stage, ...prompt }) => prompt),
+        Object.fromEntries(
+          ['branded', 'unbranded'].map((group) => [
+            group,
+            prompts
+              .filter((prompt) => prompt.stage === stage)
+              .filter((_, i) =>
+                group === 'branded'
+                  ? i < (stage === 'convert' ? 3 : 4)
+                  : i >= (stage === 'convert' ? 3 : 4),
+              )
+              .map(({ text, topic, intent }) => ({ text, topic, intent })),
+          ]),
+        ),
       ]),
     );
     const extract = vi.fn(async (_request: unknown) => ({
@@ -447,13 +463,15 @@ describe('automated account onboarding', () => {
     });
     expect(generated.prompts).toHaveLength(50);
     for (const stage of JOURNEY_STAGES) {
-      expect(request.schema.properties[stage]).toMatchObject({
+      expect(
+        request.schema.properties[stage].properties.unbranded,
+      ).toMatchObject({
         type: 'array',
-        minItems: JOURNEY_PROMPT_COUNTS[stage],
-        maxItems: JOURNEY_PROMPT_COUNTS[stage],
+        minItems: JOURNEY_PROMPT_COUNTS[stage] - (stage === 'convert' ? 3 : 4),
+        maxItems: JOURNEY_PROMPT_COUNTS[stage] - (stage === 'convert' ? 3 : 4),
       });
       expect(
-        request.schema.properties[stage].items.properties,
+        request.schema.properties[stage].properties.unbranded.items.properties,
       ).not.toHaveProperty('stage');
       expect(
         generated.prompts.filter((prompt) => prompt.stage === stage),
@@ -464,13 +482,13 @@ describe('automated account onboarding', () => {
     expect(request.instructions).toContain(
       'source authority as its central purpose',
     );
-    expect(request.instructions).not.toContain('at least 60% unbranded');
+    expect(request.input.maximum_branded_count).toBe(15);
     expect(generated.receipt).toMatchObject({
-      instructionsVersion: 'citevia-onboarding-v4',
+      instructionsVersion: 'citevia-onboarding-v5',
     });
     // Regression: the real failure had 13/12/12/13, even though the total was 50.
     // A provider returning that split must still stop after one paid attempt.
-    sections.convert.push(sections.prefer.pop()!);
+    sections.convert.unbranded.push(sections.prefer.unbranded.pop()!);
     await expect(
       new OpenAIOnboardingProvider({ answer: vi.fn(), extract }).prompts(
         job,
@@ -596,13 +614,13 @@ describe('portfolio response schema allocation', () => {
       convert: 12,
     });
     const schema = portfolioGenerationSchema(allocation);
-    expect(schema.properties.understand).toMatchObject({
+    expect(schema.properties.understand.properties.unbranded).toMatchObject({
       minItems: 0,
       maxItems: 0,
     });
-    expect(schema.properties.prefer).toMatchObject({
-      minItems: 13,
-      maxItems: 13,
+    expect(schema.properties.prefer.properties.unbranded).toMatchObject({
+      minItems: 8,
+      maxItems: 8,
     });
   });
 });

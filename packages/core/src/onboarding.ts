@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getDomain } from 'tldts';
 import type { JourneyStage, OnboardingInput } from './types.js';
+import { PROMPT_INTENTS } from './prompt-policy.js';
 export const JOURNEY_STAGES = [
   'understand',
   'prefer',
@@ -99,6 +100,7 @@ export const generatedPromptSchema = z
     stage: journeyStageSchema,
     topic: z.string().trim().min(1).max(200),
     branded: z.boolean(),
+    intent: z.enum(PROMPT_INTENTS),
   })
   .strict();
 export function journeyAllocation(

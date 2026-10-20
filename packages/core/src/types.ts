@@ -28,6 +28,7 @@ export interface Prompt {
   stage?: JourneyStage;
   topic?: string;
   generationId?: string;
+  intent?: import('./prompt-policy.js').PromptIntent;
 }
 export interface Project {
   id: string;
@@ -59,6 +60,14 @@ export interface Project {
     'status' | 'step' | 'error' | 'firstRunId'
   >;
   scanProviders?: ScanProviderConfig[];
+  portfolioRefresh?: {
+    id: string;
+    status: 'generating' | 'completed' | 'failed';
+    requestedAt: string;
+    promptHash: string;
+    brandbookHash: string;
+    error?: string;
+  };
 }
 export interface Membership {
   projectId: string;
@@ -252,8 +261,37 @@ export interface SourceRow {
   uniqueUrlCount: number;
   coverage: number | null;
   responseIds: string[];
+  promptCount: number;
+  /** Citation occurrences / captured answers; may exceed 100%, unlike coverage. */
+  usedPercent: number | null;
+  avgCitations: number | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+export interface ReportingGroup {
+  key: string;
+  promptCount: number;
+  metrics: Pick<
+    Metrics,
+    | 'visibility'
+    | 'averageRank'
+    | 'sentimentScore'
+    | 'captured'
+    | 'analyzed'
+    | 'mentioned'
+    | 'ranked'
+    | 'sentiment'
+  >;
+}
+export interface ReportingGroups {
+  stages: ReportingGroup[];
+  topics: ReportingGroup[];
+  branding: ReportingGroup[];
+  intents: ReportingGroup[];
 }
 export interface RunSummary {
+  reportingVersion: number;
+  groups: ReportingGroups;
   metrics: Metrics;
   domains: SourceRow[];
   urls: SourceRow[];
@@ -273,6 +311,8 @@ export interface TrendPoint {
   date: string;
   visibility: number | null;
   averageRank: number | null;
+  sentimentScore: number | null;
+  citations: number;
   status: RunStatus;
   analyzed: number;
   total: number;
@@ -284,6 +324,7 @@ export interface Dashboard {
   metrics: Metrics;
   trend: TrendPoint[];
   topSources: SourceRow[];
+  groups: ReportingGroups;
   comparison: {
     visibilityDelta: number | null;
     previousRunId: string | null;

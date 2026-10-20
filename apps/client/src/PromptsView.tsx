@@ -12,6 +12,7 @@ import {
   JOURNEY_STAGES,
   brandRank,
   brandSentimentScore,
+  MAX_BRANDED_PROMPTS,
   type PromptMetricsRow,
 } from '@citevia/core';
 import { MetricChange, SentimentScore } from './ScoreBadge';
@@ -168,6 +169,7 @@ export default function PromptsView({
         'Prompt',
         'Section',
         'Topic',
+        'Search intent',
         'Branded',
         'Status',
         'Version',
@@ -193,6 +195,7 @@ export default function PromptsView({
           p.text,
           p.stage,
           p.topic,
+          p.intent,
           String(p.branded),
           p.active ? 'active' : 'archived',
           p.version,
@@ -230,6 +233,13 @@ export default function PromptsView({
         <div>
           <strong>{prompts.length - active}</strong>
           <span>Archived prompts</span>
+        </div>
+        <div>
+          <strong>
+            {prompts.filter((p) => p.active && p.branded).length}
+            <small> / {MAX_BRANDED_PROMPTS}</small>
+          </strong>
+          <span>Branded prompts</span>
         </div>
         <div className="prompts-overview-note">
           One answer per active prompt on each enabled provider every week.
@@ -414,6 +424,7 @@ export default function PromptsView({
                             </span>
                             <span className="prompt-category">
                               {p.topic ? `${p.topic} · ` : ''}
+                              {p.intent ? `${labelize(p.intent)} · ` : ''}
                               {p.branded ? 'Branded' : 'Discovery'} · v
                               {p.version} · {p.active ? 'Active' : 'Archived'}
                             </span>
@@ -579,8 +590,7 @@ function PromptEditor({
 }) {
   const [text, setText] = useState(prompt?.text || ''),
     [stage, setStage] = useState<JourneyStage>(prompt?.stage || 'understand');
-  const [topic, setTopic] = useState(prompt?.topic || ''),
-    [branded, setBranded] = useState(prompt?.branded || false);
+  const [topic, setTopic] = useState(prompt?.topic || '');
   const [saving, setSaving] = useState(false),
     [error, setError] = useState<Error>();
   const texts = text
@@ -604,7 +614,6 @@ function PromptEditor({
               : { texts }),
             stage,
             topic,
-            branded,
           }),
         },
       );
@@ -664,14 +673,10 @@ function PromptEditor({
               onChange={(e) => setTopic(e.target.value)}
             />
           </label>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={branded}
-              onChange={(e) => setBranded(e.target.checked)}
-            />
-            Includes your brand name
-          </label>
+          <p className="scan-options">
+            Brand names and aliases are detected automatically. A maximum of 15
+            active prompts may be branded.
+          </p>
           <p className="scan-options">
             Saving changes your prompt portfolio. Start a scan to collect new
             answers.

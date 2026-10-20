@@ -14,6 +14,7 @@ import { OnboardingEngine } from './onboarding-engine.js';
 import { syncProjectSchedule } from '../../api/src/scheduler.js';
 import { ProviderError } from './provider.js';
 import { reanalyzeCapturedRun } from './reanalysis.js';
+import { refreshPortfolio } from './portfolio-refresh.js';
 
 const id = z
   .string()
@@ -121,6 +122,7 @@ export const handler = async (
     | SQSEvent
     | ScanMessage
     | { kind: 'database:migrate' }
+    | { kind: 'prompts:refresh'; projectId: string; requestId: string }
     | {
         kind: 'scan:reanalyze';
         projectId: string;
@@ -129,6 +131,27 @@ export const handler = async (
       }
     | { kind: 'users:bootstrap-admin'; userId: string },
 ) => {
+  if ('kind' in event && event.kind === 'prompts:refresh') {
+    const input = z
+      .object({
+        kind: z.literal('prompts:refresh'),
+        projectId: id,
+        requestId: z.string().regex(/^[A-Za-z0-9_-]{8,100}$/),
+      })
+      .strict()
+      .parse(event);
+    return refreshPortfolio(
+      createAwsRuntime(),
+      {
+        prompts: async (job, book) =>
+          new OpenAIOnboardingProvider(
+            await createResponseProviderFromEnv(),
+          ).prompts(job, book),
+      },
+      input.projectId,
+      input.requestId,
+    );
+  }
   if ('kind' in event && event.kind === 'scan:reanalyze') {
     const input = z
       .object({

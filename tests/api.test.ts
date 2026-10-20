@@ -361,7 +361,7 @@ describe('real-provider readiness and prompt catalog', () => {
     expect(items[0]).toMatchObject({
       stage: 'trust',
       topic: 'Security and references',
-      branded: true,
+      branded: false,
       version: 1,
     });
     const edited = await f.call(
@@ -508,6 +508,34 @@ describe('API prompt configuration and frozen history', () => {
 });
 
 describe('API results, sources and comparisons', () => {
+  it('enforces the branded cap on actual text even when the request claims unbranded', async () => {
+    const f = await fixture();
+    const texts = Array.from(
+      { length: 15 },
+      (_, i) => `What does Northstar offer for need ${i}?`,
+    );
+    const accepted = await f.call(
+      `${BASE}/prompts`,
+      jsonRequest('POST', { texts, branded: false }),
+    );
+    expect(accepted.status).toBe(201);
+    expect(
+      (await read<{ items: Project['prompts'] }>(accepted)).items.every(
+        (p) => p.branded,
+      ),
+    ).toBe(true);
+    const rejected = await f.call(
+      `${BASE}/prompts`,
+      jsonRequest('POST', {
+        text: 'What is Northstar Analytics pricing?',
+        branded: false,
+      }),
+    );
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toMatchObject({
+      error: { code: 'BRANDED_PROMPT_LIMIT' },
+    });
+  });
   it('returns all 50 outcomes, including absent-brand answers, with correct visibility denominators', async () => {
     const f = await fixture(fixturePrompts());
     await f.scan();
@@ -566,7 +594,17 @@ describe('API results, sources and comparisons', () => {
       kind: 'cited',
       answerCount: 3,
       coverage: 100,
+      promptCount: 3,
+      usedPercent: 100,
+      avgCitations: 1,
     });
+    expect(domain.firstSeenAt).toBeTruthy();
+    expect(domain.lastSeenAt).toBeTruthy();
+    const dashboard = await read<Dashboard>(await f.call(`${BASE}/dashboard`));
+    expect(
+      dashboard.groups.branding.find((group) => group.key === 'unbranded')
+        ?.promptCount,
+    ).toBe(3);
     const urls = await read<Page<SourceRow>>(
       await f.call(`${BASE}/sources?groupBy=url&domain=${domain.domain}`),
     );

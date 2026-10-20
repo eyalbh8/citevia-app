@@ -263,4 +263,88 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
     await repository.markRunRunning(p.id, run.id);
     expect((await repository.getRun(p.id, run.id))?.status).toBe('failed');
   });
+  it('writes every identified company to native reporting rows with evidence, nullable unknown scores and citation provenance', async () => {
+    const project = newProject({
+      id: 'reporting-companies',
+      prompts: ['Which analytics company should I use?'],
+    });
+    project.competitors = project.competitors.filter(
+      (brand) => brand.name !== 'Metriclane',
+    );
+    project.prompts[0].intent = 'commercial';
+    project.prompts[0].stage = 'prefer';
+    await repository.saveProject(project, null);
+    const artifacts = new MemoryArtifacts(),
+      queue = new MemoryQueue(),
+      provider = new FixtureProvider();
+    const scanner = new Scanner({ repository, artifacts, queue, provider });
+    await scanner.handle({
+      kind: 'kickoff',
+      projectId: project.id,
+      scheduledAt: new Date().toISOString(),
+      trigger: 'manual',
+    });
+    while (queue.messages.length) await scanner.handle(queue.messages.shift()!);
+    const run = (await repository.listRuns(project.id))[0];
+    const result = (await repository.listResults(project.id, run.id))[0];
+    const answer = (await artifacts.get<import('@citevia/core').CapturedAnswer>(
+      result.captureKey!,
+    ))!;
+    const analysis = (await artifacts.get<import('@citevia/core').Analysis>(
+      result.analysisKey!,
+    ))!;
+    const block = answer.blocks.find((b) => b.text.includes('Metriclane'))!;
+    const start = block.text.indexOf('Metriclane');
+    analysis.companies = [
+      {
+        name: 'Metriclane',
+        rank: 3,
+        evidence: {
+          blockId: block.id,
+          start,
+          end: start + 10,
+          quote: 'Metriclane',
+        },
+      },
+    ];
+    await repository.saveMeasurement(result, run, answer, analysis);
+    await repository.saveMeasurement(result, run, answer, analysis);
+    const row = (
+      await db.query(
+        'SELECT json_response,sources FROM prompt_responses WHERE account_id=$1',
+        [uuidFor(project.id)],
+      )
+    ).rows[0];
+    expect((row.json_response as any).companies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          company: 'Metriclane',
+          rank: 3,
+          sentimentScore: null,
+          feel: 'unknown',
+        }),
+      ]),
+    );
+    expect(
+      (row.sources as any[]).every(
+        (source) => typeof source.domain === 'string',
+      ),
+    ).toBe(true);
+    const native = (
+      await db.query(
+        'SELECT rank,feel,prompt_type FROM results WHERE account_id=$1 AND entity=$2',
+        [uuidFor(project.id), 'Metriclane'],
+      )
+    ).rows;
+    expect(native).toEqual([
+      { rank: 3, feel: 'unknown', prompt_type: 'commercial' },
+    ]);
+    expect(
+      (
+        await db.query('SELECT type,stage FROM prompts WHERE account_id=$1', [
+          uuidFor(project.id),
+        ])
+      ).rows,
+    ).toEqual([{ type: 'commercial', stage: 'prefer' }]);
+  });
 });

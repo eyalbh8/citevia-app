@@ -1,7 +1,12 @@
-if(process.env.NODE_ENV!=='test')throw new Error('Test fixtures cannot be used by the application.');
+if (process.env.NODE_ENV !== 'test')
+  throw new Error('Test fixtures cannot be used by the application.');
 // Test fixtures only. Never import this module from application or script code.
 import type { Brandbook, OnboardingJob } from '@citevia/core';
-import { journeyAllocation } from '@citevia/core';
+import {
+  journeyAllocation,
+  STAGE_INTENTS,
+  type JourneyStage,
+} from '@citevia/core';
 import type { OnboardingProvider } from '../../apps/scanner/src/onboarding-provider.js';
 import { validatePortfolio } from '../../apps/scanner/src/onboarding-provider.js';
 export class FixtureOnboardingProvider implements OnboardingProvider {
@@ -57,11 +62,10 @@ export class FixtureOnboardingProvider implements OnboardingProvider {
   }
   async prompts(job: OnboardingJob, book: Brandbook) {
     const templates = {
-      understand:
-        'What should I understand about choosing this type of solution',
+      understand: 'What solutions work',
       prefer: 'Which providers should I compare',
-      trust: 'What evidence should I check before trusting a provider',
-      convert: 'How can I evaluate pricing and arrange the next step',
+      trust: 'Where can I find reliable guidance',
+      convert: 'How can I choose a plan',
     };
     const audiences = [
       'a small team',
@@ -90,6 +94,10 @@ export class FixtureOnboardingProvider implements OnboardingProvider {
         stage,
         topic: 'Sample buyer journey',
         branded: false,
+        intent:
+          STAGE_INTENTS[stage as JourneyStage][
+            i % STAGE_INTENTS[stage as JourneyStage].length
+          ],
       })),
     );
     return {

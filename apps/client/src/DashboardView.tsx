@@ -182,7 +182,7 @@ export function DashboardView({
             <div>
               <h2 className="card-title">Visibility over time</h2>
               <p className="card-description">
-                How often ChatGPT includes your brand in its answers
+                How often the selected AI provider includes your brand
               </p>
             </div>
             <span className="small-select">Weekly</span>
@@ -296,6 +296,45 @@ export function DashboardView({
           </div>
         </section>
       </div>
+      <section className="card" style={{ marginBottom: 20 }}>
+        <div className="card-header">
+          <div>
+            <h2 className="card-title">Visibility by section</h2>
+            <p className="card-description">
+              The four buyer stages, plus branded and unbranded discovery
+              results
+            </p>
+          </div>
+        </div>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Section</th>
+                <th>Prompts</th>
+                <th>Analyzed</th>
+                <th>Visibility</th>
+                <th>Rank</th>
+                <th>Sentiment / 100</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...dashboard.groups.stages, ...dashboard.groups.branding].map(
+                (group) => (
+                  <tr key={group.key}>
+                    <td>{group.key[0].toUpperCase() + group.key.slice(1)}</td>
+                    <td>{group.promptCount}</td>
+                    <td>{group.metrics.analyzed}</td>
+                    <td>{percent(group.metrics.visibility.value)}</td>
+                    <td>{formatNumber(group.metrics.averageRank.value, 1)}</td>
+                    <td>{formatNumber(group.metrics.sentimentScore.value)}</td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
       <div className="lower-row">
         <section className="card">
           <div className="card-header">

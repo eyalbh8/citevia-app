@@ -7,6 +7,11 @@ import {
   JOURNEY_STAGES,
   journeyGoal,
   promptFingerprint,
+  brandedAllocation,
+  isBrandedPrompt,
+  isShortBuyerPrompt,
+  MAX_BRANDED_PROMPTS,
+  STAGE_INTENTS,
   type Brandbook,
   type CapturedAnswer,
   type OnboardingJob,
@@ -88,6 +93,21 @@ function json(receipt: ProviderReceipt): unknown {
   }
 }
 const canonical = promptFingerprint;
+function portfolioBrand(job: OnboardingJob, book: Brandbook) {
+  return { name: job.input.name, aliases: book.names, domains: book.domains };
+}
+function manualBrandedCount(job: OnboardingJob, book: Brandbook) {
+  const count = job.input.manualPrompts.filter((p) =>
+    isBrandedPrompt(p.text, portfolioBrand(job, book)),
+  ).length;
+  if (count > MAX_BRANDED_PROMPTS)
+    throw new ProviderError(
+      'onboarding_branded_limit',
+      'Saved manual prompts exceed the maximum of 15 branded questions. Edit them before retrying.',
+      false,
+    );
+  return count;
+}
 export function validatePortfolio(
   job: OnboardingJob,
   book: Brandbook,
@@ -115,6 +135,7 @@ export function validatePortfolio(
       ...p,
       topic: 'Custom prompts',
       branded: false,
+      intent: undefined,
     })),
     ...generated,
   ];
@@ -135,15 +156,43 @@ export function validatePortfolio(
       'Generated prompts contained duplicates.',
       true,
     );
+  if (generated.some((p) => !isShortBuyerPrompt(p.text)))
+    throw new ProviderError(
+      'onboarding_prompt_too_long',
+      'Generated questions must be one short search phrase, at most 20 words and 160 characters.',
+      false,
+    );
+  if (
+    all.filter((p) => isBrandedPrompt(p.text, portfolioBrand(job, book)))
+      .length > MAX_BRANDED_PROMPTS
+  )
+    throw new ProviderError(
+      'onboarding_branded_limit',
+      'A portfolio can contain at most 15 branded questions, including company aliases and website.',
+      false,
+    );
+  for (const stage of JOURNEY_STAGES) {
+    const rows = generated.filter((p) => p.stage === stage);
+    const allowed: readonly string[] = STAGE_INTENTS[stage];
+    if (
+      rows.some((p) => !allowed.includes(p.intent)) ||
+      (rows.length >= 2 &&
+        allowed.some((intent) => !rows.some((p) => p.intent === intent)))
+    )
+      throw new ProviderError(
+        'onboarding_intent_coverage_invalid',
+        'Generated questions must cover each section’s required search intents.',
+        false,
+      );
+  }
   const at = new Date().toISOString();
   return all.map((p, index) => ({
     id: `p_${createHash('sha256').update(`${job.id}:${index}`).digest('hex').slice(0, 24)}`,
     text: p.text,
     stage: p.stage,
     topic: p.topic,
-    branded: [job.input.name, ...book.names].some(
-      (name) => name.length > 1 && canonical(p.text).includes(canonical(name)),
-    ),
+    intent: p.intent,
+    branded: isBrandedPrompt(p.text, portfolioBrand(job, book)),
     version: 1,
     active: true,
     createdAt: at,
@@ -258,10 +307,14 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         },
       };
     const allocation = journeyAllocation(job.input.manualPrompts);
+    const branded = brandedAllocation(
+      allocation,
+      manualBrandedCount(job, brandbook),
+    );
     const receipt = await this.provider.extract({
       model: this.model,
       instructions: PORTFOLIO_INSTRUCTIONS,
-      schema: portfolioGenerationSchema(allocation),
+      schema: portfolioGenerationSchema(allocation, branded),
       input: {
         brandbook,
         market: job.input.country,
@@ -269,6 +322,16 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         manual_prompts: job.input.manualPrompts,
         remaining_count: 50 - job.input.manualPrompts.length,
         section_allocation: allocation,
+        maximum_branded_count: MAX_BRANDED_PROMPTS,
+        prompt_slots: Object.fromEntries(
+          JOURNEY_STAGES.map((stage) => [
+            stage,
+            {
+              branded: branded[stage],
+              unbranded: allocation[stage] - branded[stage],
+            },
+          ]),
+        ),
         brand_name: job.input.name,
         section_goals: Object.fromEntries(
           JOURNEY_STAGES.map((stage) => [
@@ -280,19 +343,44 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
     });
     try {
       const items = z
-        .array(generatedPromptSchema.omit({ stage: true }))
+        .array(generatedPromptSchema.omit({ stage: true, branded: true }))
         .max(50);
+      const section = z.object({ branded: items, unbranded: items }).strict();
       const sections = z
         .object({
-          understand: items,
-          prefer: items,
-          trust: items,
-          convert: items,
+          understand: section,
+          prefer: section,
+          trust: section,
+          convert: section,
         })
         .strict()
         .parse(json(receipt));
       const generated = JOURNEY_STAGES.flatMap((stage) =>
-        sections[stage].map((prompt) => ({ ...prompt, stage })),
+        (['branded', 'unbranded'] as const).flatMap((group) => {
+          const expected =
+            group === 'branded'
+              ? branded[stage]
+              : allocation[stage] - branded[stage];
+          if (sections[stage][group].length !== expected)
+            throw new ProviderError(
+              'onboarding_coverage_invalid',
+              'Generated prompts did not match the requested section allocation.',
+              false,
+            );
+          return sections[stage][group].map((prompt) => {
+            const actual = isBrandedPrompt(
+              prompt.text,
+              portfolioBrand(job, brandbook),
+            );
+            if (group === 'unbranded' && actual)
+              throw new ProviderError(
+                'onboarding_branded_limit',
+                'An unbranded question included the company name or an alias.',
+                false,
+              );
+            return { ...prompt, stage, branded: actual };
+          });
+        }),
       );
       return {
         prompts: validatePortfolio(job, brandbook, { prompts: generated }),

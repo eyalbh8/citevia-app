@@ -1,4 +1,9 @@
-import { PROVIDER_LABELS, snapshotProvider, brandRank } from '@citevia/core';
+import {
+  PROVIDER_LABELS,
+  snapshotProvider,
+  brandRank,
+  reportingCompanies,
+} from '@citevia/core';
 import { SentimentScore } from './ScoreBadge';
 import type { ReactNode } from 'react';
 import {
@@ -138,6 +143,24 @@ function DetailContent({ data }: { data: ResponseDetail }) {
                 {target.rankEvidence.quote}
               </blockquote>
             </>
+          )}
+          {data.analysis && (
+            <div style={{ marginBottom: 20 }}>
+              <h3 className="drawer-section-title">
+                Companies in order of appearance
+              </h3>
+              {reportingCompanies(data.analysis, run.snapshot, answer).map(
+                (company) => (
+                  <p className="card-description" key={company.company}>
+                    {company.rank === null ? 'Unranked' : `#${company.rank}`} ·{' '}
+                    {company.company}
+                    {company.sentimentScore !== null && (
+                      <> · Sentiment {company.sentimentScore}/100</>
+                    )}
+                  </p>
+                ),
+              )}
+            </div>
           )}
           <h3 className="drawer-section-title">
             <LinkIcon size={14} />
