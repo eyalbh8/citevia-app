@@ -24,6 +24,8 @@ Account setup also researches up to five direct competitors and their official w
 
 Click a prompt to open its paginated answer history across scans and providers, including previous prompt versions and collection failures. Filter by provider/date and sort by model, rank, citations, sentiment or date. Reanalysis of an existing capture is shown once at its original date. Each row opens the complete original answer, with Markdown rendered as headings, bold text, lists, links and tables; raw HTML is disabled. The original text remains unchanged in the database and evidence store. `GET /v1/projects/:id/prompts/:promptId/responses` serves this account-scoped history with `days=all|7|30|90`, `provider`, `sort`, `direction`, `limit` and `cursor` parameters.
 
+**Agents** creates account-scoped text drafts for Facebook, Instagram, X, Pinterest, Reddit, and Blog using the saved brandbook. Owners can generate, review, edit, copy, and explicitly retry failed drafts; viewers can read and copy them. Generation runs in the background and content history updates as it progresses. Social publishing remains separate. See the [agent post API, persistence, and recovery guide](docs/AGENT_POSTS.md).
+
 Read the [complete local setup and validation guide](docs/LOCAL_DEVELOPMENT.md), [onboarding/database mapping](docs/ONBOARDING.md) and [AWS deployment guide](docs/DEPLOYMENT.md). Local development needs no Docker or AWS account when using direct provider keys. `npm run dev:live` is an alias for the same real-only environment. Tests use isolated fixtures that cannot run inside the application.
 
 A small real-response validation command is ready for later:

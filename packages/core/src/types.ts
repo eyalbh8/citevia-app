@@ -369,6 +369,7 @@ export interface Page<T> {
   total: number;
 }
 export type ScanMessage =
+  | { kind: 'agent-post'; projectId: string; postId: string }
   | {
       kind: 'kickoff';
       projectId: string;

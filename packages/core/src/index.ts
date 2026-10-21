@@ -14,3 +14,4 @@ export * from './dashboard.js';
 export * from './competitors.js';
 
 export * from './traffic.js';
+export * from './agents.js';

@@ -1,4 +1,5 @@
 import { trafficRoute } from './traffic.js';
+import { agentRoute } from './agents.js';
 import { monitoringPeriod, monitoringRoute } from './monitoring.js';
 import { dashboardOverviewRoute } from './dashboard.js';
 import { competitorSuggestions } from './competitors.js';
@@ -315,6 +316,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           'FORBIDDEN',
           'Project owner access is required',
         );
+      const agent = await agentRoute(runtime, project, userId, tail, request, now(),
+        options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim()), body);
+      if (agent) return agent;
       const traffic = await trafficRoute(runtime, project, tail, request, now());
       if (traffic) return traffic;
       const monitoring = await monitoringRoute(

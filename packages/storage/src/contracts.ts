@@ -17,6 +17,7 @@ import type {
   TrafficFilters,
   TrafficAggregate,
   TrafficInstallationReceipt,
+  AgentPostJob,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 import type { McpRepository } from './mcp.js';
@@ -30,6 +31,11 @@ export interface SavedAnalysis {
   analysis: Analysis | null;
 }
 export interface Repository extends UserRepository, McpRepository {
+  getAgentPost(projectId: string, postId: string): Promise<AgentPostJob | null>;
+  listAgentPosts(projectId: string, offset: number, limit: number): Promise<{ items: AgentPostJob[]; total: number }>;
+  listActiveAgentPosts(): Promise<AgentPostJob[]>;
+  reserveAgentPost(post: AgentPostJob, expectedVersion: number | null): Promise<'saved' | 'conflict' | 'limit'>;
+  saveAgentPost(post: AgentPostJob, expectedVersion: number): Promise<boolean>;
   recordTrafficInstallation(receipt: TrafficInstallationReceipt): Promise<void>;
   collectTrafficEvent(event: TrafficEvent): Promise<void>;
   trafficStatus(projectId: string, testId?: string): Promise<TrafficStatus>;
@@ -133,6 +139,11 @@ export interface AnswerProvider {
   ): Promise<Analysis>;
 }
 export interface ScannerDependencies extends Runtime {
+  agents?: {
+    handle(projectId: string, postId: string): Promise<void>;
+    reconcile(): Promise<void>;
+    deadLetter(projectId: string, postId: string): Promise<void>;
+  };
   provider: AnswerProvider;
   now?: () => Date;
   onboarding?: {

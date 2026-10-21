@@ -10,6 +10,7 @@ import { localPostgres } from '../packages/storage/src/local-postgres.js';
 import { createAuthenticatedApi } from '../apps/api/src/handler.js';
 import { createDescopeIdentityProvider } from '../apps/api/src/descope.js';
 import { Scanner } from '../apps/scanner/src/engine.js';
+import { AgentPostEngine } from '../apps/scanner/src/agent-posts.js';
 import { createResponseProviderFromEnv } from '../apps/scanner/src/openai.js';
 import { createScanProviderFromEnv } from '../apps/scanner/src/providers.js';
 import { providerAvailability } from '../apps/scanner/src/provider-http.js';
@@ -88,7 +89,7 @@ if (configured) {
     new OpenAIOnboardingProvider(await createResponseProviderFromEnv()),
     async () => {},
   );
-  scanner = new Scanner({ ...runtime, provider, onboarding });
+  scanner = new Scanner({ ...runtime, provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv) });
 }
 api = createAuthenticatedApi(runtime, createDescopeIdentityProvider(), {
   mode: 'live',

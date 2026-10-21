@@ -147,6 +147,7 @@ export async function migrateDatabase(
       '006_mcp.sql',
       '007_ai_traffic.sql',
       '008_traffic_installations.sql',
+      '009_agent_posts.sql',
     ]) {
       const source = await readFile(resolve(directory, name), 'utf8'),
         checksum = createHash('sha256').update(source).digest('hex');

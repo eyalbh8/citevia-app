@@ -90,6 +90,9 @@ export class Scanner {
 
   async handle(message: ScanMessage): Promise<void> {
     switch (message.kind) {
+      case 'agent-post':
+        if (!this.dependencies.agents) throw new Error('Agent post worker is not configured');
+        return this.dependencies.agents.handle(message.projectId, message.postId);
       case 'onboard':
         if (!this.dependencies.onboarding)
           throw new Error('Onboarding worker is not configured');
@@ -104,6 +107,7 @@ export class Scanner {
       case 'retry':
         return this.retry(message);
       case 'reconcile':
+        await this.dependencies.agents?.reconcile();
         await this.dependencies.onboarding?.reconcile();
         return this.reconcile();
     }
@@ -587,6 +591,11 @@ export class Scanner {
   }
 
   async handleDeadLetter(message: ScanMessage): Promise<void> {
+    if (message.kind === 'agent-post') {
+      if (!this.dependencies.agents) throw new Error('Agent post worker is not configured');
+      await this.dependencies.agents.deadLetter(message.projectId, message.postId);
+      return;
+    }
     if (message.kind === 'onboard') {
       await this.dependencies.onboarding?.deadLetter(
         message.projectId,

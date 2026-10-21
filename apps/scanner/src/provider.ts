@@ -27,6 +27,8 @@ export interface AnswerRequest {
 }
 
 export interface ExtractionRequest {
+  schemaName?: string;
+  maxOutputTokens?: number;
   model: string;
   instructions: string;
   input: unknown;
@@ -75,8 +77,8 @@ export function extractionBody(input: ExtractionRequest): Record<string, unknown
     instructions: input.instructions,
     input: JSON.stringify(input.input),
     // No web tools: analysis is constrained to the captured answer.
-    text: { format: { type: 'json_schema', name: 'brand_observations', strict: true, schema: input.schema } },
-    max_output_tokens: 12000,
+    text: { format: { type: 'json_schema', name: input.schemaName ?? 'brand_observations', strict: true, schema: input.schema } },
+    max_output_tokens: input.maxOutputTokens ?? 12000,
   };
 }
 

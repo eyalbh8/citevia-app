@@ -7,6 +7,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
+  Bot,
   CalendarDays,
   ChartNoAxesCombined,
   ChevronRight,
@@ -71,6 +72,8 @@ import BrandbookView from './BrandbookView';
 import FilterDropdown from './FilterDropdown';
 import McpView from './McpView';
 import McpConsent from './McpConsent';
+import AgentsView from './AgentsView';
+import IntegrationsView from './IntegrationsView';
 import './onboarding.css';
 
 type View =
@@ -83,9 +86,13 @@ type View =
   | 'accounts'
   | 'brandbook'
   | 'prompts'
+  | 'agents'
+  | 'integrations'
   | 'mcp'
   | 'users';
 const views = {
+  agents: { title: 'Agents', description: 'Create content with your AI agents.', icon: Bot },
+  integrations: { title: 'Integrations', description: 'Connect your analytics, social agents and workflow tools.', icon: Plug },
   mcp: {
     title: 'MCP connections',
     description: 'Connect your AI assistant to Citevia with your account permissions.',
@@ -139,8 +146,11 @@ const views = {
   },
 };
 function readView(): View {
-  const hash = window.location.hash.slice(1);
+  const hash = window.location.hash.slice(1).split('?')[0];
   return hash in views ? (hash as View) : 'dashboard';
+}
+function readIntegrationHighlight() {
+  return new URLSearchParams(window.location.hash.split('?')[1] || '').get('highlight') || undefined;
 }
 function storedProject() {
   try {
@@ -241,6 +251,7 @@ function Workspace() {
   const { logout } = useDescope();
   const [view, setView] = useState<View>(readView),
     [mobileOpen, setMobileOpen] = useState(false);
+  const [integrationHighlight, setIntegrationHighlight] = useState(readIntegrationHighlight);
   const navigationRef = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLButtonElement>(null);
   const [projectId, setProjectId] = useState(storedProject),
@@ -292,7 +303,7 @@ function Workspace() {
     ? `/projects/${encodeURIComponent(currentProject.id)}`
     : null;
   const dashboard = useApi<Dashboard>(
-    path ? `${path}/dashboard${query({ runId, provider })}` : null,
+    path && !['agents', 'integrations', 'mcp'].includes(view) ? `${path}/dashboard${query({ runId, provider })}` : null,
   );
   const runs = useApi<Page<ScanRun>>(path ? `${path}/runs` : null);
   const setup = useApi<{ job: OnboardingJob | null }>(
@@ -342,6 +353,7 @@ function Workspace() {
   useEffect(() => {
     const handle = () => {
       setView(readView());
+      setIntegrationHighlight(readIntegrationHighlight());
       setMobileOpen(false);
     };
     window.addEventListener('hashchange', handle);
@@ -383,8 +395,9 @@ function Workspace() {
     document.title = `${views[view].title} · Citevia`;
     window.scrollTo(0, 0);
   }, [view]);
-  function navigate(next: View) {
-    window.location.hash = next;
+  function navigate(next: View, highlight?: string) {
+    window.location.hash = next + (next === 'integrations' && highlight ? `?${new URLSearchParams({ highlight })}` : '');
+    setIntegrationHighlight(highlight);
     setView(next);
     setMobileOpen(false);
   }
@@ -536,6 +549,7 @@ function Workspace() {
               'tracking',
               'sources',
               'traffic',
+              'agents',
               'brandbook',
               ...(systemAdmin ? ['users' as const] : []),
             ] as View[]
@@ -556,6 +570,14 @@ function Workspace() {
         </nav>
         <div className="nav-rule" />
         <nav aria-label="Project configuration">
+          <button
+            className={`nav-item ${view === 'integrations' ? 'active' : ''}`}
+            aria-current={view === 'integrations' ? 'page' : undefined}
+            onClick={() => navigate('integrations')}
+          >
+            <Plug />
+            Integrations
+          </button>
           <button
             className={`nav-item ${view === 'mcp' ? 'active' : ''}`}
             aria-current={view === 'mcp' ? 'page' : undefined}
@@ -690,9 +712,9 @@ function Workspace() {
         <main
           id="main-content"
           tabIndex={-1}
-          className={`content ${['dashboard', 'prompts', 'mentions', 'tracking', 'traffic'].includes(view) ? 'prompts-content' : ''}`}
+          className={`content ${['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'agents', 'integrations'].includes(view) ? 'prompts-content' : ''}`}
         >
-          {!['dashboard', 'prompts', 'mentions', 'tracking', 'traffic'].includes(view) && (
+          {!['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'agents', 'integrations'].includes(view) && (
             <div className="page-heading">
               <div>
                 <div className="eyebrow">AI VISIBILITY INTELLIGENCE</div>
@@ -728,7 +750,7 @@ function Workspace() {
               </div>
             </div>
           )}
-          {view !== 'mcp' && missingProviders.length > 0 && (
+          {!['mcp', 'agents', 'integrations'].includes(view) && missingProviders.length > 0 && (
             <div className="provider-banner" role="status">
               <Info size={16} />
               <span>
@@ -753,12 +775,12 @@ function Workspace() {
               </span>
             </div>
           )}
-          {view !== 'mcp' && <ErrorNotice error={runtime.error} retry={refresh} />}
+          {!['mcp', 'agents', 'integrations'].includes(view) && <ErrorNotice error={runtime.error} retry={refresh} />}
           <ErrorNotice
             error={projects.error}
             retry={() => void invalidateApiQueries('/projects')}
           />
-          {!['dashboard', 'mcp'].includes(view) && <ErrorNotice error={dashboard.error} retry={refresh} />}
+          {!['dashboard', 'mcp', 'agents', 'integrations'].includes(view) && <ErrorNotice error={dashboard.error} retry={refresh} />}
           <ErrorNotice error={actionError} />
           {view === 'mcp' ? (
             !systemAdmin && projects.loading && !projects.data ? (
@@ -766,6 +788,8 @@ function Workspace() {
             ) : (
               <McpView systemAdmin={systemAdmin} project={currentProject} />
             )
+          ) : view === 'integrations' ? (
+            <IntegrationsView key={systemAdmin ? 'system' : currentProject?.id || 'unassigned'} systemAdmin={systemAdmin} project={currentProject} highlight={integrationHighlight} onMcp={() => navigate('mcp')} onTraffic={() => navigate('traffic')} />
           ) : view === 'users' ? (
             systemAdmin ? (
               <UsersView
@@ -831,7 +855,7 @@ function Workspace() {
             path &&
             project && (
               <>
-                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic'].includes(view) &&
+                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'agents', 'integrations'].includes(view) &&
                   run && (
                     <div className="status-strip">
                       <span
@@ -860,8 +884,10 @@ function Workspace() {
                   )}
                 {dashboard.loading &&
                 !dashboard.data &&
-                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic'].includes(view) ? (
+                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'agents', 'integrations'].includes(view) ? (
                   <Skeleton variant="cards" label="Bringing your results together…" />
+                ) : view === 'agents' ? (
+                  <AgentsView key={project.id} project={project} onIntegrations={(highlight) => navigate('integrations', highlight)} />
                 ) : view === 'settings' ? (
                   <SettingsView
                     key={project.id}
@@ -906,7 +932,7 @@ function Workspace() {
                     />
                   )
                 )}
-                <footer className="page-footer">
+                {view !== 'agents' && <footer className="page-footer">
                   <span>
                     <Cloud size={11} />
                     Native ChatGPT, Perplexity and Gemini API answers
@@ -915,7 +941,7 @@ function Workspace() {
                     <ShieldCheck size={11} />
                     Weekly snapshots · Original answers preserved
                   </span>
-                </footer>
+                </footer>}
               </>
             )
           )}

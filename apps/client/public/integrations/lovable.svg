@@ -1,0 +1,17 @@
+<svg width="25" height="25" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3996_168)">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M7.37708 0C11.45 0 14.7531 3.31146 14.7531 7.39583V10.2083H17.2083C21.2813 10.2083 24.5854 13.5187 24.5854 17.6042C24.5854 21.6906 21.2833 25 17.2083 25H0V7.39583C0 3.3125 3.30208 0 7.37708 0Z" fill="url(#paint0_radial_3996_168)"/>
+</g>
+<defs>
+<radialGradient id="paint0_radial_3996_168" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(14.5833 3.125) rotate(92.5448) scale(23.4606 31.7542)">
+<stop offset="0.25" stop-color="#FE7B02"/>
+<stop offset="0.433" stop-color="#FE4230"/>
+<stop offset="0.548" stop-color="#FE529A"/>
+<stop offset="0.654" stop-color="#DD67EE"/>
+<stop offset="0.95" stop-color="#4B73FF"/>
+</radialGradient>
+<clipPath id="clip0_3996_168">
+<rect width="25" height="25" fill="white"/>
+</clipPath>
+</defs>
+</svg>

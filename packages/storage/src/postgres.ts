@@ -1,4 +1,5 @@
 import * as traffic from './traffic-postgres.js';
+import * as agents from './agents-postgres.js';
 import {
   isTerminal,
   projectProviders,
@@ -28,6 +29,11 @@ import { AccessError, PostgresUsers } from './users.js';
 const data = <T>(rows: Record<string, unknown>[]): T | null =>
   rows.length ? (rows[0].data as T) : null;
 export class PostgresRepository extends PostgresUsers implements Repository {
+  getAgentPost(projectId: string, postId: string) { return agents.getAgentPost(this.db, projectId, postId); }
+  listAgentPosts(projectId: string, offset: number, limit: number) { return agents.listAgentPosts(this.db, projectId, offset, limit); }
+  listActiveAgentPosts() { return agents.listActiveAgentPosts(this.db); }
+  reserveAgentPost(post: import('@citevia/core').AgentPostJob, expectedVersion: number | null) { return agents.reserveAgentPost(this.db, post, expectedVersion); }
+  saveAgentPost(post: import('@citevia/core').AgentPostJob, expectedVersion: number) { return agents.saveAgentPost(this.db, post, expectedVersion); }
   constructor(db: SqlDatabase) {
     super(db);
   }

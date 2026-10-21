@@ -1,4 +1,5 @@
 import { aggregateTraffic, type TrafficEvent, type TrafficFilters, type TrafficInstallationReceipt, type TrafficSite } from '@citevia/core';
+import { MAX_ACTIVE_AGENT_POSTS, type AgentPostJob } from '@citevia/core';
 import {
   verifiedIdentitySchema,
   type VerifiedIdentity,
@@ -32,6 +33,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State {
+  agentPosts?: Record<string, AgentPostJob>;
   trafficEvents?: Record<string, TrafficEvent>;
   trafficSites?: Record<string, TrafficSite & {projectId: string}>;
   trafficTests?: Record<string, string>;
@@ -69,6 +71,39 @@ const copy = <T>(value: T): T => structuredClone(value);
 
 export class MemoryRepository implements Repository {
   protected state: State = blank();
+  getAgentPost(projectId: string, postId: string) {
+    return this.operation(() => copy(this.state.agentPosts?.[key(projectId, postId)] || null));
+  }
+  listAgentPosts(projectId: string, offset: number, limit: number) {
+    return this.operation(() => {
+      const items = Object.values(this.state.agentPosts || {}).filter(post => post.projectId === projectId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      return { items: copy(items.slice(offset, offset + limit)), total: items.length };
+    });
+  }
+  listActiveAgentPosts() {
+    return this.operation(() => copy(Object.values(this.state.agentPosts || {}).filter(post => ['queued', 'generating'].includes(post.status))));
+  }
+  reserveAgentPost(post: AgentPostJob, expectedVersion: number | null) {
+    return this.operation((): 'saved' | 'conflict' | 'limit' => {
+      if (post.version !== (expectedVersion ?? 0) + 1) throw new Error('Invalid agent reservation version');
+      const existing = this.state.agentPosts?.[key(post.projectId, post.id)];
+      if (expectedVersion === null ? Boolean(existing) : existing?.version !== expectedVersion) return 'conflict';
+      const active = Object.values(this.state.agentPosts || {}).filter(item => item.projectId === post.projectId && item.id !== post.id && ['queued', 'generating'].includes(item.status));
+      if (active.length >= MAX_ACTIVE_AGENT_POSTS) return 'limit';
+      this.state.agentPosts ||= {};
+      this.state.agentPosts[key(post.projectId, post.id)] = copy(post);
+      return 'saved';
+    }, true);
+  }
+  saveAgentPost(post: AgentPostJob, expectedVersion: number) {
+    return this.operation(() => {
+      if (post.version !== expectedVersion + 1) throw new Error('Invalid agent post version');
+      if (this.state.agentPosts?.[key(post.projectId, post.id)]?.version !== expectedVersion) return false;
+      this.state.agentPosts[key(post.projectId, post.id)] = copy(post);
+      return true;
+    }, true);
+  }
   collectTrafficEvent(event: TrafficEvent) {
     return this.operation(() => {
       this.state.trafficEvents ||= {};
