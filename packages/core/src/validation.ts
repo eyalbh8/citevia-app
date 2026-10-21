@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { normalizeDomain } from './urls.js';
 import { journeyStageSchema } from './onboarding.js';
 import { scanProvidersSchema } from './providers.js';
+import { PROMPT_INTENTS } from './prompt-policy.js';
 export const identifier = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,100}$/, 'Invalid identifier');
@@ -49,6 +50,15 @@ export const settingsSchema = z
   })
   .strict();
 export const promptTextSchema = z.string().trim().min(3).max(2000);
+const promptMetadata = {
+  intent: z.enum(PROMPT_INTENTS).optional(),
+  seoKeyword: z.string().trim().max(160).optional(),
+  tags: z
+    .array(z.string().trim().min(1).max(60))
+    .max(10)
+    .transform((tags) => [...new Set(tags)])
+    .optional(),
+};
 export const promptCreateSchema = z.union([
   z
     .object({
@@ -56,6 +66,7 @@ export const promptCreateSchema = z.union([
       branded: z.boolean().optional(),
       stage: journeyStageSchema.optional(),
       topic: z.string().trim().max(120).optional(),
+      ...promptMetadata,
     })
     .strict(),
   z
@@ -64,6 +75,7 @@ export const promptCreateSchema = z.union([
       branded: z.boolean().optional(),
       stage: journeyStageSchema.optional(),
       topic: z.string().trim().max(120).optional(),
+      ...promptMetadata,
     })
     .strict(),
 ]);
@@ -75,6 +87,7 @@ export const promptUpdateSchema = z
     branded: z.boolean().optional(),
     stage: journeyStageSchema.optional(),
     topic: z.string().trim().max(120).optional(),
+    ...promptMetadata,
   })
   .strict()
   .refine(

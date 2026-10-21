@@ -583,32 +583,34 @@ function Workspace() {
             <strong>{views[view].title}</strong>
           </div>
           <div className="topbar-right">
-            <span className="platform-pill">
-              <Sparkles size={12} />
-              <select
-                aria-label="AI provider"
-                value={provider}
-                onChange={(event) => {
-                  setProvider(event.target.value as ScanProvider);
-                  setRunId('');
-                  setSelectedResponse(undefined);
-                  setPendingRunId(undefined);
-                }}
-                style={{
-                  border: 0,
-                  background: 'transparent',
-                  color: 'inherit',
-                  font: 'inherit',
-                  maxWidth: 120,
-                }}
-              >
-                {SCAN_PROVIDERS.map((value) => (
-                  <option key={value} value={value}>
-                    {PROVIDER_LABELS[value]}
-                  </option>
-                ))}
-              </select>
-            </span>
+            {view !== 'prompts' && (
+              <span className="platform-pill">
+                <Sparkles size={12} />
+                <select
+                  aria-label="AI provider"
+                  value={provider}
+                  onChange={(event) => {
+                    setProvider(event.target.value as ScanProvider);
+                    setRunId('');
+                    setSelectedResponse(undefined);
+                    setPendingRunId(undefined);
+                  }}
+                  style={{
+                    border: 0,
+                    background: 'transparent',
+                    color: 'inherit',
+                    font: 'inherit',
+                    maxWidth: 120,
+                  }}
+                >
+                  {SCAN_PROVIDERS.map((value) => (
+                    <option key={value} value={value}>
+                      {PROVIDER_LABELS[value]}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            )}
             <span className="topbar-divider" />
             <button
               className="icon-button"
@@ -626,80 +628,88 @@ function Workspace() {
             </span>
           </div>
         </header>
-        <main className="content">
-          <div className="page-heading">
-            <div>
-              <div className="eyebrow">AI VISIBILITY INTELLIGENCE</div>
-              <h1>{views[view].title}</h1>
-              <p>{views[view].description}</p>
-            </div>
-            <div className="heading-actions">
-              {!['settings', 'accounts', 'brandbook'].includes(view) && (
-                <label className="select-button">
-                  <CalendarDays size={13} />
-                  <span className="visually-hidden">Select scan</span>
-                  <select
-                    value={runId}
-                    onChange={(event) => {
-                      setRunId(event.target.value);
-                      setSelectedResponse(undefined);
-                    }}
+        <main
+          className={`content ${view === 'prompts' ? 'prompts-content' : ''}`}
+        >
+          {view !== 'prompts' && (
+            <div className="page-heading">
+              <div>
+                <div className="eyebrow">AI VISIBILITY INTELLIGENCE</div>
+                <h1>{views[view].title}</h1>
+                <p>{views[view].description}</p>
+              </div>
+              <div className="heading-actions">
+                {!['settings', 'accounts', 'brandbook'].includes(view) && (
+                  <label className="select-button">
+                    <CalendarDays size={13} />
+                    <span className="visually-hidden">Select scan</span>
+                    <select
+                      value={runId}
+                      onChange={(event) => {
+                        setRunId(event.target.value);
+                        setSelectedResponse(undefined);
+                      }}
+                    >
+                      <option value="">Latest scan</option>
+                      {runs.data?.items
+                        .filter(
+                          (item) =>
+                            snapshotProvider(item.snapshot) === provider,
+                        )
+                        .map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {formatDate(item.createdAt, true)} · {item.status}
+                            {item.reanalysisOf ? ' · Reanalysis' : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
+                {view === 'dashboard' && (
+                  <button
+                    className="button button-outline"
+                    onClick={exportSummary}
+                    disabled={!run}
                   >
-                    <option value="">Latest scan</option>
-                    {runs.data?.items
-                      .filter(
-                        (item) => snapshotProvider(item.snapshot) === provider,
-                      )
-                      .map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {formatDate(item.createdAt, true)} · {item.status}
-                          {item.reanalysisOf ? ' · Reanalysis' : ''}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              )}
-              {view === 'dashboard' && (
-                <button
-                  className="button button-outline"
-                  onClick={exportSummary}
-                  disabled={!run}
-                >
-                  <ArrowDownToLine size={13} />
-                  Export
-                </button>
-              )}
-              {owner && view !== 'accounts' && (
-                <button
-                  className="button button-primary"
-                  onClick={() => void startScan()}
-                  disabled={
-                    !providerReady || starting || hasActiveRun || !activePrompts
-                  }
-                  title={
-                    !providerReady
-                      ? 'Configure API credentials for all enabled providers to enable scans'
-                      : !activePrompts
-                        ? 'Add an active prompt in Prompts first'
-                        : hasActiveRun
-                          ? 'A scan is already in progress'
-                          : 'Scan active prompts on every enabled provider'
-                  }
-                >
-                  {starting || hasActiveRun ? (
-                    <LoaderCircle size={13} className="spinner" />
-                  ) : (
-                    <Play size={12} />
-                  )}
-                  {starting
-                    ? 'Starting…'
-                    : hasActiveRun
-                      ? 'Scanning…'
-                      : 'Run scan'}
-                </button>
-              )}
+                    <ArrowDownToLine size={13} />
+                    Export
+                  </button>
+                )}
+                {owner && view !== 'accounts' && (
+                  <button
+                    className="button button-primary"
+                    onClick={() => void startScan()}
+                    disabled={
+                      !providerReady ||
+                      starting ||
+                      hasActiveRun ||
+                      !activePrompts
+                    }
+                    title={
+                      !providerReady
+                        ? 'Configure API credentials for all enabled providers to enable scans'
+                        : !activePrompts
+                          ? 'Add an active prompt in Prompts first'
+                          : hasActiveRun
+                            ? 'A scan is already in progress'
+                            : 'Scan active prompts on every enabled provider'
+                    }
+                  >
+                    {starting || hasActiveRun ? (
+                      <LoaderCircle size={13} className="spinner" />
+                    ) : (
+                      <Play size={12} />
+                    )}
+                    {starting
+                      ? 'Starting…'
+                      : hasActiveRun
+                        ? 'Scanning…'
+                        : 'Run scan'}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
           {missingProviders.length > 0 && (
             <div className="provider-banner" role="status">
               <Info size={16} />
@@ -800,32 +810,33 @@ function Workspace() {
             path &&
             project && (
               <>
-                {!['settings', 'brandbook'].includes(view) && run && (
-                  <div className="status-strip">
-                    <span
-                      className={`status-dot ${['running', 'queued'].includes(run.status) ? 'running' : ['partial', 'failed'].includes(run.status) ? 'warning' : ''}`}
-                    />
-                    <span>
-                      <strong>
-                        {run.status === 'completed'
-                          ? 'Scan complete'
-                          : run.status === 'partial'
-                            ? 'Scan completed with issues'
-                            : run.status === 'failed'
-                              ? 'Scan failed'
-                              : 'Scan in progress'}
-                      </strong>{' '}
-                      · {run.succeededCount}/{run.totalCount} prompts analyzed ·{' '}
-                      {formatDate(run.createdAt)}
-                    </span>
-                    <span className="status-right">
-                      <Clock3 size={11} />
-                      {project.enabled
-                        ? `Next scan ${formatDate(dashboard.data?.nextScanAt)}`
-                        : 'Schedule paused'}
-                    </span>
-                  </div>
-                )}
+                {!['settings', 'brandbook', 'prompts'].includes(view) &&
+                  run && (
+                    <div className="status-strip">
+                      <span
+                        className={`status-dot ${['running', 'queued'].includes(run.status) ? 'running' : ['partial', 'failed'].includes(run.status) ? 'warning' : ''}`}
+                      />
+                      <span>
+                        <strong>
+                          {run.status === 'completed'
+                            ? 'Scan complete'
+                            : run.status === 'partial'
+                              ? 'Scan completed with issues'
+                              : run.status === 'failed'
+                                ? 'Scan failed'
+                                : 'Scan in progress'}
+                        </strong>{' '}
+                        · {run.succeededCount}/{run.totalCount} prompts analyzed
+                        · {formatDate(run.createdAt)}
+                      </span>
+                      <span className="status-right">
+                        <Clock3 size={11} />
+                        {project.enabled
+                          ? `Next scan ${formatDate(dashboard.data?.nextScanAt)}`
+                          : 'Schedule paused'}
+                      </span>
+                    </div>
+                  )}
                 {dashboard.loading &&
                 !dashboard.data &&
                 !['settings', 'brandbook'].includes(view) ? (
@@ -844,7 +855,14 @@ function Workspace() {
                     key={project.id}
                     path={path}
                     revision={revision}
-                    run={run}
+                    onScan={() => void startScan()}
+                    scanDisabled={
+                      !providerReady ||
+                      starting ||
+                      hasActiveRun ||
+                      !activePrompts
+                    }
+                    scanning={starting || hasActiveRun}
                     onSaved={settingsSaved}
                     notify={setToast}
                     onResponse={setSelectedResponse}

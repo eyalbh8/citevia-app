@@ -159,8 +159,8 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         [topicId, id, prompt.topic || 'General', prompt.updatedAt],
       );
       await tx.query(
-        `INSERT INTO prompts(id,account_id,prompt,type,ratingscore,me_in_prompt,topic_id,regions,language,is_active,generation_id,stage,created_at,updated_at)
-        VALUES($1,$2,$3,$4,0,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(id) DO UPDATE SET prompt=excluded.prompt,type=excluded.type,me_in_prompt=excluded.me_in_prompt,topic_id=excluded.topic_id,is_active=excluded.is_active,stage=excluded.stage,updated_at=excluded.updated_at`,
+        `INSERT INTO prompts(id,account_id,prompt,type,ratingscore,me_in_prompt,topic_id,regions,language,is_active,generation_id,stage,created_at,updated_at,seo_keyword,tags)
+        VALUES($1,$2,$3,$4,0,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb) ON CONFLICT(id) DO UPDATE SET prompt=excluded.prompt,type=excluded.type,me_in_prompt=excluded.me_in_prompt,topic_id=excluded.topic_id,is_active=excluded.is_active,stage=excluded.stage,regions=excluded.regions,language=excluded.language,seo_keyword=excluded.seo_keyword,tags=excluded.tags,updated_at=excluded.updated_at`,
         [
           uuidFor(`${p.id}:prompt:${prompt.id}`),
           id,
@@ -175,6 +175,8 @@ export class PostgresRepository extends PostgresUsers implements Repository {
           prompt.stage || null,
           prompt.createdAt,
           prompt.updatedAt,
+          prompt.seoKeyword || null,
+          JSON.stringify(prompt.tags || []),
         ],
       );
     }
@@ -416,6 +418,24 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       )
     ).rows.map((row) => row.data as ScanRun);
   }
+  async listPromptHistory(projectId: string, start: string, end: string) {
+    // One statement gives a consistent snapshot and avoids the scan-list page limit.
+    const { rows } = await this.db.query(
+      `WITH observations AS (
+        SELECT result.data, result.run_id FROM citevia_prompt_results result
+        JOIN citevia_runs run ON run.project_id=result.project_id AND run.id=result.run_id
+        WHERE result.project_id=$1
+          AND COALESCE(result.data->>'capturedAt',run.data->>'createdAt')::timestamptz BETWEEN $2::timestamptz AND $3::timestamptz
+      ) SELECT
+        COALESCE((SELECT jsonb_agg(data) FROM observations),'[]'::jsonb) AS results,
+        COALESCE((SELECT jsonb_agg(data) FROM citevia_runs WHERE project_id=$1 AND id IN (SELECT run_id FROM observations)),'[]'::jsonb) AS runs`,
+      [projectId, start, end],
+    );
+    return {
+      runs: rows[0].runs as ScanRun[],
+      results: rows[0].results as PromptResult[],
+    };
+  }
   async listActiveRuns() {
     return (
       await this.db.query(
@@ -617,7 +637,11 @@ export class PostgresRepository extends PostgresUsers implements Repository {
           run.snapshot.country,
           JSON.stringify(answer?.usage || result.usage || null),
           result.captureKey || null,
-          result.target?.mentioned ? 100 : 0,
+          result.status === 'succeeded' && result.target
+            ? result.target.mentioned
+              ? 100
+              : 0
+            : null,
           result.status === 'succeeded' ? brandRank(result.target) : null,
           result.status === 'succeeded'
             ? 'COMPLETED'

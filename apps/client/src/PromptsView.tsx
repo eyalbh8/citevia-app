@@ -1,32 +1,41 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import {
   Archive,
+  ArrowDown,
+  ArrowUp,
   ArrowUpRight,
+  Box,
+  CalendarDays,
+  ChevronDown,
   Download,
+  Globe2,
+  Hexagon,
+  ListFilter,
   Pencil,
+  Play,
   Plus,
   RotateCcw,
   Search,
+  Tag,
+  TerminalSquare,
+  TrendingDown,
+  TrendingUp,
 } from 'lucide-react';
 import {
   JOURNEY_STAGES,
-  brandRank,
-  brandSentimentScore,
   MAX_BRANDED_PROMPTS,
+  PROMPT_INTENTS,
+  PROVIDER_LABELS,
+  SCAN_PROVIDERS,
+  type JourneyStage,
+  type Project,
+  type Prompt,
+  type PromptIntent,
+  type PromptMetricsResponse,
   type PromptMetricsRow,
-} from '@citevia/core';
-import { MetricChange, SentimentScore } from './ScoreBadge';
-import type {
-  JourneyStage,
-  Page,
-  Project,
-  Prompt,
-  PromptResult,
-  ScanRun,
 } from '@citevia/core';
 import { downloadCsv, query, request, useApi } from './api';
 import {
-  Badge,
   Drawer,
   Empty,
   ErrorNotice,
@@ -35,46 +44,157 @@ import {
   Pagination,
   Spinner,
 } from './components';
-import { promptObservation } from './prompt-observation';
 import './prompts.css';
 
 type Props = {
   path: string;
   revision: number;
-  run?: ScanRun | null;
   onSaved: () => void;
   notify: (text: string) => void;
   onResponse: (id: string) => void;
+  onScan: () => void;
+  scanDisabled: boolean;
+  scanning: boolean;
 };
+type SortKey =
+  | 'text'
+  | 'avgVisibility'
+  | 'avgSentimentScore'
+  | 'avgRank'
+  | 'createdAt';
+const PAGE_SIZE = 20;
+
+function Filter({
+  label,
+  icon,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  icon: ReactNode;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label className={`prompt-filter-pill ${value ? 'is-filtered' : ''}`}>
+      {icon}
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {children}
+      </select>
+      <ChevronDown size={15} />
+    </label>
+  );
+}
+export function PromptMetricChange({ value }: { value: number | null }) {
+  return (
+    <span
+      className={`prompt-trend ${value === null ? 'unavailable' : value > 0 ? 'improved' : value < 0 ? 'declined' : ''}`}
+      title={
+        value === null
+          ? 'No comparable measurement in the previous period'
+          : 'Change from the previous equal-length period'
+      }
+    >
+      {value !== null &&
+        value !== 0 &&
+        (value > 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />)}
+      {value === null
+        ? '—'
+        : value === 0
+          ? '0%'
+          : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`}
+    </span>
+  );
+}
+export function VisibilityGauge({ value }: { value: number | null }) {
+  if (value === null)
+    return (
+      <span
+        className="prompt-missing"
+        title="No successfully analyzed answers in this period"
+      >
+        —
+      </span>
+    );
+  return (
+    <svg
+      className="prompt-visibility-gauge"
+      viewBox="0 0 76 48"
+      role="img"
+      aria-label={`Visibility ${value}%`}
+    >
+      <path
+        className="gauge-track"
+        d="M 10 38 A 28 28 0 0 1 66 38"
+        pathLength="100"
+      />
+      <path
+        className="gauge-value"
+        d="M 10 38 A 28 28 0 0 1 66 38"
+        pathLength="100"
+        strokeDasharray={`${Math.max(0, Math.min(100, value))} 100`}
+      />
+      <text x="38" y="36" textAnchor="middle">
+        {value}%
+      </text>
+    </svg>
+  );
+}
+function flag(country: string) {
+  return /^[A-Z]{2}$/.test(country)
+    ? String.fromCodePoint(
+        ...[...country].map((letter) => 127397 + letter.charCodeAt(0)),
+      )
+    : '';
+}
+function tagColor(tag: string) {
+  const priority = tag.match(/^P([123])\b/i);
+  return priority
+    ? Number(priority[1]) - 1
+    : [...tag].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 3;
+}
+function closeMenu(target: HTMLElement) {
+  const menu = target.closest('details');
+  if (menu) menu.open = false;
+}
 
 export default function PromptsView({
   path,
   revision,
-  run,
   onSaved,
   notify,
   onResponse,
+  onScan,
+  scanDisabled,
+  scanning,
 }: Props) {
-  const account = useApi<Project>(`${path}/settings`, revision);
-  const observations = useApi<Page<PromptResult>>(
-    run ? `${path}/responses${query({ runId: run.id, limit: 100 })}` : null,
-    revision,
-  );
-  const scores = useApi<{ items: PromptMetricsRow[] }>(
-    run ? `${path}/prompt-metrics${query({ runId: run.id })}` : null,
-    revision,
-  );
+  const [days, setDays] = useState('7'),
+    [provider, setProvider] = useState('');
   const [search, setSearch] = useState(''),
-    [stage, setStage] = useState(''),
+    [region, setRegion] = useState(''),
+    [tag, setTag] = useState('');
+  const [branded, setBranded] = useState(''),
+    [intent, setIntent] = useState(''),
     [status, setStatus] = useState('active');
-  const [topic, setTopic] = useState(''),
-    [branded, setBranded] = useState(''),
-    [sort, setSort] = useState('created');
+  const [sort, setSort] = useState<SortKey>('avgVisibility'),
+    [direction, setDirection] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0),
-    [adding, setAdding] = useState(false),
+    [selection, setSelection] = useState<string[]>([]);
+  const [adding, setAdding] = useState(false),
     [editing, setEditing] = useState<Prompt>();
-  const [busy, setBusy] = useState<string>(),
+  const [busy, setBusy] = useState(false),
     [error, setError] = useState<Error>();
+  const account = useApi<Project>(`${path}/settings`, revision);
+  const scores = useApi<PromptMetricsResponse>(
+    `${path}/prompt-metrics${query({ days, provider })}`,
+    revision,
+  );
   const project = account.data;
   if (!project)
     return (
@@ -83,235 +203,388 @@ export default function PromptsView({
         {account.loading && <Spinner label="Loading prompts…" />}
       </>
     );
-  const prompts = project.prompts,
-    active = prompts.filter((p) => p.active).length;
+  const active = project.prompts.filter((prompt) => prompt.active).length;
   const pendingSetup = Boolean(
     project.onboardingJobId && !project.onboardingAppliedJobId,
   );
   const owner = project.role === 'owner',
     editable = owner && !pendingSetup;
-  const topics = [
-    ...new Set(prompts.map((p) => p.topic).filter((t): t is string => !!t)),
+  const tags = [
+    ...new Set(project.prompts.flatMap((prompt) => prompt.tags || [])),
   ].sort();
-  const resultFor = (p: Prompt) =>
-    promptObservation(
-      p,
-      project,
-      run,
-      observations.data?.items.find((r) => r.promptId === p.id),
-    );
-  const scoresFor = (p: Prompt) =>
-    resultFor(p)
-      ? scores.data?.items.find((row) => row.id === p.id)
-      : undefined;
-  let filtered = prompts.filter(
-    (p) =>
-      (!stage || p.stage === stage) &&
-      (status === 'all' || p.active === (status === 'active')) &&
-      (!topic || p.topic === topic) &&
-      (!branded || p.branded === (branded === 'true')) &&
-      `${p.text} ${p.topic || ''}`
-        .toLocaleLowerCase()
-        .includes(search.trim().toLocaleLowerCase()),
-  );
-  filtered = [...filtered].sort((a, b) =>
-    sort === 'text'
-      ? a.text.localeCompare(b.text)
-      : sort === 'section'
-        ? JOURNEY_STAGES.indexOf(a.stage!) - JOURNEY_STAGES.indexOf(b.stage!)
-        : sort === 'rank'
-          ? (brandRank(resultFor(a)?.target) ?? Infinity) -
-            (brandRank(resultFor(b)?.target) ?? Infinity)
-          : sort === 'sentiment'
-            ? (brandSentimentScore(resultFor(b)?.target) ?? -1) -
-              (brandSentimentScore(resultFor(a)?.target) ?? -1)
-            : sort === 'visibility'
-              ? (scoresFor(b)?.avgVisibility ?? -1) -
-                (scoresFor(a)?.avgVisibility ?? -1)
-              : a.createdAt.localeCompare(b.createdAt),
-  );
+  const metricMap = new Map(scores.data?.items.map((row) => [row.id, row]));
+  // Never attach a stale measurement to a newly edited question while refreshing.
+  const rows: PromptMetricsRow[] = project.prompts.map((prompt) => {
+    const metric = metricMap.get(prompt.id);
+    return metric?.version === prompt.version && metric.text === prompt.text
+      ? metric
+      : {
+          ...prompt,
+          regions: [project.country],
+          language: project.language,
+          avgVisibility: null,
+          avgRank: null,
+          avgSentimentScore: null,
+          visibilityChange: null,
+          sentimentChange: null,
+          rankChange: null,
+          measurementCount: 0,
+          previousMeasurementCount: 0,
+          rankCount: 0,
+          sentimentCount: 0,
+          responseId: null,
+        };
+  });
+  const filtered = rows
+    .filter(
+      (prompt) =>
+        (status === 'all' || prompt.active === (status === 'active')) &&
+        (!region || prompt.regions.includes(region)) &&
+        (!tag || prompt.tags?.includes(tag)) &&
+        (!branded || prompt.branded === (branded === 'true')) &&
+        (!intent || prompt.intent === intent) &&
+        `${prompt.text} ${prompt.seoKeyword || ''} ${(prompt.tags || []).join(' ')}`
+          .toLocaleLowerCase()
+          .includes(search.trim().toLocaleLowerCase()),
+    )
+    .sort((a, b) => {
+      const left = a[sort],
+        right = b[sort];
+      if (left === null || right === null)
+        return left === right
+          ? a.id.localeCompare(b.id)
+          : left === null
+            ? 1
+            : -1;
+      const delta =
+        typeof left === 'number' && typeof right === 'number'
+          ? left - right
+          : String(left).localeCompare(String(right));
+      return (direction === 'asc' ? delta : -delta) || a.id.localeCompare(b.id);
+    });
   const currentPage = Math.min(
     page,
-    Math.max(0, Math.ceil(filtered.length / 20) - 1),
+    Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1),
   );
+  const visible = filtered.slice(
+    currentPage * PAGE_SIZE,
+    (currentPage + 1) * PAGE_SIZE,
+  );
+  const selected = filtered.filter((prompt) => selection.includes(prompt.id));
+  const allSelected =
+    visible.length > 0 &&
+    visible.every((prompt) => selection.includes(prompt.id));
   function filter(action: () => void) {
     action();
     setPage(0);
+    setSelection([]);
   }
-  async function toggle(prompt: Prompt) {
-    setBusy(prompt.id);
+  function sortBy(key: SortKey) {
+    setSort(key);
+    setDirection(
+      sort === key
+        ? direction === 'desc'
+          ? 'asc'
+          : 'desc'
+        : key === 'text' || key === 'avgRank'
+          ? 'asc'
+          : 'desc',
+    );
+    setPage(0);
+  }
+  function sortHeader(label: string, key: SortKey) {
+    return (
+      <th
+        scope="col"
+        aria-sort={
+          sort === key
+            ? direction === 'asc'
+              ? 'ascending'
+              : 'descending'
+            : 'none'
+        }
+      >
+        <button
+          className={`prompt-sort ${sort === key ? 'sorted' : ''}`}
+          onClick={() => sortBy(key)}
+        >
+          {label}
+          {sort === key &&
+            (direction === 'desc' ? (
+              <ArrowDown size={15} />
+            ) : (
+              <ArrowUp size={15} />
+            ))}
+        </button>
+      </th>
+    );
+  }
+  async function updateStatus(prompts: Prompt[], makeActive: boolean) {
+    setBusy(true);
     setError(undefined);
+    let saved = 0;
     try {
-      await request(`${path}/prompts/${encodeURIComponent(prompt.id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          version: prompt.version,
-          active: !prompt.active,
-        }),
-      });
+      for (const prompt of prompts.filter(
+        (prompt) => prompt.active !== makeActive,
+      )) {
+        await request(`${path}/prompts/${encodeURIComponent(prompt.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ version: prompt.version, active: makeActive }),
+        });
+        saved++;
+      }
+      setSelection([]);
       notify(
-        prompt.active
-          ? 'Prompt archived. Past answers are preserved.'
-          : 'Prompt activated for the next scan.',
+        `${saved} ${saved === 1 ? 'prompt' : 'prompts'} ${makeActive ? 'activated' : 'archived'}.`,
       );
-      onSaved();
-    } catch (error) {
-      setError(error as Error);
+    } catch (cause) {
+      setError(
+        new Error(
+          `${saved ? `${saved} saved. ` : ''}${(cause as Error).message}`,
+        ),
+      );
     } finally {
-      setBusy(undefined);
+      setBusy(false);
+      onSaved();
     }
   }
   function exportPrompts() {
+    const exported = selected.length ? selected : filtered;
     downloadCsv(
       'citevia-prompts.csv',
       [
         'ID',
         'Prompt',
-        'Section',
-        'Topic',
-        'Search intent',
+        'SEO keyword',
+        'Regions',
+        'Intent',
         'Branded',
-        'Status',
-        'Version',
-        'Scan date',
         'Visibility (%)',
-        'Rank',
-        'Sentiment score (0-100)',
-        'Sentiment',
-        'Explicit recommendation rank',
-        'Citations',
-        'Region',
-        'Language',
-        'Date added',
         'Visibility change (%)',
-        'Rank change (%)',
+        'Sentiment',
         'Sentiment change (%)',
+        'Rank',
+        'Rank change (%)',
+        'Created',
+        'Tags',
+        'Status',
+        'Provider',
+        'Period start',
+        'Period end',
+        'Analyzed answers',
+        'Previous analyzed answers',
+        'Version',
       ],
-      filtered.map((p) => {
-        const r = resultFor(p),
-          target = r?.status === 'succeeded' ? r.target : undefined;
-        return [
-          p.id,
-          p.text,
-          p.stage,
-          p.topic,
-          p.intent,
-          String(p.branded),
-          p.active ? 'active' : 'archived',
-          p.version,
-          r ? run?.createdAt : undefined,
-          target ? (target.mentioned ? 100 : 0) : null,
-          brandRank(target),
-          brandSentimentScore(target),
-          target?.sentiment,
-          target?.explicitRank,
-          r?.capturedAt ? r.citationCount : null,
-          project!.country,
-          project!.language,
-          p.createdAt,
-          scoresFor(p)?.visibilityChange,
-          scoresFor(p)?.rankChange,
-          scoresFor(p)?.sentimentChange,
-        ];
-      }),
+      exported.map((prompt) => [
+        prompt.id,
+        prompt.text,
+        prompt.seoKeyword,
+        prompt.regions.join(', '),
+        prompt.intent,
+        String(prompt.branded),
+        prompt.avgVisibility,
+        prompt.visibilityChange,
+        prompt.avgSentimentScore,
+        prompt.sentimentChange,
+        prompt.avgRank,
+        prompt.rankChange,
+        prompt.createdAt,
+        prompt.tags?.join(', '),
+        prompt.active ? 'active' : 'archived',
+        provider || 'all',
+        scores.data?.period.start,
+        scores.data?.period.end,
+        prompt.measurementCount,
+        prompt.previousMeasurementCount,
+        prompt.version,
+      ]),
     );
-    notify('Filtered prompts exported.');
+    notify(`${exported.length} prompts exported.`);
   }
+  const mutationTargets = selected.filter(
+    (prompt) => prompt.active === (status !== 'archived'),
+  );
   return (
-    <>
-      <ErrorNotice error={account.error || error} />
-      <ErrorNotice error={observations.error} />
-      <ErrorNotice error={scores.error} />
-      <div className="prompts-overview">
-        <div>
-          <strong>
-            {active}
-            <small> / 50</small>
-          </strong>
-          <span>Active prompts</span>
-        </div>
-        <div>
-          <strong>{prompts.length - active}</strong>
-          <span>Archived prompts</span>
-        </div>
-        <div>
-          <strong>
-            {prompts.filter((p) => p.active && p.branded).length}
-            <small> / {MAX_BRANDED_PROMPTS}</small>
-          </strong>
-          <span>Branded prompts</span>
-        </div>
-        <div className="prompts-overview-note">
-          One answer per active prompt on each enabled provider every week.
-          Metrics show the selected provider.
-          <br />
-          {run
-            ? `Measurements from ${formatDate(run.createdAt, true)}.`
-            : 'Results appear after your first scan.'}
-        </div>
-      </div>
-      {run && run.snapshot.parserVersion !== 'igeo-evidence-v2' && (
-        <p className="provider-banner">
-          This older scan uses explicit recommendation ranks. Company-appearance
-          ranks require reanalysis of its saved answers. Numeric sentiment
-          scores use the existing validated analysis.
-        </p>
-      )}
-      <div className="journey-filters" aria-label="Prompt sections">
-        {[
-          { value: '', label: 'All sections' },
-          ...JOURNEY_STAGES.map((value) => ({ value, label: labelize(value) })),
-        ].map((item) => (
-          <button
-            key={item.value}
-            className={stage === item.value ? 'selected' : ''}
-            aria-pressed={stage === item.value}
-            onClick={() => filter(() => setStage(item.value))}
+    <div className="prompts-screen">
+      <div className="prompts-filter-header">
+        <h1>Prompts</h1>
+        <div className="prompts-filter-list">
+          <Filter
+            label="Regions"
+            icon={<Globe2 size={17} />}
+            value={region}
+            onChange={(value) => filter(() => setRegion(value))}
           >
-            {item.label}
-            <span>
-              {
-                prompts.filter(
-                  (p) => p.active && (!item.value || p.stage === item.value),
-                ).length
-              }
-            </span>
-          </button>
-        ))}
+            <option value="">Regions</option>
+            <option value={project.country}>
+              {flag(project.country)} {project.country}
+            </option>
+          </Filter>
+          <Filter
+            label="Tags"
+            icon={<Tag size={17} />}
+            value={tag}
+            onChange={(value) => filter(() => setTag(value))}
+          >
+            <option value="">Tags</option>
+            {tags.map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </Filter>
+          <Filter
+            label="Branded"
+            icon={<Hexagon size={17} />}
+            value={branded}
+            onChange={(value) => filter(() => setBranded(value))}
+          >
+            <option value="">Branded</option>
+            <option value="true">Branded</option>
+            <option value="false">Non-branded</option>
+          </Filter>
+          <Filter
+            label="Prompt Types"
+            icon={<TerminalSquare size={17} />}
+            value={intent}
+            onChange={(value) => filter(() => setIntent(value))}
+          >
+            <option value="">Prompt Types</option>
+            {PROMPT_INTENTS.map((value) => (
+              <option key={value} value={value}>
+                {labelize(value)}
+              </option>
+            ))}
+          </Filter>
+          <Filter
+            label="Providers"
+            icon={<Box size={17} />}
+            value={provider}
+            onChange={(value) => filter(() => setProvider(value))}
+          >
+            <option value="">Providers</option>
+            {SCAN_PROVIDERS.map((value) => (
+              <option key={value} value={value}>
+                {PROVIDER_LABELS[value]}
+              </option>
+            ))}
+          </Filter>
+          <Filter
+            label="Date range"
+            icon={<CalendarDays size={17} />}
+            value={days}
+            onChange={(value) => filter(() => setDays(value))}
+          >
+            {[7, 30, 90].map((value) => (
+              <option key={value} value={String(value)}>
+                Last {value} days
+              </option>
+            ))}
+          </Filter>
+        </div>
       </div>
-      <section className="card">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">Your prompts</h2>
-            <p className="card-description">
-              Manage the questions your customers ask AI assistants
-            </p>
-          </div>
-          <div className="prompt-actions">
-            <button
-              className="button button-outline"
-              onClick={exportPrompts}
-              disabled={!filtered.length}
-            >
-              <Download size={13} />
-              Export
-            </button>
-            {owner && (
+      <ErrorNotice error={account.error || error} />
+      <ErrorNotice error={scores.error} />
+      <section className="prompts-panel" aria-label="Tracked prompts">
+        <div className="prompts-toolbar">
+          <label className="prompts-search">
+            <Search size={23} />
+            <input
+              type="search"
+              aria-label="Search prompts"
+              placeholder="Search"
+              value={search}
+              onChange={(event) => filter(() => setSearch(event.target.value))}
+            />
+          </label>
+          <span className="prompts-usage">
+            {scores.data?.usage.active ?? active} out of{' '}
+            {scores.data?.usage.limit ?? 50} Prompts Used
+          </span>
+          <details
+            className="prompts-manage"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') event.currentTarget.open = false;
+            }}
+          >
+            <summary>
+              Manage Prompts <ChevronDown size={15} />
+            </summary>
+            <div className="prompts-menu">
+              {owner && (
+                <button
+                  disabled={!editable || active >= 50 || busy}
+                  onClick={(event) => {
+                    closeMenu(event.currentTarget);
+                    setAdding(true);
+                  }}
+                >
+                  <Plus size={16} />
+                  Add prompts
+                </button>
+              )}
               <button
-                className="button button-primary"
-                disabled={!editable || active >= 50}
-                onClick={() => setAdding(true)}
+                disabled={!filtered.length || scores.loading || !!scores.error}
+                onClick={(event) => {
+                  closeMenu(event.currentTarget);
+                  exportPrompts();
+                }}
               >
-                <Plus size={13} />
-                Add prompts
+                <Download size={16} />
+                {selected.length
+                  ? `Export ${selected.length} selected`
+                  : 'Export prompts'}
               </button>
-            )}
-          </div>
+              {owner && (
+                <button
+                  disabled={
+                    !editable ||
+                    busy ||
+                    !mutationTargets.length ||
+                    (status === 'archived' &&
+                      active + mutationTargets.length > 50)
+                  }
+                  onClick={(event) => {
+                    closeMenu(event.currentTarget);
+                    void updateStatus(mutationTargets, status === 'archived');
+                  }}
+                >
+                  <Archive size={16} />
+                  {status === 'archived' ? 'Activate' : 'Archive'} selected
+                </button>
+              )}
+              {owner && (
+                <button
+                  disabled={scanDisabled}
+                  onClick={(event) => {
+                    closeMenu(event.currentTarget);
+                    onScan();
+                  }}
+                >
+                  <Play size={16} />
+                  {scanning ? 'Scanning…' : 'Run scan'}
+                </button>
+              )}
+              <label>
+                <ListFilter size={16} />
+                Show
+                <select
+                  aria-label="Prompt status"
+                  value={status}
+                  onChange={(event) =>
+                    filter(() => setStatus(event.target.value))
+                  }
+                >
+                  <option value="active">Active prompts</option>
+                  <option value="archived">Archived prompts</option>
+                  <option value="all">All prompts</option>
+                </select>
+              </label>
+            </div>
+          </details>
         </div>
         {pendingSetup && (
           <p className="prompt-notice">
-            Account setup is preparing your portfolio. Finish setup in Accounts
-            before editing prompts.
+            Account setup is preparing your prompts. You can edit them when
+            setup finishes.
           </p>
         )}
         {!owner && (
@@ -319,237 +592,290 @@ export default function PromptsView({
             You have view access. A project owner can manage prompts.
           </p>
         )}
-        <div className="filter-bar prompt-filters">
-          <label className="search-box">
-            <Search size={14} />
-            <input
-              aria-label="Search prompts"
-              type="search"
-              placeholder="Search prompts or topics…"
-              value={search}
-              onChange={(e) => filter(() => setSearch(e.target.value))}
-            />
-          </label>
-          <select
-            aria-label="Prompt status"
-            value={status}
-            onChange={(e) => filter(() => setStatus(e.target.value))}
-          >
-            <option value="active">Active</option>
-            <option value="archived">Archived</option>
-            <option value="all">All statuses</option>
-          </select>
-          <select
-            aria-label="Prompt topic"
-            value={topic}
-            onChange={(e) => filter(() => setTopic(e.target.value))}
-          >
-            <option value="">All topics</option>
-            {topics.map((t) => (
-              <option key={t}>{t}</option>
-            ))}
-          </select>
-          <select
-            aria-label="Branded prompts"
-            value={branded}
-            onChange={(e) => filter(() => setBranded(e.target.value))}
-          >
-            <option value="">All prompts</option>
-            <option value="true">Branded</option>
-            <option value="false">Discovery</option>
-          </select>
-          <select
-            aria-label="Sort prompts"
-            value={sort}
-            onChange={(e) => filter(() => setSort(e.target.value))}
-          >
-            <option value="created">Date added</option>
-            <option value="text">Prompt A–Z</option>
-            <option value="section">Section</option>
-            <option value="rank">Rank</option>
-            <option value="sentiment">Sentiment score</option>
-            <option value="visibility">Visibility</option>
-          </select>
-        </div>
-        {!filtered.length ? (
+        {selected.length > 0 && (
+          <div className="prompt-selection" role="status">
+            {selected.length} selected
+            <button onClick={() => setSelection([])}>Clear selection</button>
+          </div>
+        )}
+        {scores.loading && !scores.data ? (
+          <Spinner label="Loading prompt measurements…" />
+        ) : !filtered.length ? (
           <Empty
-            title={prompts.length ? 'No matching prompts' : 'No prompts yet'}
+            title={rows.length ? 'No matching prompts' : 'No prompts yet'}
             description={
-              prompts.length
-                ? 'Change the section, search or status filters to see other prompts.'
+              rows.length
+                ? 'Change your search or filters to see more prompts.'
                 : pendingSetup
-                  ? 'Your prompts will appear as account setup completes.'
-                  : 'Add the questions you want to track. Results stay empty until a real scan completes.'
+                  ? 'Your prompts will appear when account setup finishes.'
+                  : 'Add the questions you want to track.'
             }
           />
         ) : (
           <>
-            <div className="table-scroll">
-              <table className="data-table prompts-table">
+            <div className="table-scroll" aria-busy={scores.loading}>
+              <table className="prompts-table">
                 <thead>
                   <tr>
-                    <th>Prompt</th>
-                    <th>Section</th>
-                    <th>Visibility</th>
-                    <th>Rank</th>
-                    <th>Sentiment</th>
-                    <th>Region</th>
-                    <th>Language</th>
-                    <th>Date added</th>
-                    <th>Citations</th>
-                    <th>Actions</th>
+                    <th className="prompt-check-cell" scope="col">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all prompts on this page"
+                        checked={allSelected}
+                        ref={(node) => {
+                          if (node)
+                            node.indeterminate =
+                              !allSelected &&
+                              visible.some((prompt) =>
+                                selection.includes(prompt.id),
+                              );
+                        }}
+                        onChange={() =>
+                          setSelection(
+                            allSelected
+                              ? selection.filter(
+                                  (id) =>
+                                    !visible.some((prompt) => prompt.id === id),
+                                )
+                              : [
+                                  ...new Set([
+                                    ...selection,
+                                    ...visible.map((prompt) => prompt.id),
+                                  ]),
+                                ],
+                          )
+                        }
+                      />
+                    </th>
+                    {sortHeader('Prompts', 'text')}
+                    <th scope="col">SEO keyword</th>
+                    <th scope="col">
+                      <span
+                        className="prompt-heading-hint"
+                        title="Region used to collect answers"
+                      >
+                        Regions
+                      </span>
+                    </th>
+                    <th scope="col">
+                      <span
+                        className="prompt-heading-hint"
+                        title="Search intent and branded status"
+                      >
+                        Intent
+                      </span>
+                    </th>
+                    {sortHeader('Visibility', 'avgVisibility')}
+                    {sortHeader('Sentiment', 'avgSentimentScore')}
+                    {sortHeader('Rank', 'avgRank')}
+                    {sortHeader('Created', 'createdAt')}
+                    <th scope="col">Tags</th>
+                    <th scope="col">
+                      <span className="visually-hidden">Actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered
-                    .slice(currentPage * 20, (currentPage + 1) * 20)
-                    .map((p) => {
-                      const result = resultFor(p),
-                        target =
-                          result?.status === 'succeeded'
-                            ? result.target
-                            : undefined;
-                      const historical =
-                        observations.data?.items.some(
-                          (r) => r.promptId === p.id,
-                        ) && !result;
-                      return (
-                        <tr
-                          key={p.id}
-                          className={!p.active ? 'prompt-archived' : ''}
+                  {visible.map((prompt) => (
+                    <tr
+                      key={prompt.id}
+                      className={`${!prompt.active ? 'prompt-archived' : ''} ${selection.includes(prompt.id) ? 'prompt-selected' : ''}`}
+                    >
+                      <td className="prompt-check-cell">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select prompt: ${prompt.text}`}
+                          checked={selection.includes(prompt.id)}
+                          onChange={() =>
+                            setSelection(
+                              selection.includes(prompt.id)
+                                ? selection.filter((id) => id !== prompt.id)
+                                : [...selection, prompt.id],
+                            )
+                          }
+                        />
+                      </td>
+                      <td className="prompt-cell">
+                        {prompt.responseId ? (
+                          <button
+                            className="prompt-name"
+                            dir="auto"
+                            title="Read latest answer in this period"
+                            onClick={() => onResponse(prompt.responseId!)}
+                          >
+                            {prompt.text}
+                          </button>
+                        ) : (
+                          <span className="prompt-name" dir="auto">
+                            {prompt.text}
+                          </span>
+                        )}
+                        {!prompt.active && (
+                          <small className="prompt-measurement-note">
+                            Archived
+                          </small>
+                        )}
+                      </td>
+                      <td className="prompt-keyword" dir="auto">
+                        {prompt.seoKeyword || '—'}
+                      </td>
+                      <td>
+                        <span className="prompt-region">
+                          <span aria-hidden="true">
+                            {flag(project.country)}
+                          </span>
+                          {project.country}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="prompt-intent">
+                          {prompt.intent ? (
+                            <span
+                              className={`intent-chip intent-${prompt.intent}`}
+                              title={labelize(prompt.intent)}
+                            >
+                              {prompt.intent.charAt(0).toUpperCase()}
+                            </span>
+                          ) : (
+                            <span title="Intent not assigned">—</span>
+                          )}
+                          <span
+                            className="intent-chip intent-branded"
+                            title={prompt.branded ? 'Branded' : 'Non-branded'}
+                          >
+                            {prompt.branded ? 'B' : 'N'}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <div
+                          className="prompt-metric"
+                          title={`${prompt.measurementCount} successfully analyzed answers`}
                         >
-                          <td className="prompt-cell">
-                            <span className="prompt-name" dir="auto">
-                              {p.text}
+                          <VisibilityGauge value={prompt.avgVisibility} />
+                          <PromptMetricChange value={prompt.visibilityChange} />
+                        </div>
+                      </td>
+                      <td>
+                        <div
+                          className="prompt-metric"
+                          title={`${prompt.sentimentCount} classified brand mentions`}
+                        >
+                          {prompt.avgSentimentScore === null ? (
+                            <span className="prompt-missing">—</span>
+                          ) : (
+                            <span
+                              className={`prompt-sentiment ${prompt.avgSentimentScore >= 60 ? 'positive' : prompt.avgSentimentScore >= 40 ? 'neutral' : 'negative'}`}
+                            >
+                              {prompt.avgSentimentScore}
                             </span>
-                            <span className="prompt-category">
-                              {p.topic ? `${p.topic} · ` : ''}
-                              {p.intent ? `${labelize(p.intent)} · ` : ''}
-                              {p.branded ? 'Branded' : 'Discovery'} · v
-                              {p.version} · {p.active ? 'Active' : 'Archived'}
+                          )}
+                          <PromptMetricChange value={prompt.sentimentChange} />
+                        </div>
+                      </td>
+                      <td>
+                        <div
+                          className="prompt-metric"
+                          title={`${prompt.rankCount} ranked brand mentions. Lower is better.`}
+                        >
+                          <span className="prompt-rank">
+                            {prompt.avgRank === null
+                              ? '—'
+                              : Number(prompt.avgRank.toFixed(1))}
+                          </span>
+                          <PromptMetricChange value={prompt.rankChange} />
+                        </div>
+                      </td>
+                      <td>
+                        <time
+                          className="prompt-created"
+                          dateTime={prompt.createdAt}
+                        >
+                          <span>{formatDate(prompt.createdAt)}</span>
+                          <span>
+                            {new Date(prompt.createdAt).getFullYear()}
+                          </span>
+                        </time>
+                      </td>
+                      <td>
+                        <div className="prompt-tags">
+                          {prompt.tags?.map((value) => (
+                            <span
+                              className={`prompt-tag tag-color-${tagColor(value)}`}
+                              key={value}
+                            >
+                              {value}
                             </span>
-                            {historical && (
-                              <small className="prompt-measurement-note">
-                                Changed since this scan
-                              </small>
-                            )}
-                          </td>
-                          <td>{p.stage ? <Badge value={p.stage} /> : '—'}</td>
-                          <td>
-                            {target ? (
-                              <Badge
-                                value={
-                                  target.mentioned ? 'positive' : 'neutral'
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="prompt-actions">
+                          {prompt.responseId && (
+                            <button
+                              className="icon-button"
+                              aria-label={`Read answer to ${prompt.text}`}
+                              title="Read latest answer"
+                              onClick={() => onResponse(prompt.responseId!)}
+                            >
+                              <ArrowUpRight size={16} />
+                            </button>
+                          )}
+                          {owner && (
+                            <>
+                              <button
+                                className="icon-button"
+                                aria-label={`Edit prompt: ${prompt.text}`}
+                                title="Edit prompt"
+                                disabled={!editable || busy}
+                                onClick={() => setEditing(prompt)}
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                className="icon-button"
+                                aria-label={`${prompt.active ? 'Archive' : 'Activate'} prompt: ${prompt.text}`}
+                                title={
+                                  prompt.active
+                                    ? 'Archive prompt'
+                                    : 'Activate prompt'
                                 }
-                                label={
-                                  target.mentioned
-                                    ? '100% · Mentioned'
-                                    : '0% · Absent'
+                                disabled={
+                                  !editable ||
+                                  busy ||
+                                  (!prompt.active && active >= 50)
                                 }
-                              />
-                            ) : (
-                              '—'
-                            )}
-                            {result && !target && (
-                              <small className="prompt-measurement-note">
-                                {labelize(result.status)}
-                              </small>
-                            )}
-                            <MetricChange
-                              value={scoresFor(p)?.visibilityChange}
-                            />
-                          </td>
-                          <td>
-                            <span className="rank">
-                              {brandRank(target) != null
-                                ? `#${brandRank(target)}`
-                                : '—'}
-                            </span>
-                            <MetricChange value={scoresFor(p)?.rankChange} />
-                          </td>
-                          <td>
-                            <SentimentScore brand={target} />
-                            <MetricChange
-                              value={scoresFor(p)?.sentimentChange}
-                            />
-                          </td>
-                          <td>{project.country}</td>
-                          <td>{project.language}</td>
-                          <td>{formatDate(p.createdAt)}</td>
-                          <td>
-                            {result?.capturedAt ? result.citationCount : '—'}
-                          </td>
-                          <td>
-                            <div className="prompt-actions">
-                              {result && (
-                                <button
-                                  className="icon-button"
-                                  aria-label={`Read answer to ${p.text}`}
-                                  title="Read original answer"
-                                  onClick={() => onResponse(result.responseId)}
-                                >
-                                  <ArrowUpRight size={15} />
-                                </button>
-                              )}
-                              {owner && (
-                                <>
-                                  <button
-                                    className="icon-button"
-                                    disabled={!editable || !!busy}
-                                    aria-label={`Edit prompt: ${p.text}`}
-                                    title="Edit prompt"
-                                    onClick={() => setEditing(p)}
-                                  >
-                                    <Pencil size={14} />
-                                  </button>
-                                  <button
-                                    className="icon-button"
-                                    disabled={
-                                      !editable ||
-                                      !!busy ||
-                                      (!p.active && active >= 50)
-                                    }
-                                    aria-label={`${p.active ? 'Archive' : 'Activate'} prompt: ${p.text}`}
-                                    title={
-                                      p.active
-                                        ? 'Archive prompt'
-                                        : active >= 50
-                                          ? 'Archive another prompt to free a slot'
-                                          : 'Activate prompt'
-                                    }
-                                    onClick={() => void toggle(p)}
-                                  >
-                                    {p.active ? (
-                                      <Archive size={14} />
-                                    ) : (
-                                      <RotateCcw size={14} />
-                                    )}
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                                onClick={() =>
+                                  void updateStatus([prompt], !prompt.active)
+                                }
+                              >
+                                {prompt.active ? (
+                                  <Archive size={15} />
+                                ) : (
+                                  <RotateCcw size={15} />
+                                )}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
             <Pagination
               page={currentPage}
               total={filtered.length}
-              size={20}
+              size={PAGE_SIZE}
               onChange={setPage}
             />
           </>
         )}
       </section>
-      <p className="scan-options">
-        Visibility is 100% or 0% for the single answer in the selected weekly
-        scan. Missing or failed analysis stays blank. Rank is company appearance
-        order, matching iGEO. Sentiment is scored from 0 to 100; unknown or
-        absent brands have no sentiment score. Editing a prompt creates a new
-        version; past answers remain in Mentions.
+      <p className="prompts-period-note">
+        Averages for the last {days} days. Changes compare the preceding {days}{' '}
+        days. <span>— means no measurement or comparable baseline.</span>
       </p>
       {(adding || editing) && (
         <PromptEditor
@@ -569,7 +895,7 @@ export default function PromptsView({
           notify={notify}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -590,12 +916,14 @@ function PromptEditor({
 }) {
   const [text, setText] = useState(prompt?.text || ''),
     [stage, setStage] = useState<JourneyStage>(prompt?.stage || 'understand');
-  const [topic, setTopic] = useState(prompt?.topic || '');
+  const [intent, setIntent] = useState<PromptIntent | ''>(prompt?.intent || '');
+  const [seoKeyword, setSeoKeyword] = useState(prompt?.seoKeyword || ''),
+    [tags, setTags] = useState(prompt?.tags?.join(', ') || '');
   const [saving, setSaving] = useState(false),
     [error, setError] = useState<Error>();
   const texts = text
     .split(/\r?\n/)
-    .map((t) => t.trim())
+    .map((value) => value.trim())
     .filter(Boolean);
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -613,18 +941,23 @@ function PromptEditor({
               ? { text: text.trim(), version: prompt.version }
               : { texts }),
             stage,
-            topic,
+            ...(intent ? { intent } : {}),
+            seoKeyword,
+            tags: tags
+              .split(',')
+              .map((value) => value.trim())
+              .filter(Boolean),
           }),
         },
       );
       notify(
         prompt
-          ? 'Prompt saved. Changes apply to the next scan.'
+          ? 'Prompt saved.'
           : `${texts.length} prompts added for the next scan.`,
       );
       onSaved();
-    } catch (error) {
-      setError(error as Error);
+    } catch (cause) {
+      setError(cause as Error);
     } finally {
       setSaving(false);
     }
@@ -634,17 +967,17 @@ function PromptEditor({
       title={prompt ? 'Edit prompt' : 'Add prompts'}
       onClose={saving ? () => {} : onClose}
     >
-      <form className="form-stack" onSubmit={(e) => void submit(e)}>
+      <form className="form-stack" onSubmit={(event) => void submit(event)}>
         <ErrorNotice error={error} />
         <fieldset className="prompt-fieldset" disabled={saving}>
           <label className="field">
             {prompt ? 'Prompt' : 'One prompt per line'}
             <textarea
-              rows={7}
+              rows={6}
               required
               maxLength={prompt ? 2000 : 102000}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(event) => setText(event.target.value)}
             />
             {!prompt && (
               <small>
@@ -653,33 +986,58 @@ function PromptEditor({
             )}
           </label>
           <label className="field">
-            Section
+            SEO keyword
+            <input
+              maxLength={160}
+              value={seoKeyword}
+              onChange={(event) => setSeoKeyword(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            Intent
             <select
-              value={stage}
-              onChange={(e) => setStage(e.target.value as JourneyStage)}
+              value={intent}
+              onChange={(event) =>
+                setIntent(event.target.value as PromptIntent | '')
+              }
             >
-              {JOURNEY_STAGES.map((value) => (
-                <option value={value} key={value}>
+              <option value="" disabled>
+                Choose intent
+              </option>
+              {PROMPT_INTENTS.map((value) => (
+                <option key={value} value={value}>
                   {labelize(value)}
                 </option>
               ))}
             </select>
           </label>
           <label className="field">
-            Topic
+            Section
+            <select
+              value={stage}
+              onChange={(event) => setStage(event.target.value as JourneyStage)}
+            >
+              {JOURNEY_STAGES.map((value) => (
+                <option key={value} value={value}>
+                  {labelize(value)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Tags
             <input
-              value={topic}
-              maxLength={120}
-              onChange={(e) => setTopic(e.target.value)}
+              value={tags}
+              maxLength={609}
+              placeholder="Priority, Comparison"
+              onChange={(event) => setTags(event.target.value)}
             />
+            <small>Separate up to 10 tags with commas.</small>
           </label>
           <p className="scan-options">
-            Brand names and aliases are detected automatically. A maximum of 15
-            active prompts may be branded.
-          </p>
-          <p className="scan-options">
-            Saving changes your prompt portfolio. Start a scan to collect new
-            answers.
+            Brand names are detected automatically. Up to {MAX_BRANDED_PROMPTS}{' '}
+            active prompts may be branded. Edited prompts receive new
+            measurements on the next scan.
           </p>
           <div className="form-actions">
             <button
@@ -698,7 +1056,9 @@ function PromptEditor({
                   ? text.trim().length < 3
                   : !texts.length ||
                     texts.length > slots ||
-                    texts.some((t) => t.length < 3 || t.length > 2000))
+                    texts.some(
+                      (value) => value.length < 3 || value.length > 2000,
+                    ))
               }
             >
               {saving ? 'Saving…' : prompt ? 'Save prompt' : 'Add prompts'}

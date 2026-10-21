@@ -76,7 +76,7 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
     await migrateDatabase(db);
     expect(
       (await db.query('SELECT name FROM citevia_migrations')).rows,
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     const fields = (
       await db.query(
         `SELECT column_name,data_type FROM information_schema.columns WHERE table_name='prompt_responses'`,
@@ -256,7 +256,7 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
       {
         response: null,
         status: 'FAILED_COLLECTION',
-        visibility: 0,
+        visibility: null,
         response_rank: null,
       },
     ]);

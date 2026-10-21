@@ -423,6 +423,26 @@ export class MemoryRepository implements Repository {
         .slice(0, limit),
     );
   }
+  listPromptHistory(projectId: string, start: string, end: string) {
+    return this.operation(() => {
+      const runs = Object.values(this.state.runs).filter(
+        (run) => run.projectId === projectId,
+      );
+      const byId = new Map(runs.map((run) => [run.id, run]));
+      const results = Object.values(this.state.results).filter((result) => {
+        const run = byId.get(result.runId);
+        const at = Date.parse(result.capturedAt || run?.createdAt || '');
+        return (
+          result.projectId === projectId &&
+          run &&
+          at >= Date.parse(start) &&
+          at <= Date.parse(end)
+        );
+      });
+      const used = new Set(results.map((result) => result.runId));
+      return { runs: runs.filter((run) => used.has(run.id)), results };
+    });
+  }
   listActiveRuns() {
     return this.operation(() =>
       Object.values(this.state.runs).filter(

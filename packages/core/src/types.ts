@@ -29,6 +29,8 @@ export interface Prompt {
   topic?: string;
   generationId?: string;
   intent?: import('./prompt-policy.js').PromptIntent;
+  seoKeyword?: string;
+  tags?: string[];
 }
 export interface Project {
   id: string;

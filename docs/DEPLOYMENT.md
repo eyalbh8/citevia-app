@@ -143,7 +143,9 @@ Manual uploads do not run `amplify.yml` or read Amplify build environment variab
 
 Deploy this as a new Citevia stack. The local template edit does not migrate or remove any existing cloud resources. Do not update an externally deployed DynamoDB stack in place without first exporting its data and planning a separate migration. The application never connects to iGEO's production database.
 
-After deployment, run the bundled migration through the **existing scanner Lambda**. This keeps the private database inaccessible from the public internet and does not add a migration Lambda. Using the `ScannerFunctionName` stack output:
+For the prompts update, deploy the scanner bundle and apply `004_prompt_metadata.sql` before rolling out the new API/client: the API writes the new `prompts.seo_keyword` column. The migration also repairs prompt locale mirrors and represents failed visibility as null. It is included in the normal migration ledger and is safe to invoke repeatedly.
+
+Run the bundled migration through the **existing scanner Lambda**. This keeps the private database inaccessible from the public internet and does not add a migration Lambda. Using the `ScannerFunctionName` stack output:
 
 ```sh
 aws lambda invoke \

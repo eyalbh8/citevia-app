@@ -8,6 +8,7 @@ import type {
   ScanMessage,
   ScanRun,
   RunSummary,
+  PromptHistory,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 export interface Repository extends UserRepository {
@@ -43,6 +44,11 @@ export interface Repository extends UserRepository {
   createRun(run: ScanRun, results: PromptResult[]): Promise<boolean>;
   getRun(projectId: string, runId: string): Promise<ScanRun | null>;
   listRuns(projectId: string, limit?: number): Promise<ScanRun[]>;
+  listPromptHistory(
+    projectId: string,
+    start: string,
+    end: string,
+  ): Promise<PromptHistory>;
   listActiveRuns(): Promise<ScanRun[]>;
   listResults(projectId: string, runId: string): Promise<PromptResult[]>;
   getResult(

@@ -6,6 +6,7 @@ import {
   identifier,
   metricsFromResults,
   promptMetrics,
+  promptPeriodMetrics,
   brandSentimentScore,
   nextWeeklyScan,
   promptCreateSchema,
@@ -570,6 +571,32 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       if (tail === 'prompts' && method === 'GET')
         return response({ items: stored.prompts, version: stored.version });
       if (tail === 'prompt-metrics' && method === 'GET') {
+        if (!query.has('runId')) {
+          const days = Number(query.get('days') || '7');
+          if (![7, 30, 90].includes(days))
+            throw new HttpError(
+              400,
+              'INVALID_PERIOD',
+              'Choose a 7, 30 or 90 day period.',
+            );
+          const end = now();
+          const start = new Date(end.getTime() - days * 86400000 + 1);
+          const previousStart = new Date(start.getTime() - days * 86400000);
+          const history = await repository.listPromptHistory(
+            projectId,
+            previousStart.toISOString(),
+            end.toISOString(),
+          );
+          return response(
+            promptPeriodMetrics(
+              stored,
+              history,
+              start.toISOString(),
+              end.toISOString(),
+              providerFilter,
+            ),
+          );
+        }
         const run = await selectedRun();
         const runs = await repository.listRuns(projectId, 180);
         const previous =
@@ -625,6 +652,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           branded: isBrandedPrompt(text, stored.brand),
           ...('stage' in input ? { stage: input.stage } : {}),
           topic: input.topic || undefined,
+          intent: input.intent,
+          seoKeyword: input.seoKeyword || undefined,
+          tags: input.tags || [],
           createdAt: at,
           updatedAt: at,
         }));
@@ -797,12 +827,12 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         }
         await queue.send([message]);
         const configs = existing
-          ? (existing.snapshot.scanProviders ?? [
+          ? existing.snapshot.scanProviders ?? [
               {
                 provider: snapshotProvider(existing.snapshot),
                 model: existing.snapshot.generationModel,
               },
-            ])
+            ]
           : projectProviders(stored);
         return response(
           {
@@ -875,7 +905,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             ) || null;
         const selectedProvider = current
           ? snapshotProvider(current.snapshot)
-          : (providerFilter ?? projectProviders(stored)[0].provider);
+          : providerFilter ?? projectProviders(stored)[0].provider;
         const runs = allRuns.filter(
           (run) => snapshotProvider(run.snapshot) === selectedProvider,
         );
