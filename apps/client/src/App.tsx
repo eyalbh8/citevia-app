@@ -61,6 +61,7 @@ import { Skeleton } from './Loading';
 import { DashboardView } from './DashboardView';
 import MentionsView from './MentionsView';
 import TrackingView from './TrackingView';
+import TrafficView from './TrafficView';
 import SourcesView from './SourcesView';
 import SettingsView from './SettingsView';
 import PromptsView from './PromptsView';
@@ -76,6 +77,7 @@ type View =
   | 'dashboard'
   | 'mentions'
   | 'tracking'
+  | 'traffic'
   | 'sources'
   | 'settings'
   | 'accounts'
@@ -89,6 +91,7 @@ const views = {
     description: 'Connect your AI assistant to Citevia with your account permissions.',
     icon: Plug,
   },
+  traffic: { title: 'AI Traffic', description: 'See the visits AI sends to your website.', icon: ChartNoAxesCombined },
   tracking: { title: 'Tracking', description: 'Track your content in AI answers.', icon: Link2 },
   users: {
     title: 'Users',
@@ -532,6 +535,7 @@ function Workspace() {
               'mentions',
               'tracking',
               'sources',
+              'traffic',
               'brandbook',
               ...(systemAdmin ? ['users' as const] : []),
             ] as View[]
@@ -686,9 +690,9 @@ function Workspace() {
         <main
           id="main-content"
           tabIndex={-1}
-          className={`content ${['dashboard', 'prompts', 'mentions', 'tracking'].includes(view) ? 'prompts-content' : ''}`}
+          className={`content ${['dashboard', 'prompts', 'mentions', 'tracking', 'traffic'].includes(view) ? 'prompts-content' : ''}`}
         >
-          {!['dashboard', 'prompts', 'mentions', 'tracking'].includes(view) && (
+          {!['dashboard', 'prompts', 'mentions', 'tracking', 'traffic'].includes(view) && (
             <div className="page-heading">
               <div>
                 <div className="eyebrow">AI VISIBILITY INTELLIGENCE</div>
@@ -827,7 +831,7 @@ function Workspace() {
             path &&
             project && (
               <>
-                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking'].includes(view) &&
+                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic'].includes(view) &&
                   run && (
                     <div className="status-strip">
                       <span
@@ -856,7 +860,7 @@ function Workspace() {
                   )}
                 {dashboard.loading &&
                 !dashboard.data &&
-                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking'].includes(view) ? (
+                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic'].includes(view) ? (
                   <Skeleton variant="cards" label="Bringing your results together…" />
                 ) : view === 'settings' ? (
                   <SettingsView
@@ -875,6 +879,8 @@ function Workspace() {
                   />
                 ) : view === 'mentions' ? (
                   <MentionsView key={project.id} path={path} project={project} onResponse={setSelectedResponse} />
+                ) : view === 'traffic' ? (
+                  <TrafficView key={project.id} path={path} project={project} notify={setToast} />
                 ) : view === 'tracking' ? (
                   <TrackingView key={project.id} path={path} project={project} onResponse={setSelectedResponse} notify={setToast} />
                 ) : view === 'brandbook' ? (

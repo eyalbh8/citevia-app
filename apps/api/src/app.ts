@@ -1,3 +1,4 @@
+import { trafficRoute } from './traffic.js';
 import { monitoringPeriod, monitoringRoute } from './monitoring.js';
 import { dashboardOverviewRoute } from './dashboard.js';
 import { competitorSuggestions } from './competitors.js';
@@ -314,6 +315,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           'FORBIDDEN',
           'Project owner access is required',
         );
+      const traffic = await trafficRoute(runtime, project, tail, request, now());
+      if (traffic) return traffic;
       const monitoring = await monitoringRoute(
         runtime,
         project,

@@ -246,3 +246,7 @@ Template validation and local tests cannot prove account quotas, IAM delegation,
 ## Provider rollout and cost
 
 Read [PROVIDERS.md](PROVIDERS.md) before enabling schedules. A new 50-prompt account produces up to 150 collections plus 150 analysis calls weekly; research and generation add onboarding calls. Existing accounts keep OpenAI-only settings until explicitly changed. Provider failures and retries are independent; no provider silently falls back to another. Deployments still contain exactly two application Lambdas. Configure all three provider secret ARNs for the deployment, then choose enabled providers per account.
+
+### AI Traffic deployment
+
+Apply `007_ai_traffic.sql` after `006_mcp.sql` before publishing the updated API/client. It adds provider attribution and isolated connection-test IDs to the existing iGEO `analytics_events` table. The build packages the offline country database, its lookup runtime, and license notices with the API Lambda. There are no new secrets or outbound lookup calls. After deployment, use **AI Traffic → Settings** to install the account’s script on its real website and verify the connection. Existing iGEO tracker URLs continue sending to iGEO until replaced with Citevia’s generated snippet. See [AI Traffic setup and measurement boundaries](../README.md#ai-traffic).

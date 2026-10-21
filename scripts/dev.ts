@@ -60,7 +60,7 @@ const server = createServer(async (req, res) => {
         ? { body: Buffer.concat(chunks).toString('utf8') }
         : {}),
     });
-    const result = await api(request);
+    const result = await api(request, req.socket.remoteAddress);
     res.writeHead(result.status, Object.fromEntries(result.headers));
     res.end(await result.text());
   } catch (error) {

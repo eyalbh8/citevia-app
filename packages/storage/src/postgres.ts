@@ -1,3 +1,4 @@
+import * as traffic from './traffic-postgres.js';
 import {
   isTerminal,
   projectProviders,
@@ -15,6 +16,8 @@ import {
   type PromptResult,
   type ScanRun,
   type TrackedUrl,
+  type TrafficEvent,
+  type TrafficFilters,
 } from '@citevia/core';
 import * as tracking from './tracking-postgres.js';
 import * as mcp from './mcp.js';
@@ -28,6 +31,9 @@ export class PostgresRepository extends PostgresUsers implements Repository {
   constructor(db: SqlDatabase) {
     super(db);
   }
+  collectTrafficEvent(event: TrafficEvent) { return traffic.collectTrafficEvent(this.db, event); }
+  trafficStatus(projectId: string, testId?: string) { return traffic.trafficStatus(this.db, projectId, testId); }
+  aggregateTraffic(projectId: string, filters: TrafficFilters) { return traffic.aggregateTraffic(this.db, projectId, filters); }
   createMcpConnection(connection: mcp.McpConnection) { return mcp.createMcpConnection(this.db, connection); }
   listMcpConnections(userId: string, projectId: string | null) { return mcp.listMcpConnections(this.db, userId, projectId); }
   getMcpConnectionByHash(hash: string) { return mcp.getMcpConnectionByHash(this.db, hash); }

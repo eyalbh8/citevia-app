@@ -1,3 +1,5 @@
+import { publicTrafficRoute } from './traffic.js';
+import { trafficCountry } from './traffic-geo.js';
 import type {
   APIGatewayProxyEventV2,
   APIGatewayProxyStructuredResultV2,
@@ -38,7 +40,9 @@ export function createAuthenticatedApi(
     mcpConfig[name] = url.origin;
   }
   const mcp = createMcp(runtime, identity, mcpConfig, app);
-  return async (request: Request): Promise<Response> => {
+  return async (request: Request, sourceIp?: string): Promise<Response> => {
+    const traffic = await publicTrafficRoute(runtime, request, (options.now || (() => new Date()))(), () => trafficCountry(sourceIp));
+    if (traffic) return traffic;
     const mcpResponse = await mcp(request);
     if (mcpResponse) {
       mcpResponse.headers.set('Cache-Control', 'no-store');
@@ -101,7 +105,7 @@ export async function handler(
         : {}),
     },
   );
-  const result = await app(request);
+  const result = await app(request, event.requestContext.http.sourceIp);
   return {
     statusCode: result.status,
     headers: Object.fromEntries(result.headers),

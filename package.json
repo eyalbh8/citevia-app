@@ -31,12 +31,14 @@
     "@aws-sdk/client-sqs": "^3.900.0",
     "@descope/node-sdk": "^2.20.0",
     "@electric-sql/pglite": "^0.5.10",
+    "geoip-country": "^5.0.202610210158",
     "pg": "^8.23.1",
     "tldts": "^7.0.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.150",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^22.15.0",
     "@types/pg": "^8.23.1",
     "esbuild": "^0.25.0",
@@ -45,5 +47,10 @@
     "typescript": "^5.9.0",
     "vitest": "^4.1.11",
     "yaml": "^2.8.0"
+  },
+  "overrides": {
+    "geoip-country": {
+      "ip-address": "^10.7.4"
+    }
   }
 }

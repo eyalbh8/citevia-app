@@ -1,3 +1,4 @@
+import { aggregateTraffic, type TrafficEvent, type TrafficFilters } from '@citevia/core';
 import {
   verifiedIdentitySchema,
   type VerifiedIdentity,
@@ -31,6 +32,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State {
+  trafficEvents?: Record<string, TrafficEvent>;
   mcpConnections?: Record<string, McpConnection>;
   mcpRecords?: Record<string, McpRecord>;
   mcpRequestLimits?: Record<string, { windowStart: string; count: number }>;
@@ -65,6 +67,22 @@ const copy = <T>(value: T): T => structuredClone(value);
 
 export class MemoryRepository implements Repository {
   protected state: State = blank();
+  collectTrafficEvent(event: TrafficEvent) {
+    return this.operation(() => {
+      this.state.trafficEvents ||= {};
+      this.state.trafficEvents[event.id] ||= copy(event);
+    }, true);
+  }
+  trafficStatus(projectId: string, testId?: string) {
+    return this.operation(() => {
+      const events = Object.values(this.state.trafficEvents || {}).filter(e=>e.projectId===projectId);
+      return { hasEvents: events.length > 0, lastReceivedAt: events.map(e=>e.timestamp).sort().at(-1) || null,
+        testReceived: Boolean(testId && events.some(e=>e.testId===testId)) };
+    });
+  }
+  aggregateTraffic(projectId: string, filters: TrafficFilters) {
+    return this.operation(() => aggregateTraffic(Object.values(this.state.trafficEvents || {}).filter(e=>e.projectId===projectId), filters));
+  }
   private tail: Promise<unknown> = Promise.resolve();
   createMcpConnection(connection: McpConnection): Promise<void> {
     return this.operation(() => {

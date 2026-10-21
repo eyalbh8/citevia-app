@@ -74,9 +74,9 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
   });
   it('applies the complete baseline and idempotent migration ledger', async () => {
     await migrateDatabase(db);
-    expect(
-      (await db.query('SELECT name FROM citevia_migrations')).rows,
-    ).toHaveLength(6);
+    const migrations = (await db.query('SELECT name FROM citevia_migrations')).rows;
+    expect(migrations).toEqual(expect.arrayContaining([{ name: '007_ai_traffic.sql' }]));
+    expect(migrations).toHaveLength(7);
     const fields = (
       await db.query(
         `SELECT column_name,data_type FROM information_schema.columns WHERE table_name='prompt_responses'`,

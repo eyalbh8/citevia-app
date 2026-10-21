@@ -12,6 +12,10 @@ import type {
   PromptHistory,
   TrackedUrl,
   TrackingMatch,
+  TrafficEvent,
+  TrafficStatus,
+  TrafficFilters,
+  TrafficAggregate,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 import type { McpRepository } from './mcp.js';
@@ -25,6 +29,9 @@ export interface SavedAnalysis {
   analysis: Analysis | null;
 }
 export interface Repository extends UserRepository, McpRepository {
+  collectTrafficEvent(event: TrafficEvent): Promise<void>;
+  trafficStatus(projectId: string, testId?: string): Promise<TrafficStatus>;
+  aggregateTraffic(projectId: string, filters: TrafficFilters): Promise<TrafficAggregate>;
   /** A returned null is authoritative. Omitted responses require legacy artifact lookup. */
   listSavedAnalyses(
     projectId: string,
