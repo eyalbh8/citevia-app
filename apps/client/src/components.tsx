@@ -22,7 +22,7 @@ export function Pagination({ page, total, size, onChange }: { page: number; tota
   const pages = Math.ceil(total / size);
   return <div className="pagination"><span>{total ? `${page * size + 1}–${Math.min((page + 1) * size, total)} of ${total}` : 'No results'}</span><div className="page-buttons"><button aria-label="Previous page" disabled={page === 0} onClick={() => onChange(page - 1)}><ChevronLeft size={13} /></button>{Array.from({ length: pages }, (_, index) => <button key={index} className={index === page ? 'active' : ''} aria-label={`Page ${index + 1}`} aria-current={index === page ? 'page' : undefined} onClick={() => onChange(index)}>{index + 1}</button>)}<button aria-label="Next page" disabled={page + 1 >= pages} onClick={() => onChange(page + 1)}><ChevronRight size={13} /></button></div></div>;
 }
-export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Drawer({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => {
@@ -43,5 +43,5 @@ export function Drawer({ title, onClose, children }: { title: string; onClose: (
     document.addEventListener('keydown', handleKey);
     return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', handleKey); previous?.focus(); };
   }, []);
-  return <div className="overlay" onClick={event => { if (event.target === event.currentTarget) onClose(); }}><section ref={ref} tabIndex={-1} className="drawer" role="dialog" aria-modal="true" aria-label={title}><div className="drawer-header"><h2>{title}</h2><button className="icon-button" aria-label="Close details" onClick={onClose}><X size={20} /></button></div><div className="drawer-body">{children}</div></section></div>;
+  return <div className="overlay" onClick={event => { if (event.target === event.currentTarget) onClose(); }}><section ref={ref} tabIndex={-1} className={`drawer${wide ? ' drawer-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}><div className="drawer-header"><h2>{title}</h2><button className="icon-button" aria-label="Close details" onClick={onClose}><X size={20} /></button></div><div className="drawer-body">{children}</div></section></div>;
 }

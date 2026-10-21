@@ -8,6 +8,8 @@ import {
   promptMetrics,
   promptPeriodMetrics,
   brandSentimentScore,
+  brandRank,
+  reportingCompanies,
   nextWeeklyScan,
   promptCreateSchema,
   promptUpdateSchema,
@@ -31,6 +33,7 @@ import {
   type Page,
   type Project,
   type PromptResult,
+  type PromptAnswerRow,
   type ResponseDetail,
   type RunSummary,
   type ScanRun,
@@ -43,6 +46,11 @@ import { adminRoute } from './admin.js';
 import { runIdFor, providerRunIdFor } from '../../scanner/src/engine.js';
 import { brandbookUpdateSchema } from '@citevia/core';
 import { createAccounts } from './onboarding.js';
+import {
+  ANSWER_SORTS,
+  promptAnswers,
+  type AnswerSort,
+} from './prompt-answers.js';
 
 class HttpError extends Error {
   constructor(
@@ -993,6 +1001,88 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           mode: options.mode,
         };
         return response(data);
+      }
+      const answersMatch = tail.match(/^prompts\/([^/]+)\/responses$/);
+      if (answersMatch && method === 'GET') {
+        const promptId = identifier.parse(decodeURIComponent(answersMatch[1]));
+        if (!stored.prompts.some((prompt) => prompt.id === promptId))
+          throw new HttpError(404, 'NOT_FOUND', 'Prompt not found');
+        const days = query.get('days') || 'all';
+        if (!['all', '7', '30', '90'].includes(days))
+          throw new HttpError(
+            400,
+            'INVALID_PERIOD',
+            'Choose all time or a 7, 30 or 90 day period.',
+          );
+        const sort = query.get('sort') || 'date',
+          direction = query.get('direction') || 'desc';
+        if (
+          !ANSWER_SORTS.includes(sort as AnswerSort) ||
+          !['asc', 'desc'].includes(direction)
+        )
+          throw new HttpError(400, 'INVALID_SORT', 'Invalid answer sort.');
+        paging(query);
+        const end = now(),
+          start =
+            days === 'all'
+              ? new Date(0)
+              : new Date(end.getTime() - Number(days) * 86400000 + 1);
+        const history = await repository.listPromptHistory(
+          projectId,
+          start.toISOString(),
+          end.toISOString(),
+          promptId,
+        );
+        const page = paginate(
+          promptAnswers(
+            history,
+            projectId,
+            promptId,
+            providerFilter,
+            sort as AnswerSort,
+            direction as 'asc' | 'desc',
+          ),
+          query,
+        );
+        const items: PromptAnswerRow[] = [];
+        // Read only this page's immutable evidence, with bounded S3 concurrency.
+        for (let i = 0; i < page.items.length; i += 5) {
+          items.push(
+            ...(await Promise.all(
+              page.items.slice(i, i + 5).map(async ({ result, run }) => {
+                const { answer, analysis } = await details(result, run);
+                const target =
+                  result.status === 'succeeded' ? result.target : undefined;
+                return {
+                  responseId: result.responseId,
+                  promptText: result.prompt.text,
+                  promptVersion: result.prompt.version,
+                  provider: snapshotProvider(run.snapshot),
+                  model:
+                    answer?.model ||
+                    result.model ||
+                    run.snapshot.generationModel,
+                  date: result.capturedAt || run.createdAt,
+                  country: run.snapshot.country,
+                  status: result.status,
+                  answerPreview: answer?.text
+                    ? answer.text.slice(0, 600)
+                    : null,
+                  visibility: target ? (target.mentioned ? 100 : 0) : null,
+                  rank: brandRank(target),
+                  sentimentScore: brandSentimentScore(target),
+                  brands: reportingCompanies(
+                    analysis,
+                    run.snapshot,
+                    answer,
+                  ).map((company) => company.company),
+                  citationCount: result.citationCount,
+                };
+              }),
+            )),
+          );
+        }
+        return response({ ...page, items });
       }
       if (tail === 'responses' && method === 'GET') {
         const run = await selectedRun();

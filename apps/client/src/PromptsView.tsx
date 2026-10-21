@@ -44,6 +44,7 @@ import {
   Pagination,
   Spinner,
 } from './components';
+import PromptAnswersDrawer from './PromptAnswersDrawer';
 import './prompts.css';
 
 type Props = {
@@ -51,7 +52,6 @@ type Props = {
   revision: number;
   onSaved: () => void;
   notify: (text: string) => void;
-  onResponse: (id: string) => void;
   onScan: () => void;
   scanDisabled: boolean;
   scanning: boolean;
@@ -153,12 +153,6 @@ function flag(country: string) {
       )
     : '';
 }
-function tagColor(tag: string) {
-  const priority = tag.match(/^P([123])\b/i);
-  return priority
-    ? Number(priority[1]) - 1
-    : [...tag].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 3;
-}
 function closeMenu(target: HTMLElement) {
   const menu = target.closest('details');
   if (menu) menu.open = false;
@@ -169,7 +163,6 @@ export default function PromptsView({
   revision,
   onSaved,
   notify,
-  onResponse,
   onScan,
   scanDisabled,
   scanning,
@@ -186,6 +179,8 @@ export default function PromptsView({
     [direction, setDirection] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0),
     [selection, setSelection] = useState<string[]>([]);
+  const [answerPrompt, setAnswerPrompt] = useState<Prompt>();
+  const [pendingArchive, setPendingArchive] = useState<Prompt[]>();
   const [adding, setAdding] = useState(false),
     [editing, setEditing] = useState<Prompt>();
   const [busy, setBusy] = useState(false),
@@ -544,7 +539,9 @@ export default function PromptsView({
                   }
                   onClick={(event) => {
                     closeMenu(event.currentTarget);
-                    void updateStatus(mutationTargets, status === 'archived');
+                    if (status === 'archived')
+                      void updateStatus(mutationTargets, true);
+                    else setPendingArchive(mutationTargets);
                   }}
                 >
                   <Archive size={16} />
@@ -669,7 +666,6 @@ export default function PromptsView({
                     {sortHeader('Sentiment', 'avgSentimentScore')}
                     {sortHeader('Rank', 'avgRank')}
                     {sortHeader('Created', 'createdAt')}
-                    <th scope="col">Tags</th>
                     <th scope="col">
                       <span className="visually-hidden">Actions</span>
                     </th>
@@ -696,20 +692,14 @@ export default function PromptsView({
                         />
                       </td>
                       <td className="prompt-cell">
-                        {prompt.responseId ? (
-                          <button
-                            className="prompt-name"
-                            dir="auto"
-                            title="Read latest answer in this period"
-                            onClick={() => onResponse(prompt.responseId!)}
-                          >
-                            {prompt.text}
-                          </button>
-                        ) : (
-                          <span className="prompt-name" dir="auto">
-                            {prompt.text}
-                          </span>
-                        )}
+                        <button
+                          className="prompt-name"
+                          dir="auto"
+                          title="View all saved answers"
+                          onClick={() => setAnswerPrompt(prompt)}
+                        >
+                          {prompt.text}
+                        </button>
                         {!prompt.active && (
                           <small className="prompt-measurement-note">
                             Archived
@@ -798,29 +788,15 @@ export default function PromptsView({
                         </time>
                       </td>
                       <td>
-                        <div className="prompt-tags">
-                          {prompt.tags?.map((value) => (
-                            <span
-                              className={`prompt-tag tag-color-${tagColor(value)}`}
-                              key={value}
-                            >
-                              {value}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td>
                         <div className="prompt-actions">
-                          {prompt.responseId && (
-                            <button
-                              className="icon-button"
-                              aria-label={`Read answer to ${prompt.text}`}
-                              title="Read latest answer"
-                              onClick={() => onResponse(prompt.responseId!)}
-                            >
-                              <ArrowUpRight size={16} />
-                            </button>
-                          )}
+                          <button
+                            className="icon-button"
+                            aria-label={`View all answers to ${prompt.text}`}
+                            title="View all saved answers"
+                            onClick={() => setAnswerPrompt(prompt)}
+                          >
+                            <ArrowUpRight size={16} />
+                          </button>
                           {owner && (
                             <>
                               <button
@@ -833,7 +809,7 @@ export default function PromptsView({
                                 <Pencil size={15} />
                               </button>
                               <button
-                                className="icon-button"
+                                className="prompt-archive-action"
                                 aria-label={`${prompt.active ? 'Archive' : 'Activate'} prompt: ${prompt.text}`}
                                 title={
                                   prompt.active
@@ -846,7 +822,9 @@ export default function PromptsView({
                                   (!prompt.active && active >= 50)
                                 }
                                 onClick={() =>
-                                  void updateStatus([prompt], !prompt.active)
+                                  prompt.active
+                                    ? setPendingArchive([prompt])
+                                    : void updateStatus([prompt], true)
                                 }
                               >
                                 {prompt.active ? (
@@ -854,6 +832,7 @@ export default function PromptsView({
                                 ) : (
                                   <RotateCcw size={15} />
                                 )}
+                                {prompt.active ? 'Archive' : 'Activate'}
                               </button>
                             </>
                           )}
@@ -877,6 +856,59 @@ export default function PromptsView({
         Averages for the last {days} days. Changes compare the preceding {days}{' '}
         days. <span>— means no measurement or comparable baseline.</span>
       </p>
+      {answerPrompt && (
+        <PromptAnswersDrawer
+          key={answerPrompt.id}
+          path={path}
+          prompt={answerPrompt}
+          revision={revision}
+          initialProvider={provider}
+          onClose={() => setAnswerPrompt(undefined)}
+        />
+      )}
+      {pendingArchive && (
+        <Drawer
+          title="Archive prompts?"
+          onClose={() => setPendingArchive(undefined)}
+        >
+          <div className="prompt-archive-confirm">
+            <p>
+              Archiving stops future scans for{' '}
+              {pendingArchive.length === 1 ? 'this prompt' : 'these prompts'}.
+              All saved answers are kept. You can activate archived prompts
+              again from Manage Prompts.
+            </p>
+            <ul>
+              {pendingArchive.map((prompt) => (
+                <li key={prompt.id} dir="auto">
+                  {prompt.text}
+                </li>
+              ))}
+            </ul>
+            <div className="form-actions">
+              <button
+                className="button button-outline"
+                onClick={() => setPendingArchive(undefined)}
+              >
+                Keep active
+              </button>
+              <button
+                className="button button-primary"
+                onClick={() => {
+                  const prompts = pendingArchive;
+                  setPendingArchive(undefined);
+                  void updateStatus(prompts, false);
+                }}
+              >
+                Archive{' '}
+                {pendingArchive.length === 1
+                  ? 'prompt'
+                  : `${pendingArchive.length} prompts`}
+              </button>
+            </div>
+          </div>
+        </Drawer>
+      )}
       {(adding || editing) && (
         <PromptEditor
           key={editing?.id || 'add'}

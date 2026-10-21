@@ -5,7 +5,7 @@ import {
   reportingCompanies,
 } from '@citevia/core';
 import { SentimentScore } from './ScoreBadge';
-import type { ReactNode } from 'react';
+import AnswerMarkdown from './AnswerMarkdown';
 import {
   BookOpen,
   ExternalLink as LinkIcon,
@@ -47,13 +47,13 @@ export default function ResponseDrawer({
       {loading && !data ? (
         <Spinner label="Opening the original answer…" />
       ) : (
-        data && <DetailContent data={data} />
+        data && <ResponseDetailContent data={data} />
       )}
     </Drawer>
   );
 }
 
-function DetailContent({ data }: { data: ResponseDetail }) {
+export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
   const { result, answer, run } = data;
   const target =
     data.analysis?.brands.find(
@@ -118,9 +118,11 @@ function DetailContent({ data }: { data: ResponseDetail }) {
           </h3>
           {answer.refusal && <ErrorNotice error={answer.refusal} />}
           <div className="answer-block" dir="auto">
-            {answer.text
-              ? highlighted(answer.text, aliases)
-              : 'No answer text was returned.'}
+            {answer.text ? (
+              <AnswerMarkdown text={answer.text} aliases={aliases} />
+            ) : (
+              'No answer text was returned.'
+            )}
           </div>
           {target?.sentimentEvidence && (
             <>
@@ -256,29 +258,4 @@ function DetailContent({ data }: { data: ResponseDetail }) {
       )}
     </>
   );
-}
-
-function highlighted(text: string, aliases: string[]): ReactNode {
-  const names = [...new Set(aliases.filter(Boolean))].sort(
-    (a, b) => b.length - a.length,
-  );
-  if (!names.length) return text;
-  const escaped = names
-    .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|');
-  const expression = new RegExp(
-    `(?<![\\p{L}\\p{N}])(${escaped})(?![\\p{L}\\p{N}])`,
-    'giu',
-  );
-  return text
-    .split(expression)
-    .map((part, index) =>
-      names.some(
-        (name) => name.toLocaleLowerCase() === part.toLocaleLowerCase(),
-      ) ? (
-        <mark key={index}>{part}</mark>
-      ) : (
-        part
-      ),
-    );
 }

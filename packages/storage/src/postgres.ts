@@ -418,18 +418,24 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       )
     ).rows.map((row) => row.data as ScanRun);
   }
-  async listPromptHistory(projectId: string, start: string, end: string) {
+  async listPromptHistory(
+    projectId: string,
+    start: string,
+    end: string,
+    promptId?: string,
+  ) {
     // One statement gives a consistent snapshot and avoids the scan-list page limit.
     const { rows } = await this.db.query(
       `WITH observations AS (
         SELECT result.data, result.run_id FROM citevia_prompt_results result
         JOIN citevia_runs run ON run.project_id=result.project_id AND run.id=result.run_id
         WHERE result.project_id=$1
+          AND ($4::text IS NULL OR result.prompt_id=$4)
           AND COALESCE(result.data->>'capturedAt',run.data->>'createdAt')::timestamptz BETWEEN $2::timestamptz AND $3::timestamptz
       ) SELECT
         COALESCE((SELECT jsonb_agg(data) FROM observations),'[]'::jsonb) AS results,
         COALESCE((SELECT jsonb_agg(data) FROM citevia_runs WHERE project_id=$1 AND id IN (SELECT run_id FROM observations)),'[]'::jsonb) AS runs`,
-      [projectId, start, end],
+      [projectId, start, end, promptId || null],
     );
     return {
       runs: rows[0].runs as ScanRun[],

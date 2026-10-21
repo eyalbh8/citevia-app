@@ -423,7 +423,12 @@ export class MemoryRepository implements Repository {
         .slice(0, limit),
     );
   }
-  listPromptHistory(projectId: string, start: string, end: string) {
+  listPromptHistory(
+    projectId: string,
+    start: string,
+    end: string,
+    promptId?: string,
+  ) {
     return this.operation(() => {
       const runs = Object.values(this.state.runs).filter(
         (run) => run.projectId === projectId,
@@ -434,6 +439,7 @@ export class MemoryRepository implements Repository {
         const at = Date.parse(result.capturedAt || run?.createdAt || '');
         return (
           result.projectId === projectId &&
+          (!promptId || result.promptId === promptId) &&
           run &&
           at >= Date.parse(start) &&
           at <= Date.parse(end)

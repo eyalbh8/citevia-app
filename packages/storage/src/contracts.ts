@@ -48,6 +48,7 @@ export interface Repository extends UserRepository {
     projectId: string,
     start: string,
     end: string,
+    promptId?: string,
   ): Promise<PromptHistory>;
   listActiveRuns(): Promise<ScanRun[]>;
   listResults(projectId: string, runId: string): Promise<PromptResult[]>;

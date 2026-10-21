@@ -865,7 +865,6 @@ function Workspace() {
                     scanning={starting || hasActiveRun}
                     onSaved={settingsSaved}
                     notify={setToast}
-                    onResponse={setSelectedResponse}
                   />
                 ) : view === 'brandbook' ? (
                   <BrandbookView

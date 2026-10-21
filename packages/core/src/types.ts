@@ -308,6 +308,22 @@ export interface ResponseDetail {
   answer: CapturedAnswer | null;
   analysis: Analysis | null;
 }
+export interface PromptAnswerRow {
+  responseId: string;
+  promptText: string;
+  promptVersion: number;
+  provider: ScanProvider;
+  model: string;
+  date: string;
+  country: string;
+  status: ResultStatus;
+  answerPreview: string | null;
+  visibility: number | null;
+  rank: number | null;
+  sentimentScore: number | null;
+  brands: string[];
+  citationCount: number;
+}
 export interface TrendPoint {
   runId: string;
   date: string;
