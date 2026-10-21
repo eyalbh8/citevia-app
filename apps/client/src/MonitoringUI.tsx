@@ -8,23 +8,20 @@ import {
 import {
   ArrowDown,
   ArrowUp,
-  Box,
-  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Globe2,
-  Hash,
   Hexagon,
   Link2,
   Maximize2,
-  Tag,
   TerminalSquare,
   X,
 } from 'lucide-react';
 import {
   PROVIDER_LABELS,
-  projectProviders,
+  JOURNEY_STAGES,
+  type JourneyStage,
   type Project,
   type ScanProvider,
   type MentionAnswer,
@@ -34,6 +31,8 @@ import {
 import { query } from './api';
 import AnswerMarkdown from './AnswerMarkdown';
 import './monitoring.css';
+import ProviderFilter from './ProviderFilter';
+import DateRangeFilter from './DateRangeFilter';
 export const providerColors: Record<ScanProvider, string> = {
   openai: '#3930cf',
   perplexity: '#078f9d',
@@ -43,12 +42,10 @@ export type MonitorSelection = {
   days: string;
   start: string;
   end: string;
-  providers: string[];
+  providers: ScanProvider[];
   region: string;
-  tag: string;
   branded: string;
-  intent: string;
-  topic?: string;
+  stage: JourneyStage | '';
 };
 export const initialSelection = (days = '7'): MonitorSelection => ({
   days,
@@ -56,9 +53,8 @@ export const initialSelection = (days = '7'): MonitorSelection => ({
   end: new Date().toISOString().slice(0, 10),
   providers: [],
   region: '',
-  tag: '',
   branded: '',
-  intent: '',
+  stage: '',
 });
 export function selectionQuery(
   s: MonitorSelection,
@@ -108,7 +104,6 @@ export function MonitoringHeader({
   onChange,
   children,
   actions,
-  showTopics = false,
 }: {
   title: string;
   project: Project;
@@ -116,16 +111,9 @@ export function MonitoringHeader({
   onChange: (s: MonitorSelection) => void;
   children?: ReactNode;
   actions?: ReactNode;
-  showTopics?: boolean;
 }) {
   const set = (key: keyof MonitorSelection, next: string) =>
     onChange({ ...value, [key]: next });
-  const tags = [
-      ...new Set(project.prompts.flatMap((p) => p.tags || [])),
-    ].sort(),
-    intents = [
-      ...new Set(project.prompts.flatMap((p) => (p.intent ? [p.intent] : []))),
-    ].sort();
   return (
     <div className="monitor-filter-header">
       <h1>{title}</h1>
@@ -140,36 +128,6 @@ export function MonitoringHeader({
           <option value="">Regions</option>
           <option value={project.country}>{project.country}</option>
         </Pill>
-        {showTopics && (
-          <Pill
-            label="Topics"
-            icon={<Hash size={17} />}
-            value={value.topic || ''}
-            onChange={(v) => set('topic', v)}
-          >
-            <option value="">Topics</option>
-            {[
-              ...new Set(
-                project.prompts.flatMap((p) => (p.topic ? [p.topic] : [])),
-              ),
-            ]
-              .sort()
-              .map((topic) => (
-                <option key={topic}>{topic}</option>
-              ))}
-          </Pill>
-        )}
-        <Pill
-          label="Tags"
-          icon={<Tag size={17} />}
-          value={value.tag}
-          onChange={(v) => set('tag', v)}
-        >
-          <option value="">Tags</option>
-          {tags.map((v) => (
-            <option key={v}>{v}</option>
-          ))}
-        </Pill>
         <Pill
           label="Branded"
           icon={<Hexagon size={17} />}
@@ -183,82 +141,26 @@ export function MonitoringHeader({
         <Pill
           label="Prompt Types"
           icon={<TerminalSquare size={17} />}
-          value={value.intent}
-          onChange={(v) => set('intent', v)}
+          value={value.stage}
+          onChange={(v) => set('stage', v)}
         >
           <option value="">Prompt Types</option>
-          {intents.map((v) => (
+          {JOURNEY_STAGES.map((v) => (
             <option key={v} value={v}>
               {v.charAt(0).toUpperCase() + v.slice(1)}
             </option>
           ))}
         </Pill>
-        <details className="monitor-provider-select">
-          <summary
-            className={`monitor-pill${value.providers.length ? ' is-filtered' : ''}`}
-          >
-            <Box size={17} />
-            {value.providers.length
-              ? `${value.providers.length} Providers`
-              : 'Providers'}
-            <ChevronDown size={14} />
-          </summary>
-          <div className="monitor-provider-menu">
-            <button onClick={() => onChange({ ...value, providers: [] })}>
-              All providers
-            </button>
-            {projectProviders(project).map(({ provider }) => (
-              <label key={provider}>
-                <input
-                  type="checkbox"
-                  checked={value.providers.includes(provider)}
-                  onChange={(e) =>
-                    onChange({
-                      ...value,
-                      providers: e.target.checked
-                        ? [...value.providers, provider]
-                        : value.providers.filter((p) => p !== provider),
-                    })
-                  }
-                />
-                {PROVIDER_LABELS[provider]}
-              </label>
-            ))}
-          </div>
-        </details>
-        <Pill
-          label="Date range"
-          icon={<CalendarDays size={17} />}
-          value={value.days}
-          onChange={(v) => set('days', v)}
-        >
-          <option value="1">Last 24 hours</option>
-          {[7, 30, 90].map((days) => (
-            <option key={days} value={days}>
-              Last {days} days
-            </option>
-          ))}
-          <option value="custom">Custom range</option>
-        </Pill>
-        {value.days === 'custom' && (
-          <div className="monitor-custom-dates">
-            <input
-              aria-label="Start date"
-              type="date"
-              value={value.start}
-              max={value.end}
-              onChange={(e) => set('start', e.target.value)}
-            />
-            <span>–</span>
-            <input
-              aria-label="End date"
-              type="date"
-              value={value.end}
-              min={value.start}
-              onChange={(e) => set('end', e.target.value)}
-            />
-          </div>
-        )}
+        <ProviderFilter
+          project={project}
+          value={value.providers}
+          onChange={(providers) => onChange({ ...value, providers })}
+          multiple
+        />
+        <DateRangeFilter
+          value={value}
+          onChange={(range) => onChange({ ...value, ...range })}
+        />
         {children}
       </div>
     </div>

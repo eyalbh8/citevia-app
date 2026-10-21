@@ -606,12 +606,6 @@
   }
 }
 /* Keep unused filters compact; expand only when a value is selected. */
-.dashboard-screen .monitor-pill:not(.is-filtered) select[aria-label='Topics'] {
-  width: 56px;
-}
-.dashboard-screen .monitor-pill:not(.is-filtered) select[aria-label='Tags'] {
-  width: 36px;
-}
 .dashboard-screen .monitor-pill:not(.is-filtered) select[aria-label='Branded'] {
   width: 64px;
 }

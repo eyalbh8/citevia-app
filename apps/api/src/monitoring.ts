@@ -12,6 +12,7 @@ import {
   trackingPeriodsAfter,
   medianPickupDays,
   matchesMonitoringFilters,
+  JOURNEY_STAGES,
   type Project,
   type PromptResult,
   type ScanRun,
@@ -47,8 +48,8 @@ export function monitoringPeriod(
   now: Date,
 ): MonitoringPeriod {
   const days = query.get('days') || '7';
-  if (!['1', '7', '30', '90', 'custom'].includes(days))
-    return fail('Choose 24 hours, 7, 30, 90 days or a custom range.');
+  if (!['1', '7', '14', '30', '90', 'custom'].includes(days))
+    return fail('Choose 24 hours, 7, 14, 30, 90 days or a custom range.');
   let start: Date, end: Date;
   if (days === 'custom') {
     const a = query.get('start') || '',
@@ -83,7 +84,10 @@ export function monitoringPeriod(
     timezone: 'UTC',
   };
 }
-export function filtersFor(q: URLSearchParams, project: Project): MonitoringFilters {
+export function filtersFor(
+  q: URLSearchParams,
+  project: Project,
+): MonitoringFilters {
   const supported = projectProviders(project).map((p) => p.provider);
   const providers = [
     ...new Set((q.get('providers') || '').split(',').filter(Boolean)),
@@ -95,6 +99,12 @@ export function filtersFor(q: URLSearchParams, project: Project): MonitoringFilt
   const branded = q.get('branded') || '';
   if (branded && !['true', 'false'].includes(branded))
     fail('Invalid branded filter.');
+  const stage = q.get('stage') || '';
+  if (
+    stage &&
+    !JOURNEY_STAGES.includes(stage as (typeof JOURNEY_STAGES)[number])
+  )
+    fail('Choose Understand, Prefer, Trust or Convert.');
   return {
     providers: (providers.length
       ? providers
@@ -103,6 +113,7 @@ export function filtersFor(q: URLSearchParams, project: Project): MonitoringFilt
     tag: q.get('tag') || '',
     branded,
     intent: q.get('intent') || '',
+    stage: stage as MonitoringFilters['stage'],
     search: q.get('q') || '',
   };
 }

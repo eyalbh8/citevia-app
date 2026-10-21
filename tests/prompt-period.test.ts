@@ -222,11 +222,81 @@ it('validates periods, returns empty metrics before the first scan, and scopes r
     avgSentimentScore: null,
     avgRank: null,
   });
-  for (const suffix of ['?days=8', '?days=NaN', '?provider=unknown'])
+  for (const suffix of [
+    '?days=8',
+    '?days=NaN',
+    '?provider=unknown',
+    '?days=custom&start=2026-10-15',
+    '?days=custom&end=2026-10-21',
+    '?days=custom&start=2026-02-30&end=2026-03-01',
+    '?days=custom&start=2026-10-22&end=2026-10-21',
+    '?days=custom&start=2025-01-01&end=2026-10-21',
+  ])
     expect(
       (await api(request(suffix), testIdentity('period-owner'))).status,
     ).toBe(400);
   expect((await api(request(), testIdentity('outsider'))).status).toBe(404);
+  expect(
+    (await api(request('?days=custom'), testIdentity('outsider'))).status,
+  ).toBe(404);
+  const fortnight = await api(
+    request('?days=14'),
+    testIdentity('period-owner'),
+  );
+  expect(fortnight.status).toBe(200);
+  expect((await fortnight.json()).period).toMatchObject({
+    start: '2026-10-08T00:00:00.000Z',
+    end,
+    previousStart: '2026-09-24T00:00:00.000Z',
+    previousEnd: '2026-10-07T23:59:59.999Z',
+  });
+});
+
+it('uses inclusive custom UTC dates and the immediately preceding equal-length comparison period', async () => {
+  const repository = new MemoryRepository(),
+    f = fixture();
+  await repository.syncUser(testIdentity('custom-owner'));
+  await repository.saveProject(f.project, null);
+  await repository.putMembership({
+    projectId: f.project.id,
+    userId: 'custom-owner',
+    role: 'owner',
+  });
+  for (const [at, mentioned] of [
+    ['2026-10-11T23:59:59.999Z', true],
+    ['2026-10-12T00:00:00.000Z', false],
+    ['2026-10-14T23:59:59.999Z', false],
+    ['2026-10-15T00:00:00.000Z', true],
+    ['2026-10-17T23:59:59.999Z', true],
+    ['2026-10-18T00:00:00.000Z', false],
+  ] as const) {
+    const { run, result } = f.observation(at, { mentioned });
+    await repository.createRun(run, [result]);
+  }
+  const api = createApi(
+    { repository, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() },
+    { mode: 'live', now: () => new Date(end) },
+  );
+  const response = await api(
+    new Request(
+      `http://test/v1/projects/${f.project.id}/prompt-metrics?days=custom&start=2026-10-15&end=2026-10-17`,
+    ),
+    testIdentity('custom-owner'),
+  );
+  expect(response.status).toBe(200);
+  const data = await response.json();
+  expect(data.period).toEqual({
+    start: '2026-10-15T00:00:00.000Z',
+    end: '2026-10-17T23:59:59.999Z',
+    previousStart: '2026-10-12T00:00:00.000Z',
+    previousEnd: '2026-10-14T23:59:59.999Z',
+  });
+  expect(data.items[0]).toMatchObject({
+    avgVisibility: 100,
+    visibilityChange: 100,
+    measurementCount: 2,
+    previousMeasurementCount: 2,
+  });
 });
 
 it('round-trips prompt metadata, original observations and API averages through PostgreSQL', async () => {

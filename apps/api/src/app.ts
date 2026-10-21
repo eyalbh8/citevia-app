@@ -1,4 +1,4 @@
-import { monitoringRoute } from './monitoring.js';
+import { monitoringPeriod, monitoringRoute } from './monitoring.js';
 import { dashboardOverviewRoute } from './dashboard.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { ZodError } from 'zod';
@@ -586,16 +586,24 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         return response({ items: stored.prompts, version: stored.version });
       if (tail === 'prompt-metrics' && method === 'GET') {
         if (!query.has('runId')) {
-          const days = Number(query.get('days') || '7');
-          if (![7, 30, 90].includes(days))
-            throw new HttpError(
-              400,
-              'INVALID_PERIOD',
-              'Choose a 7, 30 or 90 day period.',
-            );
-          const end = now();
-          const start = new Date(end.getTime() - days * 86400000 + 1);
-          const previousStart = new Date(start.getTime() - days * 86400000);
+          let start: Date, end: Date;
+          if (query.get('days') === 'custom') {
+            const period = monitoringPeriod(query, now());
+            start = new Date(period.start);
+            end = new Date(period.end);
+          } else {
+            const days = Number(query.get('days') || '7');
+            if (![1, 7, 14, 30, 90].includes(days))
+              throw new HttpError(
+                400,
+                'INVALID_PERIOD',
+                'Choose 24 hours, 7, 14, 30, 90 days or a custom range.',
+              );
+            end = now();
+            start = new Date(end.getTime() - days * 86400000 + 1);
+          }
+          const duration = end.getTime() - start.getTime() + 1;
+          const previousStart = new Date(start.getTime() - duration);
           const history = await repository.listPromptHistory(
             projectId,
             previousStart.toISOString(),

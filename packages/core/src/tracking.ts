@@ -2,6 +2,7 @@ import type {
   Analysis,
   CapturedAnswer,
   Citation,
+  JourneyStage,
   Prompt,
   PromptAnswerRow,
   PromptResult,
@@ -228,6 +229,7 @@ export interface MonitoringFilters {
   tag: string;
   branded: string;
   intent: string;
+  stage?: JourneyStage | '';
   search: string;
 }
 export function matchesMonitoringFilters(
@@ -242,6 +244,7 @@ export function matchesMonitoringFilters(
     (!filters.tag || prompt.tags?.includes(filters.tag)) &&
     (!filters.branded || String(prompt.branded) === filters.branded) &&
     (!filters.intent || prompt.intent === filters.intent) &&
+    (!filters.stage || prompt.stage === filters.stage) &&
     (!filters.search ||
       prompt.text
         .toLocaleLowerCase()

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   aggregateDashboardOverview,
+  JOURNEY_STAGES,
   type BrandAnalysis,
   type CapturedAnswer,
   type DashboardObservation,
@@ -374,11 +375,10 @@ describe('dashboard overview measurement semantics', () => {
 });
 
 describe('authorized period dashboard API', () => {
-  async function setup() {
+  async function setup(value = project()) {
     const repository = new MemoryRepository(),
       artifacts = new MemoryArtifacts(),
       queue = new MemoryQueue();
-    const value = project();
     await repository.saveProject(value, null);
     await repository.syncUser(testIdentity('viewer'));
     await repository.syncUser(testIdentity('outsider'));
@@ -467,11 +467,15 @@ describe('authorized period dashboard API', () => {
     await save(observation(value, 'gemini', undefined, { provider: 'gemini' }));
     expect((await call('', null)).status).toBe(401);
     expect((await call('', 'outsider')).status).toBe(404);
+    expect((await call('?stage=informational', null)).status).toBe(401);
+    expect((await call('?stage=informational', 'outsider')).status).toBe(404);
     for (const query of [
       '?days=2',
       '?days=custom&start=2026-02-30&end=2026-03-01',
       '?providers=perplexity',
       '?branded=maybe',
+      '?stage=informational',
+      '?stage=understand,trust',
     ])
       expect((await call(query)).status).toBe(400);
     const response = await call(
@@ -483,6 +487,78 @@ describe('authorized period dashboard API', () => {
       providers: [{ provider: 'gemini', count: 1, change: 0 }],
     });
   });
+
+  it.each(JOURNEY_STAGES)(
+    'filters every dashboard card by the %s stage together with date and provider',
+    async (stage) => {
+      const value = project();
+      value.prompts = JOURNEY_STAGES.map((key) => ({
+        ...value.prompts[0],
+        id: key,
+        text: `${key} question?`,
+        stage: key,
+        intent: 'informational',
+      }));
+      value.prompts.push({
+        ...value.prompts[JOURNEY_STAGES.indexOf(stage)],
+        id: 'unmeasured',
+        text: 'A prompt without observations',
+      });
+      const { call, save } = await setup(value);
+      for (const [prompt, key] of JOURNEY_STAGES.entries()) {
+        const selected = observation(value, `${key}-gemini`, '2026-10-18', {
+          prompt,
+          provider: 'gemini',
+          competitors: [value.competitors[0].id],
+        });
+        selected.answer = capture([`https://${key}.example/page`]);
+        selected.result.citationCount = 1;
+        await save(selected);
+        await save(
+          observation(value, `${key}-openai`, '2026-10-18', { prompt }),
+        );
+        await save(
+          observation(value, `${key}-earlier`, '2026-10-17', {
+            prompt,
+            provider: 'gemini',
+          }),
+        );
+      }
+      const response = await call(
+        `?days=custom&start=2026-10-18&end=2026-10-18&providers=gemini&stage=${stage}&intent=informational`,
+      );
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as DashboardOverview;
+      expect(data).toMatchObject({
+        filters: { stage, intent: 'informational', providers: ['gemini'] },
+        analyzed: 1,
+        providers: [{ provider: 'gemini', count: 1, change: 0 }],
+        stages: [
+          { key: stage, promptCount: 2, measuredPromptCount: 1, visibility: 50 },
+        ],
+        trend: [{ date: '2026-10-18', mentions: { target: 1, clearview: 1 } }],
+        sources: [
+          {
+            domain: `${stage}.example`,
+            pageCount: 1,
+            citationCount: 1,
+            owned: false,
+          },
+        ],
+      });
+      expect(data.ranking).toHaveLength(2);
+      expect(data.ranking.map(({ mentions }) => mentions)).toEqual([1, 1]);
+      expect(
+        await call(`?stage=${stage}&intent=comparison`).then((r) => r.json()),
+      ).toMatchObject({
+        analyzed: 0,
+        stages: [],
+        ranking: [],
+        trend: [],
+        sources: [],
+      });
+    },
+  );
 });
 
 it.each(['memory', 'postgres'])(

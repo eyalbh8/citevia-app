@@ -5,8 +5,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
-  Box,
-  CalendarDays,
   ChevronDown,
   Download,
   Globe2,
@@ -15,7 +13,6 @@ import {
   Pencil,
   RotateCcw,
   Search,
-  Tag,
   TerminalSquare,
   TrendingDown,
   TrendingUp,
@@ -24,8 +21,7 @@ import {
   JOURNEY_STAGES,
   MAX_BRANDED_PROMPTS,
   PROMPT_INTENTS,
-  PROVIDER_LABELS,
-  SCAN_PROVIDERS,
+  type ScanProvider,
   type JourneyStage,
   type Project,
   type Prompt,
@@ -44,6 +40,8 @@ import {
 } from './components';
 import PromptAnswersDrawer from './PromptAnswersDrawer';
 import './prompts.css';
+import ProviderFilter from './ProviderFilter';
+import DateRangeFilter, { type DateRangeSelection } from './DateRangeFilter';
 
 type Props = {
   path: string;
@@ -52,11 +50,7 @@ type Props = {
   notify: (text: string) => void;
 };
 type SortKey =
-  | 'text'
-  | 'avgVisibility'
-  | 'avgSentimentScore'
-  | 'avgRank'
-  | 'createdAt';
+  'text' | 'avgVisibility' | 'avgSentimentScore' | 'avgRank' | 'createdAt';
 const PAGE_SIZE = 20;
 
 function Filter({
@@ -154,13 +148,16 @@ export default function PromptsView({
   onSaved,
   notify,
 }: Props) {
-  const [days, setDays] = useState('7'),
-    [provider, setProvider] = useState('');
+  const [dateRange, setDateRange] = useState<DateRangeSelection>(() => ({
+      days: '7',
+      start: new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10),
+      end: new Date().toISOString().slice(0, 10),
+    })),
+    [provider, setProvider] = useState<ScanProvider | ''>('');
   const [search, setSearch] = useState(''),
-    [region, setRegion] = useState(''),
-    [tag, setTag] = useState('');
+    [region, setRegion] = useState('');
   const [branded, setBranded] = useState(''),
-    [intent, setIntent] = useState(''),
+    [stage, setStage] = useState<JourneyStage | ''>(''),
     [status, setStatus] = useState('active');
   const [sort, setSort] = useState<SortKey>('avgVisibility'),
     [direction, setDirection] = useState<'asc' | 'desc'>('desc');
@@ -173,16 +170,20 @@ export default function PromptsView({
     [error, setError] = useState<Error>();
   const account = useApi<Project>(`${path}/settings`, revision);
   const scores = useApi<PromptMetricsResponse>(
-    `${path}/prompt-metrics${query({ days, provider })}`,
+    `${path}/prompt-metrics${query({ days: dateRange.days, provider, start: dateRange.days === 'custom' ? dateRange.start : undefined, end: dateRange.days === 'custom' ? dateRange.end : undefined })}`,
     revision,
   );
   const project = account.data;
   if (!project)
     return (
       <div className="prompts-screen">
-        <div className="prompts-filter-header"><h1>Prompts</h1></div>
+        <div className="prompts-filter-header">
+          <h1>Prompts</h1>
+        </div>
         <ErrorNotice error={account.error} />
-        {account.loading && <Skeleton variant="table" label="Loading prompts…" />}
+        {account.loading && (
+          <Skeleton variant="table" label="Loading prompts…" />
+        )}
       </div>
     );
   const active = project.prompts.filter((prompt) => prompt.active).length;
@@ -191,9 +192,6 @@ export default function PromptsView({
   );
   const owner = project.role === 'owner',
     editable = owner && !pendingSetup;
-  const tags = [
-    ...new Set(project.prompts.flatMap((prompt) => prompt.tags || [])),
-  ].sort();
   const metricMap = new Map(scores.data?.items.map((row) => [row.id, row]));
   // Never attach a stale measurement to a newly edited question while refreshing.
   const rows: PromptMetricsRow[] = project.prompts.map((prompt) => {
@@ -222,9 +220,8 @@ export default function PromptsView({
       (prompt) =>
         (status === 'all' || prompt.active === (status === 'active')) &&
         (!region || prompt.regions.includes(region)) &&
-        (!tag || prompt.tags?.includes(tag)) &&
         (!branded || prompt.branded === (branded === 'true')) &&
-        (!intent || prompt.intent === intent) &&
+        (!stage || prompt.stage === stage) &&
         `${prompt.text} ${prompt.seoKeyword || ''} ${(prompt.tags || []).join(' ')}`
           .toLocaleLowerCase()
           .includes(search.trim().toLocaleLowerCase()),
@@ -403,17 +400,6 @@ export default function PromptsView({
             </option>
           </Filter>
           <Filter
-            label="Tags"
-            icon={<Tag size={17} />}
-            value={tag}
-            onChange={(value) => filter(() => setTag(value))}
-          >
-            <option value="">Tags</option>
-            {tags.map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </Filter>
-          <Filter
             label="Branded"
             icon={<Hexagon size={17} />}
             value={branded}
@@ -426,41 +412,30 @@ export default function PromptsView({
           <Filter
             label="Prompt Types"
             icon={<TerminalSquare size={17} />}
-            value={intent}
-            onChange={(value) => filter(() => setIntent(value))}
+            value={stage}
+            onChange={(value) =>
+              filter(() => setStage(value as JourneyStage | ''))
+            }
           >
             <option value="">Prompt Types</option>
-            {PROMPT_INTENTS.map((value) => (
+            {JOURNEY_STAGES.map((value) => (
               <option key={value} value={value}>
                 {labelize(value)}
               </option>
             ))}
           </Filter>
-          <Filter
-            label="Providers"
-            icon={<Box size={17} />}
-            value={provider}
-            onChange={(value) => filter(() => setProvider(value))}
-          >
-            <option value="">Providers</option>
-            {SCAN_PROVIDERS.map((value) => (
-              <option key={value} value={value}>
-                {PROVIDER_LABELS[value]}
-              </option>
-            ))}
-          </Filter>
-          <Filter
-            label="Date range"
-            icon={<CalendarDays size={17} />}
-            value={days}
-            onChange={(value) => filter(() => setDays(value))}
-          >
-            {[7, 30, 90].map((value) => (
-              <option key={value} value={String(value)}>
-                Last {value} days
-              </option>
-            ))}
-          </Filter>
+          <ProviderFilter
+            project={project}
+            value={provider ? [provider] : []}
+            onChange={(providers) =>
+              filter(() => setProvider(providers[0] || ''))
+            }
+          />
+          <DateRangeFilter
+            value={dateRange}
+            onChange={(range) => filter(() => setDateRange(range))}
+            includeLast24Hours={false}
+          />
         </div>
       </div>
       <ErrorNotice error={account.error || error} />
@@ -520,7 +495,8 @@ export default function PromptsView({
                   !editable ||
                   busy ||
                   !mutationTargets.length ||
-                  (status === 'archived' && active + mutationTargets.length > 50)
+                  (status === 'archived' &&
+                    active + mutationTargets.length > 50)
                 }
                 onClick={() => {
                   if (status === 'archived')
@@ -797,8 +773,11 @@ export default function PromptsView({
         )}
       </section>
       <p className="prompts-period-note">
-        Averages for the last {days} days. Changes compare the preceding {days}{' '}
-        days. <span>— means no measurement or comparable baseline.</span>
+        {dateRange.days === 'custom'
+          ? `Averages from ${dateRange.start} through ${dateRange.end} (UTC).`
+          : `Averages for the last ${dateRange.days} days.`}{' '}
+        Changes compare the preceding equal-length period.{' '}
+        <span>— means no measurement or comparable baseline.</span>
       </p>
       {answerPrompt && (
         <PromptAnswersDrawer

@@ -153,10 +153,8 @@ export function DashboardView({
   revision: number;
   actions?: ReactNode;
 }) {
-  const [selection, setSelection] = useState<MonitorSelection>(() => ({
-    ...initialSelection(),
-    topic: '',
-  }));
+  const [selection, setSelection] =
+    useState<MonitorSelection>(initialSelection);
   const [retry, setRetry] = useState(0);
   const overview = useApi<DashboardOverview>(
     `${path}/dashboard/overview${selectionQuery(selection)}`,
@@ -181,7 +179,6 @@ export function DashboardView({
         project={project}
         value={selection}
         onChange={setSelection}
-        showTopics
         actions={
           <>
             <button

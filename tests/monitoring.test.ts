@@ -34,6 +34,7 @@ function sample(
 ) {
   const prompt = {
     ...project.prompts[0],
+    stage: 'understand' as const,
     tags: ['Priority'],
     intent: 'informational' as const,
   };
@@ -203,6 +204,12 @@ describe('iGEO URL identity and measurement semantics', () => {
     ).toBe('2026-10-15T00:00:00.000Z');
     expect(
       monitoringPeriod(
+        new URLSearchParams('days=14'),
+        new Date('2026-10-21T15:00:00Z'),
+      ).start,
+    ).toBe('2026-10-08T00:00:00.000Z');
+    expect(
+      monitoringPeriod(
         new URLSearchParams('days=custom&start=2026-10-21&end=2026-10-21'),
         new Date(),
       ).granularity,
@@ -296,6 +303,7 @@ it.each(['memory', 'postgres'])(
         sample(project, 'c', '2026-10-20T13:00:00.000Z'),
         sample(project, 'd', '2026-10-20T14:00:00.000Z', 'gemini'),
       ];
+      samples[3].result.prompt.stage = 'convert';
       async function save(s: ReturnType<typeof sample>) {
         await repository.createRun(s.run, [s.result]);
         await artifacts.put(s.result.captureKey!, s.answer);
@@ -371,6 +379,30 @@ it.each(['memory', 'postgres'])(
       expect(
         (await (await call(`mentions?${params}&region=IT`)).json()).total,
       ).toBe(0);
+      expect(
+        (await (await call(`mentions?${params}&stage=understand`)).json()).total,
+      ).toBe(3);
+      expect(
+        (
+          await (
+            await call(`mentions/summary?${params}&stage=convert&providers=gemini`)
+          ).json()
+        ).total,
+      ).toBe(1);
+      expect(
+        (
+          await (
+            await call(`mentions?${params}&stage=convert&providers=openai`)
+          ).json()
+        ).total,
+      ).toBe(0);
+      expect(
+        (
+          await (
+            await call(`tracked-urls/${tracked.id}?${params}&stage=convert`)
+          ).json()
+        ).row,
+      ).toMatchObject({ matchingAnswers: 1, appearances: 6, nativeCitations: 2 });
       const detail = await (
         await call(`tracked-urls/${tracked.id}?${params}`)
       ).json();
@@ -402,6 +434,7 @@ it.each(['memory', 'postgres'])(
         'page=-1',
         'pageSize=101',
         'providers=invalid',
+        'stage=informational',
         'days=custom&start=2026-10-22&end=2026-10-01',
       ])
         expect((await call(`mentions?${bad}`)).status).toBe(400);

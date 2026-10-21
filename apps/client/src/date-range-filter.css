@@ -1,0 +1,246 @@
+.date-range-trigger {
+  max-width: 100%;
+}
+.date-range-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.date-range-panel {
+  position: fixed;
+  z-index: 60;
+  width: min(484px, calc(100vw - 24px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 16px 48px #16154324;
+  padding: 16px;
+}
+.date-range-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.date-range-heading h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.date-range-heading > button,
+.date-range-month > button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+.date-range-heading > button:hover,
+.date-range-month > button:not(:disabled):hover {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.date-range-body {
+  display: grid;
+  grid-template-columns: 142px minmax(0, 1fr);
+  gap: 14px;
+}
+.date-range-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-right: 12px;
+  border-right: 1px solid var(--line);
+}
+.date-range-presets button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  text-align: left;
+  border-radius: 8px;
+  padding: 9px 8px;
+  min-height: 36px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.date-range-presets button:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+.date-range-presets button[aria-pressed='true'] {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+.date-range-presets .date-range-reset {
+  margin-top: 5px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  font-size: 11px;
+}
+.date-range-calendar {
+  min-width: 0;
+}
+.date-range-month {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 7px;
+}
+.date-range-month strong {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+.date-range-calendar table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 1px 3px;
+}
+.date-range-calendar th {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 3px 0;
+}
+.date-range-calendar td {
+  padding: 0;
+  text-align: center;
+  border: 0;
+}
+.date-range-calendar td button {
+  width: 100%;
+  min-height: 30px;
+  padding: 3px 0;
+  font-size: 11px;
+  border-radius: 7px;
+  font-variant-numeric: tabular-nums;
+}
+.date-range-calendar td button:hover {
+  background: var(--primary-soft);
+}
+.date-range-calendar td button.in-range {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.date-range-calendar td button.range-endpoint {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.date-range-calendar td button[aria-current='date']:not(.range-endpoint) {
+  box-shadow: inset 0 0 0 1px var(--primary-border);
+  font-weight: 600;
+}
+.date-range-calendar td button:disabled {
+  opacity: 0.35;
+  background: transparent;
+}
+.date-range-calendar td button:focus-visible {
+  outline-offset: 0;
+}
+.date-range-fields {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding-top: 16px;
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.date-range-fields label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.date-range-fields > span {
+  align-self: flex-end;
+  padding-bottom: 11px;
+  color: var(--subtle);
+}
+.date-range-fields input {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--text);
+}
+.date-range-help {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-top: 10px;
+  min-height: 18px;
+}
+.date-range-help.has-error {
+  color: var(--danger);
+}
+.date-range-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.date-range-actions .button {
+  min-height: 36px;
+  padding: 8px 16px;
+}
+@media (max-width: 520px) {
+  .date-range-panel {
+    padding: 14px;
+  }
+  .date-range-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .date-range-presets {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0 0 10px;
+    gap: 4px;
+  }
+  .date-range-presets button {
+    min-height: 32px;
+    padding: 7px 8px;
+    font-size: 11px;
+  }
+  .date-range-presets .date-range-reset {
+    border: 0;
+    margin: 0;
+    padding: 7px 8px;
+  }
+  .date-range-calendar td button {
+    min-height: 32px;
+  }
+  .date-range-calendar table {
+    border-spacing: 2px 2px;
+  }
+  .date-range-month strong {
+    font-size: 13px;
+  }
+  .date-range-fields {
+    gap: 7px;
+  }
+  .date-range-fields input {
+    padding: 7px;
+    font-size: 11px;
+  }
+}
