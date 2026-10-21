@@ -1,4 +1,5 @@
 import { monitoringRoute } from './monitoring.js';
+import { dashboardOverviewRoute } from './dashboard.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { ZodError } from 'zod';
 import {
@@ -313,6 +314,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         );
       const monitoring = await monitoringRoute(runtime,project,tail,request,now(),body);
       if (monitoring) return monitoring;
+      if (tail === 'dashboard/overview')
+        return await dashboardOverviewRoute(runtime, project, request, now());
       const selectedRun = async (id?: string): Promise<ScanRun> => {
         const runId = id || query.get('runId');
         const run = runId

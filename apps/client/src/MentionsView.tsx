@@ -1,7 +1,8 @@
+import { Skeleton } from './Loading';
 import { useState } from 'react';
 import type { Project, MentionsSummary } from '@citevia/core';
 import { useApi } from './api';
-import { Empty, ErrorNotice, Spinner } from './components';
+import { Empty, ErrorNotice } from './components';
 import {
   AnswerTable,
   initialSelection,
@@ -53,7 +54,7 @@ export default function MentionsView({
       />
       <ErrorNotice error={summary.error || answers.error} />
       {summary.loading && !summary.data ? (
-        <Spinner label="Loading mention history…" />
+        <Skeleton variant="chart" label="Loading mention history…" />
       ) : (
         summary.data && (
           <div className="mentions-charts">
@@ -68,7 +69,7 @@ export default function MentionsView({
         aria-busy={answers.loading}
       >
         {answers.loading && !answers.data ? (
-          <Spinner label="Loading answers…" />
+          <Skeleton variant="table" label="Loading answers…" />
         ) : answers.data?.items.length ? (
           <>
             <AnswerTable

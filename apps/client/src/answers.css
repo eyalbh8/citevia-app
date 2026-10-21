@@ -7,7 +7,7 @@
 .answer-history-note {
   font-size: 13px;
   line-height: 1.7;
-  color: #858b9a;
+  color: var(--muted);
   margin: 8px 0 20px;
 }
 .answer-history-filters {
@@ -22,55 +22,59 @@
   flex-direction: column;
   gap: 7px;
   font-size: 12px;
-  color: #666b78;
+  color: var(--muted);
+  min-width: 150px;
 }
 .answer-history-filters select {
-  border: 1px solid #dfd9d1;
-  border-radius: 20px;
-  padding: 10px 32px 10px 14px;
-  background: white;
-  color: #737987;
-  font-size: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  min-height: 42px;
+  padding: 10px 32px 10px 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
 }
 .answer-history-filters > span {
   margin-left: auto;
   font-size: 12px;
-  color: #858b9a;
+  color: var(--muted);
   padding: 10px 0;
 }
 .answer-history-panel {
-  border: 1px solid #e1e3e9;
-  border-radius: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
 }
 .answer-history-table {
   min-width: 1000px;
   table-layout: fixed;
 }
 .answer-history-table thead {
-  background: white;
+  background: var(--surface-muted);
   border-top: 0;
-  border-color: #e1e3e9;
+  border-color: var(--line);
 }
 .answer-history-table th {
-  color: #41454f;
+  color: var(--muted);
   font-weight: 500;
-  font-size: 14px;
-  padding: 18px 14px;
+  font-size: 12px;
+  padding: 16px 14px;
   text-align: center;
 }
 .answer-history-table td {
-  color: #757c8c;
+  color: var(--text);
   font-size: 13px;
   padding: 20px 14px;
   line-height: 1.7;
   text-align: center;
-  border-color: #e1e3e9;
+  border-color: var(--line);
 }
 .answer-history-row {
   cursor: pointer;
 }
 .answer-history-row:hover {
-  background: #fcfaff;
+  background: var(--surface-muted);
 }
 .answer-history-table th:first-child {
   width: 33%;
@@ -99,8 +103,8 @@
 }
 .answer-history-table td small {
   display: block;
-  color: #858b9a;
-  font-size: 11px;
+  color: var(--muted);
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 .answer-sort {
@@ -112,7 +116,7 @@
   font: inherit;
 }
 .answer-sort svg {
-  color: #7453b7;
+  color: var(--primary);
 }
 .answer-row-open {
   text-align: start;
@@ -128,8 +132,9 @@
   align-items: center;
   gap: 5px;
   margin-top: 9px;
-  color: #7453b7;
+  color: var(--primary);
   font-size: 12px;
+  font-weight: 500;
 }
 .answer-version {
   margin-top: 7px;
@@ -141,21 +146,26 @@
   justify-content: center;
 }
 .answer-brands span {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
-  border: 1px solid #e4ddec;
+  border: 1px solid var(--line);
   border-radius: 6px;
   padding: 3px 6px;
+  background: var(--surface-muted);
+  color: var(--muted);
 }
 .answer-back {
   margin: 0 0 20px;
-  color: #7453b7;
+  color: var(--primary);
   padding-left: 0;
 }
 .answer-markdown {
   white-space: normal;
   line-height: 1.8;
   text-align: start;
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .answer-markdown > :first-child {
   margin-top: 0;
@@ -196,36 +206,46 @@
   font-weight: 700;
 }
 .answer-markdown a {
-  color: #7453b7;
+  color: var(--primary);
   text-decoration: underline;
   overflow-wrap: anywhere;
+  text-underline-offset: 3px;
 }
 .answer-markdown hr {
   border: 0;
-  border-top: 1px solid #e1d8e9;
+  border-top: 1px solid var(--line);
   margin: 1.8em 0;
 }
 .answer-markdown blockquote {
-  border-inline-start: 3px solid #d5c3ed;
-  padding-inline-start: 1em;
+  border-inline-start: 3px solid var(--primary);
+  padding: 12px 16px;
   margin: 1em 0;
+  background: var(--primary-soft);
+  border-radius: 0 8px 8px 0;
 }
 .answer-markdown pre {
-  background: #f2eef7;
-  border-radius: 7px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 9px;
   padding: 14px;
   overflow-x: auto;
   white-space: pre;
+  max-width: 100%;
 }
 .answer-markdown code {
   font-family: ui-monospace, monospace;
   font-size: 0.92em;
-  background: #f2eef7;
+  background: var(--surface-muted);
   border-radius: 3px;
   padding: 2px 4px;
 }
 .answer-markdown pre code {
   padding: 0;
+}
+.answer-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 9px;
 }
 .answer-table-scroll {
   max-width: 100%;
@@ -238,14 +258,15 @@
   font-size: inherit;
 }
 .answer-markdown :is(th, td) {
-  border: 1px solid #e2dbe9;
+  border: 1px solid var(--line);
   padding: 8px 12px;
   font-size: inherit;
   color: inherit;
 }
 .answer-markdown th {
   font-weight: 600;
-  background: #f6f2fa;
+  background: var(--surface-muted);
+  white-space: normal;
 }
 .answer-preview {
   display: -webkit-box;
@@ -265,6 +286,7 @@
 .answer-block:has(.answer-markdown) {
   white-space: normal;
   font-size: 14px;
+  background: var(--surface);
 }
 .prompt-archive-confirm p {
   font-size: 14px;
@@ -280,11 +302,23 @@
   .answer-history-filters {
     gap: 12px;
   }
+  .answer-history-filters label {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
   .answer-history-filters > span {
     margin-left: 0;
     width: 100%;
   }
   .answer-history-filters select {
-    font-size: 12px;
+    font-size: 13px;
+    width: 100%;
+  }
+  .answer-block:has(.answer-markdown) {
+    font-size: 14px;
+    padding: 16px;
+  }
+  .answer-markdown pre {
+    padding: 12px;
   }
 }

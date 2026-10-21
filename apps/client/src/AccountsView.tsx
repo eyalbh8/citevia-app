@@ -1,3 +1,4 @@
+import { Skeleton } from './Loading';
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   ArrowRight,
@@ -26,7 +27,7 @@ import {
 } from './api';
 import { parseAccountImport } from './account-import';
 import LanguageSelect from './LanguageSelect';
-import { Badge, Empty, ErrorNotice, Spinner } from './components';
+import { Badge, Empty, ErrorNotice } from './components';
 type Account = Project & {
   activePromptCount?: number;
   onboardingSummary?: Pick<
@@ -367,24 +368,32 @@ export default function AccountsView({
           />
         </label>
         <span className="scan-options">
-          {filtered.length} of {data?.total || 0} accounts
+          {data ? `${filtered.length} of ${data.total}` : '—'} accounts
         </span>
       </div>
       {loading && !data ? (
-        <Spinner />
-      ) : !data?.items.length ? (
+        <Skeleton variant="cards" rows={3} label="Loading your accounts…" />
+      ) : !data && loadError ? null : !data?.items.length ? (
         <section className="card">
           <Empty
             title={
-              canCreate ? 'Create your first account' : 'No accounts assigned'
+              debounced
+                ? 'No matching accounts'
+                : canCreate ? 'Create your first account' : 'No accounts assigned'
             }
             description={
-              canCreate
+              debounced
+                ? 'Try another company name or domain, or clear your search to see all accounts.'
+                : canCreate
                 ? 'Add a website and company name. The system prepares the brandbook, prompts and scanning schedule.'
                 : 'A system administrator can assign the accounts you should see.'
             }
           >
-            {canCreate && (
+            {debounced ? (
+              <button className="button button-outline" onClick={() => setSearch('')}>
+                Clear search
+              </button>
+            ) : canCreate && (
               <button
                 className="button button-primary"
                 onClick={() => setShowForm(true)}

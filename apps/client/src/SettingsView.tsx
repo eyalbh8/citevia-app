@@ -1,3 +1,4 @@
+import { Skeleton } from './Loading';
 import { useState, type FormEvent } from 'react';
 import {
   CalendarClock,
@@ -18,7 +19,7 @@ import {
   DEFAULT_PERPLEXITY_PRESET,
 } from '@citevia/core';
 import { idempotentPost, request, useApi } from './api';
-import { Badge, Empty, ErrorNotice, formatDate, Spinner } from './components';
+import { Badge, Empty, ErrorNotice, formatDate } from './components';
 
 export default function SettingsView({
   path,
@@ -41,9 +42,9 @@ export default function SettingsView({
   const runs = useApi<Page<ScanRun>>(`${path}/runs`, revision);
   return (
     <>
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} retry={onSaved} />
       {loading && !project ? (
-        <Spinner label="Loading project settings…" />
+        <Skeleton variant="form" label="Loading project settings…" />
       ) : (
         project && (
           <>
@@ -103,6 +104,7 @@ export default function SettingsView({
                   </h3>
                   <ErrorNotice error={runs.error} />
                   <div className="run-history">
+                    {runs.loading && !runs.data && <Skeleton variant="table" rows={3} label="Loading recent scans…" />}
                     {runs.data?.items
                       .slice(0, 6)
                       .map((run) => (
@@ -115,7 +117,7 @@ export default function SettingsView({
                           notify={notify}
                         />
                       ))}
-                    {!runs.data?.items.length && (
+                    {runs.data && !runs.data.items.length && (
                       <p className="card-description">No scans yet.</p>
                     )}
                   </div>
@@ -461,7 +463,7 @@ function ProjectForm({
                   key={competitor.id}
                   style={{
                     padding: '12px',
-                    border: '1px solid #eee5f5',
+                    border: '1px solid var(--line, #e6e5ef)',
                     borderRadius: 8,
                     marginBottom: 9,
                   }}

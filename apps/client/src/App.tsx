@@ -4,9 +4,8 @@ import {
   useDescope,
   useSession,
 } from '@descope/react-sdk';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowDownToLine,
   ArrowRight,
   CalendarDays,
   ChartNoAxesCombined,
@@ -46,7 +45,7 @@ import {
   SCAN_PROVIDERS,
   snapshotProvider,
 } from '@citevia/core';
-import { downloadCsv, idempotentPost, query, useApi } from './api';
+import { idempotentPost, query, useApi } from './api';
 import {
   authConfigured,
   descopeProjectId,
@@ -54,7 +53,8 @@ import {
   descopeFlowId,
 } from './auth';
 import UsersView from './UsersView';
-import { Empty, ErrorNotice, formatDate, Logo, Spinner } from './components';
+import { Empty, ErrorNotice, formatDate, Logo } from './components';
+import { Skeleton } from './Loading';
 import { DashboardView } from './DashboardView';
 import MentionsView from './MentionsView';
 import TrackingView from './TrackingView';
@@ -152,8 +152,9 @@ function SessionGate() {
   const { isAuthenticated, isSessionLoading, claims } = useSession();
   if (isSessionLoading)
     return (
-      <div className="login-page">
-        <Spinner label="Checking your Descope session…" />
+      <div className="workspace-loading">
+        <Logo />
+        <Skeleton variant="workspace" label="Opening your workspace…" />
       </div>
     );
   return isAuthenticated ? (
@@ -165,14 +166,26 @@ function SessionGate() {
 function Login() {
   const [error, setError] = useState<Error>();
   return (
-    <div className="login-page">
-      <div className="login-card">
+    <div className="login-page login-layout">
+      <section className="login-story" aria-label="Welcome to Citevia">
         <Logo />
-        <div className="eyebrow">Your AI visibility workspace</div>
+        <div className="login-story-copy">
+          <div className="eyebrow">AI SEARCH INTELLIGENCE</div>
+          <h2>Clarity in every<br /><em>AI answer.</em></h2>
+          <p>Understand where your brand stands, what shapes the answers, and where to go next.</p>
+          <div className="login-features">
+            <span><ChartNoAxesCombined size={18} />See your visibility evolve</span>
+            <span><MessageSquareText size={18} />Explore the answers that matter</span>
+            <span><Link2 size={18} />Find the sources behind the story</span>
+          </div>
+        </div>
+        <a className="login-website" href="https://citevia.io" target="_blank" rel="noopener noreferrer">Discover Citevia <ArrowRight size={15} /></a>
+      </section>
+      <div className="login-card">
+        <div className="eyebrow">YOUR WORKSPACE, CONNECTED</div>
         <h1>Sign in to Citevia</h1>
         <p>
-          Use your Descope account. Your administrator assigns the customer
-          accounts you can access.
+          Welcome back. Sign in to explore your brand’s presence in AI search.
         </p>
         <ErrorNotice error={error} />
         {authConfigured ? (
@@ -188,9 +201,8 @@ function Login() {
           <div className="setting-note">
             <Info size={16} />
             <span>
-              Descope is not configured. Set the project ID and login flow for
-              the client, and the matching project and management key on the
-              server.
+              Sign-in is not configured yet. Your administrator needs to finish
+              setting up this workspace before you can continue.
             </span>
           </div>
         )}
@@ -207,6 +219,8 @@ function Workspace() {
   const { logout } = useDescope();
   const [view, setView] = useState<View>(readView),
     [mobileOpen, setMobileOpen] = useState(false);
+  const navigationRef = useRef<HTMLElement>(null);
+  const menuRef = useRef<HTMLButtonElement>(null);
   const [projectId, setProjectId] = useState(storedProject),
     [runId, setRunId] = useState('');
   const [provider, setProvider] = useState<ScanProvider>('openai');
@@ -218,6 +232,31 @@ function Workspace() {
     [pendingRunId, setPendingRunId] = useState<string>(),
     [actionError, setActionError] = useState<Error>();
   const me = useApi<User>('/me', revision);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    if (me.error) { setMobileOpen(false); return; }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const navigation = navigationRef.current;
+    const focusable = () => [...(navigation?.querySelectorAll<HTMLElement>('button:not(:disabled),select,a[href]') || [])];
+    focusable()[0]?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileOpen(false);
+      if (event.key !== 'Tab') return;
+      const elements = focusable(), first = elements[0], last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    const onResize = () => { if (window.innerWidth > 700) setMobileOpen(false); };
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+      menuRef.current?.focus();
+    };
+  }, [mobileOpen, me.error]);
   const systemAdmin = me.data?.isSystemAdmin === true;
   const projects = useApi<{ items: Project[]; mode: 'live' }>(
     '/projects',
@@ -246,7 +285,9 @@ function Workspace() {
   const settingUp = Boolean(
     setup.data?.job && ['queued', 'running'].includes(setup.data.job.status),
   );
-  const project = dashboard.data?.project || currentProject;
+  const project = view === 'dashboard'
+    ? currentProject
+    : dashboard.data?.project || currentProject;
   const run = dashboard.data?.run;
   const activeRun = runs.data?.items.find(
     (item) => item.status === 'running' || item.status === 'queued',
@@ -324,6 +365,7 @@ function Workspace() {
   }, [pendingRunId, runs.data, provider]);
   useEffect(() => {
     document.title = `${views[view].title} · Citevia`;
+    window.scrollTo(0, 0);
   }, [view]);
   function navigate(next: View) {
     window.location.hash = next;
@@ -379,51 +421,36 @@ function Workspace() {
       clearInterval(timer);
     };
   }, []);
-  function exportSummary() {
-    if (!dashboard.data || !run) return;
-    const { metrics } = dashboard.data;
-    downloadCsv(
-      `citevia-summary-${run.id}.csv`,
-      ['Metric', 'Value', 'Numerator', 'Denominator'],
-      [
-        [
-          'Visibility (%)',
-          metrics.visibility.value,
-          metrics.visibility.numerator,
-          metrics.visibility.denominator,
-        ],
-        [
-          'Average rank',
-          metrics.averageRank.value,
-          metrics.averageRank.numerator,
-          metrics.averageRank.denominator,
-        ],
-        [
-          'Sentiment score (0-100)',
-          metrics.sentimentScore?.value,
-          metrics.sentimentScore?.numerator,
-          metrics.sentimentScore?.denominator,
-        ],
-        ['Captured answers', metrics.captured, '', run.totalCount],
-        ['Analyzed answers', metrics.analyzed, '', run.totalCount],
-        ['Brand mentions', metrics.mentioned, '', metrics.analyzed],
-        ['Citation annotations', metrics.citations, '', ''],
-        ['Cited domains', metrics.uniqueDomains, '', ''],
-        ['Cited URLs', metrics.uniqueUrls, '', ''],
-        ...Object.entries(metrics.sentiment).map(([name, count]) => [
-          `Sentiment: ${name}`,
-          count,
-          '',
-          name === 'not_applicable' ? metrics.analyzed : metrics.mentioned,
-        ]),
-      ],
-    );
-    setToast('Scan summary exported.');
-  }
+  const scanAction = owner ? (
+    <button
+      className="button button-primary"
+      onClick={() => void startScan()}
+      disabled={
+        !providerReady || starting || hasActiveRun || !activePrompts
+      }
+      title={
+        !providerReady
+          ? 'Configure API credentials for all enabled providers to enable scans'
+          : !activePrompts
+            ? 'Add an active prompt in Prompts first'
+            : hasActiveRun
+              ? 'A scan is already in progress'
+              : 'Scan active prompts on every enabled provider'
+      }
+    >
+      {starting || hasActiveRun ? (
+        <LoaderCircle size={13} className="spinner" />
+      ) : (
+        <Play size={12} />
+      )}
+      {starting ? 'Starting…' : hasActiveRun ? 'Scanning…' : 'Run scan'}
+    </button>
+  ) : null;
   if (me.loading && !me.data)
     return (
-      <div className="login-page">
-        <Spinner label="Loading your account access…" />
+      <div className="workspace-loading">
+        <Logo />
+        <Skeleton variant="workspace" label="Loading your account access…" />
       </div>
     );
   if (me.error)
@@ -444,12 +471,16 @@ function Workspace() {
     );
   return (
     <div className="app">
+      <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to content</a>
       <button
         className={`sidebar-shade ${mobileOpen ? 'show' : ''}`}
         aria-label="Close navigation"
+        aria-hidden="true"
+        tabIndex={-1}
         onClick={() => setMobileOpen(false)}
       />
-      <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
+      <aside ref={navigationRef} id="workspace-navigation" className={`sidebar ${mobileOpen ? 'open' : ''}`} role={mobileOpen ? 'dialog' : undefined} aria-modal={mobileOpen || undefined} aria-label="Workspace navigation">
+        <button className="icon-button sidebar-mobile-close" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><X size={18} /></button>
         <Logo />
         <div className="workspace-select">
           <span className="workspace-avatar">
@@ -523,11 +554,10 @@ function Workspace() {
           <div className="plan-card">
             <div className="plan-title">
               <Sparkles size={13} />
-              Weekly essentials
+              Your weekly pulse
             </div>
             <p className="plan-caption">
-              A little focus.
-              <br />A clearer AI presence.
+              A clearer view of your brand<br />across AI search.
             </p>
             <div className="meter">
               <span style={{ width: `${(activePrompts / 50) * 100}%` }} />
@@ -573,11 +603,14 @@ function Workspace() {
           </div>
         </div>
       </aside>
-      <div className="main">
+      <div className="main" inert={mobileOpen}>
         <header className="topbar">
           <button
+            ref={menuRef}
             className="icon-button mobile-menu"
             aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={mobileOpen}
+            aria-controls="workspace-navigation"
             onClick={() => setMobileOpen((value) => !value)}
           >
             {mobileOpen ? <X size={18} /> : <Menu size={18} />}
@@ -588,7 +621,7 @@ function Workspace() {
             <strong>{views[view].title}</strong>
           </div>
           <div className="topbar-right">
-            {!['prompts', 'mentions', 'tracking'].includes(view) && (
+            {view === 'sources' && (
               <span className="platform-pill">
                 <Sparkles size={12} />
                 <select
@@ -625,7 +658,7 @@ function Workspace() {
             >
               <RefreshCw
                 size={15}
-                className={dashboard.loading && dashboard.data ? 'spinner' : ''}
+                className={view !== 'dashboard' && dashboard.loading && dashboard.data ? 'spinner' : ''}
               />
             </button>
             <span className="avatar">
@@ -634,9 +667,11 @@ function Workspace() {
           </div>
         </header>
         <main
-          className={`content ${['prompts', 'mentions', 'tracking'].includes(view) ? 'prompts-content' : ''}`}
+          id="main-content"
+          tabIndex={-1}
+          className={`content ${['dashboard', 'prompts', 'mentions', 'tracking'].includes(view) ? 'prompts-content' : ''}`}
         >
-          {!['prompts', 'mentions', 'tracking'].includes(view) && (
+          {!['dashboard', 'prompts', 'mentions', 'tracking'].includes(view) && (
             <div className="page-heading">
               <div>
                 <div className="eyebrow">AI VISIBILITY INTELLIGENCE</div>
@@ -644,7 +679,7 @@ function Workspace() {
                 <p>{views[view].description}</p>
               </div>
               <div className="heading-actions">
-                {!['settings', 'accounts', 'brandbook'].includes(view) && (
+                {view === 'sources' && (
                   <label className="select-button">
                     <CalendarDays size={13} />
                     <span className="visually-hidden">Select scan</span>
@@ -670,48 +705,7 @@ function Workspace() {
                     </select>
                   </label>
                 )}
-                {view === 'dashboard' && (
-                  <button
-                    className="button button-outline"
-                    onClick={exportSummary}
-                    disabled={!run}
-                  >
-                    <ArrowDownToLine size={13} />
-                    Export
-                  </button>
-                )}
-                {owner && view !== 'accounts' && (
-                  <button
-                    className="button button-primary"
-                    onClick={() => void startScan()}
-                    disabled={
-                      !providerReady ||
-                      starting ||
-                      hasActiveRun ||
-                      !activePrompts
-                    }
-                    title={
-                      !providerReady
-                        ? 'Configure API credentials for all enabled providers to enable scans'
-                        : !activePrompts
-                          ? 'Add an active prompt in Prompts first'
-                          : hasActiveRun
-                            ? 'A scan is already in progress'
-                            : 'Scan active prompts on every enabled provider'
-                    }
-                  >
-                    {starting || hasActiveRun ? (
-                      <LoaderCircle size={13} className="spinner" />
-                    ) : (
-                      <Play size={12} />
-                    )}
-                    {starting
-                      ? 'Starting…'
-                      : hasActiveRun
-                        ? 'Scanning…'
-                        : 'Run scan'}
-                  </button>
-                )}
+                {!['accounts', 'users'].includes(view) && scanAction}
               </div>
             </div>
           )}
@@ -726,9 +720,7 @@ function Workspace() {
                     .join(', ')}
                   .
                 </strong>{' '}
-                Configure their server API keys or Secrets Manager ARNs. OpenAI
-                also generates brandbooks and prompts and analyzes answers.
-                Scans require credentials for every enabled provider.
+                Ask your administrator to connect these providers before starting a scan.
               </span>
             </div>
           )}
@@ -747,7 +739,7 @@ function Workspace() {
             error={projects.error}
             retry={() => setProjectsRevision((value) => value + 1)}
           />
-          <ErrorNotice error={dashboard.error} retry={refresh} />
+          {view !== 'dashboard' && <ErrorNotice error={dashboard.error} retry={refresh} />}
           <ErrorNotice error={actionError} />
           {view === 'users' ? (
             systemAdmin ? (
@@ -775,7 +767,7 @@ function Workspace() {
               notify={setToast}
             />
           ) : projects.loading && !projects.data ? (
-            <Spinner />
+            <Skeleton variant={view === 'dashboard' ? 'dashboard' : ['settings', 'brandbook'].includes(view) ? 'form' : 'table'} />
           ) : !currentProject && !projects.error ? (
             <div className="card">
               <Empty
@@ -815,7 +807,7 @@ function Workspace() {
             path &&
             project && (
               <>
-                {!['settings', 'brandbook', 'prompts', 'mentions', 'tracking'].includes(view) &&
+                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking'].includes(view) &&
                   run && (
                     <div className="status-strip">
                       <span
@@ -844,8 +836,8 @@ function Workspace() {
                   )}
                 {dashboard.loading &&
                 !dashboard.data &&
-                !['settings', 'brandbook', 'mentions', 'tracking'].includes(view) ? (
-                  <Spinner label="Bringing your results together…" />
+                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking'].includes(view) ? (
+                  <Skeleton variant="cards" label="Bringing your results together…" />
                 ) : view === 'settings' ? (
                   <SettingsView
                     key={project.id}
@@ -874,18 +866,16 @@ function Workspace() {
                     onSaved={settingsSaved}
                     notify={setToast}
                   />
+                ) : view === 'dashboard' ? (
+                  <DashboardView
+                    key={project.id}
+                    project={project}
+                    path={path}
+                    revision={revision}
+                    actions={scanAction}
+                  />
                 ) : (
-                  dashboard.data &&
-                  (view === 'dashboard' ? (
-                    <DashboardView
-                      dashboard={dashboard.data}
-                      path={path}
-                      revision={revision}
-                      onResponse={setSelectedResponse}
-                      onMentions={() => navigate('mentions')}
-                      onSources={() => navigate('sources')}
-                    />
-                  ) : (
+                  dashboard.data && (
                     <SourcesView
                       key={`${project.id}-${run?.id || 'empty'}`}
                       path={path}
@@ -893,7 +883,7 @@ function Workspace() {
                       revision={revision}
                       onResponse={setSelectedResponse}
                     />
-                  ))
+                  )
                 )}
                 <footer className="page-footer">
                   <span>

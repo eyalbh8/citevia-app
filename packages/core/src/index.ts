@@ -10,3 +10,4 @@ export * from './urls.js';
 export * from './users.js';
 export * from './providers.js';
 export * from './tracking.js';
+export * from './dashboard.js';

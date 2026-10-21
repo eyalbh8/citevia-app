@@ -1,3 +1,4 @@
+import { Skeleton } from './Loading';
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
@@ -22,7 +23,6 @@ import {
   Empty,
   ErrorNotice,
   formatDate,
-  Spinner,
 } from './components';
 import AnswerMarkdown from './AnswerMarkdown';
 import { ResponseDetailContent } from './ResponseDrawer';
@@ -136,7 +136,7 @@ export default function PromptAnswersDrawer({
         <>
           <ErrorNotice error={detail.error} />
           {detail.loading && !detail.data ? (
-            <Spinner label="Opening the original answer…" />
+            <Skeleton variant="detail" rows={3} label="Opening the original answer…" />
           ) : (
             detail.data && <ResponseDetailContent data={detail.data} />
           )}
@@ -183,7 +183,7 @@ export default function PromptAnswersDrawer({
           </div>
           <ErrorNotice error={history.error} />
           {history.loading && !history.data ? (
-            <Spinner label="Loading answer history…" />
+            <Skeleton variant="table" label="Loading answer history…" />
           ) : (
             history.data &&
             (history.data.items.length ? (

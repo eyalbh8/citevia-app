@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import {
   ArrowDown,
   ArrowUp,
@@ -8,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Globe2,
+  Hash,
   Hexagon,
   Link2,
   Maximize2,
@@ -28,9 +35,9 @@ import { query } from './api';
 import AnswerMarkdown from './AnswerMarkdown';
 import './monitoring.css';
 export const providerColors: Record<ScanProvider, string> = {
-  openai: '#242320',
-  perplexity: '#ed8436',
-  gemini: '#74a3ee',
+  openai: '#3930cf',
+  perplexity: '#078f9d',
+  gemini: '#8091dc',
 };
 export type MonitorSelection = {
   days: string;
@@ -41,6 +48,7 @@ export type MonitorSelection = {
   tag: string;
   branded: string;
   intent: string;
+  topic?: string;
 };
 export const initialSelection = (days = '7'): MonitorSelection => ({
   days,
@@ -78,7 +86,9 @@ function Pill({
   children: ReactNode;
 }) {
   return (
-    <label className="monitor-pill">
+    <label
+      className={`monitor-pill${value && label !== 'Date range' ? ' is-filtered' : ''}`}
+    >
       {icon}
       <select
         aria-label={label}
@@ -97,12 +107,16 @@ export function MonitoringHeader({
   value,
   onChange,
   children,
+  actions,
+  showTopics = false,
 }: {
   title: string;
   project: Project;
   value: MonitorSelection;
   onChange: (s: MonitorSelection) => void;
   children?: ReactNode;
+  actions?: ReactNode;
+  showTopics?: boolean;
 }) {
   const set = (key: keyof MonitorSelection, next: string) =>
     onChange({ ...value, [key]: next });
@@ -115,6 +129,7 @@ export function MonitoringHeader({
   return (
     <div className="monitor-filter-header">
       <h1>{title}</h1>
+      {actions && <div className="monitor-header-actions">{actions}</div>}
       <div className="monitor-filters">
         <Pill
           label="Regions"
@@ -125,6 +140,25 @@ export function MonitoringHeader({
           <option value="">Regions</option>
           <option value={project.country}>{project.country}</option>
         </Pill>
+        {showTopics && (
+          <Pill
+            label="Topics"
+            icon={<Hash size={17} />}
+            value={value.topic || ''}
+            onChange={(v) => set('topic', v)}
+          >
+            <option value="">Topics</option>
+            {[
+              ...new Set(
+                project.prompts.flatMap((p) => (p.topic ? [p.topic] : [])),
+              ),
+            ]
+              .sort()
+              .map((topic) => (
+                <option key={topic}>{topic}</option>
+              ))}
+          </Pill>
+        )}
         <Pill
           label="Tags"
           icon={<Tag size={17} />}
@@ -160,7 +194,9 @@ export function MonitoringHeader({
           ))}
         </Pill>
         <details className="monitor-provider-select">
-          <summary className="monitor-pill">
+          <summary
+            className={`monitor-pill${value.providers.length ? ' is-filtered' : ''}`}
+          >
             <Box size={17} />
             {value.providers.length
               ? `${value.providers.length} Providers`
@@ -254,7 +290,7 @@ export function ProviderDonut({ summary }: { summary: MentionsSummary }) {
             cy="120"
             r={r}
             fill="none"
-            stroke="#f0edf4"
+            stroke="var(--primary-soft)"
             strokeWidth="30"
           />
           {summary.providers
@@ -282,8 +318,7 @@ export function ProviderDonut({ summary }: { summary: MentionsSummary }) {
                   onBlur={() => setHover(undefined)}
                 >
                   <title>
-                    {PROVIDER_LABELS[p.provider]}: {p.count} mentions ({p.share}
-                    %)
+                    {`${PROVIDER_LABELS[p.provider]}: ${p.count} mentions (${p.share}%)`}
                   </title>
                 </circle>
               );
@@ -446,7 +481,6 @@ export function MentionsChart({
           <button
             key={p.provider}
             aria-pressed={!hidden.includes(p.provider)}
-            style={{ opacity: hidden.includes(p.provider) ? 0.4 : 1 }}
             onClick={() =>
               setHidden(
                 hidden.includes(p.provider)
@@ -460,150 +494,168 @@ export function MentionsChart({
           </button>
         ))}
       </div>
-      <div className="mentions-chart-body">
-        <svg
-          viewBox="0 0 880 345"
-          role="img"
-          aria-label="Brand mentions by provider over time"
-        >
-          {[0, 1, 2, 3, 4].map((i) => (
-            <g key={i}>
-              <line
-                x1="52"
-                x2="842"
-                y1={y((i * top) / 4)}
-                y2={y((i * top) / 4)}
-                stroke="#e9e5e9"
-                strokeDasharray="3 3"
-              />
-              <text x="42" y={y((i * top) / 4) + 4} textAnchor="end">
-                {(i * top) / 4}
-              </text>
-            </g>
-          ))}
-          <text x="450" y="172" className="chart-watermark" textAnchor="middle">
-            citevia.
-          </text>
-          {visible.map((p) => {
-            const map = new Map(p.points.map((v) => [v.date, v.count])),
-              segments: number[][][] = [];
-            let segment: number[][] = [];
-            for (let i = 0; i < dates.length; i++) {
-              if (map.has(dates[i]))
-                segment.push([x(i), y(map.get(dates[i])!)]);
-              else if (segment.length) {
-                segments.push(segment);
-                segment = [];
-              }
-            }
-            if (segment.length) segments.push(segment);
-            return (
-              <g key={p.provider}>
-                {segments.map((points, i) => {
-                  const path = curve(points);
-                  return (
-                    <g key={i}>
-                      <path
-                        d={`${path} L${points.at(-1)![0]},275 L${points[0][0]},275 Z`}
-                        fill={providerColors[p.provider]}
-                        opacity=".14"
-                      />
-                      <path
-                        d={path}
-                        fill="none"
-                        stroke={providerColors[p.provider]}
-                        strokeWidth="2.5"
-                      />
-                      {points.length === 1 && (
-                        <circle
-                          cx={points[0][0]}
-                          cy={points[0][1]}
-                          r="3"
-                          fill={providerColors[p.provider]}
-                        />
-                      )}
-                    </g>
-                  );
-                })}
-              </g>
-            );
-          })}
-          {dates.map((date, i) => (
-            <g key={date}>
-              {(i % Math.max(1, Math.ceil(dates.length / 7)) === 0 ||
-                i === dates.length - 1) && (
-                <text x={x(i)} y="330" textAnchor="middle">
-                  {format(date)}
+      <div
+        className="mentions-chart-body"
+        role="region"
+        aria-label="Mentions chart; scroll horizontally to see the full timeline"
+        tabIndex={0}
+      >
+        <div className="mentions-chart-canvas">
+          <svg
+            viewBox="0 0 880 345"
+            role="img"
+            aria-label="Brand mentions by provider over time"
+          >
+            {[0, 1, 2, 3, 4].map((i) => (
+              <g key={i}>
+                <line
+                  x1="52"
+                  x2="842"
+                  y1={y((i * top) / 4)}
+                  y2={y((i * top) / 4)}
+                  stroke="var(--line)"
+                  strokeDasharray="3 3"
+                />
+                <text x="42" y={y((i * top) / 4) + 4} textAnchor="end">
+                  {(i * top) / 4}
                 </text>
-              )}
-              <rect
-                x={x(i) - Math.max(5, 790 / dates.length / 2)}
-                y="25"
-                width={Math.max(10, 790 / dates.length)}
-                height="260"
-                fill="transparent"
-                tabIndex={0}
-                aria-label={`${format(date)}: ${visible.map((p) => `${PROVIDER_LABELS[p.provider]} ${p.points.find((v) => v.date === date)?.count ?? 'No scan'}`).join(', ')}`}
-                onMouseEnter={() => setHover(i)}
-                onMouseLeave={() => setHover(undefined)}
-                onFocus={() => setHover(i)}
-                onBlur={() => setHover(undefined)}
-              />
-            </g>
-          ))}
-          {hover !== undefined && (
-            <line
-              x1={x(hover)}
-              x2={x(hover)}
-              y1="30"
-              y2="275"
-              stroke="#998ea4"
-              strokeDasharray="4"
-              pointerEvents="none"
-            />
-          )}
-        </svg>
-        {hover !== undefined && (
-          <div className="monitor-tooltip chart-tooltip">
-            <strong>{format(dates[hover])} · UTC</strong>
-            {visible.map((p) => (
-              <span key={p.provider}>
-                {PROVIDER_LABELS[p.provider]}
-                <b>
-                  {p.points.find((v) => v.date === dates[hover])?.count ??
-                    'No scan'}
-                </b>
-              </span>
+              </g>
             ))}
-          </div>
-        )}
-        <div className="chart-markers">
-          {summary.markers.map((marker) => {
-            const index = dates.indexOf(marker.date);
-            if (index < 0) return null;
-            return (
-              <details
-                key={marker.date}
-                style={{ left: `${(x(index) / 880) * 100}%` }}
-              >
-                <summary
-                  aria-label={`${marker.items.length} tracked URLs on ${format(marker.date)}`}
+            <text
+              x="450"
+              y="172"
+              className="chart-watermark"
+              textAnchor="middle"
+            >
+              citevia.
+            </text>
+            {visible.map((p) => {
+              const map = new Map(p.points.map((v) => [v.date, v.count])),
+                segments: number[][][] = [];
+              let segment: number[][] = [];
+              for (let i = 0; i < dates.length; i++) {
+                if (map.has(dates[i]))
+                  segment.push([x(i), y(map.get(dates[i])!)]);
+                else if (segment.length) {
+                  segments.push(segment);
+                  segment = [];
+                }
+              }
+              if (segment.length) segments.push(segment);
+              return (
+                <g key={p.provider}>
+                  {segments.map((points, i) => {
+                    const path = curve(points);
+                    return (
+                      <g key={i}>
+                        <path
+                          d={`${path} L${points.at(-1)![0]},275 L${points[0][0]},275 Z`}
+                          fill={providerColors[p.provider]}
+                          opacity=".14"
+                        />
+                        <path
+                          d={path}
+                          fill="none"
+                          stroke={providerColors[p.provider]}
+                          strokeWidth="2.5"
+                        />
+                        {points.length === 1 && (
+                          <circle
+                            cx={points[0][0]}
+                            cy={points[0][1]}
+                            r="3"
+                            fill={providerColors[p.provider]}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+            {dates.map((date, i) => (
+              <g key={date}>
+                {(i % Math.max(1, Math.ceil(dates.length / 7)) === 0 ||
+                  i === dates.length - 1) && (
+                  <text x={x(i)} y="330" textAnchor="middle">
+                    {format(date)}
+                  </text>
+                )}
+                <rect
+                  x={x(i) - Math.max(5, 790 / dates.length / 2)}
+                  y="25"
+                  width={Math.max(10, 790 / dates.length)}
+                  height="260"
+                  fill="transparent"
+                  tabIndex={0}
+                  aria-label={`${format(date)}: ${visible.map((p) => `${PROVIDER_LABELS[p.provider]} ${p.points.find((v) => v.date === date)?.count ?? 'No scan'}`).join(', ')}`}
+                  onMouseEnter={() => setHover(i)}
+                  onMouseLeave={() => setHover(undefined)}
+                  onFocus={() => setHover(i)}
+                  onBlur={() => setHover(undefined)}
+                />
+              </g>
+            ))}
+            {hover !== undefined && (
+              <line
+                x1={x(hover)}
+                x2={x(hover)}
+                y1="30"
+                y2="275"
+                stroke="var(--muted)"
+                strokeDasharray="4"
+                pointerEvents="none"
+              />
+            )}
+          </svg>
+          {hover !== undefined && (
+            <div
+              className="monitor-tooltip chart-tooltip"
+              style={{
+                left: `clamp(16px, calc(${(x(hover) / 880) * 100}% - 110px), calc(100% - 236px))`,
+              }}
+            >
+              <strong>{format(dates[hover])} · UTC</strong>
+              {visible.map((p) => (
+                <span key={p.provider}>
+                  {PROVIDER_LABELS[p.provider]}
+                  <b>
+                    {p.points.find((v) => v.date === dates[hover])?.count ??
+                      'No scan'}
+                  </b>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="chart-markers">
+            {summary.markers.map((marker) => {
+              const index = dates.indexOf(marker.date);
+              if (index < 0) return null;
+              return (
+                <details
+                  key={marker.date}
+                  data-align={index > dates.length / 2 ? 'right' : 'left'}
+                  style={{ left: `${(x(index) / 880) * 100}%` }}
                 >
-                  <Link2 size={11} />
-                  {marker.items.length}
-                </summary>
-                <div className="monitor-tooltip marker-tooltip">
-                  {marker.items.map((item) => (
-                    <button key={item.id} onClick={() => onTracked(item.id)}>
-                      <strong>{item.title}</strong>
-                      <small>{item.url}</small>
-                      <span>{item.appearances} appearances</span>
-                    </button>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
+                  <summary
+                    aria-label={`${marker.items.length} tracked URLs on ${format(marker.date)}`}
+                  >
+                    <Link2 size={11} />
+                    {marker.items.length}
+                  </summary>
+                  <div className="monitor-tooltip marker-tooltip">
+                    {marker.items.map((item) => (
+                      <button key={item.id} onClick={() => onTracked(item.id)}>
+                        <strong>{item.title}</strong>
+                        <small>{item.url}</small>
+                        <span>{item.appearances} appearances</span>
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>
@@ -645,12 +697,13 @@ export function PageControls({
   loading?: boolean;
 }) {
   return (
-    <div className="monitor-pagination">
+    <nav className="monitor-pagination" aria-label="Table pagination">
       <label>
         Rows per page:{' '}
         <select
           aria-label="Rows per page"
           value={pageSize}
+          disabled={loading}
           onChange={(e) => onSize(Number(e.target.value))}
         >
           {[25, 50, 100].map((n) => (
@@ -658,7 +711,7 @@ export function PageControls({
           ))}
         </select>
       </label>
-      <span>
+      <span aria-live="polite" aria-atomic="true">
         {total ? Math.min(page * pageSize + 1, total) : 0}–
         {Math.min((page + 1) * pageSize, total)} of {total.toLocaleString()}
       </span>
@@ -676,9 +729,105 @@ export function PageControls({
       >
         <ChevronRight size={17} />
       </button>
-    </div>
+    </nav>
   );
 }
+
+function MentionBrands({ row }: { row: MentionAnswer }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<CSSProperties>({});
+
+  useEffect(() => {
+    if (!open || !ref.current) return;
+    const details = ref.current;
+    const place = () => {
+      const rect = details.getBoundingClientRect();
+      const width = Math.min(260, window.innerWidth - 32);
+      const below = window.innerHeight - rect.bottom;
+      const openBelow = below >= 240 || below >= rect.top;
+      setPosition({
+        width,
+        left: Math.max(
+          16,
+          Math.min(rect.right - width, window.innerWidth - width - 16),
+        ),
+        top: openBelow ? rect.bottom + 8 : undefined,
+        bottom: openBelow ? undefined : window.innerHeight - rect.top + 8,
+        maxHeight: Math.max(
+          60,
+          Math.min(240, (openBelow ? below : rect.top) - 24),
+        ),
+      });
+    };
+    const dismiss = (event: PointerEvent) => {
+      if (!details.contains(event.target as Node)) details.open = false;
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        details.open = false;
+        details.querySelector('summary')?.focus();
+      }
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
+
+  if (!row.brands.length) return <span>—</span>;
+
+  return (
+    <details
+      ref={ref}
+      className="monitor-brands"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary aria-label={`${row.brands.length} brands`}>
+        <span>
+          {row.brands.slice(0, 3).map((name, i) => (
+            <i key={`${name}-${i}`} title={name}>
+              {name.slice(0, 2)}
+            </i>
+          ))}
+        </span>
+        {row.brands.length > 3 && `+${row.brands.length - 3}`}
+      </summary>
+      <div
+        className="monitor-tooltip"
+        style={{
+          ...position,
+          visibility: position.width ? 'visible' : 'hidden',
+        }}
+        role="group"
+        aria-label="Mentioned brands"
+      >
+        {row.brandSites.map((brand, i) =>
+          brand.url ? (
+            <a
+              key={i}
+              href={brand.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {brand.name}
+            </a>
+          ) : (
+            <span key={i}>{brand.name}</span>
+          ),
+        )}
+      </div>
+    </details>
+  );
+}
+
 export function AnswerTable({
   rows,
   onResponse,
@@ -693,11 +842,19 @@ export function AnswerTable({
   onSort?: (sort: string) => void;
 }) {
   return (
-    <div className="monitor-table-scroll">
+    <div
+      className="monitor-table-scroll"
+      role="region"
+      aria-label="Brand mentions table; scroll horizontally for all columns"
+      tabIndex={0}
+    >
       <table className="monitor-answer-table">
+        <caption className="visually-hidden">
+          Saved AI answers mentioning your brand
+        </caption>
         <thead>
           <tr>
-            <th>Response</th>
+            <th scope="col">Response</th>
             {(
               [
                 'Model',
@@ -708,7 +865,17 @@ export function AnswerTable({
                 'Date',
               ] as const
             ).map((label) => (
-              <th key={label}>
+              <th
+                key={label}
+                scope="col"
+                aria-sort={
+                  onSort && sort === label.toLowerCase()
+                    ? direction === 'desc'
+                      ? 'descending'
+                      : 'ascending'
+                    : undefined
+                }
+              >
                 {label === 'Brands' ? (
                   label
                 ) : (
@@ -760,35 +927,7 @@ export function AnswerTable({
               </td>
               <td>{row.rank ?? '—'}</td>
               <td>
-                <details className="monitor-brands">
-                  <summary aria-label={`${row.brands.length} brands`}>
-                    <span>
-                      {row.brands.slice(0, 3).map((name, i) => (
-                        <i key={`${name}-${i}`} title={name}>
-                          {name.slice(0, 2)}
-                        </i>
-                      ))}
-                    </span>
-                    {row.brands.length > 3 && `+${row.brands.length - 3}`}
-                    {!row.brands.length && '—'}
-                  </summary>
-                  <div className="monitor-tooltip">
-                    {row.brandSites.map((brand, i) =>
-                      brand.url ? (
-                        <a
-                          key={i}
-                          href={brand.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {brand.name}
-                        </a>
-                      ) : (
-                        <span key={i}>{brand.name}</span>
-                      ),
-                    )}
-                  </div>
-                </details>
+                <MentionBrands row={row} />
               </td>
               <td>
                 <span className="monitor-citations">

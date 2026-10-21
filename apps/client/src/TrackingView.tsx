@@ -1,3 +1,4 @@
+import { Skeleton } from './Loading';
 import { useState, type FormEvent } from 'react';
 import {
   ArrowUpRight,
@@ -18,7 +19,7 @@ import {
   type TrackingStatus,
 } from '@citevia/core';
 import { request, useApi } from './api';
-import { Drawer, Empty, ErrorNotice, Spinner } from './components';
+import { Drawer, Empty, ErrorNotice } from './components';
 import {
   AnswerTable,
   initialSelection,
@@ -66,7 +67,7 @@ function Sparkline({ values }: { values: number[] }) {
     >
       <polyline
         fill="none"
-        stroke="#5baf90"
+        stroke="var(--primary, #3930cf)"
         strokeWidth="2"
         points={
           values.length
@@ -256,7 +257,7 @@ export default function TrackingView({
       </div>
       <ErrorNotice error={list.error || summary.error} />
       {summary.loading && !summary.data ? (
-        <Spinner label="Loading tracked URLs…" />
+        <Skeleton variant="chart" label="Loading tracked URLs…" />
       ) : (
         summary.data && (
           <>
@@ -375,7 +376,7 @@ export default function TrackingView({
         aria-busy={list.loading}
       >
         {list.loading && !list.data ? (
-          <Spinner label="Loading URL results…" />
+          <Skeleton variant="table" label="Loading URL results…" />
         ) : rows.length ? (
           <>
             <div className="monitor-table-scroll">
@@ -627,7 +628,7 @@ export function TrackingDetailDrawer({
     <Drawer title="Tracking details" onClose={onClose} wide>
       <ErrorNotice error={detail.error || answers.error || error} />
       {!row ? (
-        detail.loading && <Spinner label="Loading URL evidence…" />
+        detail.loading && <Skeleton variant="detail" rows={3} label="Loading URL evidence…" />
       ) : (
         <>
           <div className="tracking-detail-title">
@@ -763,7 +764,7 @@ export function TrackingDetailDrawer({
               <h2>Matching answers</h2>
             </header>
             {answers.loading && !answers.data ? (
-              <Spinner label="Loading matching answers…" />
+              <Skeleton variant="table" label="Loading matching answers…" />
             ) : answers.data?.items.length ? (
               <>
                 <AnswerTable
@@ -782,7 +783,7 @@ export function TrackingDetailDrawer({
                   loading={answers.loading}
                 />
               </>
-            ) : (
+            ) : answers.error ? null : (
               <Empty
                 title="No matching answers yet"
                 description="Tracking checks every future scan. Try a wider date range for older evidence."

@@ -1,10 +1,9 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { AlertCircle, ArrowUpRight, ChevronLeft, ChevronRight, FileSearch, LoaderCircle, LogIn, X } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, ChevronLeft, ChevronRight, FileSearch, LogIn, X } from 'lucide-react';
 import { ApiError } from './api';
 import { signIn } from './auth';
 
-export function Logo() { return <div className="brand"><span className="brand-logo-frame"><img src="/citevia-mark.png" alt="" /></span>citevia<span className="brand-dot">.</span></div>; }
-export function Spinner({ label = 'Loading your workspace…' }: { label?: string }) { return <div className="loading-state" role="status"><LoaderCircle className="spinner" size={24} /><span>{label}</span></div>; }
+export function Logo() { return <div className="brand" aria-label="Citevia"><span className="brand-logo-frame"><img src="/citevia-mark.png" alt="" /></span><span>Citevia</span></div>; }
 export function ErrorNotice({ error, retry }: { error?: Error | string; retry?: () => void }) {
   if (!error) return null;
   const expired = error instanceof ApiError && error.status === 401;
@@ -20,7 +19,8 @@ export function safeUrl(url: string): string | undefined { try { const parsed = 
 export function ExternalLink({ url, children }: { url: string; children: ReactNode }) { const href = safeUrl(url); return href ? <a href={href} target="_blank" rel="noreferrer noopener">{children}<ArrowUpRight size={11} /></a> : <span>{children}</span>; }
 export function Pagination({ page, total, size, onChange }: { page: number; total: number; size: number; onChange: (page: number) => void }) {
   const pages = Math.ceil(total / size);
-  return <div className="pagination"><span>{total ? `${page * size + 1}–${Math.min((page + 1) * size, total)} of ${total}` : 'No results'}</span><div className="page-buttons"><button aria-label="Previous page" disabled={page === 0} onClick={() => onChange(page - 1)}><ChevronLeft size={13} /></button>{Array.from({ length: pages }, (_, index) => <button key={index} className={index === page ? 'active' : ''} aria-label={`Page ${index + 1}`} aria-current={index === page ? 'page' : undefined} onClick={() => onChange(index)}>{index + 1}</button>)}<button aria-label="Next page" disabled={page + 1 >= pages} onClick={() => onChange(page + 1)}><ChevronRight size={13} /></button></div></div>;
+  const visiblePages = pages <= 7 ? Array.from({ length: pages }, (_, index) => index) : [...new Set([0, ...[page - 1, page, page + 1].filter(index => index > 0 && index < pages - 1), pages - 1])];
+  return <div className="pagination"><span>{total ? `${page * size + 1}–${Math.min((page + 1) * size, total)} of ${total}` : 'No results'}</span><nav className="page-buttons" aria-label="Pagination"><button aria-label="Previous page" disabled={page === 0} onClick={() => onChange(page - 1)}><ChevronLeft size={15} /></button>{visiblePages.map((index, position) => <span className="page-number-group" key={index}>{position > 0 && index - visiblePages[position - 1] > 1 && <span className="pagination-gap" aria-hidden="true">…</span>}<button className={index === page ? 'active' : ''} aria-label={`Page ${index + 1}`} aria-current={index === page ? 'page' : undefined} onClick={() => onChange(index)}>{index + 1}</button></span>)}<button aria-label="Next page" disabled={page + 1 >= pages} onClick={() => onChange(page + 1)}><ChevronRight size={15} /></button></nav></div>;
 }
 export function Drawer({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLElement>(null);

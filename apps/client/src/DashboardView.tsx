@@ -1,624 +1,829 @@
-import { brandRank } from '@citevia/core';
-import { SentimentScore } from './ScoreBadge';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import {
   ArrowDownRight,
-  ArrowRight,
+  ArrowDownToLine,
   ArrowUpRight,
-  CircleHelp,
-  Eye,
-  Hash,
-  Link2,
-  MessageSquareText,
-  Sparkles,
-  TrendingUp,
+  Globe2,
+  Info,
+  Minus,
 } from 'lucide-react';
-import type {
-  Dashboard,
-  Page,
-  PromptResult,
-  SourceRow,
-  TrendPoint,
-} from '@citevia/core';
-import { query, useApi } from './api';
 import {
-  Badge,
-  Empty,
-  ErrorNotice,
-  formatDate,
-  formatNumber,
-  percent,
-  Spinner,
-} from './components';
+  PROVIDER_LABELS,
+  projectProviders,
+  type DashboardOverview,
+  type Project,
+} from '@citevia/core';
+import { downloadCsv, useApi } from './api';
+import { Empty, ErrorNotice, formatNumber, labelize } from './components';
+import { Skeleton } from './Loading';
+import {
+  initialSelection,
+  MonitoringHeader,
+  ProviderMark,
+  selectionQuery,
+  type MonitorSelection,
+} from './MonitoringUI';
+import './dashboard.css';
 
-const sentimentColors: Record<string, string> = {
-  positive: '#7fbf9c',
-  neutral: '#b5a1df',
-  negative: '#e4a4b3',
-  mixed: '#dbc29c',
-  unknown: '#d8d2df',
+const brandColors = ['#3930cf', '#148a91', '#b27621', '#ad537d', '#7685ce'];
+const stageColors: Record<string, string> = {
+  understand: '#7685ce',
+  prefer: '#3930cf',
+  trust: '#148a91',
+  convert: '#b27621',
+  unassigned: '#70778c',
 };
+const dayLabel = (date: string, full = false) =>
+  new Date(`${date.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en', {
+    month: 'short',
+    day: 'numeric',
+    ...(full ? { year: 'numeric' as const } : {}),
+    timeZone: 'UTC',
+  });
+
+function Change({
+  value,
+  unit = '%',
+  label,
+}: {
+  value: number | null;
+  unit?: string;
+  label: string;
+}) {
+  const Icon =
+    value === null || value === 0
+      ? Minus
+      : value > 0
+        ? ArrowUpRight
+        : ArrowDownRight;
+  const shown =
+    value === null ? '—' : `${formatNumber(Math.abs(value), 1)}${unit}`;
+  return (
+    <span
+      className={`overview-change ${value !== null && value > 0 ? 'positive' : value !== null && value < 0 ? 'negative' : 'neutral'}`}
+      title={`${label}: ${value === null ? 'no comparison available' : `${value > 0 ? '+' : value < 0 ? '−' : ''}${shown}`}`}
+    >
+      {value !== null && <Icon size={12} aria-hidden="true" />}
+      <span className="visually-hidden">
+        {label}:{' '}
+        {value === null
+          ? 'not available'
+          : value > 0
+            ? 'increased by '
+            : value < 0
+              ? 'decreased by '
+              : 'unchanged, '}
+      </span>
+      <span aria-hidden={value === null || undefined}>{shown}</span>
+    </span>
+  );
+}
+
+function exportOverview(data: DashboardOverview, name: string) {
+  const rows: (string | number | null)[][] = [];
+  const add = (
+    section: string,
+    item: string,
+    metric: string,
+    value: string | number | null,
+  ) => rows.push([section, item, metric, value]);
+  add('Period', name, 'Start (UTC)', data.period.start);
+  add('Period', name, 'End (UTC)', data.period.end);
+  for (const [key, value] of Object.entries(data.filters))
+    if (
+      Array.isArray(value) ? value.length : value !== '' && value !== undefined
+    )
+      add(
+        'Filter',
+        name,
+        key,
+        Array.isArray(value) ? value.join(', ') : String(value),
+      );
+  for (const p of data.providers) {
+    add('Providers', PROVIDER_LABELS[p.provider], 'Mentions', p.count);
+    add('Providers', PROVIDER_LABELS[p.provider], 'Change (%)', p.change);
+  }
+  for (const s of data.stages) {
+    add('Stages', labelize(s.key), 'Visibility (%)', s.visibility);
+    add('Stages', labelize(s.key), 'Active prompts', s.promptCount);
+    add('Stages', labelize(s.key), 'Measured prompts', s.measuredPromptCount);
+  }
+  for (const b of data.ranking) {
+    add('Industry ranking', b.name, 'Average daily rank', b.rank);
+    add('Industry ranking', b.name, 'Rank improvement', b.rankChange);
+    add('Industry ranking', b.name, 'Mentions', b.mentions);
+    add('Industry ranking', b.name, 'Mention change (%)', b.mentionChange);
+    add('Industry ranking', b.name, 'Sentiment (0–100)', b.sentiment);
+    add(
+      'Industry ranking',
+      b.name,
+      'Sentiment change (points)',
+      b.sentimentChange,
+    );
+  }
+  for (const d of data.trend)
+    for (const b of data.ranking)
+      rows.push(['Daily mentions', b.name, d.date, d.mentions[b.brandId] ?? 0]);
+  for (const s of data.sources) {
+    add('Sources', s.domain, 'Distinct pages', s.pageCount);
+    add('Sources', s.domain, 'Citations', s.citationCount);
+  }
+  downloadCsv(
+    `citevia-dashboard-${data.period.start.slice(0, 10)}-${data.period.end.slice(0, 10)}.csv`,
+    ['Section', 'Name', 'Metric', 'Value'],
+    rows,
+  );
+}
+
 export function DashboardView({
-  dashboard,
+  project,
   path,
   revision,
-  onResponse,
-  onMentions,
-  onSources,
+  actions,
 }: {
-  dashboard: Dashboard;
+  project: Project;
   path: string;
   revision: number;
-  onResponse: (id: string) => void;
-  onMentions: () => void;
-  onSources: () => void;
+  actions?: ReactNode;
 }) {
-  const { metrics, run, comparison } = dashboard;
-  const recent = useApi<Page<PromptResult>>(
-    run ? `${path}/responses${query({ runId: run.id })}` : null,
-    revision,
+  const [selection, setSelection] = useState<MonitorSelection>(() => ({
+    ...initialSelection(),
+    topic: '',
+  }));
+  const [retry, setRetry] = useState(0);
+  const overview = useApi<DashboardOverview>(
+    `${path}/dashboard/overview${selectionQuery(selection)}`,
+    revision + retry,
   );
-  const delta = comparison.visibilityDelta;
-  const mentionedSentiment = Object.entries(metrics.sentiment).filter(
-    ([key]) => key !== 'not_applicable',
-  );
-  if (!run)
-    return (
-      <div className="card">
-        <Empty
-          title="Your first scan starts here"
-          description="Add your prompts in Settings, then start a scan. Your visibility, mentions and sources will appear here as answers are collected."
-        />
-      </div>
-    );
+  const data = overview.data;
+  const periodCaption =
+    selection.days === 'custom'
+      ? 'Mentions in the selected period'
+      : selection.days === '1'
+        ? 'Mentions in the last 24 hours'
+        : `Mentions in the last ${selection.days} days`;
+  const missingPrompts =
+    data?.stages.reduce(
+      (sum, stage) => sum + stage.promptCount - stage.measuredPromptCount,
+      0,
+    ) || 0;
   return (
-    <>
-      <div className="metrics-grid">
-        <div className="metric-card">
-          <div className="metric-label">
-            Brand visibility{' '}
-            <CircleHelp size={11}>
-              <title>
-                Share of successfully analyzed answers that mention your brand.
-              </title>
-            </CircleHelp>
-            <span className="metric-icon">
-              <Eye size={17} />
-            </span>
-          </div>
-          <div className="metric-value">
-            {formatNumber(metrics.visibility.value)}
-            {metrics.visibility.value !== null && (
-              <span className="metric-unit">%</span>
-            )}
-          </div>
-          <div className="metric-footer">
-            {delta !== null ? (
-              <>
-                <span
-                  className="metric-delta"
-                  style={
-                    delta < 0
-                      ? { color: '#c48090', background: '#fff2f5' }
-                      : undefined
-                  }
-                >
-                  {delta < 0 ? (
-                    <ArrowDownRight size={10} />
-                  ) : (
-                    <ArrowUpRight size={10} />
-                  )}
-                  {Math.abs(delta).toFixed(1)} pp
+    <div className="monitor-screen dashboard-screen">
+      <MonitoringHeader
+        title="Dashboard"
+        project={project}
+        value={selection}
+        onChange={setSelection}
+        showTopics
+        actions={
+          <>
+            <button
+              className="button button-outline"
+              onClick={() => data && exportOverview(data, project.brand.name)}
+              disabled={!data || overview.loading || !!overview.error}
+            >
+              <ArrowDownToLine size={14} />
+              Export
+            </button>
+            {actions}
+          </>
+        }
+      />
+      <ErrorNotice
+        error={overview.error}
+        retry={() => setRetry((value) => value + 1)}
+      />
+      {overview.loading && !data ? (
+        <OverviewSkeleton
+          providers={
+            selection.providers.length || projectProviders(project).length
+          }
+        />
+      ) : (
+        data && (
+          <div className="overview-content" aria-busy={overview.loading}>
+            <div className="overview-period-note">
+              <span>
+                {dayLabel(data.period.start)} –{' '}
+                {dayLabel(data.period.end, true)}{' '}
+                <span className="overview-timezone">UTC</span>
+              </span>
+              <span role="status">
+                {overview.loading
+                  ? 'Updating results…'
+                  : overview.error
+                    ? 'Showing the last loaded results'
+                    : `${formatNumber(data.analyzed)} analyzed answers`}
+              </span>
+            </div>
+            {!data.analyzed && (
+              <div className="overview-empty-note" role="status">
+                <Info size={16} />
+                <span>
+                  No analyzed answers in this period. Adjust the filters or run
+                  a scan to collect results.
                 </span>
-                <span>{comparison.comparableCount} matched prompts</span>
-              </>
-            ) : (
-              <span>
-                {metrics.visibility.numerator} of{' '}
-                {metrics.visibility.denominator} analyzed answers
-              </span>
+              </div>
             )}
-          </div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">
-            Average rank{' '}
-            <CircleHelp size={11}>
-              <title>
-                Average position among companies in order of appearance,
-                matching iGEO. Older scans retain their original rank method.
-              </title>
-            </CircleHelp>
-            <span className="metric-icon">
-              <Hash size={17} />
-            </span>
-          </div>
-          <div className="metric-value">
-            {metrics.averageRank.value !== null && (
-              <span className="metric-unit" style={{ marginRight: 3 }}>
-                #
-              </span>
-            )}
-            {formatNumber(metrics.averageRank.value, 1)}
-          </div>
-          <div className="metric-footer">
-            <span>Across {metrics.ranked} ranked answers</span>
-          </div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">
-            Brand mentions
-            <span className="metric-icon">
-              <MessageSquareText size={16} />
-            </span>
-          </div>
-          <div className="metric-value">
-            {formatNumber(metrics.mentioned)}
-            <span className="metric-unit"> / {metrics.analyzed}</span>
-          </div>
-          <div className="metric-footer">
-            <span>
-              {metrics.analyzed} analyzed · {run.totalCount} scheduled
-            </span>
-          </div>
-        </div>
-        <div className="metric-card">
-          <div className="metric-label">
-            Total citations
-            <span className="metric-icon">
-              <Link2 size={16} />
-            </span>
-          </div>
-          <div className="metric-value">{formatNumber(metrics.citations)}</div>
-          <div className="metric-footer">
-            <span>
-              {metrics.uniqueDomains} domains · {metrics.uniqueUrls} unique URLs
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="chart-row">
-        <section className="card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">Visibility over time</h2>
-              <p className="card-description">
-                How often the selected AI provider includes your brand
-              </p>
-            </div>
-            <span className="small-select">Weekly</span>
-          </div>
-          <div className="card-content">
-            <div className="legend">
-              <span className="legend-item">
-                <span className="legend-dot" />
-                {run.snapshot.brand.name}
-              </span>
-              <span className="legend-item">
-                <span className="legend-dot light" />
-                Other configuration
-              </span>
-            </div>
-            <TrendChart points={dashboard.trend} selected={run.id} />
-            <div className="trend-note">
-              <span>
-                <TrendingUp size={11} />
-                {comparison.comparableCount} matched prompts
-              </span>
-              <span>
-                {comparison.reason ||
-                  `${metrics.visibility.denominator} analyzed answers in this scan`}
-              </span>
-            </div>
-          </div>
-        </section>
-        <section className="card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">Brand sentiment</h2>
-              <p className="card-description">
-                The tone of answers mentioning your brand
-              </p>
-            </div>
-            <span className="metric-icon">
-              <Sparkles size={14} />
-            </span>
-          </div>
-          <div className="card-content">
-            <div className="donut-layout">
-              <div className="donut">
-                <svg
-                  viewBox="0 0 160 160"
-                  role="img"
-                  aria-label={`Sentiment among ${metrics.mentioned} brand mentions`}
-                >
-                  <circle
-                    cx="80"
-                    cy="80"
-                    r="65"
-                    fill="none"
-                    stroke="#f3eff8"
-                    strokeWidth="15"
-                  />
-                  {mentionedSentiment.map(([name, count], index) => {
-                    const circumference = 2 * Math.PI * 65,
-                      length = metrics.mentioned
-                        ? (count / metrics.mentioned) * circumference
-                        : 0;
-                    const offset =
-                      (mentionedSentiment
-                        .slice(0, index)
-                        .reduce((sum, [, value]) => sum + value, 0) /
-                        (metrics.mentioned || 1)) *
-                      circumference;
-                    return (
-                      <circle
-                        key={name}
-                        cx="80"
-                        cy="80"
-                        r="65"
-                        fill="none"
-                        stroke={sentimentColors[name]}
-                        strokeWidth="15"
-                        strokeDasharray={`${Math.max(0, length - (count ? 3 : 0))} ${circumference}`}
-                        strokeDashoffset={-offset}
-                      >
-                        <title>
-                          {name}: {count}
-                        </title>
-                      </circle>
-                    );
-                  })}
-                </svg>
-                <div className="donut-center">
-                  <strong>
-                    {formatNumber(metrics.sentimentScore?.value ?? null)}
-                  </strong>
-                  <small>Sentiment score / 100</small>
+            <section className="overview-providers" aria-label="LLM mentions">
+              {data.providers.map((p) => (
+                <article className="overview-provider card" key={p.provider}>
+                  <h2>
+                    <ProviderMark provider={p.provider} />
+                    {PROVIDER_LABELS[p.provider]}
+                  </h2>
+                  <div className="overview-provider-value">
+                    <strong>{formatNumber(p.count)}</strong>
+                    <Change
+                      value={p.change}
+                      label="Change from first to last day with mentions"
+                    />
+                  </div>
+                  <p>{periodCaption}</p>
+                </article>
+              ))}
+            </section>
+            <section
+              className="card overview-stages"
+              aria-labelledby="stage-title"
+            >
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title" id="stage-title">
+                    Visibility by stage
+                  </h2>
+                  <p className="card-description">
+                    Average visibility per funnel stage
+                  </p>
                 </div>
               </div>
-              <div className="sentiment-list">
-                {mentionedSentiment.map(([name, count]) => (
-                  <div className="sentiment-item" key={name}>
-                    <span
-                      className="swatch"
-                      style={{ background: sentimentColors[name] }}
-                    />
-                    <span>{name[0].toUpperCase() + name.slice(1)}</span>
-                    <strong>{count}</strong>
+              {data.stages.length ? (
+                <div className="overview-stage-list">
+                  {data.stages.map((s) => (
+                    <div
+                      className="overview-stage"
+                      key={s.key}
+                      style={
+                        {
+                          '--stage-color':
+                            stageColors[s.key] || stageColors.unassigned,
+                        } as CSSProperties
+                      }
+                    >
+                      <div className="overview-stage-heading">
+                        <span className="overview-stage-name">
+                          <i aria-hidden="true" />
+                          {s.key === 'unassigned'
+                            ? 'No stage'
+                            : labelize(s.key)}
+                          <span className="overview-prompt-count">
+                            {formatNumber(s.promptCount)}{' '}
+                            {s.promptCount === 1 ? 'prompt' : 'prompts'}
+                          </span>
+                        </span>
+                        <strong>{formatNumber(s.visibility)}%</strong>
+                      </div>
+                      <div
+                        className="overview-stage-track"
+                        role="meter"
+                        aria-label={`${s.key === 'unassigned' ? 'No stage' : labelize(s.key)} visibility`}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={s.visibility}
+                      >
+                        <span
+                          style={{
+                            width: `${Math.max(0, Math.min(100, s.visibility))}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <Empty
+                  title="No matching active prompts"
+                  description="Stage visibility will appear when active prompts match these filters."
+                />
+              )}
+              {missingPrompts > 0 && (
+                <p className="overview-card-note">
+                  {formatNumber(missingPrompts)} active{' '}
+                  {missingPrompts === 1 ? 'prompt has' : 'prompts have'} no
+                  results in this period and count as 0%.
+                </p>
+              )}
+            </section>
+            <div className="overview-comparison-grid">
+              <section
+                className="card overview-ranking"
+                aria-labelledby="ranking-title"
+              >
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title" id="ranking-title">
+                      Industry Ranking
+                    </h2>
+                    <p className="card-description">Top brands by visibility</p>
                   </div>
-                ))}
-              </div>
-              <p className="sentiment-note">
-                Based on {metrics.mentioned} brand mentions. Absent brands are
-                excluded.
-              </p>
+                </div>
+                {data.ranking.length ? (
+                  <div
+                    className="overview-table-scroll"
+                    tabIndex={0}
+                    role="region"
+                    aria-label="Industry ranking table"
+                  >
+                    <table className="overview-ranking-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">#</th>
+                          <th scope="col">Brand</th>
+                          <th scope="col">
+                            <abbr title="Average daily leaderboard position, based on brand mentions">
+                              Rank
+                            </abbr>
+                          </th>
+                          <th scope="col">Mentions</th>
+                          <th scope="col">
+                            <abbr title="Average sentiment on the latest observed day, from 0 to 100">
+                              Sentiment
+                            </abbr>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.ranking.map((b, index) => (
+                          <tr
+                            key={b.brandId}
+                            className={b.isTarget ? 'is-target' : ''}
+                          >
+                            <td>{index + 1}</td>
+                            <th scope="row">
+                              <div className="overview-brand">
+                                <span
+                                  className="overview-brand-avatar"
+                                  style={
+                                    {
+                                      '--brand-color': brandColors[index],
+                                    } as CSSProperties
+                                  }
+                                  aria-hidden="true"
+                                >
+                                  {b.name.slice(0, 1).toUpperCase()}
+                                </span>
+                                <span
+                                  className="overview-brand-name"
+                                  title={b.domain || b.name}
+                                >
+                                  {b.name}
+                                  {b.isTarget && <small>Your brand</small>}
+                                </span>
+                              </div>
+                            </th>
+                            <td>
+                              <div className="overview-measurement">
+                                <strong>{formatNumber(b.rank, 1)}</strong>
+                                <Change
+                                  value={b.rankChange}
+                                  unit=""
+                                  label="Rank improvement from first to last observed day"
+                                />
+                              </div>
+                            </td>
+                            <td>
+                              <div className="overview-measurement">
+                                <strong>{formatNumber(b.mentions)}</strong>
+                                <Change
+                                  value={b.mentionChange}
+                                  label="Mention change from first to last observed day"
+                                />
+                              </div>
+                            </td>
+                            <td>
+                              <div className="overview-measurement">
+                                <span
+                                  className={`overview-sentiment ${b.sentiment === null ? '' : b.sentiment >= 70 ? 'positive' : b.sentiment < 40 ? 'negative' : 'neutral'}`}
+                                  title={
+                                    b.sentiment === null
+                                      ? 'No sentiment measured on the latest observed day'
+                                      : `${formatNumber(b.sentiment)} out of 100`
+                                  }
+                                >
+                                  {formatNumber(b.sentiment)}
+                                </span>
+                                <Change
+                                  value={b.sentimentChange}
+                                  unit=" pts"
+                                  label="Sentiment change from first to last observed day"
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <Empty
+                    title="No brand mentions yet"
+                    description="Brands will be ranked when your brand or a tracked competitor appears in an analyzed answer."
+                  />
+                )}
+                {data.ranking.length > 0 && (
+                  <div className="overview-card-footer">
+                    <span>Rank reflects daily mention totals.</span>
+                  </div>
+                )}
+              </section>
+              <section
+                className="card overview-trend"
+                aria-labelledby="visibility-title"
+              >
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title" id="visibility-title">
+                      Brand Visibility Over Time
+                    </h2>
+                    <p className="card-description">
+                      Daily brand mentions compared with your competitors
+                    </p>
+                  </div>
+                </div>
+                {data.ranking.length && data.trend.length ? (
+                  <BrandTrend ranking={data.ranking} points={data.trend} />
+                ) : (
+                  <Empty
+                    title="Your visibility trend starts here"
+                    description="Daily mentions will appear after a completed scan includes your brand or a competitor."
+                  />
+                )}
+              </section>
             </div>
+            <section
+              className="card overview-sources"
+              aria-labelledby="sources-title"
+            >
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title" id="sources-title">
+                    Sources
+                  </h2>
+                  <p className="card-description">
+                    The domains most frequently cited in your responses
+                  </p>
+                </div>
+              </div>
+              {data.sources.length ? (
+                <table className="overview-sources-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Source</th>
+                      <th scope="col">
+                        <abbr title="Distinct cited URLs in the selected period">
+                          Pages
+                        </abbr>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.sources.map((s) => (
+                      <tr key={s.domain}>
+                        <th scope="row">
+                          <span className="overview-source">
+                            <span
+                              className={`overview-source-icon ${s.owned ? 'owned' : ''}`}
+                            >
+                              <Globe2 size={16} />
+                            </span>
+                            <span className="overview-source-domain">
+                              {s.domain}
+                              {s.owned && <small>Your domain</small>}
+                            </span>
+                          </span>
+                        </th>
+                        <td>{formatNumber(s.pageCount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <Empty
+                  title="No cited sources in this period"
+                  description="Sources will appear when analyzed answers include citations. Try a wider date range or different filters."
+                />
+              )}
+              {data.sources.length > 0 && (
+                <p className="overview-card-note">
+                  Top {data.sources.length} domains by citation frequency. Pages
+                  counts distinct cited URLs.
+                </p>
+              )}
+            </section>
           </div>
-        </section>
+        )
+      )}
+    </div>
+  );
+}
+
+function OverviewSkeleton({ providers }: { providers: number }) {
+  return (
+    <div
+      className="overview-loading"
+      role="status"
+      aria-label="Loading dashboard results…"
+    >
+      <div className="overview-providers" aria-hidden="true">
+        {Array.from({ length: providers }, (_, i) => (
+          <div className="card overview-provider" key={i}>
+            <span className="skeleton-shape skeleton-line skeleton-width-medium" />
+            <span className="skeleton-shape skeleton-value" />
+            <span className="skeleton-shape skeleton-line" />
+          </div>
+        ))}
       </div>
-      <section className="card" style={{ marginBottom: 20 }}>
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">Visibility by section</h2>
-            <p className="card-description">
-              The four buyer stages, plus branded and unbranded discovery
-              results
-            </p>
+      <div className="card overview-stage-skeleton" aria-hidden="true">
+        <span className="skeleton-shape skeleton-title" />
+        {[75, 56, 38, 21].map((width) => (
+          <div key={width}>
+            <span className="skeleton-shape skeleton-line skeleton-width-short" />
+            <span
+              className="skeleton-shape skeleton-line"
+              style={{ width: `${width}%`, maxWidth: 'none' }}
+            />
           </div>
-        </div>
-        <div className="table-scroll">
+        ))}
+      </div>
+      <div className="overview-comparison-grid">
+        <Skeleton variant="table" label="Loading brand rankings…" />
+        <Skeleton variant="chart" label="Loading visibility history…" />
+      </div>
+    </div>
+  );
+}
+
+function BrandTrend({
+  ranking,
+  points,
+}: {
+  ranking: DashboardOverview['ranking'];
+  points: DashboardOverview['trend'];
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const chartId = useId();
+  const [width, setWidth] = useState(560);
+  const [active, setActive] = useState<number | null>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setWidth(Math.max(200, entry.contentRect.width)),
+    );
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => setActive(null), [points]);
+  const height = 264,
+    left = 40,
+    right = width - 14,
+    top = 20,
+    bottom = 226;
+  const times = points.map((p) =>
+    Date.parse(`${p.date.slice(0, 10)}T12:00:00Z`),
+  );
+  const first = times[0],
+    last = times.at(-1)!;
+  const x = (i: number) =>
+    first === last
+      ? (left + right) / 2
+      : left + ((times[i] - first) / (last - first)) * (right - left);
+  const maximum = Math.max(
+    1,
+    ...points.flatMap((p) => ranking.map((b) => p.mentions[b.brandId] || 0)),
+  );
+  const step = Math.max(1, Math.ceil(maximum / 4));
+  const ceiling = step * 4;
+  const y = (count: number) => bottom - (count / ceiling) * (bottom - top);
+  const tickCount = Math.min(width < 400 ? 3 : 5, points.length);
+  const ticks = [
+    ...new Set(
+      Array.from({ length: tickCount }, (_, i) =>
+        Math.round((i * (points.length - 1)) / Math.max(1, tickCount - 1)),
+      ),
+    ),
+  ];
+  const visibleActive =
+    active === null ? null : Math.min(active, points.length - 1);
+  const selected = visibleActive === null ? null : points[visibleActive];
+  const activeDescription = selected
+    ? `${dayLabel(selected.date, true)}. ${ranking.map((b) => `${b.name}: ${selected.mentions[b.brandId] || 0} mentions`).join('. ')}`
+    : 'Use left and right arrow keys to explore daily mentions.';
+  return (
+    <div className="overview-trend-body">
+      <div className="overview-chart-legend">
+        {ranking.map((b, i) => (
+          <span key={b.brandId}>
+            <i style={{ background: brandColors[i] }} />
+            {b.name}
+          </span>
+        ))}
+      </div>
+      <div
+        className="overview-chart"
+        ref={ref}
+        tabIndex={0}
+        role="group"
+        aria-label="Daily brand mentions chart"
+        aria-describedby={`${chartId}-hint`}
+        onFocus={() => setActive((value) => value ?? points.length - 1)}
+        onBlur={() => setActive(null)}
+        onKeyDown={(e) => {
+          if (
+            ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(e.key)
+          ) {
+            e.preventDefault();
+            setActive((value) =>
+              e.key === 'Escape'
+                ? null
+                : e.key === 'Home'
+                  ? 0
+                  : e.key === 'End'
+                    ? points.length - 1
+                    : Math.max(
+                        0,
+                        Math.min(
+                          points.length - 1,
+                          (value ?? points.length - 1) +
+                            (e.key === 'ArrowLeft' ? -1 : 1),
+                        ),
+                      ),
+            );
+          }
+        }}
+        onPointerLeave={() => setActive(null)}
+      >
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          width="100%"
+          height={height}
+          role="img"
+          aria-label="Mention counts for the top brands on each observed day"
+          onPointerMove={(event) => {
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const pointerX =
+              ((event.clientX - bounds.left) / bounds.width) * width;
+            let index = 0;
+            for (let i = 1; i < points.length; i++)
+              if (Math.abs(x(i) - pointerX) < Math.abs(x(index) - pointerX))
+                index = i;
+            setActive(index);
+          }}
+        >
+          {[0, 1, 2, 3, 4].map((n) => (
+            <g key={n}>
+              <line
+                x1={left}
+                x2={right}
+                y1={y(n * step)}
+                y2={y(n * step)}
+                className="overview-gridline"
+              />
+              <text x={left - 9} y={y(n * step) + 4} textAnchor="end">
+                {formatNumber(n * step)}
+              </text>
+            </g>
+          ))}
+          {ticks.map((i) => (
+            <text
+              key={i}
+              x={x(i)}
+              y={bottom + 26}
+              textAnchor={
+                points.length === 1
+                  ? 'middle'
+                  : i === 0
+                    ? 'start'
+                    : i === points.length - 1
+                      ? 'end'
+                      : 'middle'
+              }
+            >
+              {dayLabel(points[i].date)}
+            </text>
+          ))}
+          {visibleActive !== null && (
+            <line
+              x1={x(visibleActive)}
+              x2={x(visibleActive)}
+              y1={top}
+              y2={bottom}
+              className="overview-active-line"
+            />
+          )}
+          {ranking.map((b, i) => (
+            <g key={b.brandId}>
+              <polyline
+                points={points
+                  .map((p, j) => `${x(j)},${y(p.mentions[b.brandId] || 0)}`)
+                  .join(' ')}
+                fill="none"
+                stroke={brandColors[i]}
+                strokeWidth="2.5"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+              {points.map((p, j) => (
+                <circle
+                  key={p.date}
+                  cx={x(j)}
+                  cy={y(p.mentions[b.brandId] || 0)}
+                  r={visibleActive === j ? 5 : points.length === 1 ? 5 : 3}
+                  fill={brandColors[i]}
+                  stroke="white"
+                  strokeWidth="1.5"
+                >
+                  <title>{`${b.name}, ${dayLabel(p.date)}: ${formatNumber(p.mentions[b.brandId] || 0)} mentions`}</title>
+                </circle>
+              ))}
+            </g>
+          ))}
+        </svg>
+        {selected && (
+          <div
+            className="overview-chart-tooltip"
+            style={{
+              left: Math.min(
+                Math.max(10, x(visibleActive!) - 90),
+                Math.max(10, width - 210),
+              ),
+            }}
+            aria-hidden="true"
+          >
+            <strong>{dayLabel(selected.date, true)}</strong>
+            {ranking.map((b, i) => (
+              <span key={b.brandId}>
+                <i style={{ background: brandColors[i] }} />
+                {b.name}
+                <b>{formatNumber(selected.mentions[b.brandId] || 0)}</b>
+              </span>
+            ))}
+          </div>
+        )}
+        <span
+          className="visually-hidden"
+          id={`${chartId}-hint`}
+          aria-live="polite"
+        >
+          {activeDescription}
+        </span>
+      </div>
+      <details className="overview-chart-data">
+        <summary>
+          View daily data{' '}
+          <span>
+            {points.length} observed {points.length === 1 ? 'day' : 'days'} ·
+            UTC
+          </span>
+        </summary>
+        <div
+          className="overview-table-scroll"
+          tabIndex={0}
+          role="region"
+          aria-label="Daily mention values"
+        >
           <table>
             <thead>
               <tr>
-                <th>Section</th>
-                <th>Prompts</th>
-                <th>Analyzed</th>
-                <th>Visibility</th>
-                <th>Rank</th>
-                <th>Sentiment / 100</th>
+                <th scope="col">Date</th>
+                {ranking.map((b) => (
+                  <th scope="col" key={b.brandId}>
+                    {b.name}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {[...dashboard.groups.stages, ...dashboard.groups.branding].map(
-                (group) => (
-                  <tr key={group.key}>
-                    <td>{group.key[0].toUpperCase() + group.key.slice(1)}</td>
-                    <td>{group.promptCount}</td>
-                    <td>{group.metrics.analyzed}</td>
-                    <td>{percent(group.metrics.visibility.value)}</td>
-                    <td>{formatNumber(group.metrics.averageRank.value, 1)}</td>
-                    <td>{formatNumber(group.metrics.sentimentScore.value)}</td>
-                  </tr>
-                ),
-              )}
+              {points.map((p) => (
+                <tr key={p.date}>
+                  <th scope="row">{dayLabel(p.date, true)}</th>
+                  {ranking.map((b) => (
+                    <td key={b.brandId}>
+                      {formatNumber(p.mentions[b.brandId] || 0)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-      </section>
-      <div className="lower-row">
-        <section className="card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">Prompt insights</h2>
-              <p className="card-description">
-                A closer look at the latest answers
-              </p>
-            </div>
-            <button className="button button-quiet" onClick={onMentions}>
-              View all <ArrowUpRight size={13} />
-            </button>
-          </div>
-          {recent.error && (
-            <div className="card-content">
-              <ErrorNotice error={recent.error} />
-            </div>
-          )}
-          {!recent.data && recent.loading ? (
-            <Spinner label="Loading prompts…" />
-          ) : !recent.data?.items.length ? (
-            <Empty
-              title="No answers yet"
-              description="Answers will appear as the scan progresses."
-            />
-          ) : (
-            <div className="table-scroll dashboard-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Prompt</th>
-                    <th>Rank</th>
-                    <th>Sentiment</th>
-                    <th>
-                      <span className="visually-hidden">Open</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recent.data.items.slice(0, 5).map((result) => (
-                    <tr key={result.responseId}>
-                      <td className="prompt-cell">
-                        <button
-                          className="row-button"
-                          onClick={() => onResponse(result.responseId)}
-                        >
-                          <span>
-                            <span className="prompt-name">
-                              {result.prompt.text}
-                            </span>
-                            <span className="prompt-category">
-                              {result.prompt.branded ? 'Branded' : 'Discovery'}{' '}
-                              prompt
-                            </span>
-                          </span>
-                        </button>
-                      </td>
-                      <td>
-                        <span className="rank">
-                          {brandRank(result.target) != null
-                            ? `#${brandRank(result.target)}`
-                            : '—'}
-                        </span>
-                      </td>
-                      <td>
-                        {result.status === 'succeeded' ? (
-                          <SentimentScore brand={result.target} />
-                        ) : (
-                          <Badge value={result.status} />
-                        )}
-                      </td>
-                      <td>
-                        <button
-                          className="table-link"
-                          onClick={() => onResponse(result.responseId)}
-                          aria-label={`Read answer to ${result.prompt.text}`}
-                        >
-                          <ArrowUpRight size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="card-footer">
-            <span>{run.totalCount} prompts monitored every week</span>
-          </div>
-        </section>
-        <section className="card">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">Most cited sources</h2>
-              <p className="card-description">
-                The domains shaping your brand's answers
-              </p>
-            </div>
-            <button className="button button-quiet" onClick={onSources}>
-              View all <ArrowUpRight size={13} />
-            </button>
-          </div>
-          <div className="card-content">
-            {dashboard.topSources.length ? (
-              dashboard.topSources
-                .slice(0, 5)
-                .map((source, index) => (
-                  <SourcePreview
-                    key={source.id}
-                    source={source}
-                    index={index}
-                    onClick={onSources}
-                  />
-                ))
-            ) : (
-              <Empty
-                title="No citations captured"
-                description="This scan has no API-returned citations yet."
-              />
-            )}
-          </div>
-          <button
-            className="card-footer"
-            style={{ width: '100%' }}
-            onClick={onSources}
-          >
-            Explore all sources <ArrowRight size={12} />
-          </button>
-        </section>
-      </div>
-    </>
-  );
-}
-
-function SourcePreview({
-  source,
-  index,
-  onClick,
-}: {
-  source: SourceRow;
-  index: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className="source-row"
-      style={{ width: '100%', textAlign: 'left' }}
-      onClick={onClick}
-    >
-      <span
-        className="domain-icon"
-        style={{
-          background: ['#f6f0fb', '#eff7f4', '#fff4f0', '#f1f3fa', '#faf5eb'][
-            index % 5
-          ],
-        }}
-      >
-        {source.domain[0].toUpperCase()}
-      </span>
-      <span className="domain-info">
-        <span className="domain-name">{source.domain}</span>
-        <span className="domain-meta">
-          {source.uniqueUrlCount} pages ·{' '}
-          {source.owned ? 'Your domain' : 'Third-party source'}
-        </span>
-      </span>
-      <span className="coverage-bar">
-        <span style={{ width: `${source.coverage || 0}%` }} />
-      </span>
-      <span className="source-count">{percent(source.coverage)}</span>
-    </button>
-  );
-}
-
-function TrendChart({
-  points,
-  selected,
-}: {
-  points: TrendPoint[];
-  selected: string;
-}) {
-  const ordered = [...points]
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(-8);
-  if (!ordered.length)
-    return (
-      <Empty
-        title="Your trend starts with this scan"
-        description="Weekly scans will build a clearer picture of your visibility."
-      />
-    );
-  const width = 570,
-    height = 195,
-    left = 31,
-    right = 11,
-    top = 12,
-    bottom = 29;
-  const x = (index: number) =>
-    left +
-    (ordered.length === 1 ? 0.5 : index / (ordered.length - 1)) *
-      (width - left - right);
-  const y = (value: number) =>
-    top + ((100 - value) / 100) * (height - top - bottom);
-  const segments: string[] = [];
-  let segment = '';
-  ordered.forEach((point, index) => {
-    if (
-      point.visibility === null ||
-      (!point.comparable && point.runId !== selected)
-    ) {
-      if (segment) segments.push(segment);
-      segment = '';
-      return;
-    }
-    segment += `${segment ? ' L' : 'M'}${x(index)},${y(point.visibility)}`;
-  });
-  if (segment) segments.push(segment);
-  return (
-    <div className="chart-wrap">
-      <svg
-        className="trend-svg"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label="Weekly brand visibility, as a percentage of successfully analyzed answers"
-      >
-        <defs>
-          <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#a78bdd" stopOpacity=".18" />
-            <stop offset="100%" stopColor="#a78bdd" stopOpacity=".01" />
-          </linearGradient>
-        </defs>
-        {[0, 25, 50, 75, 100].map((value) => (
-          <g key={value}>
-            <line
-              className="gridline"
-              x1={left}
-              y1={y(value)}
-              x2={width - right}
-              y2={y(value)}
-            />
-            <text x={left - 10} y={y(value) + 3} textAnchor="end">
-              {value}%
-            </text>
-          </g>
-        ))}
-        {segments.map((line, index) => (
-          <path
-            key={index}
-            d={line}
-            stroke="#a38ad2"
-            fill="none"
-            strokeWidth="2.4"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        ))}
-        {ordered.map((point, index) => (
-          <g key={point.runId}>
-            <text x={x(index)} y={height - 5} textAnchor="middle">
-              {formatDate(point.date)}
-            </text>
-            {point.visibility !== null && (
-              <circle
-                cx={x(index)}
-                cy={y(point.visibility)}
-                r={point.runId === selected ? 5 : 3.2}
-                fill={
-                  point.comparable || point.runId === selected
-                    ? '#a38ad2'
-                    : '#d8cfdf'
-                }
-                stroke="white"
-                strokeWidth="2"
-              >
-                <title>
-                  {formatDate(point.date)}: {percent(point.visibility)} ·{' '}
-                  {point.analyzed}/{point.total} analyzed
-                  {point.comparable ? '' : ' · Different configuration'}
-                </title>
-              </circle>
-            )}
-          </g>
-        ))}
-      </svg>
+      </details>
     </div>
   );
 }

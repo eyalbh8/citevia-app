@@ -83,7 +83,7 @@ export function monitoringPeriod(
     timezone: 'UTC',
   };
 }
-function filtersFor(q: URLSearchParams, project: Project): MonitoringFilters {
+export function filtersFor(q: URLSearchParams, project: Project): MonitoringFilters {
   const supported = projectProviders(project).map((p) => p.provider);
   const providers = [
     ...new Set((q.get('providers') || '').split(',').filter(Boolean)),

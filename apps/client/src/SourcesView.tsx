@@ -1,3 +1,4 @@
+import { Skeleton } from './Loading';
 import { useEffect, useState } from 'react';
 import {
   ArrowRight,
@@ -19,7 +20,6 @@ import {
   formatDate,
   formatNumber,
   percent,
-  Spinner,
 } from './components';
 
 export default function SourcesView({
@@ -140,8 +140,8 @@ export default function SourcesView({
           />
         </div>
       ) : loading && !data ? (
-        <Spinner label="Mapping the sources behind your answers…" />
-      ) : !data?.items.length ? (
+        <Skeleton variant="cards" rows={3} label="Mapping the sources behind your answers…" />
+      ) : !data && error ? null : !data?.items.length ? (
         <div className="card">
           <Empty
             title="No sources match these filters"
@@ -295,7 +295,7 @@ function DomainCard({
           </div>
           <ErrorNotice error={error} />
           {loading && !data ? (
-            <Spinner label="Loading pages…" />
+            <Skeleton variant="table" label="Loading pages…" />
           ) : (
             data?.items.map((url) => (
               <div className="source-url" key={url.id}>
@@ -378,7 +378,7 @@ function SourceAnswers({
       )}
       <ErrorNotice error={error} />
       {loading && !data ? (
-        <Spinner label="Finding answers…" />
+        <Skeleton variant="table" label="Finding answers…" />
       ) : data?.items.length ? (
         <div className="citation-list">
           {data.items.map((result) => (
@@ -402,12 +402,12 @@ function SourceAnswers({
               </div>
               <ArrowUpRight
                 size={14}
-                style={{ color: '#a186b2', marginTop: 3 }}
+                style={{ color: 'var(--primary, #3930cf)', marginTop: 3 }}
               />
             </button>
           ))}
         </div>
-      ) : (
+      ) : error ? null : (
         <Empty
           title="No answers found"
           description="This source has no matching answers in the selected scan."

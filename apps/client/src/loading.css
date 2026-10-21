@@ -1,0 +1,95 @@
+.content-skeleton {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+}
+.skeleton-visual { display: grid; gap: 20px; }
+.skeleton-shape {
+  display: block;
+  flex-shrink: 0;
+  background: var(--skeleton, #e9eaf5);
+  border-radius: 6px;
+  animation: skeleton-breathe 1.8s ease-in-out infinite;
+}
+.skeleton-line { width: 100%; max-width: 420px; height: 12px; }
+.skeleton-line-small { height: 8px; }
+.skeleton-width-medium { width: 65%; max-width: 240px; }
+.skeleton-width-short { width: 36%; max-width: 120px; }
+.skeleton-title { width: 48%; max-width: 280px; height: 24px; }
+.skeleton-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line, #e6e5ef);
+  border-radius: var(--radius, 18px);
+  background: var(--surface, #fff);
+}
+.skeleton-table-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  min-height: 52px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line, #e6e5ef);
+}
+.skeleton-table-row {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  min-height: 78px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line, #e6e5ef);
+}
+.skeleton-table-row:last-child { border-bottom: 0; }
+.skeleton-avatar { width: 32px; height: 32px; border-radius: 9px; }
+.skeleton-avatar-large { width: 44px; height: 44px; border-radius: 12px; }
+.skeleton-copy { display: grid; flex: 1; min-width: 0; gap: 11px; }
+.skeleton-pill { width: 72px; height: 24px; border-radius: 20px; }
+.skeleton-cell { width: 12%; max-width: 90px; }
+.skeleton-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.skeleton-metric { display: grid; align-content: space-between; gap: 24px; min-height: 160px; padding: 24px; }
+.skeleton-value { width: 80px; height: 34px; }
+.skeleton-chart-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; }
+.skeleton-chart { display: grid; gap: 16px; padding: 24px; }
+.skeleton-chart-plot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 10px;
+  height: 180px;
+  margin-top: 12px;
+  padding: 20px 8px 0;
+  border-bottom: 1px solid var(--line, #e6e5ef);
+  background: repeating-linear-gradient(to top, transparent 0, transparent 44px, var(--line, #e6e5ef) 44px, var(--line, #e6e5ef) 45px);
+}
+.skeleton-chart-bar { flex: 1; max-width: 42px; border-radius: 5px 5px 0 0; }
+.skeleton-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.skeleton-card { display: grid; gap: 20px; min-height: 230px; padding: 24px; }
+.skeleton-card-heading { display: flex; gap: 14px; align-items: center; margin-bottom: 6px; }
+.skeleton-form, .skeleton-detail { display: grid; gap: 20px; padding: 28px; }
+.skeleton-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 12px 0; }
+.skeleton-field { display: grid; gap: 10px; }
+.skeleton-input { width: 100%; height: 42px; border-radius: 8px; }
+.skeleton-button { width: 132px; height: 40px; margin-top: 6px; }
+.skeleton-detail-tags { display: flex; gap: 10px; margin: 4px 0 12px; }
+.skeleton-paragraph { display: grid; gap: 12px; margin-bottom: 12px; }
+.skeleton-paragraph .skeleton-line { max-width: none; }
+.skeleton-page-heading { display: grid; gap: 14px; padding: 8px 0 12px; }
+.skeleton-caption { display: block; margin-top: 16px; color: var(--muted, #71758a); font-size: 12px; line-height: 1.5; text-align: center; }
+.card > .content-skeleton { padding: 0; }
+.card > .content-skeleton .skeleton-panel { border: 0; border-radius: 0; }
+.card > .content-skeleton .skeleton-caption { margin-bottom: 18px; }
+@keyframes skeleton-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+@media (max-width: 1080px) { .skeleton-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .skeleton-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .skeleton-metric { min-height: 144px; padding: 18px; }
+  .skeleton-chart-grid, .skeleton-card-grid, .skeleton-fields { grid-template-columns: minmax(0, 1fr); }
+  .skeleton-table-row { gap: 12px; padding: 18px 16px; }
+  .skeleton-table-heading { padding-inline: 16px; }
+  .skeleton-cell { display: none; }
+  .skeleton-form, .skeleton-detail { padding: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .skeleton-shape { animation: none; } }
+
+@media (max-width: 340px) { .skeleton-metrics { grid-template-columns: minmax(0, 1fr); } }

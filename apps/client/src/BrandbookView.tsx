@@ -1,8 +1,9 @@
+import { Skeleton } from './Loading';
 import { useState, type FormEvent } from 'react';
 import { ExternalLink, Save } from 'lucide-react';
 import type { Brandbook } from '@citevia/core';
 import { request, useApi } from './api';
-import { Empty, ErrorNotice, Spinner, formatDate } from './components';
+import { Empty, ErrorNotice, formatDate } from './components';
 type BookData = { brandbook: Brandbook | null; version: number; role: string };
 export default function BrandbookView({
   path,
@@ -21,9 +22,9 @@ export default function BrandbookView({
   );
   return (
     <>
-      <ErrorNotice error={error} />
+      <ErrorNotice error={error} retry={onSaved} />
       {loading && !data ? (
-        <Spinner label="Loading brandbook…" />
+        <Skeleton variant="form" label="Loading brandbook…" />
       ) : data?.brandbook ? (
         <BrandbookForm
           key={`${path}:${data.version}`}
@@ -32,7 +33,7 @@ export default function BrandbookView({
           onSaved={onSaved}
           notify={notify}
         />
-      ) : (
+      ) : error ? null : (
         <section className="card">
           <Empty
             title="Your brandbook is being prepared"

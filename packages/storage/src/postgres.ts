@@ -8,6 +8,7 @@ import {
   reportingCitations,
   type Analysis,
   type CapturedAnswer,
+  type Citation,
   type Membership,
   type OnboardingJob,
   type Project,
@@ -25,6 +26,26 @@ const data = <T>(rows: Record<string, unknown>[]): T | null =>
 export class PostgresRepository extends PostgresUsers implements Repository {
   constructor(db: SqlDatabase) {
     super(db);
+  }
+  async listNativeCitations(projectId: string, captureKeys: string[]) {
+    const keys = [...new Set(captureKeys)];
+    const citations: { captureKey: string; citations: Citation[] }[] = [];
+    for (let index = 0; index < keys.length; index += 500) {
+      const { rows } = await this.db.query(
+        `SELECT cap.capture_key,
+          COALESCE(jsonb_agg(c.data->'citations') FILTER (WHERE c.normalized_url IS NOT NULL),'[]'::jsonb) AS citations
+        FROM citevia_citation_captures cap
+        LEFT JOIN citevia_response_citations c ON c.project_id=cap.project_id AND c.capture_key=cap.capture_key
+        WHERE cap.project_id=$1 AND cap.capture_key=ANY($2::text[])
+        GROUP BY cap.capture_key`,
+        [projectId, keys.slice(index, index + 500)],
+      );
+      citations.push(...rows.map(row => ({
+        captureKey: String(row.capture_key),
+        citations: (row.citations as Citation[][]).flat(),
+      })));
+    }
+    return citations;
   }
   listTrackedUrls(projectId: string) { return tracking.listTrackedUrls(this.db,projectId); }
   registerTrackedUrl(url: TrackedUrl) { return tracking.registerTrackedUrl(this.db,url); }

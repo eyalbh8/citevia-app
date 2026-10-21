@@ -1,3 +1,4 @@
+import { Skeleton } from './Loading';
 import {
   PROVIDER_LABELS,
   snapshotProvider,
@@ -23,7 +24,6 @@ import {
   ErrorNotice,
   ExternalLink,
   formatDate,
-  Spinner,
 } from './components';
 
 export default function ResponseDrawer({
@@ -45,7 +45,7 @@ export default function ResponseDrawer({
     <Drawer title="Answer details" onClose={onClose}>
       <ErrorNotice error={error} />
       {loading && !data ? (
-        <Spinner label="Opening the original answer…" />
+        <Skeleton variant="detail" rows={3} label="Opening the original answer…" />
       ) : (
         data && <ResponseDetailContent data={data} />
       )}

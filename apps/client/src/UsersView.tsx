@@ -1,3 +1,4 @@
+import { Skeleton } from './Loading';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowRight, Plus, Search, ShieldCheck, UserMinus } from 'lucide-react';
 import type { Page, Project, User, UserAccount } from '@citevia/core';
@@ -8,7 +9,6 @@ import {
   Empty,
   ErrorNotice,
   formatDate,
-  Spinner,
 } from './components';
 
 export default function UsersView({
@@ -106,7 +106,7 @@ export default function UsersView({
       </section>
       <section className="card" style={{ marginTop: 20 }}>
         <div className="filter-bar">
-          <label className="search-box">
+          <label className="search-field">
             <Search size={14} />
             <input
               aria-label="Search users"
@@ -116,12 +116,12 @@ export default function UsersView({
               onChange={(e) => setSearch(e.target.value)}
             />
           </label>
-          <span className="scan-options">{users.data?.total ?? 0} users</span>
+          <span className="scan-options">{users.data?.total ?? '—'} users</span>
         </div>
-        <ErrorNotice error={users.error} />
+        <ErrorNotice error={users.error} retry={() => setRevision((value) => value + 1)} />
         {users.loading && !users.data ? (
-          <Spinner label="Loading users…" />
-        ) : !users.data?.items.length ? (
+          <Skeleton variant="table" label="Loading users…" />
+        ) : !users.data && users.error ? null : !users.data?.items.length ? (
           <Empty
             title="No matching users"
             description="Try another search or import an existing Descope identity."
@@ -142,7 +142,7 @@ export default function UsersView({
                 <tbody>
                   {users.data.items.map((user) => (
                     <tr key={user.id}>
-                      <td>
+                      <td className="user-identity">
                         <strong>
                           {[user.name, user.lastName]
                             .filter(Boolean)
@@ -284,9 +284,9 @@ function UserAccess({
     user = record?.user;
   return (
     <Drawer title="User access" onClose={busy ? () => {} : onClose}>
-      <ErrorNotice error={loaded.error || error} />
+      <ErrorNotice error={loaded.error || error} retry={() => setRevision((value) => value + 1)} />
       {!record || !user ? (
-        <Spinner label="Loading access…" />
+        loaded.loading && <Skeleton variant="form" rows={4} label="Loading access…" />
       ) : (
         <div className="form-stack">
           <div>

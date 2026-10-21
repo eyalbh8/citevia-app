@@ -1,5 +1,6 @@
 import type {
   CapturedAnswer,
+  Citation,
   Analysis,
   Membership,
   OnboardingJob,
@@ -14,6 +15,11 @@ import type {
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 export interface Repository extends UserRepository {
+  /** Provider-qualified capture keys. Includes indexed captures with zero native citations. */
+  listNativeCitations(
+    projectId: string,
+    captureKeys: string[],
+  ): Promise<{ captureKey: string; citations: Citation[] }[]>;
   listTrackedUrls(projectId: string): Promise<TrackedUrl[]>;
   registerTrackedUrl(url: TrackedUrl): Promise<TrackedUrl>;
   updateTrackedUrl(url: TrackedUrl, expectedVersion: number): Promise<boolean>;

@@ -1,3 +1,4 @@
+import { Skeleton } from './Loading';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import {
   Archive,
@@ -40,7 +41,6 @@ import {
   formatDate,
   labelize,
   Pagination,
-  Spinner,
 } from './components';
 import PromptAnswersDrawer from './PromptAnswersDrawer';
 import './prompts.css';
@@ -179,10 +179,11 @@ export default function PromptsView({
   const project = account.data;
   if (!project)
     return (
-      <>
+      <div className="prompts-screen">
+        <div className="prompts-filter-header"><h1>Prompts</h1></div>
         <ErrorNotice error={account.error} />
-        {account.loading && <Spinner label="Loading prompts…" />}
-      </>
+        {account.loading && <Skeleton variant="table" label="Loading prompts…" />}
+      </div>
     );
   const active = project.prompts.filter((prompt) => prompt.active).length;
   const pendingSetup = Boolean(
@@ -539,7 +540,7 @@ export default function PromptsView({
           </div>
         )}
         {scores.loading && !scores.data ? (
-          <Spinner label="Loading prompt measurements…" />
+          <Skeleton variant="table" label="Loading prompt measurements…" />
         ) : !filtered.length ? (
           <Empty
             title={rows.length ? 'No matching prompts' : 'No prompts yet'}

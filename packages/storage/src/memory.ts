@@ -53,6 +53,13 @@ const copy = <T>(value: T): T => structuredClone(value);
 export class MemoryRepository implements Repository {
   protected state: State = blank();
   private tail: Promise<unknown> = Promise.resolve();
+  listNativeCitations(projectId: string, captureKeys: string[]) {
+    return this.operation(() => [...new Set(captureKeys)].flatMap(captureKey => {
+      const measurement = this.state.citationCaptures?.[key(projectId, captureKey)];
+      if (!measurement || measurement.capture.projectId !== projectId) return [];
+      return [{ captureKey, citations: measurement.evidence.flatMap(item => item.citations) }];
+    }));
+  }
   createOnboarding(project: Project, job: OnboardingJob, maxAccounts: number) {
     return this.operation(() => {
       this.state.onboarding ||= {};
