@@ -636,22 +636,10 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         return response({ items: stored.prompts, version: stored.version });
       if (tail === 'prompt-metrics' && method === 'GET') {
         if (!query.has('runId')) {
-          let start: Date, end: Date;
-          if (query.get('days') === 'custom') {
-            const period = monitoringPeriod(query, now());
-            start = new Date(period.start);
+          // Shared date controls must select the same original answers in every view.
+          const period = monitoringPeriod(query, now());
+          const start = new Date(period.start),
             end = new Date(period.end);
-          } else {
-            const days = Number(query.get('days') || '7');
-            if (![1, 7, 14, 30, 90].includes(days))
-              throw new HttpError(
-                400,
-                'INVALID_PERIOD',
-                'Choose 24 hours, 7, 14, 30, 90 days or a custom range.',
-              );
-            end = now();
-            start = new Date(end.getTime() - days * 86400000 + 1);
-          }
           const duration = end.getTime() - start.getTime() + 1;
           const previousStart = new Date(start.getTime() - duration);
           const history = await repository.listPromptHistory(

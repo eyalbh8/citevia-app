@@ -334,6 +334,53 @@ it('uses inclusive custom UTC dates and the immediately preceding equal-length c
   });
 });
 
+it.each([
+  ['1', '2026-10-20T15:00:00.001Z'],
+  ['7', '2026-10-15T00:00:00.000Z'],
+  ['14', '2026-10-08T00:00:00.000Z'],
+  ['30', '2026-09-22T00:00:00.000Z'],
+  ['90', '2026-07-24T00:00:00.000Z'],
+])('uses the same %s-day answer window across prompts, dashboard and mentions', async (days, expectedStart) => {
+  const repository = new MemoryRepository(), f = fixture();
+  const at = '2026-10-21T15:00:00.000Z';
+  await repository.syncUser(testIdentity('shared-period-owner'));
+  await repository.saveProject(f.project, null);
+  await repository.putMembership({
+    projectId: f.project.id,
+    userId: 'shared-period-owner',
+    role: 'owner',
+  });
+  for (const timestamp of [
+    new Date(Date.parse(expectedStart) - 1).toISOString(),
+    expectedStart,
+    at,
+    new Date(Date.parse(at) + 1).toISOString(),
+  ]) {
+    const { run, result } = f.observation(timestamp);
+    await repository.createRun(run, [result]);
+  }
+  const api = createApi(
+    { repository, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() },
+    { mode: 'live', now: () => new Date(at) },
+  );
+  const call = async (tail: string) => {
+    const response = await api(
+      new Request(`http://test/v1/projects/${f.project.id}/${tail}?days=${days}`),
+      testIdentity('shared-period-owner'),
+    );
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const [prompts, dashboard, mentions] = await Promise.all([
+    call('prompt-metrics'), call('dashboard/overview'), call('mentions/summary'),
+  ]);
+  for (const report of [prompts, dashboard, mentions])
+    expect(report.period).toMatchObject({ start: expectedStart, end: at });
+  expect(prompts.items[0]).toMatchObject({ measurementCount: 2, previousMeasurementCount: 1 });
+  expect(dashboard.analyzed).toBe(2);
+  expect(mentions.total).toBe(2);
+});
+
 it('round-trips prompt metadata, original observations and API averages through PostgreSQL', async () => {
   const db = await localPostgres();
   try {

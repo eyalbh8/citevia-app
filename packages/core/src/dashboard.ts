@@ -93,11 +93,14 @@ const mean = (values: number[]) =>
     : null;
 const rounded = (value: number | null, digits = 2) =>
   value === null ? null : Number(value.toFixed(digits));
-function dailyChange(values: Map<string, number>): number | null {
-  const dates = [...values.keys()].sort();
+function dailyChange(
+  values: Map<string, number>,
+  observedDays: Iterable<string>,
+): number | null {
+  const dates = [...observedDays].sort();
   if (!dates.length) return null;
-  const first = values.get(dates[0])!,
-    last = values.get(dates.at(-1)!)!;
+  const first = values.get(dates[0]) || 0,
+    last = values.get(dates.at(-1)!) || 0;
   return rounded(first ? ((last - first) / first) * 100 : last ? 100 : 0);
 }
 
@@ -116,6 +119,12 @@ export function aggregateDashboardOverview(
   );
   const brands = [project.brand, ...project.competitors];
   const days = new Set<string>();
+  const providerDays = new Map<ScanProvider, Set<string>>();
+  const activePrompts = new Map(
+    project.prompts
+      .filter((prompt) => prompt.active)
+      .map((prompt) => [prompt.id, prompt]),
+  );
   // A mention is a distinct prompt text / provider / scan, matching iGEO's dashboard.
   const mentions = new Map<
     string,
@@ -136,13 +145,24 @@ export function aggregateDashboardOverview(
     const provider = snapshotProvider(run.snapshot);
     const day = result.capturedAt!.slice(0, 10);
     days.add(day);
-    const prompt = promptResults.get(result.promptId) || {
-      analyzed: 0,
-      mentioned: 0,
-    };
-    prompt.analyzed++;
-    if (result.target?.mentioned) prompt.mentioned++;
-    promptResults.set(result.promptId, prompt);
+    const observed = providerDays.get(provider) || new Set<string>();
+    observed.add(day);
+    providerDays.set(provider, observed);
+    const currentPrompt = activePrompts.get(result.promptId);
+    // Saved answers remain in historical totals, but cannot measure an edited question.
+    if (
+      currentPrompt &&
+      currentPrompt.version === result.prompt.version &&
+      currentPrompt.text === result.prompt.text
+    ) {
+      const prompt = promptResults.get(result.promptId) || {
+        analyzed: 0,
+        mentioned: 0,
+      };
+      prompt.analyzed++;
+      if (result.target?.mentioned) prompt.mentioned++;
+      promptResults.set(result.promptId, prompt);
+    }
     const measured = new Map<string, BrandAnalysis>(
       (result.brands || []).map((brand) => [brand.brandId, brand]),
     );
@@ -222,8 +242,7 @@ export function aggregateDashboardOverview(
       const brandRanks = ranks.get(brand.id) || new Map<string, number>();
       const rankDates = [...brandRanks.keys()].sort();
       const scores = sentiments.get(brand.id) || new Map<string, number[]>();
-      const mentionDates = [...(daily.get(brand.id)?.keys() || [])].sort();
-      const firstSentiment = mean(scores.get(mentionDates[0]) || []);
+      const firstSentiment = mean(scores.get(observedDays[0]) || []);
       const lastSentiment = mean(scores.get(observedDays.at(-1)!) || []);
       return {
         brandId: brand.id,
@@ -235,8 +254,8 @@ export function aggregateDashboardOverview(
           ? brandRanks.get(rankDates[0])! - brandRanks.get(rankDates.at(-1)!)!
           : null,
         mentions: mentions.get(brand.id)?.size || 0,
-        mentionChange: dailyChange(daily.get(brand.id) || new Map()),
-        sentiment: rounded(lastSentiment, 0),
+        mentionChange: dailyChange(daily.get(brand.id) || new Map(), days),
+        sentiment: rounded(mean([...scores.values()].flat()), 0),
         sentimentChange:
           firstSentiment !== null && lastSentiment !== null
             ? Math.round(lastSentiment) - Math.round(firstSentiment)
@@ -294,7 +313,11 @@ export function aggregateDashboardOverview(
       ].filter((event) => event.provider === provider);
       for (const event of events)
         counts.set(event.day, (counts.get(event.day) || 0) + 1);
-      return { provider, count: events.length, change: dailyChange(counts) };
+      return {
+        provider,
+        count: events.length,
+        change: dailyChange(counts, providerDays.get(provider) || []),
+      };
     }),
     stages: [...stages]
       .map(([key, row]) => ({

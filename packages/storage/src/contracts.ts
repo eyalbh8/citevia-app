@@ -14,6 +14,7 @@ import type {
   TrackingMatch,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
+import type { McpRepository } from './mcp.js';
 export interface SavedAnalysisRef {
   responseId: string;
   captureKey: string;
@@ -23,7 +24,7 @@ export interface SavedAnalysis {
   responseId: string;
   analysis: Analysis | null;
 }
-export interface Repository extends UserRepository {
+export interface Repository extends UserRepository, McpRepository {
   /** A returned null is authoritative. Omitted responses require legacy artifact lookup. */
   listSavedAnalyses(
     projectId: string,

@@ -243,7 +243,7 @@ describe('dashboard overview measurement semantics', () => {
       rankChange: 0,
       mentions: 4,
       mentionChange: -66.67,
-      sentiment: 0,
+      sentiment: 75,
       sentimentChange: -100,
     });
     expect(result.ranking).toHaveLength(2); // Never-mentioned competitors are not fabricated.
@@ -260,10 +260,132 @@ describe('dashboard overview measurement semantics', () => {
     ).toMatchObject({
       rank: 1.7,
       rankChange: -1,
-      sentiment: null,
+      sentiment: 100,
       sentimentChange: null,
     });
   });
+
+  it('averages classified sentiment over all selected mentions for both target and competitors', () => {
+    const value = project();
+    const competitor = value.competitors[0].id;
+    const first = observation(value, 'first', '2026-10-15', {
+      competitors: [competitor],
+    });
+    first.result.brands![1].sentiment = 'negative';
+    const second = observation(value, 'second', '2026-10-15', {
+      competitors: [competitor],
+    });
+    second.result.brands![1].sentiment = 'neutral';
+    const unknown = observation(value, 'unknown', '2026-10-18', {
+      competitors: [competitor],
+      sentiment: 'unknown',
+    });
+    unknown.result.brands![1].sentiment = 'unknown';
+    const last = observation(value, 'last', '2026-10-20', {
+      provider: 'gemini',
+      sentiment: 'negative',
+    });
+    const data = aggregateDashboardOverview(value, period, filters, [first, second, unknown, last]);
+    expect(data.ranking.find((row) => row.isTarget)).toMatchObject({
+      mentions: 4,
+      sentiment: 67,
+      sentimentChange: -100,
+    });
+    expect(data.ranking.find((row) => row.brandId === competitor)).toMatchObject({
+      mentions: 3,
+      sentiment: 25,
+      sentimentChange: null,
+    });
+    const selected = aggregateDashboardOverview(
+      value, period, { ...filters, providers: ['gemini'] }, [first, second, unknown, last],
+    );
+    expect(selected.ranking).toHaveLength(1);
+    expect(selected.ranking[0]).toMatchObject({ sentiment: 0, mentions: 1 });
+  });
+
+  it('compares mention totals on observed days including measured zeroes, per provider', () => {
+    const value = project();
+    const first = observation(value, 'first', '2026-10-15');
+    const zero = observation(value, 'zero', '2026-10-18', { mentioned: false });
+    const last = observation(value, 'last', '2026-10-20', { provider: 'gemini' });
+    const data = aggregateDashboardOverview(value, period, filters, [first, zero, last]);
+    expect(data.providers).toEqual([
+      { provider: 'openai', count: 1, change: -100 },
+      { provider: 'gemini', count: 1, change: 0 },
+    ]);
+    expect(aggregateDashboardOverview(value, period, filters, [first, zero]).ranking[0])
+      .toMatchObject({ mentions: 1, mentionChange: -100 });
+    expect(aggregateDashboardOverview(value, period, filters, [zero, last]).ranking[0])
+      .toMatchObject({ mentions: 1, mentionChange: 100, sentimentChange: null });
+    expect(data.trend.map((row) => row.date)).toEqual(['2026-10-15', '2026-10-18', '2026-10-20']);
+  });
+
+  it('retains historical totals without assigning answers to an edited active prompt', () => {
+    const value = project();
+    const previous = observation(value, 'old-question');
+    previous.result.prompt = { ...previous.result.prompt };
+    value.prompts[0] = {
+      ...value.prompts[0],
+      version: value.prompts[0].version + 1,
+      text: 'A changed question?',
+    };
+    const data = aggregateDashboardOverview(value, period, filters, [previous]);
+    expect(data.analyzed).toBe(1);
+    expect(data.ranking[0].mentions).toBe(1);
+    expect(data.stages.find((row) => row.key === 'understand'))
+      .toMatchObject({ promptCount: 2, measuredPromptCount: 0, visibility: 0 });
+  });
+
+  it.each(['provider', 'region', 'tag', 'topic', 'intent', 'branded', 'search', 'stage', 'date'])(
+    'excludes mismatched %s observations from every card and competitor sentiment',
+    (dimension) => {
+      const value = project();
+      const selected: DashboardOverview['filters'] = {
+        ...filters,
+        providers: ['gemini'],
+        region: 'US',
+        tag: 'Priority',
+        topic: 'Analytics',
+        intent: 'informational',
+        branded: 'false',
+        search: 'first',
+        stage: 'understand',
+      };
+      const competitor = value.competitors[0].id;
+      const included = observation(value, 'included', '2026-10-15', {
+        provider: 'gemini', competitors: [competitor], sentiment: 'negative',
+      });
+      included.result.brands![1].sentiment = 'negative';
+      included.answer = capture(['https://included.example/page']);
+      const excluded = observation(value, 'excluded', '2026-10-18', {
+        provider: 'gemini', competitors: [competitor],
+      });
+      excluded.result.prompt = { ...excluded.result.prompt };
+      excluded.answer = capture(['https://excluded.example/page']);
+      switch (dimension) {
+        case 'provider': excluded.run.snapshot.provider = 'openai'; break;
+        case 'region': excluded.run.snapshot.country = 'GB'; break;
+        case 'tag': excluded.result.prompt.tags = ['Other']; break;
+        case 'topic': excluded.result.prompt.topic = 'Other'; break;
+        case 'intent': excluded.result.prompt.intent = 'comparison'; break;
+        case 'branded': excluded.result.prompt.branded = true; break;
+        case 'search': excluded.result.prompt.text = 'Unrelated question'; break;
+        case 'stage': excluded.result.prompt.stage = 'trust'; break;
+        case 'date': excluded.result.capturedAt = '2026-10-21T00:00:00.000Z'; break;
+      }
+      const data = aggregateDashboardOverview(value, period, selected, [included, excluded]);
+      expect(data).toMatchObject({
+        analyzed: 1,
+        providers: [{ provider: 'gemini', count: 1, change: 0 }],
+        stages: [{ key: 'understand', promptCount: 1, measuredPromptCount: 1, visibility: 100 }],
+        trend: [{ date: '2026-10-15', mentions: { [value.brand.id]: 1, [competitor]: 1 } }],
+        sources: [{ domain: 'included.example', pageCount: 1, citationCount: 1 }],
+      });
+      expect(data.ranking).toHaveLength(2);
+      for (const row of data.ranking)
+        expect(row).toMatchObject({ mentions: 1, sentiment: 0, sentimentChange: 0 });
+    },
+  );
 
   it('counts distinct cited pages per hostname separately from citation occurrences', () => {
     const value = project(),

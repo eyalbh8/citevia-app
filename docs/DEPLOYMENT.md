@@ -153,6 +153,8 @@ For the prompts update, deploy the scanner bundle and apply `004_prompt_metadata
 
 The Mentions/Tracking update additionally requires `005_url_tracking.sql`. Deploy the updated scanner bundle, invoke the migration operation below, verify success, then roll out the API and client. The migration adds the capture/citation ledger, tracked URLs and matches; it does not run paid scans or manufacture historical observations. Future scan finalization populates the ledger automatically. Existing answer artifacts can be replayed using the account/date-scoped `tracking:backfill` command from a trusted environment with database and artifact access; see [implementation and replay details](MENTIONS_AND_URL_TRACKING_PLAN.md#implemented-behavior-and-operational-notes).
 
+The MCP connection update requires `006_mcp.sql` before the new API/client is published. It adds hashed credentials, OAuth records and shared rate limits. SAM configures `MCP_PUBLIC_URL` from the public API hostname and uses `FrontendOrigin` for OAuth consent. See [MCP setup, scope and protocol details](MCP.md).
+
 Run the bundled migration through the **existing scanner Lambda**. This keeps the private database inaccessible from the public internet and does not add a migration Lambda. Using the `ScannerFunctionName` stack output:
 
 ```sh

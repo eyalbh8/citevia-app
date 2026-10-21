@@ -30,6 +30,16 @@ export async function reanalyzeCapturedRun(
     const at = now.toISOString(),
       expiresAt = Math.floor(now.getTime() / 1000) + RETENTION_DAYS * 86400;
     const results: PromptResult[] = [];
+    const snapshot = {
+      ...source.snapshot,
+      competitors: structuredClone(project.competitors),
+      parserVersion: PARSER_VERSION,
+    };
+    // Staged legacy receipts know only their original brand definitions. Matching IDs
+    // alone cannot prove that a renamed/reassigned rival is still the same entity.
+    const sameBrands =
+      JSON.stringify(source.snapshot.competitors) ===
+      JSON.stringify(snapshot.competitors);
     for (const result of original) {
       const captureKey = result.captureKey || captureKeyFor(result);
       const answer = await artifacts.get<CapturedAnswer>(captureKey);
@@ -39,10 +49,11 @@ export async function reanalyzeCapturedRun(
         ? await artifacts.get<Analysis>(validatedKey)
         : null;
       const useValidated =
+        sameBrands &&
         validated?.parserVersion === PARSER_VERSION &&
         validated.model === source.snapshot.extractionModel &&
-        validated.brands.length === 1 + source.snapshot.competitors.length &&
-        [source.snapshot.brand, ...source.snapshot.competitors].every((brand) =>
+        validated.brands.length === 1 + snapshot.competitors.length &&
+        [snapshot.brand, ...snapshot.competitors].every((brand) =>
           validated.brands.some((row) => row.brandId === brand.id),
         );
       results.push({
@@ -83,7 +94,7 @@ export async function reanalyzeCapturedRun(
       id,
       reanalysisOf: sourceRunId,
       groupId: `rescore_${createHash('sha256').update(`${projectId}:${requestId}`).digest('hex').slice(0, 24)}`,
-      snapshot: { ...source.snapshot, parserVersion: PARSER_VERSION },
+      snapshot,
       createdAt: at,
       scheduledAt: at,
       status: 'queued',

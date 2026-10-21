@@ -1,0 +1,79 @@
+.mcp-page { display:flex; flex-direction:column; gap:24px; max-width:1120px; }
+.mcp-page h2 { font-size:18px; font-weight:600; letter-spacing:-.35px; }
+.mcp-page h3 { font-size:14px; font-weight:600; }
+.mcp-page p,.mcp-drawer-copy { font-size:13px; color:var(--muted); line-height:1.8; }
+.mcp-scope { display:flex; gap:18px; padding:26px; background:linear-gradient(120deg,var(--primary-soft),var(--surface)); }
+.mcp-feature-icon { width:44px; height:44px; flex-shrink:0; border:1px solid var(--primary-border); border-radius:13px; display:grid; place-items:center; color:var(--primary); background:var(--surface); }
+.mcp-scope .eyebrow { margin-bottom:7px; }
+.mcp-scope h2 { margin-bottom:8px; }
+.mcp-scope p { max-width:780px; }
+.mcp-access { display:inline-flex; align-items:center; gap:6px; color:var(--primary); font-size:11px; font-weight:600; margin-top:14px; padding:6px 9px; border-radius:8px; background:var(--surface); border:1px solid var(--primary-border); }
+.mcp-scope .mcp-scope-footnote { font-size:11px; margin-top:10px; }
+.mcp-connect,.mcp-created { padding:26px; }
+.mcp-section-heading { display:flex; align-items:center; gap:14px; margin-bottom:22px; }
+.mcp-section-heading p { margin-top:5px; }
+.mcp-value-row { display:flex; align-items:flex-start; gap:10px; margin-top:9px; margin-bottom:20px; }
+.mcp-value { min-width:0; flex:1; min-height:42px; padding:10px 13px; font-size:12px; line-height:1.7; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--surface-muted); border:1px solid var(--line); border-radius:10px; }
+.mcp-copy-action { flex-shrink:0; max-width:230px; }
+.mcp-copy-error { display:block; font-size:11px; color:var(--danger); line-height:1.6; margin-top:6px; }
+.mcp-methods { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; }
+.mcp-method { padding:20px; border:1px solid var(--line); border-radius:12px; }
+.mcp-method-label { display:block; color:var(--primary); font-family:var(--font-label); font-size:9px; letter-spacing:1px; margin-bottom:10px; }
+.mcp-method p { margin-top:8px; font-size:12px; }
+.mcp-method .mcp-method-detail { font-size:11px; color:var(--subtle); }
+.mcp-method code { font-size:11px; overflow-wrap:anywhere; }
+.mcp-config-details { margin-top:21px; }
+.mcp-config-details summary { cursor:pointer; font-size:12px; font-weight:600; color:var(--primary); padding:6px 0; }
+.mcp-config-details>p { margin-top:8px; font-size:12px; }
+.mcp-config { margin-top:15px; background:var(--surface-muted); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+.mcp-config-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; border-bottom:1px solid var(--line); font-size:11px; font-weight:600; }
+.mcp-config pre { padding:18px; margin:0; overflow:auto; font-size:12px; line-height:1.8; tab-size:2; }
+.mcp-created { border-color:var(--primary-border); }
+.mcp-created>.button { margin-top:18px; }
+.mcp-connections-heading { justify-content:space-between; align-items:flex-start; padding:24px 24px 0; }
+.mcp-table { min-width:720px; }
+.mcp-table td:first-child,.mcp-table th:first-child { padding-left:24px; }
+.mcp-table td:last-child,.mcp-table th:last-child { padding-right:24px; text-align:right; }
+.mcp-table td { font-size:12px; }
+.mcp-table strong { font-weight:600; display:block; max-width:240px; overflow-wrap:anywhere; }
+.mcp-connection-detail { display:block; margin-top:6px; font-size:11px; color:var(--muted); }
+.mcp-table .button { min-height:34px; font-size:11px; padding:7px 10px; }
+.mcp-success { display:flex; align-items:center; gap:9px; border:1px solid #cfe7dc; border-radius:10px; padding:14px 16px; background:#f0faf5; color:var(--success); font-size:12px; line-height:1.6; }
+.mcp-success svg { flex-shrink:0; }
+.mcp-form-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:8px; }
+.mcp-visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.mcp-consent-page { min-height:100dvh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px; padding:32px 20px; }
+.mcp-consent { padding:36px; max-width:580px; width:100%; display:flex; flex-direction:column; gap:20px; }
+.mcp-consent>.eyebrow { margin:2px 0 -12px; }
+.mcp-consent h1 { font-size:25px; font-weight:600; letter-spacing:-.6px; line-height:1.4; overflow-wrap:anywhere; }
+.mcp-consent p { color:var(--muted); font-size:13px; line-height:1.8; }
+.mcp-consent-access { display:flex; gap:12px; padding:18px; border:1px solid var(--primary-border); background:var(--primary-soft); border-radius:12px; }
+.mcp-consent-access>svg { flex-shrink:0; color:var(--primary); }
+.mcp-consent-access strong { font-size:13px; }
+.mcp-consent-access p { font-size:12px; margin-top:5px; }
+.mcp-consent .mcp-consent-note { font-size:11px; }
+.mcp-consent-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+@media(max-width:700px) {
+  .mcp-page { gap:18px; }
+  .mcp-scope,.mcp-connect,.mcp-created { padding:20px; }
+  .mcp-scope { gap:12px; }
+  .mcp-scope>.mcp-feature-icon { display:none; }
+  .mcp-value-row { flex-direction:column; align-items:stretch; }
+  .mcp-value { width:100%; }
+  .mcp-copy-action { max-width:none; }
+  .mcp-methods { grid-template-columns:1fr; }
+  .mcp-connections-heading { flex-direction:column; padding:20px 20px 0; }
+  .mcp-table { display:block; min-width:0; }
+  .mcp-table thead { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  .mcp-table tbody { display:block; }
+  .mcp-table tr { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px; padding:20px; border-top:1px solid var(--line); }
+  .mcp-table td,.mcp-table td:first-child,.mcp-table td:last-child { display:block; padding:0; border:0; }
+  .mcp-table td:first-child { grid-column:1/-1; }
+  .mcp-table td:last-child { align-self:end; }
+  .mcp-table td:nth-child(2)::before,.mcp-table td:nth-child(3)::before { display:block; margin-bottom:5px; font-size:10px; color:var(--muted); }
+  .mcp-table td:nth-child(2)::before { content:'Created'; }
+  .mcp-table td:nth-child(3)::before { content:'Last used'; }
+  .mcp-table strong { max-width:none; }
+  .mcp-form-actions { flex-wrap:wrap; }
+  .mcp-consent { padding:24px; }
+}

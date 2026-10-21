@@ -42,6 +42,9 @@ export function reportingCompanies(
       rank: company.rank,
       identity,
       brand,
+      sentiment: company.sentimentEvidence
+        ? company.sentiment || 'unknown'
+        : 'unknown',
       evidence: [company.evidence],
     };
   });
@@ -54,6 +57,8 @@ export function reportingCompanies(
         rank: brandRank(brand)!,
         identity,
         brand,
+        sentiment:
+          brand.sentiment === 'not_applicable' ? 'unknown' : brand.sentiment,
         evidence: brand.evidence,
       });
   }
@@ -61,6 +66,7 @@ export function reportingCompanies(
     .map((entry) => {
       const evidence = entry.brand?.evidence || entry.evidence;
       const domain = entry.identity?.domains[0] || null;
+      const sentiment = entry.brand?.sentiment || entry.sentiment;
       // Only native citation ranges that overlap verified company evidence imply attribution.
       const sources = reportingCitations(answer).filter(
         (citation) =>
@@ -77,9 +83,9 @@ export function reportingCompanies(
         company: entry.identity?.name || entry.company,
         rank: entry.brand ? brandRank(entry.brand) : entry.rank,
         explicitRank: entry.brand?.explicitRank ?? null,
-        sentimentScore: brandSentimentScore(entry.brand),
-        feel: entry.brand?.sentiment || 'unknown',
-        sentiment: entry.brand?.sentiment || 'unknown',
+        sentimentScore: brandSentimentScore({ mentioned: true, sentiment }),
+        feel: sentiment,
+        sentiment,
         company_site_url: domain ? `https://${domain}` : null,
         domain,
         sources,

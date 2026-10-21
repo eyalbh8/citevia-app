@@ -397,7 +397,8 @@ Resources:
         AllowOrigins:
           - !Ref FrontendOrigin
           - !If [IncludeDevOrigin, !Ref DevOrigin, !Ref 'AWS::NoValue']
-        AllowHeaders: [Authorization, Content-Type, Idempotency-Key]
+        AllowHeaders: [Authorization, Content-Type, Idempotency-Key, MCP-Protocol-Version, X-Workspace-Id]
+        ExposeHeaders: [WWW-Authenticate, Retry-After]
         AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
         MaxAge: 600
       DefaultRouteSettings:
@@ -457,6 +458,11 @@ Resources:
           PERPLEXITY_PRESET: !Ref PerplexityPreset
           GEMINI_GENERATION_MODEL: !Ref GeminiGenerationModel
           ALLOWED_ORIGIN: !Ref FrontendOrigin
+          MCP_PUBLIC_URL: !If
+            - HasApiDomain
+            - !Sub 'https://${ApiDomainName}'
+            - ''
+          MCP_ALLOWED_ORIGINS: !If [IncludeDevOrigin, !Ref DevOrigin, '']
           SCHEDULER_ROLE_ARN: !GetAtt SchedulerQueueRole.Arn
           SCHEDULE_GROUP: !Ref ProjectScheduleGroup
           DLQ_ARN: !GetAtt ScanDeadLetterQueue.Arn

@@ -17,6 +17,7 @@ import {
   type TrackedUrl,
 } from '@citevia/core';
 import * as tracking from './tracking-postgres.js';
+import * as mcp from './mcp.js';
 import type { Repository, SavedAnalysis, SavedAnalysisRef } from './contracts.js';
 import { uuidFor, type SqlDatabase, type SqlSession } from './sql.js';
 import { AccessError, PostgresUsers } from './users.js';
@@ -27,6 +28,16 @@ export class PostgresRepository extends PostgresUsers implements Repository {
   constructor(db: SqlDatabase) {
     super(db);
   }
+  createMcpConnection(connection: mcp.McpConnection) { return mcp.createMcpConnection(this.db, connection); }
+  listMcpConnections(userId: string, projectId: string | null) { return mcp.listMcpConnections(this.db, userId, projectId); }
+  getMcpConnectionByHash(hash: string) { return mcp.getMcpConnectionByHash(this.db, hash); }
+  getMcpConnection(id: string) { return mcp.getMcpConnection(this.db, id); }
+  revokeMcpConnection(id: string, userId: string, now: string) { return mcp.revokeMcpConnection(this.db, id, userId, now); }
+  touchMcpConnection(id: string, now: string) { return mcp.touchMcpConnection(this.db, id, now); }
+  putMcpRecord(record: mcp.McpRecord) { return mcp.putMcpRecord(this.db, record); }
+  getMcpRecord(kind: mcp.McpRecord['kind'], id: string) { return mcp.getMcpRecord(this.db, kind, id); }
+  consumeMcpRecord(kind: mcp.McpRecord['kind'], id: string, now: string) { return mcp.consumeMcpRecord(this.db, kind, id, now); }
+  limitMcpRequests(bucket: string, windowStart: string, limit: number) { return mcp.limitMcpRequests(this.db, bucket, windowStart, limit); }
   async listSavedAnalyses(
     projectId: string,
     refs: SavedAnalysisRef[],

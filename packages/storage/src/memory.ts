@@ -6,6 +6,7 @@ import {
 } from '@citevia/core';
 import { uuidFor } from './sql.js';
 import { AccessError } from './users.js';
+import { MCP_CONNECTION_LIMIT, type McpConnection, type McpRecord } from './mcp.js';
 import {
   isTerminal,
   citationMeasurement,
@@ -30,6 +31,9 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State {
+  mcpConnections?: Record<string, McpConnection>;
+  mcpRecords?: Record<string, McpRecord>;
+  mcpRequestLimits?: Record<string, { windowStart: string; count: number }>;
   savedAnalyses?: Record<string, SavedAnalysisRef & {
     projectId: string;
     runId: string;
@@ -62,6 +66,92 @@ const copy = <T>(value: T): T => structuredClone(value);
 export class MemoryRepository implements Repository {
   protected state: State = blank();
   private tail: Promise<unknown> = Promise.resolve();
+  createMcpConnection(connection: McpConnection): Promise<void> {
+    return this.operation(() => {
+      this.state.mcpConnections ||= {};
+      if (!this.state.users[connection.userId])
+        throw new AccessError(404, 'USER_NOT_FOUND', 'Register the user first.');
+      if (connection.projectId !== null && !this.state.projects[connection.projectId])
+        throw new AccessError(404, 'NOT_FOUND', 'Account not found.');
+      const connections = Object.values(this.state.mcpConnections);
+      if (connections.some(item => item.id === connection.id || item.tokenHash === connection.tokenHash))
+        throw new AccessError(409, 'MCP_CONNECTION_EXISTS', 'This MCP credential already exists.');
+      if (connections.filter(item =>
+        item.userId === connection.userId && item.projectId === connection.projectId &&
+        item.revokedAt === null && (item.expiresAt === null || Date.parse(item.expiresAt) > Date.parse(connection.createdAt)),
+      ).length >= MCP_CONNECTION_LIMIT)
+        throw new AccessError(409, 'MCP_CONNECTION_LIMIT', 'Revoke an existing MCP connection before creating another.');
+      this.state.mcpConnections[JSON.stringify(connection.id)] = copy(connection);
+    }, true);
+  }
+  listMcpConnections(userId: string, projectId: string | null) {
+    return this.operation(() => Object.values(this.state.mcpConnections || {})
+      .filter(item => item.userId === userId && item.projectId === projectId)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id)));
+  }
+  getMcpConnectionByHash(hash: string) {
+    return this.operation(() => Object.values(this.state.mcpConnections || {}).find(item => item.tokenHash === hash) || null);
+  }
+  getMcpConnection(id: string) {
+    return this.operation(() => this.state.mcpConnections?.[JSON.stringify(id)] || null);
+  }
+  revokeMcpConnection(id: string, userId: string, now: string) {
+    return this.operation(() => {
+      const connection = this.state.mcpConnections?.[JSON.stringify(id)];
+      if (!connection || connection.userId !== userId || connection.revokedAt !== null) return false;
+      connection.revokedAt = now;
+      return true;
+    }, true);
+  }
+  touchMcpConnection(id: string, now: string): Promise<void> {
+    return this.operation(() => {
+      const connection = this.state.mcpConnections?.[JSON.stringify(id)];
+      if (connection && connection.revokedAt === null &&
+        (connection.expiresAt === null || Date.parse(connection.expiresAt) > Date.parse(now)) &&
+        (connection.lastUsedAt === null || Date.parse(connection.lastUsedAt) < Date.parse(now)))
+        connection.lastUsedAt = now;
+    }, true);
+  }
+  putMcpRecord(record: McpRecord): Promise<void> {
+    return this.operation(() => {
+      this.state.mcpRecords ||= {};
+      this.state.mcpRecords[JSON.stringify([record.kind, record.id])] = copy(record);
+    }, true);
+  }
+  getMcpRecord(kind: McpRecord['kind'], id: string) {
+    return this.operation(() => this.state.mcpRecords?.[JSON.stringify([kind, id])] || null);
+  }
+  consumeMcpRecord(kind: McpRecord['kind'], id: string, now: string) {
+    return this.operation(() => {
+      const recordKey = JSON.stringify([kind, id]);
+      const record = this.state.mcpRecords?.[recordKey];
+      if (!record) return null;
+      if (kind === 'refresh') {
+        if (record.data.consumed === true || (record.expiresAt !== null && Date.parse(record.expiresAt) <= Date.parse(now))) return null;
+        const original = copy(record);
+        record.data.consumed = true;
+        return original;
+      }
+      delete this.state.mcpRecords![recordKey];
+      return record.expiresAt === null || Date.parse(record.expiresAt) > Date.parse(now) ? record : null;
+    }, true);
+  }
+  limitMcpRequests(bucket: string, windowStart: string, limit: number) {
+    return this.operation(() => {
+      if (!Number.isSafeInteger(limit) || limit < 1) return false;
+      this.state.mcpRequestLimits ||= {};
+      // Prefix the caller-supplied bucket to avoid Object.prototype keys in file state.
+      const bucketKey = JSON.stringify(bucket);
+      const existing = this.state.mcpRequestLimits[bucketKey];
+      if (!existing || Date.parse(existing.windowStart) < Date.parse(windowStart)) {
+        this.state.mcpRequestLimits[bucketKey] = { windowStart, count: 1 };
+        return true;
+      }
+      if (Date.parse(existing.windowStart) !== Date.parse(windowStart) || existing.count >= limit) return false;
+      existing.count++;
+      return true;
+    }, true);
+  }
   listSavedAnalyses(projectId: string, refs: SavedAnalysisRef[]) {
     return this.operation(() => {
       const found = new Map<string, SavedAnalysis>();

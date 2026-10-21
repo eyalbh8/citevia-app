@@ -1,10 +1,12 @@
 import {
   promptFingerprint,
   normalizeDomain,
+  brandSentimentScore,
   type Analysis,
   type Brand,
   type BrandAnalysis,
   type DashboardObservation,
+  type EvidenceSpan,
   type Project,
   type ScanRun,
 } from '@citevia/core';
@@ -15,6 +17,23 @@ import { promptAnswers } from './prompt-answers.js';
 const HISTORY_DAYS = 90;
 const SUGGESTION_CAPTURE_LIMIT = 300;
 const ARTIFACT_BATCH_SIZE = 5;
+
+function validEvidence(
+  span: EvidenceSpan | null | undefined,
+): span is EvidenceSpan {
+  return (
+    !!span &&
+    typeof span.blockId === 'string' &&
+    typeof span.quote === 'string' &&
+    !!span.quote.trim() &&
+    span.quote.length <= 1000 &&
+    Number.isInteger(span.start) &&
+    span.start >= 0 &&
+    Number.isInteger(span.end) &&
+    span.end - span.start === span.quote.length
+  );
+}
+const visible = (text: string) => text.replace(/https?:\/\/[^\s)\]>]+/giu, ' ');
 
 export interface CompetitorSuggestion {
   name: string;
@@ -38,20 +57,11 @@ function verifiedCompanies(analysis: Analysis | null, run: ScanRun) {
       company.name.length > 120 ||
       !Number.isInteger(company.rank) ||
       company.rank < 1 ||
-      !span ||
-      typeof span.blockId !== 'string' ||
-      typeof span.quote !== 'string' ||
-      !span.quote.trim() ||
-      span.quote.length > 1000 ||
-      !Number.isInteger(span.start) ||
-      span.start < 0 ||
-      !Number.isInteger(span.end) ||
-      span.end - span.start !== span.quote.length
+      !validEvidence(span)
     )
       return false;
     // A bare URL is not evidence that the answer discusses a company.
-    const visible = span.quote.replace(/https?:\/\/[^\s)\]>]+/giu, ' ');
-    return containsAlias(visible, {
+    return containsAlias(visible(span.quote), {
       id: 'candidate',
       name: company.name,
       aliases: [],
@@ -254,18 +264,33 @@ export async function historicalCompetitorMentions(
       );
       if (!matches.length) continue;
       const first = matches.reduce((a, b) => (a.rank < b.rank ? a : b));
-      mentions.push({
+      const assessed = matches.find(
+        (company) =>
+          ['positive', 'neutral', 'negative', 'mixed'].includes(
+            company.sentiment || '',
+          ) &&
+          validEvidence(company.sentimentEvidence) &&
+          containsAlias(visible(company.sentimentEvidence.quote), brand) &&
+          containsAlias(visible(company.sentimentEvidence.quote), {
+            id: 'company',
+            name: company.name,
+            aliases: [],
+            domains: [],
+          }),
+      );
+      const mention: BrandAnalysis = {
         brandId: brand.id,
         mentioned: true,
         appearanceRank: first.rank,
         explicitRank: null,
         mentionOrder: null,
-        sentiment: 'unknown',
-        sentimentScore: null,
+        sentiment: assessed?.sentiment || 'unknown',
         evidence: [first.evidence],
         rankEvidence: null,
-        sentimentEvidence: null,
-      });
+        sentimentEvidence: assessed?.sentimentEvidence || null,
+      };
+      mention.sentimentScore = brandSentimentScore(mention);
+      mentions.push(mention);
     }
     if (mentions.length)
       projected[index] = {

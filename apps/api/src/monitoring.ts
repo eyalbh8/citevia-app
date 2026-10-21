@@ -314,8 +314,11 @@ export async function monitoringRoute(
           ? `${at.slice(0, 13)}:00:00.000Z`
           : at.slice(0, 10);
       const series = dates.get(provider) || new Map();
+      const days = daily.get(provider) || new Map();
       series.set(date, 0);
+      days.set(at.slice(0, 10), 0);
       dates.set(provider, series);
+      daily.set(provider, days);
     }
     for (const { result, run } of eligible) {
       const provider = snapshotProvider(run.snapshot),
@@ -392,9 +395,13 @@ export async function monitoringRoute(
               ? Math.round((count / eligible.length) * 10000) / 100
               : 0,
             change:
-              first && last !== undefined
-                ? Math.round(((last - first) / first) * 10000) / 100
-                : null,
+              first === undefined || last === undefined
+                ? null
+                : first
+                  ? Math.round(((last - first) / first) * 10000) / 100
+                  : last
+                    ? 100
+                    : 0,
             points,
           };
         })

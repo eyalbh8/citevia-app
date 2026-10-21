@@ -1,7 +1,9 @@
 import type { BrandAnalysis } from './types.js';
 
 /** Matches iGEO's 50 + 50 * (positive - negative) / classified mentions. */
-export function brandSentimentScore(brand?: BrandAnalysis): number | null {
+export function brandSentimentScore(
+  brand?: Pick<BrandAnalysis, 'mentioned' | 'sentiment'>,
+): number | null {
   if (!brand?.mentioned) return null;
   return {
     positive: 100,

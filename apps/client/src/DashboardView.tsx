@@ -240,7 +240,7 @@ export function DashboardView({
                     <strong>{formatNumber(p.count)}</strong>
                     <Change
                       value={p.change}
-                      label="Change from first to last day with mentions"
+                      label="Change from first to last observed day"
                     />
                   </div>
                   <p>{periodCaption}</p>
@@ -360,7 +360,7 @@ export function DashboardView({
                           </th>
                           <th scope="col">Mentions</th>
                           <th scope="col">
-                            <abbr title="Average sentiment on the latest observed day, from 0 to 100">
+                            <abbr title="Average sentiment across classified mentions in the selected period, from 0 to 100">
                               Sentiment
                             </abbr>
                           </th>
@@ -419,7 +419,7 @@ export function DashboardView({
                                   className={`overview-sentiment ${b.sentiment === null ? '' : b.sentiment >= 70 ? 'positive' : b.sentiment < 40 ? 'negative' : 'neutral'}`}
                                   title={
                                     b.sentiment === null
-                                      ? 'No sentiment measured on the latest observed day'
+                                      ? 'No classified sentiment in the selected period'
                                       : `${formatNumber(b.sentiment)} out of 100`
                                   }
                                 >

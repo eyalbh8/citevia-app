@@ -23,6 +23,7 @@ import {
   Menu,
   MessageSquareText,
   Play,
+  Plug,
   RefreshCw,
   Settings2,
   ShieldCheck,
@@ -65,6 +66,8 @@ import ResponseDrawer from './ResponseDrawer';
 import AccountsView from './AccountsView';
 import BrandbookView from './BrandbookView';
 import FilterDropdown from './FilterDropdown';
+import McpView from './McpView';
+import McpConsent from './McpConsent';
 import './onboarding.css';
 
 type View =
@@ -76,8 +79,14 @@ type View =
   | 'accounts'
   | 'brandbook'
   | 'prompts'
+  | 'mcp'
   | 'users';
 const views = {
+  mcp: {
+    title: 'MCP connections',
+    description: 'Connect your AI assistant to Citevia with your account permissions.',
+    icon: Plug,
+  },
   tracking: { title: 'Tracking', description: 'Track your content in AI answers.', icon: Link2 },
   users: {
     title: 'Users',
@@ -151,6 +160,7 @@ export default function App() {
 }
 function SessionGate() {
   const { isAuthenticated, isSessionLoading, claims } = useSession();
+  const authorizationRequest = new URLSearchParams(window.location.search).get('mcp_authorize');
   if (isSessionLoading)
     return (
       <div className="workspace-loading">
@@ -159,7 +169,11 @@ function SessionGate() {
       </div>
     );
   return isAuthenticated ? (
-    <Workspace key={String(claims?.sub || 'session')} />
+    authorizationRequest ? (
+      <McpConsent key={`${claims?.sub || 'session'}:${authorizationRequest}`} requestId={authorizationRequest} />
+    ) : (
+      <Workspace key={String(claims?.sub || 'session')} />
+    )
   ) : (
     <Login />
   );
@@ -543,6 +557,14 @@ function Workspace() {
         <div className="nav-rule" />
         <nav aria-label="Project configuration">
           <button
+            className={`nav-item ${view === 'mcp' ? 'active' : ''}`}
+            aria-current={view === 'mcp' ? 'page' : undefined}
+            onClick={() => navigate('mcp')}
+          >
+            <Plug />
+            MCP connections
+          </button>
+          <button
             className={`nav-item ${view === 'settings' ? 'active' : ''}`}
             aria-current={view === 'settings' ? 'page' : undefined}
             onClick={() => navigate('settings')}
@@ -702,11 +724,11 @@ function Workspace() {
                     ]}
                   />
                 )}
-                {!['accounts', 'users'].includes(view) && scanAction}
+                {!['accounts', 'users', 'mcp'].includes(view) && scanAction}
               </div>
             </div>
           )}
-          {missingProviders.length > 0 && (
+          {view !== 'mcp' && missingProviders.length > 0 && (
             <div className="provider-banner" role="status">
               <Info size={16} />
               <span>
@@ -731,14 +753,20 @@ function Workspace() {
               </span>
             </div>
           )}
-          <ErrorNotice error={runtime.error} retry={refresh} />
+          {view !== 'mcp' && <ErrorNotice error={runtime.error} retry={refresh} />}
           <ErrorNotice
             error={projects.error}
             retry={() => setProjectsRevision((value) => value + 1)}
           />
-          {view !== 'dashboard' && <ErrorNotice error={dashboard.error} retry={refresh} />}
+          {!['dashboard', 'mcp'].includes(view) && <ErrorNotice error={dashboard.error} retry={refresh} />}
           <ErrorNotice error={actionError} />
-          {view === 'users' ? (
+          {view === 'mcp' ? (
+            !systemAdmin && projects.loading && !projects.data ? (
+              <Skeleton variant="cards" label="Loading your accounts…" />
+            ) : (
+              <McpView systemAdmin={systemAdmin} project={currentProject} revision={revision} />
+            )
+          ) : view === 'users' ? (
             systemAdmin ? (
               <UsersView
                 self={me.data!}

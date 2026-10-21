@@ -289,6 +289,74 @@ describe('observed competitor suggestions', () => {
 });
 
 describe('historical competitor dashboard measurements', () => {
+  it.each([
+    ['positive', 100],
+    ['neutral', 50],
+    ['negative', 0],
+    ['mixed', 50],
+  ] as const)(
+    'recovers evidence-backed %s sentiment for a subsequently assigned competitor',
+    async (sentiment, score) => {
+      const { project, runtime, save } = await fixture();
+      const item = observation(project, 'scored-company', ['Skyward']);
+      const company = item.analysis.companies![0];
+      company.sentiment = sentiment;
+      company.sentimentEvidence = company.evidence;
+      company.sentimentScore = score;
+      item.analysis.validationVersion = 'exact-evidence-v2.2';
+      await save(item);
+      await runtime.repository.saveMeasurement(
+        item.result, item.run, item.answer, item.analysis,
+      );
+      project.competitors.push({
+        id: 'skyward', name: 'Skyward', aliases: [], domains: [],
+      });
+      const read = vi.spyOn(runtime.artifacts, 'get');
+      const projected = await historicalCompetitorMentions(
+        runtime, project, [item],
+      );
+      expect(
+        projected[0].result.brands?.find((brand) => brand.brandId === 'skyward'),
+      ).toMatchObject({
+        sentiment, sentimentScore: score, sentimentEvidence: company.evidence,
+      });
+      expect(
+        aggregateDashboardOverview(project, period, filters, projected)
+          .ranking.find((brand) => brand.brandId === 'skyward'),
+      ).toMatchObject({ mentions: 1, sentiment: score });
+      expect(read).not.toHaveBeenCalled();
+      expect(runtime.queue.messages).toEqual([]);
+      expect(item.result.brands).toHaveLength(1);
+    },
+  );
+
+  it('does not reuse another company assessment, malformed evidence, or an unsupported numeric score', async () => {
+    const { project, runtime, save } = await fixture();
+    const item = observation(project, 'bad-sentiment', ['Skyward', 'OtherCo']);
+    const company = item.analysis.companies![0];
+    company.sentiment = 'positive';
+    company.sentimentScore = 100;
+    project.competitors.push({
+      id: 'skyward', name: 'Skyward', aliases: [], domains: [],
+    });
+    for (const evidence of [
+      undefined,
+      item.analysis.companies![1].evidence,
+      { ...company.evidence, end: 999 },
+    ]) {
+      company.sentimentEvidence = evidence;
+      await save(item);
+      const projected = await historicalCompetitorMentions(
+        runtime, project, [item],
+      );
+      expect(
+        projected[0].result.brands?.find((brand) => brand.brandId === 'skyward'),
+      ).toMatchObject({
+        sentiment: 'unknown', sentimentScore: null, sentimentEvidence: null,
+      });
+    }
+  });
+
   it.each(['memory', 'postgres'])(
     'prefers indexed analysis and authoritative null over legacy artifacts (%s)',
     async (backend) => {

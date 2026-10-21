@@ -157,11 +157,20 @@ export interface Usage {
   searchCalls?: number;
   searchQueries?: number;
 }
+export interface CompanyAnalysis {
+  name: string;
+  rank: number;
+  evidence: EvidenceSpan;
+  /** Optional on older captures, which did not assess untracked companies. */
+  sentiment?: Exclude<Sentiment, 'not_applicable'>;
+  sentimentScore?: number | null;
+  sentimentEvidence?: EvidenceSpan | null;
+}
 export interface Analysis {
   brands: BrandAnalysis[];
   validationVersion?: string;
   validationWarnings?: string[];
-  companies?: { name: string; rank: number; evidence: EvidenceSpan }[];
+  companies?: CompanyAnalysis[];
   parserVersion: string;
   model: string;
   createdAt: string;

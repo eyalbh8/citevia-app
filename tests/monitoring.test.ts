@@ -4,12 +4,14 @@ import {
   trackedUrlKey,
   trackingRows,
   medianPickupDays,
+  matchesMonitoringFilters,
   type Analysis,
   type CapturedAnswer,
   type Project,
   type PromptResult,
   type ScanRun,
   type TrackedUrl,
+  type MonitoringFilters,
 } from '@citevia/core';
 import {
   MemoryRepository,
@@ -221,7 +223,195 @@ describe('iGEO URL identity and measurement semantics', () => {
       ),
     ).toThrow();
   });
+  it('requires every selected monitoring filter to match the captured prompt', () => {
+    const project = newProject({ prompts: ['Which platform?'] });
+    const prompt = {
+      ...project.prompts[0],
+      tags: ['Priority', 'Comparison'],
+      branded: false,
+      intent: 'comparison' as const,
+      stage: 'prefer' as const,
+    };
+    const filters: MonitoringFilters = {
+      providers: ['gemini', 'openai'],
+      region: 'US',
+      tag: 'Priority',
+      branded: 'false',
+      intent: 'comparison',
+      stage: 'prefer',
+      search: 'PLATFORM',
+    };
+    expect(matchesMonitoringFilters(prompt, 'openai', 'US', filters)).toBe(
+      true,
+    );
+    for (const mismatch of [
+      { providers: ['gemini'] },
+      { region: 'GB' },
+      { tag: 'Other' },
+      { branded: 'true' },
+      { intent: 'informational' },
+      { stage: 'convert' },
+      { search: 'unrelated' },
+    ] satisfies Partial<MonitoringFilters>[])
+      expect(
+        matchesMonitoringFilters(prompt, 'openai', 'US', {
+          ...filters,
+          ...mismatch,
+        }),
+      ).toBe(false);
+  });
 });
+
+it.each(['memory', 'postgres'])(
+  'selects historical filter metadata and later reanalysis by inclusive original capture dates (%s)',
+  async (backend) => {
+    const db = backend === 'postgres' ? await localPostgres() : undefined;
+    const repository: Repository = db
+      ? new PostgresRepository(db)
+      : new MemoryRepository();
+    try {
+      const project = newProject({
+        id: `history-filters-${backend}`,
+        prompts: ['Which platform?'],
+      });
+      await repository.saveProject(project, null);
+      const start = '2026-10-20T00:00:00.000Z',
+        end = '2026-10-20T23:59:59.999Z';
+      const original = sample(project, 'original', start);
+      const reanalysis = sample(
+        project,
+        'reanalysis',
+        '2026-10-22T12:00:00.000Z',
+      );
+      reanalysis.run.reanalysisOf = original.run.id;
+      reanalysis.result.capturedAt = start;
+      reanalysis.result.captureKey = original.result.captureKey;
+      const samples = [
+        sample(project, 'before', '2026-10-19T23:59:59.999Z'),
+        original,
+        sample(project, 'end', end, 'gemini'),
+        sample(project, 'after', '2026-10-21T00:00:00.000Z'),
+        reanalysis,
+      ];
+      for (const { run, result } of samples)
+        await repository.createRun(run, [result]);
+      // Editing the current prompt cannot reclassify historical scan evidence.
+      await repository.saveProject(
+        {
+          ...project,
+          version: 2,
+          prompts: project.prompts.map((prompt) => ({
+            ...prompt,
+            version: 2,
+            text: 'A changed question?',
+            stage: 'convert',
+            tags: ['New tag'],
+            intent: 'transactional',
+            branded: true,
+          })),
+        },
+        1,
+      );
+      const history = await repository.listPromptHistory(
+        project.id,
+        start,
+        end,
+      );
+      expect(history.results.map((result) => result.runId).sort()).toEqual([
+        'end',
+        'original',
+        'reanalysis',
+      ]);
+      expect(history.runs.map((run) => run.id).sort()).toEqual([
+        'end',
+        'original',
+        'reanalysis',
+      ]);
+      for (const result of history.results)
+        expect(result.prompt).toMatchObject({
+          text: 'Which platform?',
+          version: 1,
+          stage: 'understand',
+          tags: ['Priority'],
+          intent: 'informational',
+          branded: false,
+        });
+      expect(
+        (
+          await repository.listPromptHistory(project.id, start, end, 'missing')
+        ).results,
+      ).toEqual([]);
+      expect(
+        await repository.listPromptHistory('other-account', start, end),
+      ).toEqual({ runs: [], results: [] });
+    } finally {
+      await db?.close();
+    }
+  },
+  30000,
+);
+it.each([
+  [true, false, -100],
+  [false, true, 100],
+  [false, false, 0],
+])('keeps mentions and changes scoped to combined filters, including observed zero days (%s → %s)', async (firstMentioned, lastMentioned, change) => {
+  const repository = new MemoryRepository(),
+    project = newProject({ id: 'filtered-mentions', prompts: ['Which platform?'] });
+  project.scanProviders = [
+    { provider: 'openai', model: 'test' },
+    { provider: 'gemini', model: 'test' },
+  ];
+  await repository.saveProject(project, null);
+  await repository.syncUser(testIdentity('filters-owner'));
+  await repository.putMembership({ projectId: project.id, userId: 'filters-owner', role: 'owner' });
+  const fixtures = [
+    ['first', '2026-10-15T12:00:00.000Z'],
+    ['last', '2026-10-16T12:00:00.000Z'],
+    ['provider', '2026-10-16T13:00:00.000Z'],
+    ['region', '2026-10-16T14:00:00.000Z'],
+    ['stage', '2026-10-16T15:00:00.000Z'],
+    ['branded', '2026-10-16T16:00:00.000Z'],
+    ['outside', '2026-10-17T00:00:00.000Z'],
+    ['failed', '2026-10-16T17:00:00.000Z'],
+  ].map(([id, at]) => {
+    const value = sample(project, id, at, id === 'provider' ? 'openai' : 'gemini');
+    value.result.prompt.stage = id === 'stage' ? 'trust' : 'convert';
+    value.result.prompt.branded = id !== 'branded';
+    if (id === 'region') value.run.snapshot.country = 'GB';
+    if (id === 'first') value.result.target!.mentioned = firstMentioned;
+    if (id === 'last') value.result.target!.mentioned = lastMentioned;
+    if (id === 'failed') value.run.status = 'failed';
+    return value;
+  });
+  for (const value of fixtures) await repository.createRun(value.run, [value.result]);
+  const api = createApi(
+    { repository, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() },
+    { mode: 'live', now: () => new Date('2026-10-21T15:00:00.000Z') },
+  );
+  const params = 'days=custom&start=2026-10-15&end=2026-10-16&providers=gemini&region=US&stage=convert&branded=true';
+  const call = async (tail: string, query = params) => {
+    const response = await api(new Request(`http://test/v1/projects/${project.id}/${tail}?${query}`), testIdentity('filters-owner'));
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const [summary, answers] = await Promise.all([call('mentions/summary'), call('mentions')]);
+  const total = Number(firstMentioned) + Number(lastMentioned);
+  expect(summary.total).toBe(total);
+  expect(answers.total).toBe(total);
+  expect(answers.items.map((row: { responseId: string }) => row.responseId).sort()).toEqual(
+    fixtures.slice(0, 2).filter((value) => value.result.target!.mentioned).map((value) => value.result.responseId).sort(),
+  );
+  expect(summary.providers).toEqual([{
+    provider: 'gemini', count: total, share: total ? 100 : 0, change,
+    points: [
+      { date: '2026-10-15', count: Number(firstMentioned) },
+      { date: '2026-10-16', count: Number(lastMentioned) },
+    ],
+  }]);
+  const empty = await call('mentions/summary', params.replace('region=US', 'region=IT'));
+  expect(empty).toMatchObject({ total: 0, providers: [{ count: 0, change: null, points: [] }] });
+});
+
 it.each(['memory', 'postgres'])(
   'persists scan matches, deduplicates retries and reanalysis, and serves period-wide mentions (%s)',
   async (backend) => {

@@ -4,3 +4,4 @@ export * from './aws.js';
 export * from './postgres.js';
 export * from './sql.js';
 export * from './users.js';
+export * from './mcp.js';
