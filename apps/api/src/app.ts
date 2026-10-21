@@ -1,3 +1,4 @@
+import { monitoringRoute } from './monitoring.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { ZodError } from 'zod';
 import {
@@ -310,6 +311,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           'FORBIDDEN',
           'Project owner access is required',
         );
+      const monitoring = await monitoringRoute(runtime,project,tail,request,now(),body);
+      if (monitoring) return monitoring;
       const selectedRun = async (id?: string): Promise<ScanRun> => {
         const runId = id || query.get('runId');
         const run = runId

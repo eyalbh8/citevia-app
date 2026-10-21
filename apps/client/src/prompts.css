@@ -109,67 +109,9 @@
   white-space: nowrap;
   color: #575762;
 }
-.prompts-manage {
-  position: relative;
+.prompts-status-filter {
   margin-left: auto;
   flex-shrink: 0;
-}
-.prompts-manage summary {
-  list-style: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  border-radius: 28px;
-  background: #242320;
-  color: #fff;
-  font-size: 14px;
-  padding: 13px 22px;
-  cursor: pointer;
-}
-.prompts-manage summary::-webkit-details-marker {
-  display: none;
-}
-.prompts-manage summary:focus-visible {
-  outline: 3px solid #9a8bf2;
-  outline-offset: 3px;
-}
-.prompts-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  z-index: 20;
-  background: #fff;
-  width: 245px;
-  border: 1px solid #e4dfd9;
-  border-radius: 12px;
-  padding: 7px;
-  box-shadow: 0 12px 35px #332c4320;
-}
-.prompts-menu button,
-.prompts-menu label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  font-size: 13px;
-  padding: 11px;
-  border-radius: 6px;
-}
-.prompts-menu button:hover:not(:disabled) {
-  background: #f1edfb;
-}
-.prompts-menu label {
-  border-top: 1px solid #ece9ef;
-  border-radius: 0;
-}
-.prompts-menu select {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  background: #fff;
-  font-size: 12px;
 }
 .prompts-table {
   min-width: 1100px;
@@ -415,6 +357,7 @@
 }
 .prompt-selection {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   background: #f8f5fe;
@@ -423,6 +366,9 @@
   font-size: 12px;
 }
 .prompt-selection button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   text-decoration: underline;
 }
 .prompts-panel .pagination {
@@ -536,11 +482,6 @@
   .prompts-usage {
     padding: 7px 9px;
     font-size: 11px;
-  }
-  .prompts-manage summary {
-    padding: 10px 13px;
-    font-size: 12px;
-    gap: 7px;
   }
   .prompts-panel {
     border-radius: 17px;

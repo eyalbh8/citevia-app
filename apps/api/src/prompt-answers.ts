@@ -21,7 +21,7 @@ export type AnswerSort = (typeof ANSWER_SORTS)[number];
 export function promptAnswers(
   history: PromptHistory,
   projectId: string,
-  promptId: string,
+  promptId: string | undefined,
   provider: ScanProvider | undefined,
   sort: AnswerSort,
   direction: 'asc' | 'desc',
@@ -37,7 +37,7 @@ export function promptAnswers(
     if (
       !run ||
       result.projectId !== projectId ||
-      result.promptId !== promptId ||
+      (promptId && result.promptId !== promptId) ||
       (provider && snapshotProvider(run.snapshot) !== provider)
     )
       continue;

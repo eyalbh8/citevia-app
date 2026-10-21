@@ -17,6 +17,7 @@ import {
   Info,
   LayoutDashboard,
   ListChecks,
+  Link2,
   LoaderCircle,
   LogIn,
   LogOut,
@@ -56,6 +57,7 @@ import UsersView from './UsersView';
 import { Empty, ErrorNotice, formatDate, Logo, Spinner } from './components';
 import { DashboardView } from './DashboardView';
 import MentionsView from './MentionsView';
+import TrackingView from './TrackingView';
 import SourcesView from './SourcesView';
 import SettingsView from './SettingsView';
 import PromptsView from './PromptsView';
@@ -67,6 +69,7 @@ import './onboarding.css';
 type View =
   | 'dashboard'
   | 'mentions'
+  | 'tracking'
   | 'sources'
   | 'settings'
   | 'accounts'
@@ -74,6 +77,7 @@ type View =
   | 'prompts'
   | 'users';
 const views = {
+  tracking: { title: 'Tracking', description: 'Track your content in AI answers.', icon: Link2 },
   users: {
     title: 'Users',
     description: 'Manage users and assign access to customer accounts.',
@@ -484,6 +488,7 @@ function Workspace() {
               'dashboard',
               'prompts',
               'mentions',
+              'tracking',
               'sources',
               'brandbook',
               ...(systemAdmin ? ['users' as const] : []),
@@ -583,7 +588,7 @@ function Workspace() {
             <strong>{views[view].title}</strong>
           </div>
           <div className="topbar-right">
-            {view !== 'prompts' && (
+            {!['prompts', 'mentions', 'tracking'].includes(view) && (
               <span className="platform-pill">
                 <Sparkles size={12} />
                 <select
@@ -629,9 +634,9 @@ function Workspace() {
           </div>
         </header>
         <main
-          className={`content ${view === 'prompts' ? 'prompts-content' : ''}`}
+          className={`content ${['prompts', 'mentions', 'tracking'].includes(view) ? 'prompts-content' : ''}`}
         >
-          {view !== 'prompts' && (
+          {!['prompts', 'mentions', 'tracking'].includes(view) && (
             <div className="page-heading">
               <div>
                 <div className="eyebrow">AI VISIBILITY INTELLIGENCE</div>
@@ -810,7 +815,7 @@ function Workspace() {
             path &&
             project && (
               <>
-                {!['settings', 'brandbook', 'prompts'].includes(view) &&
+                {!['settings', 'brandbook', 'prompts', 'mentions', 'tracking'].includes(view) &&
                   run && (
                     <div className="status-strip">
                       <span
@@ -839,7 +844,7 @@ function Workspace() {
                   )}
                 {dashboard.loading &&
                 !dashboard.data &&
-                !['settings', 'brandbook'].includes(view) ? (
+                !['settings', 'brandbook', 'mentions', 'tracking'].includes(view) ? (
                   <Spinner label="Bringing your results together…" />
                 ) : view === 'settings' ? (
                   <SettingsView
@@ -855,17 +860,13 @@ function Workspace() {
                     key={project.id}
                     path={path}
                     revision={revision}
-                    onScan={() => void startScan()}
-                    scanDisabled={
-                      !providerReady ||
-                      starting ||
-                      hasActiveRun ||
-                      !activePrompts
-                    }
-                    scanning={starting || hasActiveRun}
                     onSaved={settingsSaved}
                     notify={setToast}
                   />
+                ) : view === 'mentions' ? (
+                  <MentionsView key={project.id} path={path} project={project} revision={revision} onResponse={setSelectedResponse} />
+                ) : view === 'tracking' ? (
+                  <TrackingView key={project.id} path={path} project={project} revision={revision} onResponse={setSelectedResponse} notify={setToast} />
                 ) : view === 'brandbook' ? (
                   <BrandbookView
                     path={path}
@@ -883,15 +884,6 @@ function Workspace() {
                       onResponse={setSelectedResponse}
                       onMentions={() => navigate('mentions')}
                       onSources={() => navigate('sources')}
-                    />
-                  ) : view === 'mentions' ? (
-                    <MentionsView
-                      key={`${project.id}-${run?.id || 'empty'}`}
-                      path={path}
-                      runId={run?.id}
-                      revision={revision}
-                      onResponse={setSelectedResponse}
-                      notify={setToast}
                     />
                   ) : (
                     <SourcesView

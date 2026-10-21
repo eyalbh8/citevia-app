@@ -13,7 +13,9 @@ import {
   type Project,
   type PromptResult,
   type ScanRun,
+  type TrackedUrl,
 } from '@citevia/core';
+import * as tracking from './tracking-postgres.js';
 import type { Repository } from './contracts.js';
 import { uuidFor, type SqlDatabase, type SqlSession } from './sql.js';
 import { AccessError, PostgresUsers } from './users.js';
@@ -24,6 +26,10 @@ export class PostgresRepository extends PostgresUsers implements Repository {
   constructor(db: SqlDatabase) {
     super(db);
   }
+  listTrackedUrls(projectId: string) { return tracking.listTrackedUrls(this.db,projectId); }
+  registerTrackedUrl(url: TrackedUrl) { return tracking.registerTrackedUrl(this.db,url); }
+  updateTrackedUrl(url: TrackedUrl, expectedVersion: number) { return tracking.updateTrackedUrl(this.db,url,expectedVersion); }
+  listTrackingMatches(projectId: string, trackedUrlId?: string) { return tracking.listTrackingMatches(this.db,projectId,trackedUrlId); }
   async listProjectSummaries(
     userId: string,
     options: { offset: number; limit: number; query?: string },
@@ -558,6 +564,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     completedAt: string,
   ) {
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM citevia_projects WHERE id=$1 FOR UPDATE', [projectId]);
       const run = data<ScanRun>(
         (
           await tx.query(
@@ -579,6 +586,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         completedAt,
       });
       await this.updateRun(tx, run);
+      await tracking.refreshRunCounters(tx,projectId,id);
       return true;
     });
   }
@@ -589,6 +597,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     analysis: Analysis | null,
   ) {
     await this.db.transaction(async (tx) => {
+      await tx.query('SELECT id FROM citevia_projects WHERE id=$1 FOR UPDATE', [run.projectId]);
       // Prevent an older finalizer from publishing rows after a newer retry changed the result.
       await tx.query(
         'SELECT id FROM citevia_runs WHERE project_id=$1 AND id=$2 FOR UPDATE',
@@ -599,6 +608,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         [result.projectId, result.runId, result.promptId],
       );
       if (current.rows[0]?.version !== result.version) return;
+      await tracking.saveCitationMeasurement(tx,result,run,answer,analysis);
       const responseId = uuidFor(
           `${run.projectId}:response:${result.responseId}`,
         ),
@@ -611,7 +621,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       await tx.query(
         `INSERT INTO prompt_responses(id,account_id,topic_id,prompt_id,scan_id,purpose,response,json_response,sources,model,timestamp,country,region,usage,s3_key,status,provider,visibility,response_rank,failed_reason,updated_at)
       VALUES($1,$2,$3,$4,$5,'LLM_SCAN',$6,$7::jsonb,ARRAY(SELECT value FROM jsonb_array_elements($8::jsonb)),$9,$10,$11,$11,$12::jsonb,$13,$16,$18,$14,$15,$17,now())
-      ON CONFLICT(id) DO UPDATE SET response=excluded.response,json_response=excluded.json_response,sources=excluded.sources,usage=excluded.usage,status=excluded.status,visibility=excluded.visibility,response_rank=excluded.response_rank,failed_reason=excluded.failed_reason,updated_at=now()`,
+      ON CONFLICT(id) DO UPDATE SET response=excluded.response,json_response=excluded.json_response,sources=excluded.sources,model=excluded.model,timestamp=excluded.timestamp,provider=excluded.provider,s3_key=excluded.s3_key,usage=excluded.usage,status=excluded.status,visibility=excluded.visibility,response_rank=excluded.response_rank,failed_reason=excluded.failed_reason,updated_at=now()`,
         [
           responseId,
           accountId,

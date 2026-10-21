@@ -145,6 +145,8 @@ Deploy this as a new Citevia stack. The local template edit does not migrate or 
 
 For the prompts update, deploy the scanner bundle and apply `004_prompt_metadata.sql` before rolling out the new API/client: the API writes the new `prompts.seo_keyword` column. The migration also repairs prompt locale mirrors and represents failed visibility as null. It is included in the normal migration ledger and is safe to invoke repeatedly.
 
+The Mentions/Tracking update additionally requires `005_url_tracking.sql`. Deploy the updated scanner bundle, invoke the migration operation below, verify success, then roll out the API and client. The migration adds the capture/citation ledger, tracked URLs and matches; it does not run paid scans or manufacture historical observations. Future scan finalization populates the ledger automatically. Existing answer artifacts can be replayed using the account/date-scoped `tracking:backfill` command from a trusted environment with database and artifact access; see [implementation and replay details](MENTIONS_AND_URL_TRACKING_PLAN.md#implemented-behavior-and-operational-notes).
+
 Run the bundled migration through the **existing scanner Lambda**. This keeps the private database inaccessible from the public internet and does not add a migration Lambda. Using the `ScannerFunctionName` stack output:
 
 ```sh
@@ -157,7 +159,7 @@ aws lambda invoke \
 
 Check that the invocation metadata has no `FunctionError` and the result contains `{"migrated":true}`. A Lambda invocation can return HTTP 200 while its function failed; checking only the CLI exit status is insufficient. Migrations are transactional, serialized with a PostgreSQL advisory lock, and checksum-verified. Repeating the command is safe. The command operates only on the new Citevia database; it does not import iGEO customer data. SQS payload validation rejects migration events, so this operation requires direct IAM permission to invoke the scanner.
 
-The baseline reproduces the 109 tables modeled by the frozen iGEO Prisma reference. Five workflow tables and a migration ledger supplement it. See [the exact model snapshot, field mapping and limitations](ONBOARDING.md). Run migrations before publishing the client or enabling account creation. A rollback that needs to remove schema requires an operator-authored migration; application updates do not silently drop tables.
+The baseline reproduces the 109 tables modeled by the frozen iGEO Prisma reference. Citevia workflow tables, the citation ledger and a migration ledger supplement it. See [the exact model snapshot, field mapping and limitations](ONBOARDING.md). Run migrations before publishing the client or enabling account creation. A rollback that needs to remove schema requires an operator-authored migration; application updates do not silently drop tables.
 
 Sign in through the configured Descope flow. The API validates the session, fetches the real verified profile and saves it to the iGEO-compatible user tables, with no account access or system role by default. Copy the database user ID shown in the no-accounts workspace. Establish the first system administrator from an IAM-authorized operator terminal:
 

@@ -143,6 +143,7 @@ export async function migrateDatabase(
       '002_citevia.sql',
       '003_descope_users.sql',
       '004_prompt_metadata.sql',
+      '005_url_tracking.sql',
     ]) {
       const source = await readFile(resolve(directory, name), 'utf8'),
         checksum = createHash('sha256').update(source).digest('hex');

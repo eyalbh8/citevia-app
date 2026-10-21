@@ -8,6 +8,12 @@ import { uuidFor } from './sql.js';
 import { AccessError } from './users.js';
 import {
   isTerminal,
+  citationMeasurement,
+  newerCapture, trackingEnabledAt,
+  type TrackedUrl,
+  type TrackingMatch,
+  type CitationCapture,
+  type CitationEvidence,
   type Analysis,
   type CapturedAnswer,
   type OnboardingJob,
@@ -22,6 +28,9 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State {
+  trackedUrls: Record<string, TrackedUrl>;
+  citationCaptures: Record<string, {capture: CitationCapture; evidence: CitationEvidence[]}>;
+  trackingMatches: Record<string, string[]>;
   users: Record<string, User>;
   projects: Record<string, Project>;
   members: Record<string, Membership>;
@@ -30,6 +39,7 @@ interface State {
   onboarding: Record<string, OnboardingJob>;
 }
 const blank = (): State => ({
+  trackedUrls: {}, citationCaptures: {}, trackingMatches: {},
   users: {},
   projects: {},
   members: {},
@@ -90,12 +100,61 @@ export class MemoryRepository implements Repository {
       ),
     );
   }
-  async saveMeasurement(
-    _result: PromptResult,
-    _run: ScanRun,
-    _answer: CapturedAnswer | null,
-    _analysis: Analysis | null,
-  ) {}
+  listTrackedUrls(projectId: string) {
+    return this.operation(() => Object.values(this.state.trackedUrls || {}).filter(url => url.projectId === projectId));
+  }
+  registerTrackedUrl(url: TrackedUrl) {
+    return this.operation(() => {
+      this.state.trackedUrls ||= {}; this.state.trackingMatches ||= {};
+      const urls = Object.values(this.state.trackedUrls).filter(item => item.projectId === url.projectId);
+      const existing = urls.find(item => item.normalizedUrl === url.normalizedUrl);
+      if (existing) return existing;
+      if (urls.length >= 500) throw new AccessError(400, 'TRACKING_LIMIT', 'An account can track up to 500 URLs.');
+      this.state.trackedUrls[key(url.projectId, url.id)] = copy(url);
+      this.state.trackingMatches[key(url.projectId,url.id)] = Object.entries(this.state.citationCaptures || {}).filter(([,m]) => m.capture.projectId === url.projectId && trackingEnabledAt(url,m.capture.capturedAt) && m.evidence.some(e => e.normalizedUrl === url.normalizedUrl)).map(([id])=>id);
+      return url;
+    }, true);
+  }
+  updateTrackedUrl(url: TrackedUrl, expectedVersion: number) {
+    return this.operation(() => {
+      const id = key(url.projectId,url.id);
+      if (this.state.trackedUrls?.[id]?.version !== expectedVersion) return false;
+      this.state.trackedUrls[id] = copy(url); return true;
+    }, true);
+  }
+  listTrackingMatches(projectId: string, trackedUrlId?: string) {
+    return this.operation(() => {
+      const matches: TrackingMatch[] = [];
+      for (const url of Object.values(this.state.trackedUrls || {})) {
+        if (url.projectId !== projectId || (trackedUrlId && url.id !== trackedUrlId)) continue;
+        for (const captureId of this.state.trackingMatches?.[key(projectId,url.id)] || []) {
+          const measurement = this.state.citationCaptures?.[captureId];
+          if (!measurement || !['completed','partial'].includes(this.state.runs[key(projectId,measurement.capture.runId)]?.status)) continue;
+          const evidence = measurement.evidence.find(e => e.normalizedUrl === url.normalizedUrl);
+          if (evidence) matches.push({trackedUrlId: url.id, capture: measurement.capture, evidence});
+        }
+      }
+      return matches.sort((a,b)=>b.capture.capturedAt.localeCompare(a.capture.capturedAt)||a.capture.captureKey.localeCompare(b.capture.captureKey));
+    });
+  }
+  async saveMeasurement(result: PromptResult, run: ScanRun, answer: CapturedAnswer | null, analysis: Analysis | null) {
+    return this.operation(() => {
+      if (this.state.results[key(result.projectId,result.runId,result.promptId)]?.version !== result.version) return;
+      const measurement = citationMeasurement(result,run,answer,analysis);
+      if (!measurement) return;
+      this.state.citationCaptures ||= {}; this.state.trackingMatches ||= {};
+      const id = key(result.projectId,measurement.capture.captureKey);
+      if (!newerCapture(measurement.capture,this.state.citationCaptures[id]?.capture)) return;
+      this.state.citationCaptures[id] = copy(measurement);
+      for (const url of Object.values(this.state.trackedUrls || {})) {
+        if (url.projectId !== result.projectId) continue;
+        const matchKey = key(url.projectId,url.id), previous = this.state.trackingMatches[matchKey] || [];
+        const eligible = previous.includes(id) || trackingEnabledAt(url,measurement.capture.capturedAt);
+        this.state.trackingMatches[matchKey] = previous.filter(item => item !== id);
+        if (eligible && measurement.evidence.some(e => e.normalizedUrl === url.normalizedUrl)) this.state.trackingMatches[matchKey].push(id);
+      }
+    }, true);
+  }
   protected async persist(): Promise<void> {}
   protected async operation<T>(fn: () => T, write = false): Promise<T> {
     const work = this.tail.then(async () => {

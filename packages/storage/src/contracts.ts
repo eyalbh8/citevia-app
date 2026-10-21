@@ -9,9 +9,15 @@ import type {
   ScanRun,
   RunSummary,
   PromptHistory,
+  TrackedUrl,
+  TrackingMatch,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 export interface Repository extends UserRepository {
+  listTrackedUrls(projectId: string): Promise<TrackedUrl[]>;
+  registerTrackedUrl(url: TrackedUrl): Promise<TrackedUrl>;
+  updateTrackedUrl(url: TrackedUrl, expectedVersion: number): Promise<boolean>;
+  listTrackingMatches(projectId: string, trackedUrlId?: string): Promise<TrackingMatch[]>;
   createOnboarding(
     project: Project,
     job: OnboardingJob,

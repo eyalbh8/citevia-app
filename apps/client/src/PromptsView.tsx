@@ -12,8 +12,6 @@ import {
   Hexagon,
   ListFilter,
   Pencil,
-  Play,
-  Plus,
   RotateCcw,
   Search,
   Tag,
@@ -52,9 +50,6 @@ type Props = {
   revision: number;
   onSaved: () => void;
   notify: (text: string) => void;
-  onScan: () => void;
-  scanDisabled: boolean;
-  scanning: boolean;
 };
 type SortKey =
   | 'text'
@@ -153,19 +148,11 @@ function flag(country: string) {
       )
     : '';
 }
-function closeMenu(target: HTMLElement) {
-  const menu = target.closest('details');
-  if (menu) menu.open = false;
-}
-
 export default function PromptsView({
   path,
   revision,
   onSaved,
   notify,
-  onScan,
-  scanDisabled,
-  scanning,
 }: Props) {
   const [days, setDays] = useState('7'),
     [provider, setProvider] = useState('');
@@ -181,8 +168,7 @@ export default function PromptsView({
     [selection, setSelection] = useState<string[]>([]);
   const [answerPrompt, setAnswerPrompt] = useState<Prompt>();
   const [pendingArchive, setPendingArchive] = useState<Prompt[]>();
-  const [adding, setAdding] = useState(false),
-    [editing, setEditing] = useState<Prompt>();
+  const [editing, setEditing] = useState<Prompt>();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<Error>();
   const account = useApi<Project>(`${path}/settings`, revision);
@@ -494,89 +480,18 @@ export default function PromptsView({
             {scores.data?.usage.active ?? active} out of{' '}
             {scores.data?.usage.limit ?? 50} Prompts Used
           </span>
-          <details
-            className="prompts-manage"
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') event.currentTarget.open = false;
-            }}
-          >
-            <summary>
-              Manage Prompts <ChevronDown size={15} />
-            </summary>
-            <div className="prompts-menu">
-              {owner && (
-                <button
-                  disabled={!editable || active >= 50 || busy}
-                  onClick={(event) => {
-                    closeMenu(event.currentTarget);
-                    setAdding(true);
-                  }}
-                >
-                  <Plus size={16} />
-                  Add prompts
-                </button>
-              )}
-              <button
-                disabled={!filtered.length || scores.loading || !!scores.error}
-                onClick={(event) => {
-                  closeMenu(event.currentTarget);
-                  exportPrompts();
-                }}
-              >
-                <Download size={16} />
-                {selected.length
-                  ? `Export ${selected.length} selected`
-                  : 'Export prompts'}
-              </button>
-              {owner && (
-                <button
-                  disabled={
-                    !editable ||
-                    busy ||
-                    !mutationTargets.length ||
-                    (status === 'archived' &&
-                      active + mutationTargets.length > 50)
-                  }
-                  onClick={(event) => {
-                    closeMenu(event.currentTarget);
-                    if (status === 'archived')
-                      void updateStatus(mutationTargets, true);
-                    else setPendingArchive(mutationTargets);
-                  }}
-                >
-                  <Archive size={16} />
-                  {status === 'archived' ? 'Activate' : 'Archive'} selected
-                </button>
-              )}
-              {owner && (
-                <button
-                  disabled={scanDisabled}
-                  onClick={(event) => {
-                    closeMenu(event.currentTarget);
-                    onScan();
-                  }}
-                >
-                  <Play size={16} />
-                  {scanning ? 'Scanning…' : 'Run scan'}
-                </button>
-              )}
-              <label>
-                <ListFilter size={16} />
-                Show
-                <select
-                  aria-label="Prompt status"
-                  value={status}
-                  onChange={(event) =>
-                    filter(() => setStatus(event.target.value))
-                  }
-                >
-                  <option value="active">Active prompts</option>
-                  <option value="archived">Archived prompts</option>
-                  <option value="all">All prompts</option>
-                </select>
-              </label>
-            </div>
-          </details>
+          <div className="prompts-status-filter">
+            <Filter
+              label="Prompt status"
+              icon={<ListFilter size={17} />}
+              value={status}
+              onChange={(value) => filter(() => setStatus(value))}
+            >
+              <option value="active">Active prompts</option>
+              <option value="archived">Archived prompts</option>
+              <option value="all">All prompts</option>
+            </Filter>
+          </div>
         </div>
         {pendingSetup && (
           <p className="prompt-notice">
@@ -591,7 +506,35 @@ export default function PromptsView({
         )}
         {selected.length > 0 && (
           <div className="prompt-selection" role="status">
-            {selected.length} selected
+            <span>{selected.length} selected</span>
+            <button
+              disabled={scores.loading || !!scores.error}
+              onClick={exportPrompts}
+            >
+              <Download size={16} /> Export selected
+            </button>
+            {owner && (
+              <button
+                disabled={
+                  !editable ||
+                  busy ||
+                  !mutationTargets.length ||
+                  (status === 'archived' && active + mutationTargets.length > 50)
+                }
+                onClick={() => {
+                  if (status === 'archived')
+                    void updateStatus(mutationTargets, true);
+                  else setPendingArchive(mutationTargets);
+                }}
+              >
+                {status === 'archived' ? (
+                  <RotateCcw size={16} />
+                ) : (
+                  <Archive size={16} />
+                )}
+                {status === 'archived' ? 'Activate' : 'Archive'} selected
+              </button>
+            )}
             <button onClick={() => setSelection([])}>Clear selection</button>
           </div>
         )}
@@ -605,7 +548,7 @@ export default function PromptsView({
                 ? 'Change your search or filters to see more prompts.'
                 : pendingSetup
                   ? 'Your prompts will appear when account setup finishes.'
-                  : 'Add the questions you want to track.'
+                  : 'Your prompts will appear after account setup.'
             }
           />
         ) : (
@@ -875,8 +818,8 @@ export default function PromptsView({
             <p>
               Archiving stops future scans for{' '}
               {pendingArchive.length === 1 ? 'this prompt' : 'these prompts'}.
-              All saved answers are kept. You can activate archived prompts
-              again from Manage Prompts.
+              All saved answers are kept. Choose Archived prompts in the status
+              filter to activate them again.
             </p>
             <ul>
               {pendingArchive.map((prompt) => (
@@ -909,18 +852,16 @@ export default function PromptsView({
           </div>
         </Drawer>
       )}
-      {(adding || editing) && (
+      {editing && (
         <PromptEditor
-          key={editing?.id || 'add'}
+          key={editing.id}
           path={path}
           prompt={editing}
           slots={50 - active}
           onClose={() => {
-            setAdding(false);
             setEditing(undefined);
           }}
           onSaved={() => {
-            setAdding(false);
             setEditing(undefined);
             onSaved();
           }}
