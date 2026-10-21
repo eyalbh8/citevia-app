@@ -22,13 +22,11 @@ import CompetitorSettings from './CompetitorSettings';
 
 export default function SettingsView({
   path,
-  revision,
   onSaved,
   notify,
   nextScanAt,
 }: {
   path: string;
-  revision: number;
   nextScanAt?: string | null;
   onSaved: () => void;
   notify: (text: string) => void;
@@ -37,8 +35,8 @@ export default function SettingsView({
     data: project,
     error,
     loading,
-  } = useApi<Project>(`${path}/settings`, revision);
-  const runs = useApi<Page<ScanRun>>(`${path}/runs`, revision);
+  } = useApi<Project>(`${path}/settings`);
+  const runs = useApi<Page<ScanRun>>(`${path}/runs`);
   return (
     <>
       <ErrorNotice error={error} retry={onSaved} />

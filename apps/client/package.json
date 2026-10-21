@@ -12,6 +12,7 @@
   "dependencies": {
     "@citevia/core": "0.1.0",
     "@descope/react-sdk": "^3.3.19",
+    "@tanstack/react-query": "^5.104.5",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

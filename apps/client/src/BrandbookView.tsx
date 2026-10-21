@@ -7,18 +7,15 @@ import { Empty, ErrorNotice, formatDate } from './components';
 type BookData = { brandbook: Brandbook | null; version: number; role: string };
 export default function BrandbookView({
   path,
-  revision,
   onSaved,
   notify,
 }: {
   path: string;
-  revision: number;
   onSaved: () => void;
   notify: (text: string) => void;
 }) {
   const { data, error, loading } = useApi<BookData>(
     `${path}/brandbook`,
-    revision,
   );
   return (
     <>

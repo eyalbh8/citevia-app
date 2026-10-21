@@ -47,6 +47,8 @@ import {
   snapshotProvider,
 } from '@citevia/core';
 import { idempotentPost, query, useApi } from './api';
+import ApiSessionProvider from './ApiSessionProvider';
+import { invalidateApiQueries } from './query-cache';
 import {
   authConfigured,
   descopeProjectId,
@@ -169,11 +171,13 @@ function SessionGate() {
       </div>
     );
   return isAuthenticated ? (
-    authorizationRequest ? (
-      <McpConsent key={`${claims?.sub || 'session'}:${authorizationRequest}`} requestId={authorizationRequest} />
-    ) : (
-      <Workspace key={String(claims?.sub || 'session')} />
-    )
+    <ApiSessionProvider key={String(claims?.sub || 'session')} sessionId={String(claims?.sub || 'session')}>
+      {authorizationRequest ? (
+        <McpConsent key={authorizationRequest} requestId={authorizationRequest} />
+      ) : (
+        <Workspace />
+      )}
+    </ApiSessionProvider>
   ) : (
     <Login />
   );
@@ -239,14 +243,12 @@ function Workspace() {
   const [projectId, setProjectId] = useState(storedProject),
     [runId, setRunId] = useState('');
   const [provider, setProvider] = useState<ScanProvider>('openai');
-  const [revision, setRevision] = useState(0),
-    [projectsRevision, setProjectsRevision] = useState(0);
   const [selectedResponse, setSelectedResponse] = useState<string>(),
     [toast, setToast] = useState('');
   const [starting, setStarting] = useState(false),
     [pendingRunId, setPendingRunId] = useState<string>(),
     [actionError, setActionError] = useState<Error>();
-  const me = useApi<User>('/me', revision);
+  const me = useApi<User>('/me');
   useEffect(() => {
     if (!mobileOpen) return;
     if (me.error) { setMobileOpen(false); return; }
@@ -275,11 +277,9 @@ function Workspace() {
   const systemAdmin = me.data?.isSystemAdmin === true;
   const projects = useApi<{ items: Project[]; mode: 'live' }>(
     '/projects',
-    projectsRevision,
   );
   const selectedProject = useApi<Project>(
     projectId ? `/projects/${encodeURIComponent(projectId)}/settings` : null,
-    projectsRevision,
   );
   const currentProject =
     projects.data?.items.find((project) => project.id === projectId) ||
@@ -290,12 +290,10 @@ function Workspace() {
     : null;
   const dashboard = useApi<Dashboard>(
     path ? `${path}/dashboard${query({ runId, provider })}` : null,
-    revision,
   );
-  const runs = useApi<Page<ScanRun>>(path ? `${path}/runs` : null, revision);
+  const runs = useApi<Page<ScanRun>>(path ? `${path}/runs` : null);
   const setup = useApi<{ job: OnboardingJob | null }>(
     path ? `${path}/onboarding` : null,
-    revision,
   );
   const settingUp = Boolean(
     setup.data?.job && ['queued', 'running'].includes(setup.data.job.status),
@@ -318,7 +316,7 @@ function Workspace() {
   const runtime = useApi<{
     providerConfigured: boolean;
     providers: Record<ScanProvider, boolean>;
-  }>('/runtime', revision);
+  }>('/runtime');
   const enabledProviders = project
     ? projectProviders(project)
     : SCAN_PROVIDERS.map((provider) => ({ provider, model: '' }));
@@ -354,9 +352,9 @@ function Workspace() {
   }, [toast]);
   useEffect(() => {
     if (!hasActiveRun) return;
-    const timer = setInterval(() => setRevision((value) => value + 1), 5000);
+    const timer = setInterval(() => { if (path) void invalidateApiQueries(path); }, 5000);
     return () => clearInterval(timer);
-  }, [hasActiveRun]);
+  }, [hasActiveRun, path]);
   useEffect(() => {
     if (
       pendingRunId &&
@@ -400,11 +398,10 @@ function Workspace() {
     }
   }
   function refresh() {
-    setRevision((value) => value + 1);
+    void invalidateApiQueries();
   }
   function settingsSaved() {
     refresh();
-    setProjectsRevision((value) => value + 1);
   }
   async function startScan() {
     if (!path || starting) return;
@@ -426,8 +423,7 @@ function Workspace() {
   }
   useEffect(() => {
     const update = () => {
-      setRevision((v) => v + 1);
-      setProjectsRevision((v) => v + 1);
+      void invalidateApiQueries();
     };
     window.addEventListener('focus', update);
     const timer = setInterval(update, 60000);
@@ -756,7 +752,7 @@ function Workspace() {
           {view !== 'mcp' && <ErrorNotice error={runtime.error} retry={refresh} />}
           <ErrorNotice
             error={projects.error}
-            retry={() => setProjectsRevision((value) => value + 1)}
+            retry={() => void invalidateApiQueries('/projects')}
           />
           {!['dashboard', 'mcp'].includes(view) && <ErrorNotice error={dashboard.error} retry={refresh} />}
           <ErrorNotice error={actionError} />
@@ -764,7 +760,7 @@ function Workspace() {
             !systemAdmin && projects.loading && !projects.data ? (
               <Skeleton variant="cards" label="Loading your accounts…" />
             ) : (
-              <McpView systemAdmin={systemAdmin} project={currentProject} revision={revision} />
+              <McpView systemAdmin={systemAdmin} project={currentProject} />
             )
           ) : view === 'users' ? (
             systemAdmin ? (
@@ -785,10 +781,9 @@ function Workspace() {
               providerReady={onboardingReady}
               onOpen={(id) => {
                 changeProject(id);
-                setProjectsRevision((value) => value + 1);
                 navigate('dashboard');
               }}
-              onChanged={() => setProjectsRevision((value) => value + 1)}
+              onChanged={() => void invalidateApiQueries('/projects')}
               notify={setToast}
             />
           ) : projects.loading && !projects.data ? (
@@ -809,7 +804,7 @@ function Workspace() {
               >
                 <button
                   className="button button-primary"
-                  onClick={() => setProjectsRevision((value) => value + 1)}
+                  onClick={() => void invalidateApiQueries('/projects')}
                 >
                   <RefreshCw size={13} />
                   Refresh access
@@ -867,7 +862,6 @@ function Workspace() {
                   <SettingsView
                     key={project.id}
                     path={path}
-                    revision={revision}
                     nextScanAt={dashboard.data?.nextScanAt}
                     onSaved={settingsSaved}
                     notify={setToast}
@@ -876,18 +870,16 @@ function Workspace() {
                   <PromptsView
                     key={project.id}
                     path={path}
-                    revision={revision}
                     onSaved={settingsSaved}
                     notify={setToast}
                   />
                 ) : view === 'mentions' ? (
-                  <MentionsView key={project.id} path={path} project={project} revision={revision} onResponse={setSelectedResponse} />
+                  <MentionsView key={project.id} path={path} project={project} onResponse={setSelectedResponse} />
                 ) : view === 'tracking' ? (
-                  <TrackingView key={project.id} path={path} project={project} revision={revision} onResponse={setSelectedResponse} notify={setToast} />
+                  <TrackingView key={project.id} path={path} project={project} onResponse={setSelectedResponse} notify={setToast} />
                 ) : view === 'brandbook' ? (
                   <BrandbookView
                     path={path}
-                    revision={revision}
                     onSaved={settingsSaved}
                     notify={setToast}
                   />
@@ -896,7 +888,6 @@ function Workspace() {
                     key={project.id}
                     project={project}
                     path={path}
-                    revision={revision}
                     actions={scanAction}
                   />
                 ) : (
@@ -905,7 +896,6 @@ function Workspace() {
                       key={`${project.id}-${run?.id || 'empty'}`}
                       path={path}
                       dashboard={dashboard.data}
-                      revision={revision}
                       onResponse={setSelectedResponse}
                     />
                   )
@@ -930,7 +920,6 @@ function Workspace() {
           path={path}
           id={selectedResponse}
           onClose={() => setSelectedResponse(undefined)}
-          revision={revision}
         />
       )}
       {toast && (

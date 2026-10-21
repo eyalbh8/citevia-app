@@ -1,5 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { getAccessToken } from './auth';
+import { ApiError } from './api-error';
+import { ApiSessionContext } from './ApiSessionProvider';
+import { apiQueryKey, invalidateAfterMutation, queryClient } from './query-cache';
+export { ApiError } from './api-error';
 import {
   onboardingInputSchema,
   type AccountOnboardingInput,
@@ -19,15 +24,6 @@ export function onboardAccounts(accounts: AccountOnboardingInput[]) {
     limitReached: boolean;
   }>('/onboarding/accounts', { accounts: parsed });
 }
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-  ) {
-    super(message);
-  }
-}
-
 // Keep the same key after a lost response or server failure. A retry can repair
 // an accepted reservation without accidentally scheduling a second scan.
 const pendingKeys = new Map<string, string>();
@@ -118,53 +114,36 @@ export async function request<T>(
     }
     throw new ApiError(message, response.status);
   }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  const result = response.status === 204 ? undefined : await response.json();
+  if (!['GET', 'HEAD'].includes((options.method || 'GET').toUpperCase()))
+    void invalidateAfterMutation(path);
+  return result as T;
 }
 
 export function useApi<T>(path: string | null, revision = 0) {
-  const [state, setState] = useState<{
-    key: string | null;
-    data?: T;
-    error?: Error;
-    loading: boolean;
-  }>({ key: path, loading: Boolean(path) });
+  const sessionId = useContext(ApiSessionContext);
+  const result = useQuery<T, Error>({
+    queryKey: apiQueryKey(sessionId, path),
+    queryFn: ({ signal }) => request<T>(path!, { signal }),
+    enabled: Boolean(path),
+  });
+  const previous = useRef({ path, revision });
   useEffect(() => {
-    if (!path) {
-      setState({ key: null, loading: false });
-      return;
-    }
-    const controller = new AbortController();
-    setState((previous) => ({
-      key: path,
-      data: previous.key === path ? previous.data : undefined,
-      loading: true,
-    }));
-    request<T>(path, { signal: controller.signal })
-      .then((data) => {
-        if (!controller.signal.aborted)
-          setState({ key: path, data, loading: false });
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted)
-          setState((previous) => ({
-            key: path,
-            data:
-              error instanceof ApiError &&
-              [401, 403, 404].includes(error.status)
-                ? undefined
-                : previous.key === path
-                  ? previous.data
-                  : undefined,
-            error,
-            loading: false,
-          }));
-      });
-    return () => controller.abort();
-  }, [path, revision]);
-  if (state.key !== path)
-    return { data: undefined, error: undefined, loading: Boolean(path) };
-  return state;
+    const shouldRefresh = previous.current.path === path && previous.current.revision !== revision;
+    previous.current = { path, revision };
+    if (path && shouldRefresh)
+      void queryClient.invalidateQueries(
+        { queryKey: apiQueryKey(sessionId, path), exact: true },
+        { cancelRefetch: false },
+      );
+  }, [path, revision, sessionId]);
+  const forbidden = result.error instanceof ApiError && [401, 403, 404].includes(result.error.status);
+  return {
+    key: path,
+    data: path && !forbidden ? result.data : undefined,
+    error: path ? result.error ?? undefined : undefined,
+    loading: Boolean(path) && result.isFetching,
+  };
 }
 
 export function query(

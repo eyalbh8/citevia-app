@@ -18,12 +18,10 @@ import { TrackingDetailDrawer } from './TrackingView';
 export default function MentionsView({
   path,
   project,
-  revision,
   onResponse,
 }: {
   path: string;
   project: Project;
-  revision: number;
   onResponse: (id: string) => void;
 }) {
   const [selection, setSelection] = useState(() => initialSelection()),
@@ -35,11 +33,9 @@ export default function MentionsView({
   const params = selectionQuery(selection);
   const summary = useApi<MentionsSummary>(
     `${path}/mentions/summary${params}`,
-    revision,
   );
   const answers = useApi<AnswerPage>(
     `${path}/mentions${selectionQuery(selection, { page, pageSize: size, sort, direction })}`,
-    revision,
   );
   return (
     <div className="monitor-screen mentions-screen">
@@ -111,7 +107,6 @@ export default function MentionsView({
           path={path}
           id={tracked}
           selection={selection}
-          revision={revision}
           onClose={() => setTracked(undefined)}
           onResponse={(id) => {
             setTracked(undefined);

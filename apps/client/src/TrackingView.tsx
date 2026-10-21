@@ -149,13 +149,11 @@ function TrackingTrend({ summary }: { summary: TrackingSummary }) {
 export default function TrackingView({
   path,
   project,
-  revision,
   onResponse,
   notify,
 }: {
   path: string;
   project: Project;
-  revision: number;
   onResponse: (id: string) => void;
   notify: (s: string) => void;
 }) {
@@ -172,14 +170,13 @@ export default function TrackingView({
     [busy, setBusy] = useState(false),
     [error, setError] = useState<Error>(),
     [localRevision, refresh] = useState(0);
-  const currentRevision = revision + localRevision;
   const list = useApi<{ items: TrackingRow[]; total: number }>(
     `${path}/tracked-urls${selectionQuery(selection, { status, sort, q: search, page, pageSize: size })}`,
-    currentRevision,
+    localRevision,
   );
   const summary = useApi<TrackingSummary>(
     `${path}/tracked-urls/summary${selectionQuery(selection)}`,
-    currentRevision,
+    localRevision,
   );
   async function add(event: FormEvent) {
     event.preventDefault();
@@ -552,7 +549,7 @@ export default function TrackingView({
           path={path}
           id={selected}
           selection={selection}
-          revision={currentRevision}
+          revision={localRevision}
           owner={project.role === 'owner'}
           onChanged={() => refresh((r) => r + 1)}
           onClose={() => setSelected(undefined)}
@@ -569,7 +566,7 @@ export function TrackingDetailDrawer({
   path,
   id,
   selection,
-  revision,
+  revision = 0,
   onClose,
   onResponse,
   owner = false,
@@ -578,7 +575,7 @@ export function TrackingDetailDrawer({
   path: string;
   id: string;
   selection: MonitorSelection;
-  revision: number;
+  revision?: number;
   onClose: () => void;
   onResponse: (id: string) => void;
   owner?: boolean;

@@ -19,7 +19,7 @@ describe('MCP connection scope UI', () => {
 
   it('loads the global connection for an administrator independently of the selected account', () => {
     useApi.mockReturnValue({ data: { ...connectionData, scope: 'system', projectId: null, projectName: null, serverUrl: 'https://app.citevia.io/api/v1/mcp' } });
-    const html = renderToStaticMarkup(createElement(McpView, { systemAdmin: true, project, revision: 0 }));
+    const html = renderToStaticMarkup(createElement(McpView, { systemAdmin: true, project }));
     expect(useApi).toHaveBeenCalledWith('/mcp/connections', 0);
     expect(html).toContain('All accounts');
     expect(html).not.toContain('Account A');
@@ -28,7 +28,7 @@ describe('MCP connection scope UI', () => {
 
   it('keeps a viewer account scoped and explains the read-only credential', () => {
     useApi.mockReturnValue({ data: connectionData });
-    const html = renderToStaticMarkup(createElement(McpView, { systemAdmin: false, project, revision: 0 }));
+    const html = renderToStaticMarkup(createElement(McpView, { systemAdmin: false, project }));
     expect(useApi).toHaveBeenCalledWith('/mcp/connections?projectId=account-A', 0);
     expect(html).toContain('Read-only access · Viewer');
     expect(html).toContain('Create API key');
@@ -41,7 +41,7 @@ describe('MCP connection scope UI', () => {
   });
 
   it('never falls back to a global connection when a non-admin has no assigned account', () => {
-    const html = renderToStaticMarkup(createElement(McpView, { systemAdmin: false, revision: 0 }));
+    const html = renderToStaticMarkup(createElement(McpView, { systemAdmin: false }));
     expect(useApi).not.toHaveBeenCalled();
     expect(html).toContain('Select an account to connect');
     expect(html).not.toContain('Create API key');

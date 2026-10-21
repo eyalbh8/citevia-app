@@ -35,13 +35,11 @@ const PAGE_SIZE = 20;
 export default function PromptAnswersDrawer({
   path,
   prompt,
-  revision,
   initialProvider,
   onClose,
 }: {
   path: string;
   prompt: Prompt;
-  revision: number;
   initialProvider: string;
   onClose: () => void;
 }) {
@@ -58,11 +56,9 @@ export default function PromptAnswersDrawer({
   }, [selected]);
   const history = useApi<Page<PromptAnswerRow>>(
     `${path}/prompts/${encodeURIComponent(prompt.id)}/responses${query({ provider, days, sort, direction, limit: PAGE_SIZE, cursor: cursors.at(-1) })}`,
-    revision,
   );
   const detail = useApi<ResponseDetail>(
     selected ? `${path}/responses/${encodeURIComponent(selected)}` : null,
-    revision,
   );
   function filter(change: () => void) {
     change();

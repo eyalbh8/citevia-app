@@ -50,7 +50,6 @@ import DateRangeFilter, { type DateRangeSelection } from './DateRangeFilter';
 
 type Props = {
   path: string;
-  revision: number;
   onSaved: () => void;
   notify: (text: string) => void;
 };
@@ -122,7 +121,6 @@ function flag(country: string) {
 }
 export default function PromptsView({
   path,
-  revision,
   onSaved,
   notify,
 }: Props) {
@@ -146,10 +144,9 @@ export default function PromptsView({
   const [editing, setEditing] = useState<Prompt>();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<Error>();
-  const account = useApi<Project>(`${path}/settings`, revision);
+  const account = useApi<Project>(`${path}/settings`);
   const scores = useApi<PromptMetricsResponse>(
     `${path}/prompt-metrics${query({ days: dateRange.days, provider, start: dateRange.days === 'custom' ? dateRange.start : undefined, end: dateRange.days === 'custom' ? dateRange.end : undefined })}`,
-    revision,
   );
   const project = account.data;
   if (!project)
@@ -753,7 +750,6 @@ export default function PromptsView({
           key={answerPrompt.id}
           path={path}
           prompt={answerPrompt}
-          revision={revision}
           initialProvider={provider}
           onClose={() => setAnswerPrompt(undefined)}
         />

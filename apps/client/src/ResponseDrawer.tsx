@@ -30,16 +30,13 @@ export default function ResponseDrawer({
   path,
   id,
   onClose,
-  revision,
 }: {
   path: string;
   id: string;
   onClose: () => void;
-  revision: number;
 }) {
   const { data, error, loading } = useApi<ResponseDetail>(
     `${path}/responses/${encodeURIComponent(id)}`,
-    revision,
   );
   return (
     <Drawer title="Answer details" onClose={onClose}>

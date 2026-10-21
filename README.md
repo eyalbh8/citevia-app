@@ -56,6 +56,8 @@ Open **MCP connections** to connect an assistant through OAuth or a named API ke
 - `infra`: AWS SAM/CloudFormation and deployment configuration.
 - `scripts`: local environment, production bundle, account bootstrap and live feasibility check.
 
+The client uses TanStack React Query for an in-memory cache, following iGEO's navigation caching pattern. `useApi` keys include the signed-in user and the full API path (account, filters and pagination). Revisiting a page reuses cached data; unused entries expire after 30 minutes and signing out clears that user's cache. Writes invalidate related entries, including inactive filter variants. Manual refresh, window focus, the existing one-minute refresh and five-second active-scan polling update data in the background while keeping loaded content visible. New reads should use `useApi`, and writes should use `request` or `idempotentPost` so invalidation is applied consistently.
+
 ## Measurement
 
 Collection requests web search and saves the original response before extraction. The answering request does not receive the tracked brand unless it is already in the saved question. A separate structured extraction request receives brand context and the saved answer, without tools. Extracted quotes and spans are checked against the answer. Native citations, repeated citation occurrences and retrieved-but-not-cited sources are retained separately.

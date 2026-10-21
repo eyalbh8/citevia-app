@@ -25,12 +25,10 @@ import {
 export default function SourcesView({
   path,
   dashboard,
-  revision,
   onResponse,
 }: {
   path: string;
   dashboard: Dashboard;
-  revision: number;
   onResponse: (id: string) => void;
 }) {
   const [kind, setKind] = useState<'cited' | 'consulted'>('cited');
@@ -51,7 +49,6 @@ export default function SourcesView({
     runId
       ? `${path}/sources${query({ runId, kind, groupBy: 'domain', q: debounced, owned, cursor: cursors.at(-1) })}`
       : null,
-    revision,
   );
   return (
     <>
@@ -158,7 +155,6 @@ export default function SourcesView({
                 source={source}
                 path={path}
                 runId={runId}
-                revision={revision}
                 onSelect={setSelected}
               />
             ))}
@@ -194,7 +190,6 @@ export default function SourcesView({
           source={selected}
           path={path}
           runId={runId}
-          revision={revision}
           onClose={() => setSelected(undefined)}
           onResponse={(id) => {
             setSelected(undefined);
@@ -210,13 +205,11 @@ function DomainCard({
   source,
   path,
   runId,
-  revision,
   onSelect,
 }: {
   source: SourceRow;
   path: string;
   runId: string;
-  revision: number;
   onSelect: (source: SourceRow) => void;
 }) {
   const [open, setOpen] = useState(false),
@@ -225,7 +218,6 @@ function DomainCard({
     open
       ? `${path}/sources${query({ runId, kind: source.kind, groupBy: 'url', domain: source.domain, cursor })}`
       : null,
-    revision,
   );
   return (
     <details
@@ -347,21 +339,18 @@ function SourceAnswers({
   source,
   path,
   runId,
-  revision,
   onClose,
   onResponse,
 }: {
   source: SourceRow;
   path: string;
   runId: string;
-  revision: number;
   onClose: () => void;
   onResponse: (id: string) => void;
 }) {
   const [cursor, setCursor] = useState<string>();
   const { data, error, loading } = useApi<Page<PromptResult>>(
     `${path}/sources/${encodeURIComponent(source.id)}/responses${query({ runId, cursor })}`,
-    revision,
   );
   return (
     <Drawer title="Answers using this source" onClose={onClose}>

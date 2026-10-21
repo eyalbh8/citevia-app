@@ -145,12 +145,10 @@ function exportOverview(data: DashboardOverview, name: string) {
 export function DashboardView({
   project,
   path,
-  revision,
   actions,
 }: {
   project: Project;
   path: string;
-  revision: number;
   actions?: ReactNode;
 }) {
   const [selection, setSelection] =
@@ -158,7 +156,7 @@ export function DashboardView({
   const [retry, setRetry] = useState(0);
   const overview = useApi<DashboardOverview>(
     `${path}/dashboard/overview${selectionQuery(selection)}`,
-    revision + retry,
+    retry,
   );
   const data = overview.data;
   const periodCaption =

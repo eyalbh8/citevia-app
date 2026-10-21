@@ -115,18 +115,17 @@ export function CreatedConnectionPanel({ created, onHide }: { created: CreatedCo
 }
 
 /** Remount on scope changes so even an in-flight key response cannot cross accounts. */
-export default function McpView({ systemAdmin, project, revision }: {
+export default function McpView({ systemAdmin, project }: {
   systemAdmin: boolean;
   project?: Project;
-  revision: number;
 }) {
   if (!systemAdmin && !project) return <div className="card"><Empty title="Select an account to connect" description="Your MCP connection gives access to one assigned account. Ask your system administrator to assign an account if none are available." /></div>;
-  return <ScopedMcpView key={systemAdmin ? 'system' : project!.id} systemAdmin={systemAdmin} project={systemAdmin ? undefined : project} revision={revision} />;
+  return <ScopedMcpView key={systemAdmin ? 'system' : project!.id} systemAdmin={systemAdmin} project={systemAdmin ? undefined : project} />;
 }
 
-function ScopedMcpView({ systemAdmin, project, revision }: { systemAdmin: boolean; project?: Project; revision: number }) {
+function ScopedMcpView({ systemAdmin, project }: { systemAdmin: boolean; project?: Project }) {
   const [localRevision, setLocalRevision] = useState(0);
-  const result = useApi<Connections>(`/mcp/connections${query({ projectId: systemAdmin ? undefined : project!.id })}`, revision + localRevision);
+  const result = useApi<Connections>(`/mcp/connections${query({ projectId: systemAdmin ? undefined : project!.id })}`, localRevision);
   const [createOpen, setCreateOpen] = useState(false);
   const [suggestedName, setSuggestedName] = useState('');
   const [created, setCreated] = useState<CreatedConnection>();
