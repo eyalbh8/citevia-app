@@ -113,7 +113,8 @@ export function metricsFromResults(results: PromptResult[]): Metrics {
   return metrics;
 }
 
-export function sameMethod(a: RunSnapshot, b: RunSnapshot): boolean {
+/** Target-only scores do not change meaning when the tracked competitor list changes. */
+export function sameTargetMethod(a: RunSnapshot, b: RunSnapshot): boolean {
   return (
     (a.provider ?? 'openai') === (b.provider ?? 'openai') &&
     a.generationModel === b.generationModel &&
@@ -121,7 +122,14 @@ export function sameMethod(a: RunSnapshot, b: RunSnapshot): boolean {
     a.parserVersion === b.parserVersion &&
     a.country === b.country &&
     a.language === b.language &&
-    JSON.stringify(a.brand) === JSON.stringify(b.brand) &&
+    JSON.stringify(a.brand) === JSON.stringify(b.brand)
+  );
+}
+
+/** Full reports still require the same competitor cohort for comparison. */
+export function sameMethod(a: RunSnapshot, b: RunSnapshot): boolean {
+  return (
+    sameTargetMethod(a, b) &&
     JSON.stringify(a.competitors) === JSON.stringify(b.competitors)
   );
 }

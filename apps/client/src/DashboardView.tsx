@@ -10,7 +10,6 @@ import {
   ArrowDownRight,
   ArrowDownToLine,
   ArrowUpRight,
-  Globe2,
   Info,
   Minus,
 } from 'lucide-react';
@@ -23,6 +22,7 @@ import {
 import { downloadCsv, useApi } from './api';
 import { Empty, ErrorNotice, formatNumber, labelize } from './components';
 import { Skeleton } from './Loading';
+import DomainLogo from './DomainLogo';
 import {
   initialSelection,
   MonitoringHeader,
@@ -330,6 +330,16 @@ export function DashboardView({
                     </h2>
                     <p className="card-description">Top brands by visibility</p>
                   </div>
+                  {project.role === 'owner' && (
+                    <a
+                      className="button button-quiet overview-manage-competitors"
+                      href="#settings"
+                    >
+                      {project.competitors.length
+                        ? 'Manage competitors'
+                        : 'Add competitors'}
+                    </a>
+                  )}
                 </div>
                 {data.ranking.length ? (
                   <div
@@ -365,17 +375,16 @@ export function DashboardView({
                             <td>{index + 1}</td>
                             <th scope="row">
                               <div className="overview-brand">
-                                <span
+                                <DomainLogo
+                                  domain={b.domain}
+                                  name={b.name}
                                   className="overview-brand-avatar"
                                   style={
                                     {
                                       '--brand-color': brandColors[index],
                                     } as CSSProperties
                                   }
-                                  aria-hidden="true"
-                                >
-                                  {b.name.slice(0, 1).toUpperCase()}
-                                </span>
+                                />
                                 <span
                                   className="overview-brand-name"
                                   title={b.domain || b.name}
@@ -436,7 +445,11 @@ export function DashboardView({
                 )}
                 {data.ranking.length > 0 && (
                   <div className="overview-card-footer">
-                    <span>Rank reflects daily mention totals.</span>
+                    <span>
+                      {project.competitors.length
+                        ? 'Rank reflects daily mention totals.'
+                        : 'Add competitors to compare your brand with other companies.'}
+                    </span>
                   </div>
                 )}
               </section>
@@ -495,11 +508,11 @@ export function DashboardView({
                       <tr key={s.domain}>
                         <th scope="row">
                           <span className="overview-source">
-                            <span
+                            <DomainLogo
+                              domain={s.domain}
+                              size={30}
                               className={`overview-source-icon ${s.owned ? 'owned' : ''}`}
-                            >
-                              <Globe2 size={16} />
-                            </span>
+                            />
                             <span className="overview-source-domain">
                               {s.domain}
                               {s.owned && <small>Your domain</small>}

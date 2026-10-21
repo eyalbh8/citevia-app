@@ -14,6 +14,7 @@ import {
   STAGE_INTENTS,
   type Brandbook,
   type CapturedAnswer,
+  type DiscoveredCompetitor,
   type OnboardingJob,
   type Prompt,
 } from '@citevia/core';
@@ -37,15 +38,24 @@ import {
   brandbookGenerationSchema,
   resolveBrandbookEvidence,
 } from './onboarding-evidence.js';
+import {
+  competitorGenerationSchema,
+  resolveDiscoveredCompetitors,
+} from './competitor-discovery.js';
 export interface OnboardingProvider {
   research(job: OnboardingJob): Promise<CapturedAnswer>;
   brandbook(
     job: OnboardingJob,
     research: CapturedAnswer,
-  ): Promise<{ brandbook: Brandbook; receipt: unknown }>;
+  ): Promise<{
+    brandbook: Brandbook;
+    competitors?: DiscoveredCompetitor[];
+    receipt: unknown;
+  }>;
   prompts(
     job: OnboardingJob,
     brandbook: Brandbook,
+    competitors?: DiscoveredCompetitor[],
   ): Promise<{ prompts: Prompt[]; receipt: unknown }>;
 }
 export class OnboardingOutputError extends ProviderError {
@@ -237,10 +247,18 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         'Saved research has no usable citation-linked evidence. Automatic generation stopped before another API call.',
         false,
       );
+    const schema = brandbookGenerationSchema(catalog);
     const receipt = await this.provider.extract({
       model: this.model,
       instructions: BRANDBOOK_INSTRUCTIONS,
-      schema: brandbookGenerationSchema(catalog),
+      schema: {
+        ...schema,
+        required: [...schema.required, 'competitors'],
+        properties: {
+          ...schema.properties,
+          competitors: competitorGenerationSchema(catalog),
+        },
+      },
       input: {
         company: job.input,
         research: research.text,
@@ -249,8 +267,20 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
       },
     });
     try {
+      const raw = object(json(receipt));
+      const { competitors: rawCompetitors = [], ...rawBrandbook } = raw || {};
       const parsed = generatedBrandbookSchema.parse(
-        resolveBrandbookEvidence(json(receipt), catalog),
+        resolveBrandbookEvidence(rawBrandbook, catalog),
+      );
+      const competitors = resolveDiscoveredCompetitors(
+        rawCompetitors,
+        research,
+        {
+          id: 'target',
+          name: job.input.name,
+          aliases: parsed.names,
+          domains: [new URL(job.input.website).hostname],
+        },
       );
       const allowed = new Set(
         [...research.citations, ...research.sources].map(
@@ -287,6 +317,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
       };
       return {
         brandbook,
+        competitors,
         receipt: {
           instructionsVersion: ONBOARDING_INSTRUCTIONS_VERSION,
           evidenceCatalog: catalog,
@@ -297,7 +328,11 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
       throw new OnboardingOutputError(error, receipt);
     }
   }
-  async prompts(job: OnboardingJob, brandbook: Brandbook) {
+  async prompts(
+    job: OnboardingJob,
+    brandbook: Brandbook,
+    competitors: DiscoveredCompetitor[] = [],
+  ) {
     if (job.input.manualPrompts.length === 50)
       return {
         prompts: validatePortfolio(job, brandbook, { prompts: [] }),
@@ -317,6 +352,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
       schema: portfolioGenerationSchema(allocation, branded),
       input: {
         brandbook,
+        competitors,
         market: job.input.country,
         language: job.input.language,
         manual_prompts: job.input.manualPrompts,

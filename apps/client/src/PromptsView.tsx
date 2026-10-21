@@ -1,11 +1,10 @@
 import { Skeleton } from './Loading';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent } from 'react';
 import {
   Archive,
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
-  ChevronDown,
   Download,
   Globe2,
   Hexagon,
@@ -41,6 +40,12 @@ import {
 import PromptAnswersDrawer from './PromptAnswersDrawer';
 import './prompts.css';
 import ProviderFilter from './ProviderFilter';
+import FilterDropdown from './FilterDropdown';
+import {
+  brandingOptions,
+  promptTypeOptions,
+  regionOptions,
+} from './filter-options';
 import DateRangeFilter, { type DateRangeSelection } from './DateRangeFilter';
 
 type Props = {
@@ -53,33 +58,6 @@ type SortKey =
   'text' | 'avgVisibility' | 'avgSentimentScore' | 'avgRank' | 'createdAt';
 const PAGE_SIZE = 20;
 
-function Filter({
-  label,
-  icon,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  icon: ReactNode;
-  value: string;
-  onChange: (value: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <label className={`prompt-filter-pill ${value ? 'is-filtered' : ''}`}>
-      {icon}
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {children}
-      </select>
-      <ChevronDown size={15} />
-    </label>
-  );
-}
 export function PromptMetricChange({ value }: { value: number | null }) {
   return (
     <span
@@ -388,42 +366,32 @@ export default function PromptsView({
       <div className="prompts-filter-header">
         <h1>Prompts</h1>
         <div className="prompts-filter-list">
-          <Filter
+          <FilterDropdown
             label="Regions"
             icon={<Globe2 size={17} />}
             value={region}
             onChange={(value) => filter(() => setRegion(value))}
-          >
-            <option value="">Regions</option>
-            <option value={project.country}>
-              {flag(project.country)} {project.country}
-            </option>
-          </Filter>
-          <Filter
+            placeholder="Regions"
+            options={regionOptions(project.country)}
+          />
+          <FilterDropdown
             label="Branded"
             icon={<Hexagon size={17} />}
             value={branded}
             onChange={(value) => filter(() => setBranded(value))}
-          >
-            <option value="">Branded</option>
-            <option value="true">Branded</option>
-            <option value="false">Non-branded</option>
-          </Filter>
-          <Filter
+            placeholder="Branded"
+            options={brandingOptions}
+          />
+          <FilterDropdown
             label="Prompt Types"
             icon={<TerminalSquare size={17} />}
             value={stage}
             onChange={(value) =>
               filter(() => setStage(value as JourneyStage | ''))
             }
-          >
-            <option value="">Prompt Types</option>
-            {JOURNEY_STAGES.map((value) => (
-              <option key={value} value={value}>
-                {labelize(value)}
-              </option>
-            ))}
-          </Filter>
+            placeholder="Prompt Types"
+            options={promptTypeOptions}
+          />
           <ProviderFilter
             project={project}
             value={provider ? [provider] : []}
@@ -457,16 +425,17 @@ export default function PromptsView({
             {scores.data?.usage.limit ?? 50} Prompts Used
           </span>
           <div className="prompts-status-filter">
-            <Filter
+            <FilterDropdown
               label="Prompt status"
               icon={<ListFilter size={17} />}
               value={status}
               onChange={(value) => filter(() => setStatus(value))}
-            >
-              <option value="active">Active prompts</option>
-              <option value="archived">Archived prompts</option>
-              <option value="all">All prompts</option>
-            </Filter>
+              options={[
+                { value: 'active', label: 'Active prompts' },
+                { value: 'archived', label: 'Archived prompts' },
+                { value: 'all', label: 'All prompts' },
+              ]}
+            />
           </div>
         </div>
         {pendingSetup && (

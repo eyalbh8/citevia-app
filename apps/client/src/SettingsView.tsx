@@ -4,10 +4,8 @@ import {
   CalendarClock,
   Info,
   LoaderCircle,
-  Plus,
   RefreshCw,
   Save,
-  Trash2,
 } from 'lucide-react';
 import type { Brand, Page, Project, ScanRun } from '@citevia/core';
 import {
@@ -20,6 +18,7 @@ import {
 } from '@citevia/core';
 import { idempotentPost, request, useApi } from './api';
 import { Badge, Empty, ErrorNotice, formatDate } from './components';
+import CompetitorSettings from './CompetitorSettings';
 
 export default function SettingsView({
   path,
@@ -104,19 +103,23 @@ export default function SettingsView({
                   </h3>
                   <ErrorNotice error={runs.error} />
                   <div className="run-history">
-                    {runs.loading && !runs.data && <Skeleton variant="table" rows={3} label="Loading recent scans…" />}
-                    {runs.data?.items
-                      .slice(0, 6)
-                      .map((run) => (
-                        <RunHistoryRow
-                          key={run.id}
-                          run={run}
-                          path={path}
-                          owner={project.role === 'owner'}
-                          onSaved={onSaved}
-                          notify={notify}
-                        />
-                      ))}
+                    {runs.loading && !runs.data && (
+                      <Skeleton
+                        variant="table"
+                        rows={3}
+                        label="Loading recent scans…"
+                      />
+                    )}
+                    {runs.data?.items.slice(0, 6).map((run) => (
+                      <RunHistoryRow
+                        key={run.id}
+                        run={run}
+                        path={path}
+                        owner={project.role === 'owner'}
+                        onSaved={onSaved}
+                        notify={notify}
+                      />
+                    ))}
                     {runs.data && !runs.data.items.length && (
                       <p className="card-description">No scans yet.</p>
                     )}
@@ -181,6 +184,7 @@ function ProjectForm({
     [timezone, setTimezone] = useState(project.timezone),
     [enabled, setEnabled] = useState(project.enabled);
   const [competitors, setCompetitors] = useState<Brand[]>(project.competitors);
+  const [competitorsEdited, setCompetitorsEdited] = useState(false);
   const [scanProviders, setScanProviders] = useState(projectProviders(project));
   const [saving, setSaving] = useState(false),
     [error, setError] = useState<Error>();
@@ -210,7 +214,16 @@ function ProjectForm({
             aliases: split(aliases),
             domains: split(domains),
           },
-          competitors,
+          ...(competitorsEdited
+            ? {
+                competitors: competitors.map((competitor) => ({
+                  ...competitor,
+                  name: competitor.name.trim(),
+                  aliases: competitor.aliases.flatMap(split),
+                  domains: competitor.domains.flatMap(split),
+                })),
+              }
+            : {}),
           country: country.toUpperCase(),
           language,
           timezone,
@@ -218,7 +231,11 @@ function ProjectForm({
           scanProviders,
         }),
       });
-      notify('Project settings saved. Changes apply to the next scan.');
+      notify(
+        competitorsEdited && competitors.length
+          ? 'Settings saved. Competitors are tracked in the dashboard and future scans.'
+          : 'Project settings saved.',
+      );
       onSaved();
     } catch (error) {
       setError(error as Error);
@@ -426,108 +443,15 @@ function ProjectForm({
                 <p role="alert">Select at least one provider.</p>
               )}
             </div>
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: 11,
-                }}
-              >
-                <span className="field">Tracked competitors</span>
-                {owner && (
-                  <button
-                    className="button button-quiet"
-                    type="button"
-                    disabled={competitors.length >= 5}
-                    onClick={() =>
-                      setCompetitors((previous) => [
-                        ...previous,
-                        {
-                          id: crypto.randomUUID(),
-                          name: '',
-                          aliases: [],
-                          domains: [],
-                        },
-                      ])
-                    }
-                  >
-                    <Plus size={12} />
-                    Add competitor
-                  </button>
-                )}
-              </div>
-              {competitors.map((competitor, index) => (
-                <div
-                  key={competitor.id}
-                  style={{
-                    padding: '12px',
-                    border: '1px solid var(--line, #e6e5ef)',
-                    borderRadius: 8,
-                    marginBottom: 9,
-                  }}
-                >
-                  <div
-                    style={{ display: 'flex', alignItems: 'center', gap: 9 }}
-                  >
-                    <label className="field" style={{ flex: 1 }}>
-                      Name
-                      <input
-                        required
-                        value={competitor.name}
-                        onChange={(event) =>
-                          setCompetitors((previous) =>
-                            previous.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, name: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    {owner && (
-                      <button
-                        className="icon-button"
-                        type="button"
-                        style={{ marginTop: 18 }}
-                        aria-label={`Remove competitor ${competitor.name || index + 1}`}
-                        onClick={() =>
-                          setCompetitors((previous) =>
-                            previous.filter(
-                              (_, itemIndex) => itemIndex !== index,
-                            ),
-                          )
-                        }
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                  <label className="field" style={{ marginTop: 10 }}>
-                    Aliases (comma separated)
-                    <input
-                      defaultValue={competitor.aliases.join(', ')}
-                      onBlur={(event) =>
-                        setCompetitors((previous) =>
-                          previous.map((item, itemIndex) =>
-                            itemIndex === index
-                              ? { ...item, aliases: split(event.target.value) }
-                              : item,
-                          ),
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-              ))}
-              {!competitors.length && (
-                <p className="card-description">
-                  Optional. Track other brands mentioned in the same answers.
-                </p>
-              )}
-            </div>
+            <CompetitorSettings
+              project={project}
+              path={path}
+              value={competitors}
+              onChange={(value) => {
+                setCompetitors(value);
+                setCompetitorsEdited(true);
+              }}
+            />
             {owner && (
               <div className="form-actions">
                 <button

@@ -17,7 +17,7 @@ import {
   type TrackedUrl,
 } from '@citevia/core';
 import * as tracking from './tracking-postgres.js';
-import type { Repository } from './contracts.js';
+import type { Repository, SavedAnalysis, SavedAnalysisRef } from './contracts.js';
 import { uuidFor, type SqlDatabase, type SqlSession } from './sql.js';
 import { AccessError, PostgresUsers } from './users.js';
 
@@ -26,6 +26,44 @@ const data = <T>(rows: Record<string, unknown>[]): T | null =>
 export class PostgresRepository extends PostgresUsers implements Repository {
   constructor(db: SqlDatabase) {
     super(db);
+  }
+  async listSavedAnalyses(
+    projectId: string,
+    refs: SavedAnalysisRef[],
+  ): Promise<SavedAnalysis[]> {
+    const found = new Map<string, SavedAnalysis>();
+    for (let index = 0; index < refs.length; index += 500) {
+      const requested = refs.slice(index, index + 500).map((ref) => ({
+        response_id: ref.responseId,
+        native_id: uuidFor(`${projectId}:response:${ref.responseId}`),
+        capture_key: ref.captureKey,
+        analysis_key: ref.analysisKey || null,
+      }));
+      const { rows } = await this.db.query(
+        `SELECT requested.response_id, response.json_response->'analysis' AS analysis
+        FROM jsonb_to_recordset($2::jsonb) AS requested(response_id text,native_id uuid,capture_key text,analysis_key text)
+        JOIN prompt_responses response ON response.id=requested.native_id
+        JOIN citevia_projects project ON project.id=$1 AND project.account_id=response.account_id
+        JOIN citevia_runs run ON run.project_id=project.id AND run.scan_id=response.scan_id
+        JOIN citevia_prompt_results result ON result.project_id=project.id AND result.run_id=run.id AND result.data->>'responseId'=requested.response_id
+        WHERE response.s3_key=requested.capture_key
+          AND result.data->>'captureKey'=requested.capture_key
+          AND result.data->>'analysisKey' IS NOT DISTINCT FROM requested.analysis_key
+          AND response.json_response ? 'analysis'
+          AND (NOT (response.json_response ? 'measurement') OR (
+            response.json_response->'measurement'->>'responseId'=requested.response_id
+            AND response.json_response->'measurement'->>'captureKey'=requested.capture_key
+            AND response.json_response->'measurement'->>'analysisKey' IS NOT DISTINCT FROM requested.analysis_key
+            AND (response.json_response->'measurement'->>'version')::integer=result.version
+          ))`,
+        [projectId, JSON.stringify(requested)],
+      );
+      for (const row of rows) found.set(String(row.response_id), {
+        responseId: String(row.response_id),
+        analysis: row.analysis as Analysis | null,
+      });
+    }
+    return [...found.values()];
   }
   async listNativeCitations(projectId: string, captureKeys: string[]) {
     const keys = [...new Set(captureKeys)];
@@ -617,6 +655,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     answer: CapturedAnswer | null,
     analysis: Analysis | null,
   ) {
+    if (result.projectId !== run.projectId || result.runId !== run.id) return;
     await this.db.transaction(async (tx) => {
       await tx.query('SELECT id FROM citevia_projects WHERE id=$1 FOR UPDATE', [run.projectId]);
       // Prevent an older finalizer from publishing rows after a newer retry changed the result.
@@ -656,6 +695,12 @@ export class PostgresRepository extends PostgresUsers implements Repository {
                 ? reportingCompanies(analysis, run.snapshot, answer)
                 : [],
             analysis,
+            measurement: {
+              responseId: result.responseId,
+              captureKey: result.captureKey || null,
+              analysisKey: result.analysisKey || null,
+              version: result.version,
+            },
             companiesByAppearance: analysis?.companies || [],
             sentimentScore:
               result.status === 'succeeded'

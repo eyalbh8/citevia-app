@@ -7,8 +7,8 @@ import {
 } from '@citevia/core';
 import { SentimentScore } from './ScoreBadge';
 import AnswerMarkdown from './AnswerMarkdown';
+import DomainLogo from './DomainLogo';
 import {
-  BookOpen,
   ExternalLink as LinkIcon,
   Info,
   MessageSquareText,
@@ -173,7 +173,10 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
             <div className="citation-list">
               {answer.citations.map((citation, index) => (
                 <div className="citation" key={citation.id + index}>
-                  <span className="citation-number">{index + 1}</span>
+                  <span className="citation-logo-stack">
+                    <DomainLogo domain={citation.url} />
+                    <span className="citation-number">{index + 1}</span>
+                  </span>
                   <div>
                     <ExternalLink url={citation.url}>
                       {citation.title || citation.url}
@@ -201,9 +204,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
             <div className="citation-list">
               {answer.sources.map((source, index) => (
                 <div className="citation" key={source.url + index}>
-                  <span className="citation-number">
-                    <BookOpen size={11} />
-                  </span>
+                  <DomainLogo domain={source.url} />
                   <div>
                     <ExternalLink url={source.url}>
                       {source.title || source.url}

@@ -104,6 +104,83 @@ async function fixture(
   return { ...runtime, project, call, scan };
 }
 
+describe('competitor settings', () => {
+  it('saves normalized competitor websites, preserves explicit empty choices, and requires owner access', async () => {
+    const f = await fixture();
+    const competitor = {
+      id: 'new-rival',
+      name: 'New Rival',
+      aliases: ['Rival Analytics'],
+      domains: ['https://www.rival.com/products', 'rival.com'],
+    };
+    const patch = jsonRequest('PATCH', {
+      version: 1,
+      competitors: [competitor],
+    });
+    expect((await f.call(`${BASE}/settings`, patch, VIEWER)).status).toBe(403);
+    const saved = await f.call(`${BASE}/settings`, patch);
+    expect(saved.status).toBe(200);
+    const project = await read<Project>(saved);
+    expect(project.competitors).toEqual([
+      { ...competitor, domains: ['rival.com'] },
+    ]);
+    expect(project.competitorsConfiguredAt).toBe(DATE.toISOString());
+    const cleared = await f.call(
+      `${BASE}/settings`,
+      jsonRequest('PATCH', { version: project.version, competitors: [] }),
+    );
+    expect(cleared.status).toBe(200);
+    expect(await read(cleared)).toMatchObject({
+      competitors: [],
+      competitorsConfiguredAt: DATE.toISOString(),
+    });
+  });
+
+  it('rejects target identities and duplicate competitor aliases or websites', async () => {
+    const f = await fixture();
+    const rival = {
+      id: 'rival-a',
+      name: 'Rival',
+      aliases: ['Rival Analytics'],
+      domains: ['rival.com'],
+    };
+    for (const competitors of [
+      [{ ...rival, name: f.project.brand.name }],
+      [{ ...rival, domains: f.project.brand.domains }],
+      [
+        rival,
+        {
+          ...rival,
+          id: 'rival-b',
+          name: 'Different name',
+          aliases: [],
+          domains: ['https://www.rival.com'],
+        },
+      ],
+      [
+        rival,
+        {
+          ...rival,
+          id: 'rival-b',
+          name: 'RIVAL ANALYTICS',
+          aliases: [],
+          domains: [],
+        },
+      ],
+    ]) {
+      const result = await f.call(
+        `${BASE}/settings`,
+        jsonRequest('PATCH', { version: 1, competitors }),
+      );
+      expect(result.status).toBe(400);
+      expect(await read(result)).toMatchObject({
+        error: { code: 'DUPLICATE_COMPETITOR' },
+      });
+    }
+    expect((await f.repository.getProject(f.project.id))?.version).toBe(1);
+  });
+});
+
 describe('multi-provider reporting and admission', () => {
   async function configure(f: Awaited<ReturnType<typeof fixture>>) {
     const stored = (await f.repository.getProject(f.project.id))!;

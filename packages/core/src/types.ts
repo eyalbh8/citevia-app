@@ -37,6 +37,8 @@ export interface Project {
   name: string;
   brand: Brand;
   competitors: Brand[];
+  /** Records an explicit owner choice, including choosing no competitors. */
+  competitorsConfiguredAt?: string;
   country: string;
   language: string;
   timezone: string;

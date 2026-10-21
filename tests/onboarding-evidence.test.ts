@@ -103,7 +103,7 @@ describe('brandbook evidence references', () => {
       { field: 'about', quote: catalog[0].quote, url: catalog[0].url },
     ]);
     expect(result.receipt).toMatchObject({
-      instructionsVersion: 'citevia-onboarding-v5',
+      instructionsVersion: 'citevia-onboarding-v6',
       evidenceCatalog: catalog,
     });
     const request = extract.mock.calls[0][0] as any;

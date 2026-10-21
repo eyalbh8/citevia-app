@@ -1,0 +1,187 @@
+.filter-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.filter-dropdown-trigger:hover:not(:disabled),
+.filter-dropdown-trigger.is-open {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.filter-dropdown-trigger.is-open {
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.filter-dropdown-trigger.is-filtered {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+.filter-dropdown-trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+.filter-dropdown-trigger:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.filter-dropdown-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-dropdown-icon,
+.filter-dropdown-option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.filter-dropdown-option-icon {
+  width: 20px;
+  height: 20px;
+}
+.filter-dropdown-option-icon img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+.filter-dropdown-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: transform 0.15s;
+}
+.filter-dropdown-trigger.is-open .filter-dropdown-chevron {
+  transform: rotate(180deg);
+}
+.filter-dropdown-panel {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow:
+    0 12px 40px #16154320,
+    0 2px 6px #16154308;
+  overflow: hidden;
+}
+.filter-dropdown-heading {
+  flex-shrink: 0;
+  padding: 7px 10px 11px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 18px;
+}
+.filter-dropdown-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+}
+.filter-dropdown-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.filter-dropdown-option.is-all {
+  margin-bottom: 5px;
+}
+.filter-dropdown-option.is-selected {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.filter-dropdown-option.is-focused:not([aria-disabled]) {
+  background: var(--surface-muted);
+}
+.filter-dropdown-option.is-focused.is-selected {
+  background: var(--primary-soft);
+}
+.filter-dropdown-list:focus-visible .filter-dropdown-option.is-focused {
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+.filter-dropdown-option[aria-disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+.filter-dropdown-option-text {
+  flex: 1;
+  min-width: 0;
+}
+.filter-dropdown-option-text > span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.filter-dropdown-option-text small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 17px;
+  font-weight: 400;
+}
+.filter-dropdown-check {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--primary);
+}
+.filter-dropdown-check.is-checkbox {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.is-selected .filter-dropdown-check.is-checkbox {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: white;
+}
+.filter-stage-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--stage-color);
+}
+.filter-pagination-label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.filter-dropdown-trigger.filter-dropdown-compact {
+  min-height: 34px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .filter-dropdown-trigger,
+  .filter-dropdown-chevron {
+    transition: none;
+  }
+}

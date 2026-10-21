@@ -1,0 +1,157 @@
+.competitor-settings {
+  min-width: 0;
+}
+.competitor-settings > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.competitor-settings h3 {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 5px;
+}
+.competitor-settings p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+}
+.competitor-count {
+  flex-shrink: 0;
+  padding: 4px 9px;
+  border-radius: 99px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 12px;
+}
+.competitor-editor {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  min-width: 0;
+}
+.competitor-editor-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.competitor-editor-heading strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  flex: 1;
+  min-width: 0;
+}
+.competitor-editor-heading .icon-button {
+  flex-shrink: 0;
+}
+.competitor-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.competitor-editor .field {
+  min-width: 0;
+}
+.competitor-editor input {
+  width: 100%;
+  min-width: 0;
+}
+.competitor-aliases {
+  margin-top: 12px;
+}
+.competitor-aliases .field-hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--muted);
+}
+.competitor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+.competitor-empty {
+  padding: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.competitor-suggestions {
+  padding: 16px;
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.competitor-suggestions h4 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 13px;
+}
+.competitor-suggestions > p {
+  margin-bottom: 12px;
+}
+.competitor-suggestion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+}
+.competitor-suggestion:last-child {
+  padding-bottom: 0;
+}
+.competitor-suggestion > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.competitor-suggestion strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.competitor-suggestion span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.competitor-suggestion details {
+  grid-column: 1 / -1;
+}
+.competitor-suggestion summary {
+  font-size: 12px;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 3px 0;
+}
+.competitor-suggestion blockquote {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--primary);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  max-height: 150px;
+  overflow: auto;
+}
+.competitor-settings .competitor-help {
+  margin-top: 14px;
+}
+@media (max-width: 520px) {
+  .competitor-editor-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .competitor-suggestions {
+    padding: 12px;
+  }
+}

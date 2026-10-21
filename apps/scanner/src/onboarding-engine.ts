@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   Brandbook,
   CapturedAnswer,
+  DiscoveredCompetitor,
   OnboardingJob,
   Prompt,
 } from '@citevia/core';
@@ -9,6 +10,7 @@ import {
   isBrandedPrompt,
   MAX_BRANDED_PROMPTS,
   isShortBuyerPrompt,
+  competitorBrands,
 } from '@citevia/core';
 import type { Runtime } from '@citevia/storage';
 import {
@@ -104,19 +106,21 @@ export class OnboardingEngine {
         );
         current = { ...current, brandbookKey: key, step: 'prompts' };
       } else if (current.step === 'prompts') {
-        const book = await artifacts.get<{ brandbook: Brandbook }>(
-          current.brandbookKey!,
-        );
+        const book = await artifacts.get<{
+          brandbook: Brandbook;
+          competitors?: DiscoveredCompetitor[];
+        }>(current.brandbookKey!);
         if (!book) throw new Error('Missing brandbook checkpoint');
         const key = `${root}/prompts.json`;
         await generateOnce(key, () =>
-          this.provider.prompts(current, book.brandbook),
+          this.provider.prompts(current, book.brandbook, book.competitors),
         );
         current = { ...current, promptsKey: key, step: 'activate' };
       } else if (current.step === 'activate') {
-        const book = await artifacts.get<{ brandbook: Brandbook }>(
-            current.brandbookKey!,
-          ),
+        const book = await artifacts.get<{
+            brandbook: Brandbook;
+            competitors?: DiscoveredCompetitor[];
+          }>(current.brandbookKey!),
           portfolio = await artifacts.get<{ prompts: Prompt[] }>(
             current.promptsKey!,
           );
@@ -157,6 +161,23 @@ export class OnboardingEngine {
           const next = {
             ...project,
             brandbook: book.brandbook,
+            // Manual settings win if an owner configured rivals while setup ran.
+            competitors:
+              project.competitorsConfiguredAt || project.competitors.length
+                ? project.competitors
+                : competitorBrands(
+                    {
+                      id: project.id,
+                      brand: {
+                        ...project.brand,
+                        aliases: [
+                          ...project.brand.aliases,
+                          ...book.brandbook.names,
+                        ],
+                      },
+                    },
+                    book.competitors || [],
+                  ),
             brand: {
               ...project.brand,
               aliases: book.brandbook.names

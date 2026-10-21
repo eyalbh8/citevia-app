@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   promptMetricChange,
   promptPeriodMetrics,
+  promptMetrics,
+  sameMethod,
+  sameTargetMethod,
   type PromptHistory,
   type PromptResult,
   type ScanProvider,
@@ -106,6 +109,38 @@ function fixture() {
 }
 
 describe('iGEO prompt period metrics', () => {
+  it('retains target measurements when competitors change without relaxing full-report compatibility', () => {
+    const f = fixture();
+    const previous = f.observation('2026-10-13T12:00:00.000Z', { rank: 3 });
+    const current = f.observation('2026-10-20T12:00:00.000Z', { rank: 2 });
+    f.project.competitors = [
+      { id: 'new', name: 'New rival', aliases: [], domains: [] },
+    ];
+    current.run.snapshot.competitors = f.project.competitors;
+    expect(sameTargetMethod(previous.run.snapshot, current.run.snapshot)).toBe(
+      true,
+    );
+    expect(sameMethod(previous.run.snapshot, current.run.snapshot)).toBe(false);
+    expect(
+      promptPeriodMetrics(f.project, f.history, start, end).items[0],
+    ).toMatchObject({
+      measurementCount: 1,
+      previousMeasurementCount: 1,
+      avgVisibility: 100,
+      avgRank: 2,
+      rankChange: 33.33,
+    });
+    expect(
+      promptMetrics(f.project, current.run, [current.result], previous.run, [
+        previous.result,
+      ])[0],
+    ).toMatchObject({ previousMeasurementCount: 1, rankChange: 33.33 });
+    f.project.brand = { ...f.project.brand, aliases: ['New target alias'] };
+    expect(
+      promptPeriodMetrics(f.project, f.history, start, end).items[0]
+        .measurementCount,
+    ).toBe(0);
+  });
   it('matches rounded period averages and two-decimal iGEO changes', () => {
     const f = fixture();
     for (let i = 0; i < 100; i++) {

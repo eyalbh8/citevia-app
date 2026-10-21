@@ -202,6 +202,15 @@
   gap: 20px;
   align-items: stretch;
 }
+.overview-ranking .card-header {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.overview-manage-competitors {
+  font-size: 12px;
+  white-space: normal;
+  text-align: left;
+}
 .overview-ranking,
 .overview-trend {
   display: flex;
@@ -604,10 +613,6 @@
   .overview-loading .skeleton-shape {
     animation: none;
   }
-}
-/* Keep unused filters compact; expand only when a value is selected. */
-.dashboard-screen .monitor-pill:not(.is-filtered) select[aria-label='Branded'] {
-  width: 64px;
 }
 
 @media (max-width: 380px) {

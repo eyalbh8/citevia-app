@@ -28,39 +28,6 @@
   gap: 8px;
   flex-wrap: wrap;
 }
-.prompt-filter-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 38px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  color: var(--muted);
-  background: var(--surface);
-}
-.prompt-filter-pill select {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-size: 13px;
-  max-width: 150px;
-  padding: 0;
-  appearance: none;
-  cursor: pointer;
-}
-.prompt-filter-pill.is-filtered {
-  color: var(--primary);
-  background: var(--primary-soft);
-  border-color: var(--primary);
-}
-.prompt-filter-pill:hover {
-  border-color: var(--primary);
-}
-.prompt-filter-pill:focus-within {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
 .prompts-panel {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -455,10 +422,6 @@
   .prompts-filter-list {
     gap: 6px;
   }
-  .prompt-filter-pill select {
-    font-size: 12px;
-    max-width: 120px;
-  }
   .prompts-toolbar {
     flex-wrap: wrap;
     gap: 12px;
@@ -488,10 +451,6 @@
   .prompts-filter-list {
     justify-content: flex-start;
     gap: 8px;
-  }
-  .prompt-filter-pill {
-    min-height: 38px;
-    padding: 0 9px;
   }
   .prompts-toolbar {
     padding: 16px 14px;

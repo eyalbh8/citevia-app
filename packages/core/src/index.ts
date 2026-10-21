@@ -11,3 +11,4 @@ export * from './users.js';
 export * from './providers.js';
 export * from './tracking.js';
 export * from './dashboard.js';
+export * from './competitors.js';

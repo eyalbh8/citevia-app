@@ -23,11 +23,20 @@ import {
   type ScanMessage,
   type ScanRun,
 } from '@citevia/core';
-import type { ArtifactStore, JobQueue, Repository } from './contracts.js';
+import type {
+  ArtifactStore, JobQueue, Repository, SavedAnalysisRef, SavedAnalysis,
+} from './contracts.js';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State {
+  savedAnalyses?: Record<string, SavedAnalysisRef & {
+    projectId: string;
+    runId: string;
+    promptId: string;
+    version: number;
+    analysis: Analysis | null;
+  }>;
   trackedUrls: Record<string, TrackedUrl>;
   citationCaptures: Record<string, {capture: CitationCapture; evidence: CitationEvidence[]}>;
   trackingMatches: Record<string, string[]>;
@@ -53,6 +62,25 @@ const copy = <T>(value: T): T => structuredClone(value);
 export class MemoryRepository implements Repository {
   protected state: State = blank();
   private tail: Promise<unknown> = Promise.resolve();
+  listSavedAnalyses(projectId: string, refs: SavedAnalysisRef[]) {
+    return this.operation(() => {
+      const found = new Map<string, SavedAnalysis>();
+      for (const ref of refs) {
+        const saved = this.state.savedAnalyses?.[key(projectId, ref.responseId)];
+        if (
+          !saved || saved.projectId !== projectId ||
+          saved.captureKey !== ref.captureKey || saved.analysisKey !== ref.analysisKey
+        ) continue;
+        const current = this.state.results[key(projectId, saved.runId, saved.promptId)];
+        if (
+          !current || current.responseId !== ref.responseId || current.version !== saved.version ||
+          current.captureKey !== ref.captureKey || current.analysisKey !== ref.analysisKey
+        ) continue;
+        found.set(ref.responseId, { responseId: ref.responseId, analysis: saved.analysis });
+      }
+      return [...found.values()];
+    });
+  }
   listNativeCitations(projectId: string, captureKeys: string[]) {
     return this.operation(() => [...new Set(captureKeys)].flatMap(captureKey => {
       const measurement = this.state.citationCaptures?.[key(projectId, captureKey)];
@@ -146,7 +174,21 @@ export class MemoryRepository implements Repository {
   }
   async saveMeasurement(result: PromptResult, run: ScanRun, answer: CapturedAnswer | null, analysis: Analysis | null) {
     return this.operation(() => {
+      if (result.projectId !== run.projectId || result.runId !== run.id) return;
       if (this.state.results[key(result.projectId,result.runId,result.promptId)]?.version !== result.version) return;
+      if (result.captureKey) {
+        this.state.savedAnalyses ||= {};
+        this.state.savedAnalyses[key(result.projectId, result.responseId)] = copy({
+          projectId: result.projectId,
+          runId: result.runId,
+          promptId: result.promptId,
+          responseId: result.responseId,
+          captureKey: result.captureKey,
+          analysisKey: result.analysisKey,
+          version: result.version,
+          analysis,
+        });
+      }
       const measurement = citationMeasurement(result,run,answer,analysis);
       if (!measurement) return;
       this.state.citationCaptures ||= {}; this.state.trackingMatches ||= {};

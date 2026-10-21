@@ -6,16 +6,16 @@ A system administrator opens **Accounts → New account** and supplies exactly f
 
 The system persists the account, membership and onboarding job atomically, with weekly scanning disabled. It then queues these steps:
 
-1. **Research:** OpenAI Responses with web search researches the company and saves the native response and sources.
-2. **Brandbook:** a separate strict JSON generation creates the iGEO-style company profile from that research. The model selects IDs from a server-built catalog of citation-linked research excerpts. The server copies each exact quote and its native URL; it never accepts a generated or paraphrased evidence quote. Selected evidence and all returned URLs are validated before saving. Missing facts remain empty/null and appear under Needs verification.
+1. **Research:** OpenAI Responses with web search researches the company and up to five direct competitors, including their official websites, and saves the native response and sources.
+2. **Brandbook:** a separate strict JSON generation creates the iGEO-style company profile and a separate competitor list from that research. The model selects IDs from a server-built catalog of citation-linked research excerpts. The server copies each exact quote and its native URL; it never accepts a generated or paraphrased evidence quote. Selected evidence and all returned URLs are validated before saving. Competitors require name-bearing evidence linked to their official domain; unsupported candidates are omitted. Missing profile facts remain empty/null and appear under Needs verification.
 3. **Prompts:** a separate strict JSON generation creates exactly 50 questions using the four brand-specific tactics. Each prompt has a journey section, topic, branded flag, generation ID and version.
-4. **Activate:** save the brandbook and validated portfolio, enable the weekly schedule in the account's timezone, and enqueue an idempotent first scan. The Accounts screen shows progress and recoverable failures; Dashboard shows scan progress.
+4. **Activate:** save the brandbook, validated portfolio and verified competitors, enable the weekly schedule in the account's timezone, and enqueue an idempotent first scan. Existing manual competitor choices, including an explicitly empty list, are preserved. All provider scans receive the same assigned competitors. The Accounts screen shows progress and recoverable failures; Dashboard shows scan progress.
 
 No per-account CLI or database editing is required. Descope authenticates people and their verified profiles are saved in the existing iGEO `users` table. Only database-backed system administrators can create customer brand accounts. `user_accounts` assigns Viewer/Owner access; new users have no account access. Descope controls the login flow and allowed signup methods. See [authentication and user management](AUTHENTICATION.md). Billing and invitation delivery are separate concerns.
 
 ## Generation instructions
 
-The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v4`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
+The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v6`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
 
 - Understand: whether AI understands the brand’s business, offerings, audiences and use cases.
 - Prefer: discovery, shortlists, alternatives, comparisons and tradeoffs.
@@ -66,6 +66,7 @@ AWS gives scans a 24-hour deadline to tolerate bulk onboarding and weekly queue 
 - `GET /v1/projects/:id/onboarding`: persisted job details for account members.
 - `POST /v1/projects/:id/onboarding/retry`: owner-only, idempotent retry of a failed job.
 - `GET/PATCH /v1/projects/:id/brandbook`: versioned profile, owner-only edits.
+- `GET /v1/projects/:id/competitors/suggestions`: account members can retrieve verified alternatives from a sample of up to 300 recent saved answers, without another AI request. Owners assign competitors through Settings; historical verified mentions contribute to the dashboard, while unmeasured sentiment remains unknown. Indexed analysis is read in batches with artifact fallback for legacy records.
 - `GET /v1/runtime`: provider configuration status, behind authentication. Missing local credentials block paid work before account/run admission.
 - Existing prompt APIs accept `stage`, `topic` and `branded`; bulk creation accepts `texts`. PATCH accepts the current prompt `version` and rejects stale edits. Response lists accept a `stage` filter.
 - The dedicated Prompts screen manages active/archived questions and their four sections, and joins measurements only to matching prompt versions and methodology. Editing is blocked until onboarding activation finishes, preventing the generated portfolio from overwriting concurrent manual edits.

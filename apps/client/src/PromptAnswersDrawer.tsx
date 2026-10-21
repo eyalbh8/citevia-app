@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowUp,
   ArrowUpRight,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ import {
   formatDate,
 } from './components';
 import AnswerMarkdown from './AnswerMarkdown';
+import FilterDropdown from './FilterDropdown';
 import { ResponseDetailContent } from './ResponseDrawer';
 
 type Sort = 'date' | 'model' | 'rank' | 'citations' | 'sentiment';
@@ -144,36 +146,46 @@ export default function PromptAnswersDrawer({
       ) : (
         <>
           <div className="answer-history-filters">
-            <label>
-              Provider
-              <select
-                aria-label="Answer provider"
+            <div className="answer-history-filter">
+              <span>Provider</span>
+              <FilterDropdown
+                label="Answer provider"
                 value={provider}
-                onChange={(event) =>
-                  filter(() => setProvider(event.target.value))
-                }
-              >
-                <option value="">All providers</option>
-                {SCAN_PROVIDERS.map((value) => (
-                  <option key={value} value={value}>
-                    {PROVIDER_LABELS[value]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Date range
-              <select
-                aria-label="Answer date range"
+                onChange={(value) => filter(() => setProvider(value))}
+                options={[
+                  { value: '', label: 'All providers' },
+                  ...SCAN_PROVIDERS.map((value) => ({
+                    value,
+                    label: PROVIDER_LABELS[value],
+                    icon: (
+                      <img
+                        src={`/providers/${value}.svg`}
+                        alt=""
+                        width={20}
+                        height={20}
+                        aria-hidden="true"
+                      />
+                    ),
+                  })),
+                ]}
+              />
+            </div>
+            <div className="answer-history-filter">
+              <span>Date range</span>
+              <FilterDropdown
+                label="Answer date range"
                 value={days}
-                onChange={(event) => filter(() => setDays(event.target.value))}
-              >
-                <option value="all">All time</option>
-                <option value="7">Last 7 days</option>
-                <option value="30">Last 30 days</option>
-                <option value="90">Last 90 days</option>
-              </select>
-            </label>
+                active={days !== 'all'}
+                icon={<CalendarDays size={16} />}
+                onChange={(value) => filter(() => setDays(value))}
+                options={[
+                  { value: 'all', label: 'All time' },
+                  { value: '7', label: 'Last 7 days' },
+                  { value: '30', label: 'Last 30 days' },
+                  { value: '90', label: 'Last 90 days' },
+                ]}
+              />
+            </div>
             {history.data && (
               <span>
                 {history.data.total} saved{' '}

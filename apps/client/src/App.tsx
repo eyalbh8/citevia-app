@@ -64,6 +64,7 @@ import PromptsView from './PromptsView';
 import ResponseDrawer from './ResponseDrawer';
 import AccountsView from './AccountsView';
 import BrandbookView from './BrandbookView';
+import FilterDropdown from './FilterDropdown';
 import './onboarding.css';
 
 type View =
@@ -622,32 +623,30 @@ function Workspace() {
           </div>
           <div className="topbar-right">
             {view === 'sources' && (
-              <span className="platform-pill">
-                <Sparkles size={12} />
-                <select
-                  aria-label="AI provider"
-                  value={provider}
-                  onChange={(event) => {
-                    setProvider(event.target.value as ScanProvider);
-                    setRunId('');
-                    setSelectedResponse(undefined);
-                    setPendingRunId(undefined);
-                  }}
-                  style={{
-                    border: 0,
-                    background: 'transparent',
-                    color: 'inherit',
-                    font: 'inherit',
-                    maxWidth: 120,
-                  }}
-                >
-                  {SCAN_PROVIDERS.map((value) => (
-                    <option key={value} value={value}>
-                      {PROVIDER_LABELS[value]}
-                    </option>
-                  ))}
-                </select>
-              </span>
+              <FilterDropdown
+                label="AI provider"
+                value={provider}
+                active={false}
+                onChange={(value) => {
+                  setProvider(value as ScanProvider);
+                  setRunId('');
+                  setSelectedResponse(undefined);
+                  setPendingRunId(undefined);
+                }}
+                options={SCAN_PROVIDERS.map((value) => ({
+                  value,
+                  label: PROVIDER_LABELS[value],
+                  icon: (
+                    <img
+                      src={`/providers/${value}.svg`}
+                      alt=""
+                      width={20}
+                      height={20}
+                      aria-hidden="true"
+                    />
+                  ),
+                }))}
+              />
             )}
             <span className="topbar-divider" />
             <button
@@ -680,30 +679,28 @@ function Workspace() {
               </div>
               <div className="heading-actions">
                 {view === 'sources' && (
-                  <label className="select-button">
-                    <CalendarDays size={13} />
-                    <span className="visually-hidden">Select scan</span>
-                    <select
-                      value={runId}
-                      onChange={(event) => {
-                        setRunId(event.target.value);
-                        setSelectedResponse(undefined);
-                      }}
-                    >
-                      <option value="">Latest scan</option>
-                      {runs.data?.items
+                  <FilterDropdown
+                    label="Select scan"
+                    value={runId}
+                    active={false}
+                    icon={<CalendarDays size={16} />}
+                    onChange={(value) => {
+                      setRunId(value);
+                      setSelectedResponse(undefined);
+                    }}
+                    options={[
+                      { value: '', label: 'Latest scan' },
+                      ...(runs.data?.items ?? [])
                         .filter(
                           (item) =>
                             snapshotProvider(item.snapshot) === provider,
                         )
-                        .map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {formatDate(item.createdAt, true)} · {item.status}
-                            {item.reanalysisOf ? ' · Reanalysis' : ''}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
+                        .map((item) => ({
+                          value: item.id,
+                          label: `${formatDate(item.createdAt, true)} · ${item.status}${item.reanalysisOf ? ' · Reanalysis' : ''}`,
+                        })),
+                    ]}
+                  />
                 )}
                 {!['accounts', 'users'].includes(view) && scanAction}
               </div>

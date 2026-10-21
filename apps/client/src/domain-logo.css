@@ -1,0 +1,64 @@
+.domain-logo {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--primary);
+  vertical-align: middle;
+}
+.domain-logo-fallback {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+.domain-logo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 3px;
+  background: #fff;
+  opacity: 0;
+}
+.domain-logo.is-loaded img {
+  opacity: 1;
+}
+.domain-logo.is-loaded .domain-logo-fallback {
+  visibility: hidden;
+}
+.citation-logo-stack {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.citation-logo-stack .citation-number {
+  border: 0;
+  height: auto;
+  line-height: 1;
+  font-size: 10px;
+}
+.citation > div:last-child {
+  min-width: 0;
+}
+.source-url > .domain-logo {
+  margin-top: 1px;
+}
+.monitor-brands .monitor-brand-logo {
+  display: inline-flex;
+  margin-left: -5px;
+}
+.monitor-brand-logo .domain-logo {
+  border-radius: 50%;
+}
+.monitor-brands .monitor-tooltip > .monitor-brand-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

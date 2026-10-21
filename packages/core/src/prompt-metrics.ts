@@ -5,7 +5,7 @@ import type {
   ScanProvider,
   ScanRun,
 } from './types.js';
-import { sameMethod } from './metrics.js';
+import { sameTargetMethod } from './metrics.js';
 import { brandRank, brandSentimentScore } from './scoring.js';
 import { projectProviders, snapshotProvider } from './providers.js';
 
@@ -43,7 +43,7 @@ export interface PromptMetricsResponse {
 export function matchesPromptMethod(project: Project, run: ScanRun) {
   return (
     run.projectId === project.id &&
-    sameMethod(run.snapshot, {
+    sameTargetMethod(run.snapshot, {
       ...run.snapshot,
       brand: project.brand,
       competitors: project.competitors,
@@ -158,7 +158,7 @@ export function promptMetrics(
     run &&
     previousRun &&
     previousRun.projectId === project.id &&
-    sameMethod(run.snapshot, previousRun.snapshot);
+    sameTargetMethod(run.snapshot, previousRun.snapshot);
   return project.prompts.map((prompt) =>
     metricRow(
       project,

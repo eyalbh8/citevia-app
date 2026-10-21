@@ -5,12 +5,12 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
-  FileText,
-  Globe2,
   Search,
 } from 'lucide-react';
 import type { Dashboard, Page, PromptResult, SourceRow } from '@citevia/core';
 import { query, useApi } from './api';
+import DomainLogo from './DomainLogo';
+import FilterDropdown from './FilterDropdown';
 import {
   Badge,
   Drawer,
@@ -114,15 +114,16 @@ export default function SourcesView({
               Retrieved sources
             </button>
           </div>
-          <select
-            aria-label="Filter source ownership"
+          <FilterDropdown
+            label="Filter source ownership"
             value={owned}
-            onChange={(event) => setOwned(event.target.value)}
-          >
-            <option value="">All domains</option>
-            <option value="true">Your domains</option>
-            <option value="false">Third-party domains</option>
-          </select>
+            onChange={setOwned}
+            options={[
+              { value: '', label: 'All domains' },
+              { value: 'true', label: 'Your domains' },
+              { value: 'false', label: 'Third-party domains' },
+            ]}
+          />
           <span className="filter-count">{data?.total ?? '—'} domains</span>
         </div>
         <div className="inline-notice">
@@ -233,7 +234,7 @@ function DomainCard({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary className="source-card-summary">
-        <span className="domain-icon">{source.domain[0].toUpperCase()}</span>
+        <DomainLogo domain={source.domain} size={30} className="domain-icon" />
         <div className="domain-info">
           <span className="domain-name">{source.domain}</span>
           <span className="domain-meta">
@@ -299,7 +300,7 @@ function DomainCard({
           ) : (
             data?.items.map((url) => (
               <div className="source-url" key={url.id}>
-                <FileText size={14} />
+                <DomainLogo domain={url.domain || url.url} size={24} />
                 <div>
                   <ExternalLink url={url.url || ''}>
                     {url.title || url.url}
@@ -372,7 +373,7 @@ function SourceAnswers({
       </h3>
       {source.url && (
         <div className="source-url">
-          <Globe2 size={13} />
+          <DomainLogo domain={source.domain || source.url} size={24} />
           <ExternalLink url={source.url}>{source.url}</ExternalLink>
         </div>
       )}

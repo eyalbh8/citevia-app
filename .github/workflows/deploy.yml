@@ -37,6 +37,7 @@ jobs:
       DESCOPE_PROJECT_ID: ${{ vars.DESCOPE_PROJECT_ID }}
       DESCOPE_SECRET_ARN: ${{ vars.DESCOPE_SECRET_ARN }}
       DESCOPE_BASE_URL: ${{ vars.DESCOPE_BASE_URL || 'https://api.descope.com' }}
+      VITE_LOGO_DEV_API_KEY: ${{ vars.VITE_LOGO_DEV_API_KEY }}
       OPENAI_SECRET_ARN: ${{ vars.OPENAI_SECRET_ARN }}
       PERPLEXITY_SECRET_ARN: ${{ vars.PERPLEXITY_SECRET_ARN }}
       GEMINI_SECRET_ARN: ${{ vars.GEMINI_SECRET_ARN }}

@@ -3,7 +3,6 @@ import { useState, type FormEvent } from 'react';
 import {
   ArrowUpRight,
   Check,
-  ChevronDown,
   Clock3,
   Link2,
   Plus,
@@ -20,6 +19,8 @@ import {
 } from '@citevia/core';
 import { request, useApi } from './api';
 import { Drawer, Empty, ErrorNotice } from './components';
+import DomainLogo from './DomainLogo';
+import FilterDropdown from './FilterDropdown';
 import {
   AnswerTable,
   initialSelection,
@@ -49,13 +50,6 @@ const date = (value: string | null) =>
       })
     : '—';
 const daysLabel = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
-const safeHost = (url: string) => {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
-};
 function Sparkline({ values }: { values: number[] }) {
   const max = Math.max(1, ...values);
   return (
@@ -339,37 +333,33 @@ export default function TrackingView({
             }}
           />
         </label>
-        <label className="monitor-pill">
-          <select
-            aria-label="Sort tracked URLs"
-            value={sort}
-            onChange={(e) => {
-              setSort(e.target.value);
-              setPage(0);
-            }}
-          >
-            <option value="newest">Newest</option>
-            <option value="cited">Most cited</option>
-            <option value="fastest">Fastest pickup</option>
-            <option value="az">A–Z</option>
-            <option value="lift" disabled>
-              Lift · unavailable
-            </option>
-          </select>
-          <ChevronDown size={14} />
-        </label>
-        <label className="monitor-pill">
-          <select
-            aria-label="Group tracked URLs"
-            value={group}
-            onChange={(e) => setGroup(e.target.value)}
-          >
-            <option value="status">Group: Status</option>
-            <option value="month">Group: Month</option>
-            <option value="none">No grouping</option>
-          </select>
-          <ChevronDown size={14} />
-        </label>
+        <FilterDropdown
+          label="Sort tracked URLs"
+          value={sort}
+          active={false}
+          onChange={(value) => {
+            setSort(value);
+            setPage(0);
+          }}
+          options={[
+            { value: 'newest', label: 'Newest' },
+            { value: 'cited', label: 'Most cited' },
+            { value: 'fastest', label: 'Fastest pickup' },
+            { value: 'az', label: 'A–Z' },
+            { value: 'lift', label: 'Lift · unavailable', disabled: true },
+          ]}
+        />
+        <FilterDropdown
+          label="Group tracked URLs"
+          value={group}
+          active={false}
+          onChange={setGroup}
+          options={[
+            { value: 'status', label: 'Group: Status' },
+            { value: 'month', label: 'Group: Month' },
+            { value: 'none', label: 'No grouping' },
+          ]}
+        />
       </div>
       <section
         className="monitor-card tracking-table-panel"
@@ -423,12 +413,11 @@ export default function TrackingView({
                             className="tracking-content"
                             onClick={() => setSelected(row.id)}
                           >
-                            <span className="tracking-site-icon">
-                              {safeHost(row.url)
-                                .replace(/^www\./, '')
-                                .slice(0, 1)
-                                .toUpperCase()}
-                            </span>
+                            <DomainLogo
+                              domain={row.url}
+                              size={34}
+                              className="tracking-site-icon"
+                            />
                             <span>
                               <strong>{row.title}</strong>
                               <small>
@@ -638,6 +627,7 @@ export function TrackingDetailDrawer({
             {!row.active && <span>Paused</span>}
             <h2>{row.title}</h2>
             <a href={row.url} target="_blank" rel="noopener noreferrer">
+              <DomainLogo domain={row.url} size={24} />
               {row.url}
               <ArrowUpRight size={15} />
             </a>

@@ -43,6 +43,25 @@ function observation() {
 }
 
 describe('prompt measurement provenance', () => {
+  it('retains target observations after adding or removing competitors', () => {
+    const { project, prompt, run, result } = observation();
+    expect(
+      promptObservation(prompt, { ...project, competitors: [] }, run, result),
+    ).toBe(result);
+    expect(
+      promptObservation(
+        prompt,
+        {
+          ...project,
+          competitors: [
+            { id: 'new', name: 'New rival', aliases: [], domains: [] },
+          ],
+        },
+        run,
+        result,
+      ),
+    ).toBe(result);
+  });
   it('preserves the actual result status and native citation count, including analysis failures', () => {
     const { project, prompt, run, result } = observation();
     expect(promptObservation(prompt, project, run, result)).toBe(result);

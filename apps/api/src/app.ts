@@ -1,5 +1,6 @@
 import { monitoringPeriod, monitoringRoute } from './monitoring.js';
 import { dashboardOverviewRoute } from './dashboard.js';
+import { competitorSuggestions } from './competitors.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { ZodError } from 'zod';
 import {
@@ -16,6 +17,7 @@ import {
   promptCreateSchema,
   promptUpdateSchema,
   promptFingerprint,
+  normalizeDomain,
   sameCohort,
   sameMethod,
   settingsSchema,
@@ -312,7 +314,14 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           'FORBIDDEN',
           'Project owner access is required',
         );
-      const monitoring = await monitoringRoute(runtime,project,tail,request,now(),body);
+      const monitoring = await monitoringRoute(
+        runtime,
+        project,
+        tail,
+        request,
+        now(),
+        body,
+      );
       if (monitoring) return monitoring;
       if (tail === 'dashboard/overview')
         return await dashboardOverviewRoute(runtime, project, request, now());
@@ -350,6 +359,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
               ],
         );
       if (tail === 'settings' && method === 'GET') return response(project);
+      if (tail === 'competitors/suggestions' && method === 'GET')
+        return response(await competitorSuggestions(runtime, project, now()));
       if (tail === 'onboarding' && method === 'GET')
         return response({
           job: stored.onboardingJobId
@@ -523,6 +534,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         const next = {
           ...stored,
           ...input,
+          ...(input.competitors !== undefined
+            ? { competitorsConfiguredAt: now().toISOString() }
+            : {}),
           version: stored.version + 1,
           updatedAt: now().toISOString(),
           scheduleStatus: 'pending' as const,
@@ -537,6 +551,42 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             'DUPLICATE_BRAND',
             'Brand identifiers must be unique',
           );
+        if (input.competitors || input.brand) {
+          const names = new Set(
+            [next.brand.name, ...next.brand.aliases]
+              .map(promptFingerprint)
+              .filter(Boolean),
+          );
+          const domains = new Set(
+            next.brand.domains.map(normalizeDomain).filter(Boolean),
+          );
+          next.competitors = next.competitors.map((competitor) => {
+            const ownNames = [
+              ...new Set(
+                [competitor.name, ...competitor.aliases]
+                  .map(promptFingerprint)
+                  .filter(Boolean),
+              ),
+            ];
+            const ownDomains = [
+              ...new Set(
+                competitor.domains.map((domain) => normalizeDomain(domain)!),
+              ),
+            ];
+            if (
+              ownNames.some((name) => names.has(name)) ||
+              ownDomains.some((domain) => domains.has(domain))
+            )
+              throw new HttpError(
+                400,
+                'DUPLICATE_COMPETITOR',
+                'Each competitor must have a distinct name and website, different from your brand.',
+              );
+            ownNames.forEach((name) => names.add(name));
+            ownDomains.forEach((domain) => domains.add(domain));
+            return { ...competitor, domains: ownDomains };
+          });
+        }
         await persistProject(next, stored.version);
         try {
           for (let attempt = 0; attempt < 3; attempt++) {
@@ -849,12 +899,12 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         }
         await queue.send([message]);
         const configs = existing
-          ? existing.snapshot.scanProviders ?? [
+          ? (existing.snapshot.scanProviders ?? [
               {
                 provider: snapshotProvider(existing.snapshot),
                 model: existing.snapshot.generationModel,
               },
-            ]
+            ])
           : projectProviders(stored);
         return response(
           {
@@ -927,7 +977,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             ) || null;
         const selectedProvider = current
           ? snapshotProvider(current.snapshot)
-          : providerFilter ?? projectProviders(stored)[0].provider;
+          : (providerFilter ?? projectProviders(stored)[0].provider);
         const runs = allRuns.filter(
           (run) => snapshotProvider(run.snapshot) === selectedProvider,
         );

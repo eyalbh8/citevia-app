@@ -119,6 +119,12 @@ aws amplify update-app \
 
 If Amplify assigned the origin after the first backend deploy, update backend `FrontendOrigin`, register that exact origin/redirect in Descope and rebuild the client. Login/API access require the correct project, published flow, origins and server key.
 
+### Domain logos
+
+Set optional `VITE_LOGO_DEV_API_KEY` to a Logo.dev **publishable** key (`pk_…`) in the Amplify branch environment or `apps/client/.env.production.local`, then rebuild. This is the same client setting used by iGEO. Never put a Logo.dev secret key (`sk_…`) in a `VITE_*` setting. For local `npm run dev`, the root `.env` value is forwarded to Vite automatically.
+
+The client looks up normalized company domains through `img.logo.dev`; failed or unconfigured lookups fall back to Google favicons, then local initials. Only domains are shared with image services, never citation paths or query strings. Allow the deployed app domain in the publishable key's domain restrictions; logo requests send the app origin as their referrer. If a custom Content Security Policy is configured, permit `https://img.logo.dev`, `https://www.google.com` and `https://*.gstatic.com` in `img-src`. Follow Logo.dev's [key setup](https://www.logo.dev/docs/platform/api-keys) and [plan attribution requirements](https://www.logo.dev/docs/platform/attribution).
+
 ## Publish the client without a Git repository
 
 If this project is only on your computer, use Amplify's **Deploy without Git** option. The existing Lambda/API stack remains the backend.

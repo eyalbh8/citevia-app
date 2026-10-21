@@ -8,7 +8,6 @@ import {
 import {
   ArrowDown,
   ArrowUp,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Globe2,
@@ -20,7 +19,6 @@ import {
 } from 'lucide-react';
 import {
   PROVIDER_LABELS,
-  JOURNEY_STAGES,
   type JourneyStage,
   type Project,
   type ScanProvider,
@@ -30,9 +28,16 @@ import {
 } from '@citevia/core';
 import { query } from './api';
 import AnswerMarkdown from './AnswerMarkdown';
+import DomainLogo from './DomainLogo';
 import './monitoring.css';
 import ProviderFilter from './ProviderFilter';
 import DateRangeFilter from './DateRangeFilter';
+import FilterDropdown from './FilterDropdown';
+import {
+  brandingOptions,
+  promptTypeOptions,
+  regionOptions,
+} from './filter-options';
 export const providerColors: Record<ScanProvider, string> = {
   openai: '#3930cf',
   perplexity: '#078f9d',
@@ -68,35 +73,6 @@ export function selectionQuery(
     ...extra,
   });
 }
-function Pill({
-  label,
-  icon,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  icon: ReactNode;
-  value: string;
-  onChange: (v: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <label
-      className={`monitor-pill${value && label !== 'Date range' ? ' is-filtered' : ''}`}
-    >
-      {icon}
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {children}
-      </select>
-      <ChevronDown size={14} />
-    </label>
-  );
-}
 export function MonitoringHeader({
   title,
   project,
@@ -119,38 +95,30 @@ export function MonitoringHeader({
       <h1>{title}</h1>
       {actions && <div className="monitor-header-actions">{actions}</div>}
       <div className="monitor-filters">
-        <Pill
+        <FilterDropdown
           label="Regions"
           icon={<Globe2 size={17} />}
           value={value.region}
           onChange={(v) => set('region', v)}
-        >
-          <option value="">Regions</option>
-          <option value={project.country}>{project.country}</option>
-        </Pill>
-        <Pill
+          placeholder="Regions"
+          options={regionOptions(project.country)}
+        />
+        <FilterDropdown
           label="Branded"
           icon={<Hexagon size={17} />}
           value={value.branded}
           onChange={(v) => set('branded', v)}
-        >
-          <option value="">Branded</option>
-          <option value="true">Branded</option>
-          <option value="false">Non-branded</option>
-        </Pill>
-        <Pill
+          placeholder="Branded"
+          options={brandingOptions}
+        />
+        <FilterDropdown
           label="Prompt Types"
           icon={<TerminalSquare size={17} />}
           value={value.stage}
           onChange={(v) => set('stage', v)}
-        >
-          <option value="">Prompt Types</option>
-          {JOURNEY_STAGES.map((v) => (
-            <option key={v} value={v}>
-              {v.charAt(0).toUpperCase() + v.slice(1)}
-            </option>
-          ))}
-        </Pill>
+          placeholder="Prompt Types"
+          options={promptTypeOptions}
+        />
         <ProviderFilter
           project={project}
           value={value.providers}
@@ -600,19 +568,21 @@ export function PageControls({
 }) {
   return (
     <nav className="monitor-pagination" aria-label="Table pagination">
-      <label>
-        Rows per page:{' '}
-        <select
-          aria-label="Rows per page"
-          value={pageSize}
+      <div className="filter-pagination-label">
+        <span>Rows per page:</span>
+        <FilterDropdown
+          label="Rows per page"
+          value={String(pageSize)}
           disabled={loading}
-          onChange={(e) => onSize(Number(e.target.value))}
-        >
-          {[25, 50, 100].map((n) => (
-            <option key={n}>{n}</option>
-          ))}
-        </select>
-      </label>
+          active={false}
+          className="filter-dropdown-compact"
+          onChange={(value) => onSize(Number(value))}
+          options={[25, 50, 100].map((value) => ({
+            value: String(value),
+            label: String(value),
+          }))}
+        />
+      </div>
       <span aria-live="polite" aria-atomic="true">
         {total ? Math.min(page * pageSize + 1, total) : 0}–
         {Math.min((page + 1) * pageSize, total)} of {total.toLocaleString()}
@@ -695,9 +665,19 @@ function MentionBrands({ row }: { row: MentionAnswer }) {
       <summary aria-label={`${row.brands.length} brands`}>
         <span>
           {row.brands.slice(0, 3).map((name, i) => (
-            <i key={`${name}-${i}`} title={name}>
-              {name.slice(0, 2)}
-            </i>
+            <span
+              key={`${name}-${i}`}
+              className="monitor-brand-logo"
+              title={name}
+            >
+              <DomainLogo
+                domain={
+                  row.brandSites.find((brand) => brand.name === name)?.url
+                }
+                name={name}
+                size={27}
+              />
+            </span>
           ))}
         </span>
         {row.brands.length > 3 && `+${row.brands.length - 3}`}
@@ -715,14 +695,19 @@ function MentionBrands({ row }: { row: MentionAnswer }) {
           brand.url ? (
             <a
               key={i}
+              className="monitor-brand-link"
               href={brand.url}
               target="_blank"
               rel="noopener noreferrer"
             >
+              <DomainLogo domain={brand.url} name={brand.name} size={22} />
               {brand.name}
             </a>
           ) : (
-            <span key={i}>{brand.name}</span>
+            <span key={i} className="monitor-brand-link">
+              <DomainLogo name={brand.name} size={22} />
+              {brand.name}
+            </span>
           ),
         )}
       </div>

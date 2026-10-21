@@ -17,7 +17,7 @@
   flex-wrap: wrap;
   margin: 22px 0;
 }
-.answer-history-filters label {
+.answer-history-filter {
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -25,14 +25,9 @@
   color: var(--muted);
   min-width: 150px;
 }
-.answer-history-filters select {
-  border: 1px solid var(--line);
-  border-radius: 9px;
+.answer-history-filter .filter-dropdown-trigger {
   min-height: 42px;
-  padding: 10px 32px 10px 12px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 13px;
+  width: 100%;
 }
 .answer-history-filters > span {
   margin-left: auto;
@@ -302,7 +297,7 @@
   .answer-history-filters {
     gap: 12px;
   }
-  .answer-history-filters label {
+  .answer-history-filter {
     flex: 1 1 140px;
     min-width: 0;
   }
@@ -310,10 +305,7 @@
     margin-left: 0;
     width: 100%;
   }
-  .answer-history-filters select {
-    font-size: 13px;
-    width: 100%;
-  }
+
   .answer-block:has(.answer-markdown) {
     font-size: 14px;
     padding: 16px;

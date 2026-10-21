@@ -8,6 +8,7 @@ import {
 import { AccessError, type Runtime } from '@citevia/storage';
 import { filtersFor, monitoringPeriod } from './monitoring.js';
 import { promptAnswers } from './prompt-answers.js';
+import { historicalCompetitorMentions } from './competitors.js';
 
 /** This period projection is separate from the retained single-scan dashboard API. */
 export async function dashboardOverviewRoute(
@@ -73,7 +74,12 @@ export async function dashboardOverviewRoute(
   }
   return new Response(
     JSON.stringify(
-      aggregateDashboardOverview(project, period, filters, observations),
+      aggregateDashboardOverview(
+        project,
+        period,
+        filters,
+        await historicalCompetitorMentions(runtime, project, observations),
+      ),
     ),
     {
       headers: {

@@ -71,7 +71,8 @@ function awsScanner(): Scanner {
       research: async (job) => (await onboard()).research(job),
       brandbook: async (job, research) =>
         (await onboard()).brandbook(job, research),
-      prompts: async (job, book) => (await onboard()).prompts(job, book),
+      prompts: async (job, book, competitors) =>
+        (await onboard()).prompts(job, book, competitors),
     },
     syncProjectSchedule,
   );
