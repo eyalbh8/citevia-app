@@ -14,6 +14,13 @@
 .mcp-section-heading p { margin-top:5px; }
 .mcp-value-row { display:flex; align-items:flex-start; gap:10px; margin-top:9px; margin-bottom:20px; }
 .mcp-value { min-width:0; flex:1; min-height:42px; padding:10px 13px; font-size:12px; line-height:1.7; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--surface-muted); border:1px solid var(--line); border-radius:10px; }
+.mcp-connection-url { resize:vertical; overflow-wrap:anywhere; line-height:1.8; min-height:90px; }
+.mcp-url-instructions { padding:16px 18px; border:1px solid var(--primary-border); background:var(--primary-soft); border-radius:12px; }
+.mcp-url-instructions p+p { margin-top:7px; font-size:11px; }
+.mcp-assistants { margin-top:16px; }
+.mcp-assistant-actions { display:flex; gap:10px; flex-wrap:wrap; }
+.mcp-copy-success { color:var(--success) !important; margin-top:10px; font-size:12px !important; }
+.mcp-created .mcp-config-details>.field { margin-top:16px; }
 .mcp-copy-action { flex-shrink:0; max-width:230px; }
 .mcp-copy-error { display:block; font-size:11px; color:var(--danger); line-height:1.6; margin-top:6px; }
 .mcp-methods { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; }
@@ -60,6 +67,7 @@
   .mcp-scope>.mcp-feature-icon { display:none; }
   .mcp-value-row { flex-direction:column; align-items:stretch; }
   .mcp-value { width:100%; }
+  .mcp-connection-url { min-height:170px; }
   .mcp-copy-action { max-width:none; }
   .mcp-methods { grid-template-columns:1fr; }
   .mcp-connections-heading { flex-direction:column; padding:20px 20px 0; }

@@ -43,7 +43,7 @@ The first administrator is established explicitly after their first Descope sign
 
 ## MCP connections
 
-Open **MCP connections** to connect an assistant through OAuth or a named API key. System administrators use one connection for all accounts; other users connect one assigned account at a time. Viewer connections are read-only and owner connections retain the account's existing permissions. Credentials support expiry and immediate revocation. See [connection setup, tools and deployment](docs/MCP.md). Apply migration `006_mcp.sql` before publishing this update.
+Open **MCP connections** to connect an assistant through OAuth or a named API key. Creating a key also shows a copyable URL-only connection and Claude/ChatGPT setup buttons. System administrators use one connection for all accounts; other users connect one assigned account at a time. Viewer connections are read-only and owner connections retain the account's existing permissions. Credentials support expiry and immediate revocation. See [connection setup, tools and deployment](docs/MCP.md). Apply migration `006_mcp.sql` before publishing this update.
 
 ## Structure
 

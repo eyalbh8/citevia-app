@@ -5,7 +5,7 @@ import type { Project } from '@citevia/core';
 
 const { useApi } = vi.hoisted(() => ({ useApi: vi.fn() }));
 vi.mock('./api', async importOriginal => ({ ...(await importOriginal<object>()), useApi }));
-import McpView from './McpView';
+import McpView, { CreatedConnectionPanel } from './McpView';
 
 const project = { id: 'account-A', name: 'Account A', role: 'viewer' } as Project;
 const connectionData = {
@@ -34,6 +34,10 @@ describe('MCP connection scope UI', () => {
     expect(html).toContain('Create API key');
     expect(html).toContain('https://app.citevia.io/api/v1/mcp/accounts/account-A');
     expect(html).not.toContain('All accounts');
+    expect(html).toContain('None / No authentication');
+    expect(html).toContain('Add to ChatGPT');
+    expect(html).toContain('Add to Claude');
+    expect(html).not.toContain('mcp_token=');
   });
 
   it('never falls back to a global connection when a non-admin has no assigned account', () => {
@@ -41,5 +45,25 @@ describe('MCP connection scope UI', () => {
     expect(useApi).not.toHaveBeenCalled();
     expect(html).toContain('Select an account to connect');
     expect(html).not.toContain('Create API key');
+  });
+
+  it('shows the newly created URL before advanced credentials and explains URL-only authentication', () => {
+    const created = {
+      scope: 'account' as const,
+      projectId: 'account-A',
+      serverUrl: connectionData.serverUrl,
+      token: 'qa-only-created-token',
+      connection: { id: 'qa-created', name: 'My assistant', keyPrefix: 'qa-only', createdAt: new Date().toISOString(), expiresAt: null, lastUsedAt: null, revokedAt: null, kind: 'api_key' as const },
+    };
+    const html = renderToStaticMarkup(createElement(CreatedConnectionPanel, { created, onHide: () => undefined }));
+    expect(html).toContain('Connection URL (URL-only)');
+    expect(html).toContain('mcp_token=qa-only-created-token&amp;workspace_id=account-A');
+    expect(html).toContain('None / No authentication');
+    expect(html).toContain('href="https://chatgpt.com/plugins" target="_blank" rel="noopener noreferrer"');
+    expect(html).toContain('https://claude.ai/customize/connectors?modal=add-custom-connector');
+    expect(html.indexOf('mcp-connection-url')).toBeLessThan(html.indexOf('mcp-new-key'));
+    expect(html).toContain('<details class="mcp-config-details">');
+    expect(html).not.toContain('<details class="mcp-config-details" open');
+    expect(html).toContain('hide it');
   });
 });

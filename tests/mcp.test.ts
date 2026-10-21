@@ -231,3 +231,96 @@ describe('MCP protocol and API contracts', () => {
     expect((await f.tool(key.token, 'response', { responseId: '../beta' })).body.error.code).toBe(-32602);
   });
 });
+
+describe('MCP URL-only connections', () => {
+  async function queryRpc(f: Awaited<ReturnType<typeof setup>>, token: string, options: {
+    path?: string; workspace?: string; method?: string; params?: Record<string, unknown>;
+    headers?: Record<string, string>; extraQuery?: [string, string][];
+  } = {}) {
+    const url = new URL(options.path || '/mcp', 'https://api.test');
+    url.searchParams.set('mcp_token', token);
+    if (options.workspace !== undefined) url.searchParams.set('workspace_id', options.workspace);
+    for (const [name, value] of options.extraQuery || []) url.searchParams.append(name, value);
+    const response = await f.app(new Request(url, {
+      method: 'POST',
+      headers: { Accept: 'application/json, text/event-stream', 'Content-Type': 'application/json', ...options.headers },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: options.method || 'tools/call', params: options.params || { name: 'list_accounts', arguments: {} } }),
+    }));
+    return { response, body: await response.json() };
+  }
+
+  it('initializes and calls tools using only a generated URL, with one global or account scope', async () => {
+    const f = await setup(), global = await f.mint('admin'), account = await f.mint('owner', 'alpha');
+    const initialized = await queryRpc(f, global.token, { method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'url-only-client', version: '1' } } });
+    expect(initialized.body.result.serverInfo.name).toBe('citevia');
+    expect((await queryRpc(f, global.token, { method: 'tools/list' })).body.result.tools.some((tool: { name: string }) => tool.name === 'list_accounts')).toBe(true);
+    expect(toolData(await queryRpc(f, global.token)).items.map((item: { id: string }) => item.id).sort()).toEqual(['alpha', 'beta']);
+    expect(toolData(await queryRpc(f, account.token, { path: '/mcp/accounts/alpha', workspace: 'alpha' })).items.map((item: { id: string }) => item.id)).toEqual(['alpha']);
+    // Matches iGEO's generic endpoint + workspace query convention as well.
+    expect(toolData(await queryRpc(f, account.token, { workspace: 'alpha' })).items.map((item: { id: string }) => item.id)).toEqual(['alpha']);
+    expect(toolData(await queryRpc(f, global.token, { params: { name: 'settings', arguments: { accountId: 'beta' } } })).id).toBe('beta');
+  });
+
+  it('does not allow account URLs, query parameters or tool arguments to change credential scope', async () => {
+    const f = await setup(), account = await f.mint('owner', 'alpha'), global = await f.mint('admin');
+    for (const options of [
+      { workspace: 'beta' }, { path: '/mcp/accounts/beta', workspace: 'alpha' },
+      { workspace: 'beta', headers: { 'X-Workspace-Id': 'alpha' } },
+      { workspace: 'alpha', headers: { 'X-Workspace-Id': 'beta' } }, { workspace: '' },
+    ]) expect((await queryRpc(f, account.token, options)).response.status).toBe(403);
+    expect((await queryRpc(f, global.token, { workspace: 'alpha' })).response.status).toBe(403);
+    expect((await queryRpc(f, account.token, { params: { name: 'settings', arguments: { accountId: 'beta' } } })).body.result.isError).toBe(true);
+    expect((await queryRpc(f, account.token, { extraQuery: [['workspace_id', 'alpha'], ['workspace_id', 'beta']] })).response.status).toBe(400);
+  });
+
+  it('prioritizes the Authorization header and rejects duplicate query credentials without fallback', async () => {
+    const f = await setup(), alpha = await f.mint('owner', 'alpha'), beta = await f.mint('owner', 'beta');
+    const header = await queryRpc(f, beta.token, { headers: { Authorization: `Bearer ${alpha.token}` } });
+    expect(toolData(header).items[0].id).toBe('alpha');
+    for (const Authorization of ['Bearer invalid', 'Basic invalid', ''])
+      expect((await queryRpc(f, alpha.token, { headers: { Authorization } })).response.status).toBe(401);
+    expect((await queryRpc(f, alpha.token, { extraQuery: [['mcp_token', beta.token]] })).response.status).toBe(400);
+    expect((await queryRpc(f, 'x'.repeat(2001))).response.status).toBe(401);
+  });
+
+  it('keeps OAuth access and Descope session tokens out of URL authentication and credential management', async () => {
+    const f = await setup(), key = await f.mint('admin');
+    const connection = (await f.repository.getMcpConnection(key.connection.id))!;
+    await f.repository.createMcpConnection({ ...connection, id: 'oauth-url-test', kind: 'oauth', tokenHash: mcpHash('unusable-oauth-backing-secret') });
+    await f.repository.putMcpRecord({ kind: 'access', id: mcpHash('test-oauth-access'), expiresAt: new Date(START.getTime() + 3600000).toISOString(), data: { connectionId: 'oauth-url-test', resource: 'https://api.test/mcp' } });
+    expect((await f.rpc('test-oauth-access', 'ping')).response.status).toBe(200);
+    for (const token of ['test-oauth-access', 'unusable-oauth-backing-secret', 'session:admin'])
+      expect((await queryRpc(f, token)).response.status).toBe(401);
+    for (const path of ['/v1/mcp/connections', '/v1/admin/users', '/v1/me'])
+      expect((await f.app(new Request(`https://api.test${path}?mcp_token=${key.token}`))).status).toBe(401);
+  });
+
+  it('applies viewer access, current membership, revocation and expiry to URL credentials', async () => {
+    const f = await setup(), viewer = await f.mint('viewer', 'alpha'), account = await f.mint('owner', 'alpha'), global = await f.mint('admin', undefined, 30);
+    const write = await queryRpc(f, viewer.token, { params: { name: 'create_prompt', arguments: { body: { text: 'No viewer writes' } } } });
+    expect(write.body.error.code).toBe(-32602);
+    expect((await f.request(`/v1/mcp/connections/${viewer.connection.id}`, 'session:viewer', 'DELETE')).status).toBe(204);
+    expect((await queryRpc(f, viewer.token)).response.status).toBe(401);
+    const owner = (await f.repository.getUser('owner'))!;
+    await f.repository.setUserAccount('admin', owner.id, 'alpha', null, owner.version);
+    expect((await queryRpc(f, account.token)).response.status).toBe(403);
+    f.setNow(new Date(START.getTime() + 30 * 86400000));
+    expect((await queryRpc(f, global.token)).response.status).toBe(401);
+  });
+
+  it('never returns query credentials in responses, discovery challenges or audit logs', async () => {
+    const f = await setup(), key = await f.mint('admin');
+    const success = await queryRpc(f, key.token, { method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'safe-client', version: '1' } } });
+    expect(JSON.stringify(success.body)).not.toContain(key.token);
+    expect(success.response.headers.get('cache-control')).toBe('no-store');
+    expect(success.response.headers.get('referrer-policy')).toBe('no-referrer');
+    const unknown = await queryRpc(f, 'citevia_live_unknown-secret');
+    expect(unknown.response.status).toBe(401);
+    expect(unknown.response.headers.get('www-authenticate')).not.toContain('mcp_token');
+    expect((await queryRpc(f, key.token, { headers: { Origin: 'https://evil.test' } })).response.status).toBe(403);
+    const logs = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logs).not.toContain(key.token);
+    expect(logs).not.toContain('citevia_live_unknown-secret');
+    expect(logs).not.toContain('mcp_token');
+  });
+});

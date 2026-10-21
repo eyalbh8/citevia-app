@@ -22,7 +22,8 @@ export const mcpHash = (value: string) => createHash('sha256').update(value).dig
 export const mcpJson = (data: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), { status, headers: {
     'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers,
+    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer', ...headers,
   } });
 export function mcpServerUrl(config: McpConfig, projectId: string | null) {
   return `${config.publicUrl.replace(/\/$/, '')}/mcp${projectId === null ? '' : `/accounts/${encodeURIComponent(projectId)}`}`;
@@ -132,9 +133,20 @@ export function createMcp(
     return mcpJson({ ...context, connection: mcpMetadata(connection), token }, 201);
   }
   async function authenticate(request: Request, endpointProject: string | null): Promise<McpPrincipal> {
-    const token = request.headers.get('authorization')?.match(/^Bearer ([^\s]+)$/i)?.[1];
+    const query = new URL(request.url).searchParams;
+    const authorization = request.headers.get('authorization');
+    // URL-only clients cannot attach headers. Header authentication still wins,
+    // including invalid headers: never silently fall back to a second credential.
+    const queryAuth = authorization === null;
+    if (queryAuth && query.getAll('mcp_token').length > 1)
+      throw new AccessError(400, 'INVALID_TOKEN', 'Supply one MCP credential.');
+    const token = queryAuth ? query.get('mcp_token') : authorization.match(/^Bearer ([^\s]+)$/i)?.[1];
     if (!token || token.length > 2000) throw new AccessError(401, 'INVALID_TOKEN', 'Connect with OAuth or an MCP API key.');
     let connection = await repository.getMcpConnectionByHash(mcpHash(token));
+    // Query authentication is limited to user-created API keys. OAuth and Descope
+    // tokens keep their existing header-only authentication and audience binding.
+    if (queryAuth && (!connection || connection.kind !== 'api_key'))
+      throw new AccessError(401, 'INVALID_TOKEN', 'Invalid or expired MCP API key.');
     // OAuth access tokens are independent, short lived, and bound to a resource.
     if (!connection || connection.kind !== 'api_key') {
       const access = await repository.getMcpRecord('access', mcpHash(token));
@@ -148,9 +160,15 @@ export function createMcp(
     // but can never select another account or acquire global access.
     if (endpointProject !== null && connection.projectId !== endpointProject)
       throw new AccessError(403, 'ACCOUNT_MISMATCH', 'This connection belongs to a different account.');
-    const workspace = request.headers.get('x-workspace-id');
-    if (workspace && workspace !== connection.projectId)
-      throw new AccessError(403, 'ACCOUNT_MISMATCH', 'Select the account in the tool arguments for a system connection.');
+    if (query.getAll('workspace_id').length > 1)
+      throw new AccessError(400, 'ACCOUNT_MISMATCH', 'Supply one workspace identifier.');
+    const workspaceHeader = request.headers.get('x-workspace-id');
+    const workspaceQuery = query.get('workspace_id');
+    // Neither a URL parameter nor a header can change the credential's scope.
+    if ([workspaceHeader, workspaceQuery].some(workspace => workspace !== null && workspace !== connection.projectId))
+      throw new AccessError(403, 'ACCOUNT_MISMATCH', connection.projectId === null
+        ? 'A system connection must not include a workspace ID. Select accounts in tool arguments.'
+        : 'The workspace ID does not match this connection’s account.');
     return currentMcpPrincipal(repository, connection, now());
   }
   return async (request: Request): Promise<Response | null> => {

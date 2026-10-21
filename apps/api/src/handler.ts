@@ -41,6 +41,8 @@ export function createAuthenticatedApi(
   return async (request: Request): Promise<Response> => {
     const mcpResponse = await mcp(request);
     if (mcpResponse) {
+      mcpResponse.headers.set('Cache-Control', 'no-store');
+      mcpResponse.headers.set('Referrer-Policy', 'no-referrer');
       const origin = request.headers.get('origin');
       if (origin && [mcpConfig.frontendUrl, mcpConfig.publicUrl, ...(mcpConfig.allowedOrigins || [])].includes(origin)) {
         mcpResponse.headers.set('Access-Control-Allow-Origin', origin);

@@ -17,9 +17,13 @@ Copy the **Server URL** from the screen: the public API origin plus `/mcp` for a
 
 For **OAuth**, add that URL to a remote MCP client supporting OAuth and dynamic registration. Sign in through Citevia's normal Descope flow and approve the client and scope. A non-admin authorizing the generic `/mcp` endpoint must select exactly one assigned account. S256 PKCE, exact registered redirects, single-use authorization codes and rotating refresh tokens protect the flow. Access tokens last one hour; refresh tokens last 30 days, bounded by the connection's 90-day lifetime. Revocation blocks both. Public clients (`token_endpoint_auth_method=none`) and clients using `client_secret_post` or `client_secret_basic` are supported. Client ID metadata documents are not implemented.
 
-For an **API key**, choose Create API key, name it and choose an expiry. The full secret appears once. Copy it into the client's credential settings or an `Authorization: Bearer ...` header. The UI provides JSON configuration for clients using `mcpServers`. Account keys also work at `/mcp`; the stored account boundary still applies. `X-Workspace-Id`, if present, must match the credential. Global connections select accounts through tool arguments.
+For a **URL-only connection**, choose Create API key, name it and choose an expiry. Copy the generated **Connection URL (URL-only)** while the key is visible. It contains the key in `mcp_token`; account connections also include `workspace_id`. Administrators get one URL for all accounts, without a workspace ID. Paste the full URL as the client's Server URL and select **No authentication**: the URL already carries the credential. The endpoint still authenticates every request and enforces the stored account scope.
 
-Secrets in query strings are intentionally unsupported. OAuth supplies the URL-only connection flow. Descope sessions never appear in redirect URLs.
+**Add to ChatGPT** copies this URL and opens ChatGPT Plugins; choose Add custom MCP server, paste it as Server URL and select No authentication. **Add to Claude** opens its custom-connector form with the URL prefilled. If clipboard access is denied, use the displayed URL to copy manually. See [OpenAI's custom MCP setup](https://developers.openai.com/api/docs/guides/custom-mcp-server) for the current ChatGPT flow.
+
+The full key and connection URL appear only while the new key is visible and are cleared when you hide the key, leave the screen or switch account scopes. Treat the URL as a password. Existing keys cannot be recovered; if you no longer have the key, create a new one. Revocation and expiry immediately invalidate its URL too.
+
+For clients supporting headers, the advanced section retains the `Authorization: Bearer ...` value and `mcpServers` JSON. Account keys also work at `/mcp` with their stored account boundary. `X-Workspace-Id` and `workspace_id`, when present, must match the credential; neither can expand its scope. Global connections select accounts through tool arguments. An Authorization header takes precedence over `mcp_token`, including an invalid header; the server never falls back to a different credential. Duplicate query credentials are rejected. OAuth access tokens and Descope sessions remain header-only.
 
 ## Tools and protocol
 
@@ -41,7 +45,7 @@ The implementation follows iGEO's named-key, show-once, expiry/revocation, OAuth
 4. Add discovery, registration, PKCE authorization and rotating tokens, with consent after normal sign-in.
 5. Add scoped connection/consent screens, deployment configuration, and memory/PostgreSQL isolation tests.
 
-The principal change from iGEO is the global administrator connection. The implementation also avoids reference weaknesses: credentials/session tokens in query strings, non-atomic code redemption, missing refresh support and requiring a workspace header after OAuth authorization.
+The principal change from iGEO is the global administrator connection. URL-only API-key connections follow iGEO's `mcp_token`/`workspace_id` convention. OAuth additionally uses atomic code redemption, refresh-token rotation and stored account context without requiring a workspace header after authorization.
 
 ## Configuration and deployment
 
@@ -53,6 +57,6 @@ SAM sets the public origin when a custom API domain is configured; otherwise Lam
 
 Public endpoints: `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource[/mcp[/accounts/{projectId}]]`, `/oauth/register`, `/oauth/authorize`, `/oauth/token`. Token requests include the same `resource` used in authorization. Credential management/consent under `/v1/mcp/` require a real Descope session; MCP tokens cannot manage credentials.
 
-Only SHA-256 hashes of random credentials/codes are persisted. Structured `MCP_AUDIT` logs include IDs, method/tool, status and duration; they omit secrets, arguments and response data. CloudWatch uses existing API retention. OAuth expiry is enforced during reads/redemption; periodically delete expired `citevia_mcp_records` rows and obsolete rate buckets for storage housekeeping.
+Only SHA-256 hashes of random credentials/codes are persisted. Structured `MCP_AUDIT` logs include IDs, method/tool, status and duration; they omit secrets, arguments, full request URLs and response data. The API Gateway access-log format also omits query strings. MCP responses use `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. Any additional proxy or tracing system must redact `mcp_token` before recording request URLs. CloudWatch uses existing API retention. OAuth expiry is enforced during reads/redemption; periodically delete expired `citevia_mcp_records` rows and obsolete rate buckets for storage housekeeping. URL-only support uses the existing key records and needs no additional migration beyond 006.
 
 Protocol references checked through Context7: [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization), [lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle).
