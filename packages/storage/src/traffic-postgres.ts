@@ -5,8 +5,9 @@ import {
   type TrafficFilters,
   type TrafficAggregate,
   type TrafficProvider,
+  type TrafficInstallationReceipt,
 } from '@citevia/core';
-import type { SqlSession } from './sql.js';
+import type { SqlSession, SqlDatabase } from './sql.js';
 
 export async function collectTrafficEvent(db: SqlSession, event: TrafficEvent) {
   await db.query(
@@ -29,23 +30,75 @@ export async function collectTrafficEvent(db: SqlSession, event: TrafficEvent) {
     ],
   );
 }
+export async function recordTrafficInstallation(
+  db: SqlDatabase,
+  receipt: TrafficInstallationReceipt,
+) {
+  await db.transaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO citevia_traffic_installations(project_id,origin,first_seen_at,last_seen_at,tracker_version)
+      VALUES($1,$2,$3,$3,$4) ON CONFLICT(project_id,origin) DO UPDATE
+      SET last_seen_at=greatest(citevia_traffic_installations.last_seen_at,excluded.last_seen_at), tracker_version=excluded.tracker_version`,
+      [
+        receipt.projectId,
+        receipt.origin,
+        receipt.timestamp,
+        receipt.trackerVersion,
+      ],
+    );
+    if (receipt.testId)
+      await tx.query(
+        `INSERT INTO analytics_events(id,account_id,timestamp,url,path,user_agent,source,tracker_version,connection_test_id)
+      SELECT $2,p.account_id::text,$3,$4,$5,'','INSTALLATION',$6,$7 FROM citevia_projects p WHERE p.id=$1 ON CONFLICT(id) DO NOTHING`,
+        [
+          receipt.projectId,
+          receipt.id,
+          receipt.timestamp,
+          receipt.url,
+          new URL(receipt.url).pathname,
+          receipt.trackerVersion,
+          receipt.testId,
+        ],
+      );
+  });
+}
 export async function trafficStatus(
   db: SqlSession,
   projectId: string,
   testId?: string,
 ) {
-  const { rows } = await db.query(
-    `SELECT
-      (SELECT timestamp FROM analytics_events WHERE account_id=p.account_id::text ORDER BY timestamp DESC LIMIT 1) AS last,
+  const [events, installations] = await Promise.all([
+    db.query(
+      `SELECT
+      (SELECT timestamp FROM analytics_events WHERE account_id=p.account_id::text AND source='USER' AND connection_test_id IS NULL ORDER BY timestamp DESC LIMIT 1) AS last,
       EXISTS(SELECT 1 FROM analytics_events WHERE account_id=p.account_id::text AND connection_test_id=$2) AS test_received
       FROM citevia_projects p WHERE p.id=$1`,
-    [projectId, testId || null],
-  );
-  const last = rows[0]?.last;
+      [projectId, testId || null],
+    ),
+    db.query(
+      `SELECT origin,first_seen_at,last_seen_at,tracker_version FROM citevia_traffic_installations WHERE project_id=$1 ORDER BY last_seen_at DESC,origin`,
+      [projectId],
+    ),
+  ]);
+  const last = events.rows[0]?.last;
+  const sites = installations.rows.map((r) => ({
+    origin: String(r.origin),
+    firstSeenAt: new Date(r.first_seen_at as string).toISOString(),
+    lastSeenAt: new Date(r.last_seen_at as string).toISOString(),
+    trackerVersion: String(r.tracker_version),
+  }));
   return {
+    installed: sites.length > 0 || Boolean(last),
+    sites,
     hasEvents: Boolean(last),
-    lastReceivedAt: last ? new Date(last as string).toISOString() : null,
-    testReceived: Boolean(rows[0]?.test_received),
+    lastReceivedAt:
+      [
+        ...sites.map((s) => s.lastSeenAt),
+        ...(last ? [new Date(last as string).toISOString()] : []),
+      ]
+        .sort()
+        .at(-1) || null,
+    testReceived: Boolean(events.rows[0]?.test_received),
   };
 }
 /** Aggregate in the database; no visitor-level records are returned to the dashboard. */

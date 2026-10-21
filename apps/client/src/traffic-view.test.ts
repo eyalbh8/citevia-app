@@ -72,6 +72,8 @@ const initialReport = (): TrafficDashboard => ({
   browsers: [{ label: 'Chrome', visits: 24 }],
   countries: ['CY', 'US'],
   status: {
+    installed: true,
+    sites: [],
     hasEvents: true,
     lastReceivedAt: '2026-10-21T12:00:00.000Z',
     testReceived: false,
@@ -201,6 +203,21 @@ describe('AI Traffic screen interactions', () => {
     await act(async () => vi.advanceTimersByTimeAsync(2000));
     expect(container.textContent).toContain('Connection verified');
   });
+  it('shows a direct-visit installation without AI visits and tests the detected website instead of the brand domain', async () => {
+    report.status.hasEvents=false;
+    report.status.sites=[{origin:'https://citevia.io',firstSeenAt:'2026-10-21T12:00:00Z',lastSeenAt:'2026-10-21T12:00:00Z',trackerVersion:'citevia-v2'}];
+    await render();
+    expect(container.textContent).toContain('Tracker detected on citevia.io');
+    expect(container.textContent).not.toContain('Connect your website to see AI traffic');
+    await click('Settings');
+    const input=document.querySelector<HTMLInputElement>('.traffic-test-url input')!;
+    expect(input.value).toBe('https://citevia.io');
+    expect(container.textContent).toContain('Detected websites');
+    const opener=vi.spyOn(window,'open').mockReturnValue({opener:null} as Window);
+    vi.useFakeTimers();
+    await click('Test connection');
+    expect(new URL(opener.mock.calls.at(-1)![0] as string).hostname).toBe('citevia.io');
+  });
   it('cancels a pending connection test when the settings screen unmounts', async () => {
     await render();
     await click('Settings');
@@ -213,6 +230,7 @@ describe('AI Traffic screen interactions', () => {
   });
   it('shows website setup for accounts with no events and keeps the zero-data dashboard available', async () => {
     report.status.hasEvents = false;
+    report.status.installed = false;
     report.current = 0;
     await render();
     expect(container.textContent).toContain(

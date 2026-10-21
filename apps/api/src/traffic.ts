@@ -24,6 +24,8 @@ const fail = (message: string, status = 400): never => {
   throw new AccessError(status, 'TRAFFIC_REQUEST', message);
 };
 const eventSchema = z.object({
+  type: z.enum(['pageview', 'installation']).optional().default('pageview'),
+  trackerVersion: z.string().max(32).optional().default('citevia-v1'),
   id: z.string().uuid(),
   projectId: z.string().min(1).max(120),
   url: z.string().url().max(4096),
@@ -43,16 +45,6 @@ function siteUrl(value: string) {
     return null;
   }
 }
-function allowedHost(host: string, project: Project) {
-  return project.brand.domains.some((domain) => {
-    const configured = siteUrl(
-      domain.includes('://') ? domain : `https://${domain}`,
-    )?.hostname.replace(/^www\./, '');
-    return (
-      configured && (host === configured || host.endsWith(`.${configured}`))
-    );
-  });
-}
 export async function publicTrafficRoute(
   runtime: Runtime,
   request: Request,
@@ -64,7 +56,7 @@ export async function publicTrafficRoute(
     return new Response(trafficTracker, {
       headers: {
         'Content-Type': 'application/javascript; charset=utf-8',
-        'Cache-Control': 'public,max-age=300',
+        'Cache-Control': 'public,max-age=60',
         'X-Content-Type-Options': 'nosniff',
         'Cross-Origin-Resource-Policy': 'cross-origin',
       },
@@ -82,12 +74,7 @@ export async function publicTrafficRoute(
     if (!project) return json({ error: 'Unknown website' }, 404);
     const url = siteUrl(payload.url),
       origin = siteUrl(request.headers.get('origin') || '');
-    if (
-      !url ||
-      !origin ||
-      origin.origin !== url.origin ||
-      !allowedHost(url.hostname, project)
-    )
+    if (!url || !origin || origin.origin !== url.origin)
       return json({ error: 'Website origin does not match this account' }, 403);
     // UA and receipt time come from the request; never accept supplied provider/browser/country fields.
     const ua = (request.headers.get('user-agent') || '').slice(0, 1024);
@@ -95,9 +82,6 @@ export async function publicTrafficRoute(
       /bot\b|crawler|spider|ChatGPT-User|Perplexity-User|Claude-User/i.test(ua)
     )
       return new Response(null, { status: 204 });
-    const referrer = siteUrl(payload.referrer);
-    const provider = trafficProvider(referrer?.href || null, payload.utmSource);
-    if (!provider) return new Response(null, { status: 204 });
     const windowStart = new Date(
       Math.floor(now.getTime() / 60000) * 60000,
     ).toISOString();
@@ -109,6 +93,21 @@ export async function publicTrafficRoute(
       ))
     )
       return json({ error: 'Too many events' }, 429);
+    // A published script can run on any website. Installation receipts never inflate AI referrals.
+    await runtime.repository.recordTrafficInstallation({
+      id: payload.id,
+      projectId: project.id,
+      origin: url.origin,
+      url: `${url.origin}${url.pathname}`,
+      timestamp: now.toISOString(),
+      trackerVersion: payload.trackerVersion,
+      testId: payload.testId || null,
+    });
+    if (payload.type === 'installation' || payload.testId)
+      return new Response(null, { status: 204 });
+    const referrer = siteUrl(payload.referrer);
+    const provider = trafficProvider(referrer?.href || null, payload.utmSource);
+    if (!provider) return new Response(null, { status: 204 });
     await runtime.repository.collectTrafficEvent({
       id: payload.id,
       projectId: project.id,

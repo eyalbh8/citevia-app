@@ -121,7 +121,24 @@ export interface TrafficAggregate {
   browsers: TrafficRow[];
   countries: string[];
 }
+export interface TrafficSite {
+  origin: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  trackerVersion: string;
+}
+export interface TrafficInstallationReceipt {
+  id: string;
+  projectId: string;
+  origin: string;
+  url: string;
+  timestamp: string;
+  trackerVersion: string;
+  testId: string | null;
+}
 export interface TrafficStatus {
+  installed: boolean;
+  sites: TrafficSite[];
   hasEvents: boolean;
   lastReceivedAt: string | null;
   testReceived: boolean;

@@ -1,4 +1,4 @@
-import { aggregateTraffic, type TrafficEvent, type TrafficFilters } from '@citevia/core';
+import { aggregateTraffic, type TrafficEvent, type TrafficFilters, type TrafficInstallationReceipt, type TrafficSite } from '@citevia/core';
 import {
   verifiedIdentitySchema,
   type VerifiedIdentity,
@@ -33,6 +33,8 @@ import { dirname, resolve, sep } from 'node:path';
 
 interface State {
   trafficEvents?: Record<string, TrafficEvent>;
+  trafficSites?: Record<string, TrafficSite & {projectId: string}>;
+  trafficTests?: Record<string, string>;
   mcpConnections?: Record<string, McpConnection>;
   mcpRecords?: Record<string, McpRecord>;
   mcpRequestLimits?: Record<string, { windowStart: string; count: number }>;
@@ -73,11 +75,33 @@ export class MemoryRepository implements Repository {
       this.state.trafficEvents[event.id] ||= copy(event);
     }, true);
   }
+  recordTrafficInstallation(receipt: TrafficInstallationReceipt) {
+    return this.operation(() => {
+      this.state.trafficSites ||= {};
+      const siteKey = JSON.stringify([receipt.projectId, receipt.origin]);
+      const previous = this.state.trafficSites[siteKey];
+      this.state.trafficSites[siteKey] = {
+        projectId: receipt.projectId, origin: receipt.origin,
+        firstSeenAt: previous?.firstSeenAt || receipt.timestamp,
+        lastSeenAt: receipt.timestamp, trackerVersion: receipt.trackerVersion,
+      };
+      if (receipt.testId) {
+        this.state.trafficTests ||= {};
+        this.state.trafficTests[JSON.stringify([receipt.projectId, receipt.testId])] = receipt.timestamp;
+      }
+    }, true);
+  }
   trafficStatus(projectId: string, testId?: string) {
     return this.operation(() => {
-      const events = Object.values(this.state.trafficEvents || {}).filter(e=>e.projectId===projectId);
-      return { hasEvents: events.length > 0, lastReceivedAt: events.map(e=>e.timestamp).sort().at(-1) || null,
-        testReceived: Boolean(testId && events.some(e=>e.testId===testId)) };
+      const events = Object.values(this.state.trafficEvents || {}).filter(e => e.projectId === projectId);
+      const sites = Object.values(this.state.trafficSites || {}).filter(s => s.projectId === projectId)
+        .map(({projectId: _, ...site}) => site).sort((a,b) => b.lastSeenAt.localeCompare(a.lastSeenAt) || a.origin.localeCompare(b.origin));
+      return {
+        installed: sites.length > 0 || events.length > 0, sites,
+        hasEvents: events.some(e => !e.testId),
+        lastReceivedAt: [...events.map(e => e.timestamp), ...sites.map(s => s.lastSeenAt)].sort().at(-1) || null,
+        testReceived: Boolean(testId && (this.state.trafficTests?.[JSON.stringify([projectId,testId])] || events.some(e => e.testId === testId))),
+      };
     });
   }
   aggregateTraffic(projectId: string, filters: TrafficFilters) {

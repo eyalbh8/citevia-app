@@ -9,7 +9,7 @@ function website(
 ) {
   const dom = new JSDOM(
     '<!doctype html><html><head></head><body></body></html>',
-    { url, referrer, runScripts: 'outside-only' },
+    { url, ...(referrer ? { referrer } : {}), runScripts: 'outside-only' },
   );
   const script = dom.window.document.createElement('script');
   script.src = 'https://api.example/v1/traffic/tracker.js';
@@ -17,7 +17,10 @@ function website(
   Object.defineProperty(dom.window.document, 'currentScript', {
     value: script,
   });
-  Object.defineProperty(dom.window.crypto, 'randomUUID', { value: randomUUID });
+  Object.defineProperty(dom.window.crypto, 'randomUUID', {
+    value: randomUUID,
+    configurable: true,
+  });
   const fetcher = vi.fn().mockResolvedValue({});
   Object.defineProperty(dom.window, 'fetch', { value: fetcher });
   return { dom, fetcher, run: () => dom.window.eval(trafficTracker) };
@@ -35,11 +38,12 @@ describe('embedded referral tracker', () => {
       credentials: 'omit',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
+      referrerPolicy: 'origin',
       keepalive: true,
     });
     expect(JSON.parse(f.fetcher.mock.calls[0][1].body)).toMatchObject({
       projectId: 'project-a',
-      referrer: 'https://chatgpt.com/',
+      referrer: 'https://chatgpt.com',
     });
     expect(f.dom.window.document.cookie).toBe('');
     f.dom.window.close();
@@ -54,18 +58,21 @@ describe('embedded referral tracker', () => {
       'https://site.example/pricing',
     );
     expect(JSON.parse(f.fetcher.mock.calls[1][1].body).referrer).toBe(
-      'https://chatgpt.com/',
+      'https://chatgpt.com',
     );
     f.dom.window.close();
   });
-  it('only sends recognized referrers or supported UTM tags and includes the exact connection token', () => {
+  it('detects ordinary and unrecognized visits without attributing them to AI, and includes the exact connection token', () => {
     for (const ref of [
       'https://evil.example/?from=chatgpt.com',
       'https://chatgpt.com.evil.example/',
     ]) {
       const f = website('https://site.example/', ref);
       f.run();
-      expect(f.fetcher).not.toHaveBeenCalled();
+      expect(f.fetcher).toHaveBeenCalledOnce();
+      expect(JSON.parse(f.fetcher.mock.calls[0][1].body).type).toBe(
+        'installation',
+      );
       f.dom.window.close();
     }
     const id = randomUUID();
@@ -77,9 +84,29 @@ describe('embedded referral tracker', () => {
     expect(JSON.parse(f.fetcher.mock.calls[0][1].body)).toMatchObject({
       utmSource: 'chatgpt.com',
       testId: id,
+      type: 'installation',
     });
     f.dom.window.history.replaceState({}, '', '/pricing');
     expect(JSON.parse(f.fetcher.mock.calls.at(-1)![1].body).testId).toBe(id);
+    f.dom.window.close();
+  });
+  it('detects a direct visit without AI tags and supports browsers without randomUUID', () => {
+    const f = website('https://site.example/?email=private', '');
+    Object.defineProperty(f.dom.window.crypto, 'randomUUID', {
+      value: undefined,
+      configurable: true,
+    });
+    f.run();
+    const payload = JSON.parse(f.fetcher.mock.calls[0][1].body);
+    expect(payload).toMatchObject({
+      type: 'installation',
+      url: 'https://site.example/',
+      trackerVersion: 'citevia-v2',
+    });
+    expect(payload.id).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    );
+    expect(f.fetcher.mock.calls[0][1].body).not.toContain('private');
     f.dom.window.close();
   });
 });

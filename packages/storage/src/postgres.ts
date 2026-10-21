@@ -31,6 +31,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
   constructor(db: SqlDatabase) {
     super(db);
   }
+  recordTrafficInstallation(receipt: import('@citevia/core').TrafficInstallationReceipt) { return traffic.recordTrafficInstallation(this.db, receipt); }
   collectTrafficEvent(event: TrafficEvent) { return traffic.collectTrafficEvent(this.db, event); }
   trafficStatus(projectId: string, testId?: string) { return traffic.trafficStatus(this.db, projectId, testId); }
   aggregateTraffic(projectId: string, filters: TrafficFilters) { return traffic.aggregateTraffic(this.db, projectId, filters); }

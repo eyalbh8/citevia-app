@@ -436,11 +436,19 @@ function TrafficSettings({
     s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   const snippet = `<script async src="${escape(new URL('traffic/tracker.js', base).href)}" data-project-id="${escape(project.id)}"></script>`;
   const domain = project.brand.domains[0];
+  const [testUrl, setTestUrl] = useState(domain || '');
+  const [urlEdited, setUrlEdited] = useState(false);
+  const detectedOrigin = status.data?.sites?.[0]?.origin;
+  useEffect(() => {
+    if (detectedOrigin && !urlEdited) setTestUrl(detectedOrigin);
+  }, [detectedOrigin, urlEdited]);
+  const installed = Boolean(status.data?.installed || status.data?.hasEvents);
   let target: URL | null = null;
   try {
-    if (domain) {
+    if (testUrl.trim()) {
+      const value = testUrl.trim();
       const parsed = new URL(
-        domain.includes('://') ? domain : `https://${domain}`,
+        value.includes('://') ? value : `https://${value}`,
       );
       if (
         ['http:', 'https:'].includes(parsed.protocol) &&
@@ -520,12 +528,10 @@ function TrafficSettings({
             </p>
           </div>
           <span
-            className={`traffic-connection ${status.data?.hasEvents ? 'connected' : ''}`}
+            className={`traffic-connection ${installed ? 'connected' : ''}`}
           >
             <i />
-            {status.data?.hasEvents
-              ? 'Receiving events'
-              : 'Awaiting first event'}
+            {installed ? 'Tracker detected' : 'Awaiting first event'}
           </span>
         </header>
         <div className="traffic-install">
@@ -536,7 +542,9 @@ function TrafficSettings({
               <p>
                 Paste this snippet inside the <code>&lt;head&gt;</code> of your
                 website, or add it as a custom HTML tag in your tag manager.
-                Publish it on every page you want to measure.
+                Publish it on every page you want to measure. This script
+                records visits under {project.name || project.brand.name} on any
+                website where you install it.
               </p>
             </div>
           </div>
@@ -568,12 +576,24 @@ function TrafficSettings({
             <div>
               <h3>Verify your connection</h3>
               <p>
-                Open {domain || 'your configured website'} with a tagged test
-                visit. We’ll check that this specific visit reaches Citevia.
-                Test visits stay out of your reports.
+                Open the website where you installed this script. We’ll check
+                that a fresh signal from that page reaches Citevia. Test visits
+                stay out of your reports.
               </p>
             </div>
           </div>
+          <label className="traffic-test-url">
+            Website URL
+            <input
+              type="url"
+              value={testUrl}
+              placeholder="https://example.com"
+              onChange={(event) => {
+                setUrlEdited(true);
+                setTestUrl(event.target.value);
+              }}
+            />
+          </label>
           <div className="traffic-test-actions">
             <button
               className="button button-primary"
@@ -593,8 +613,7 @@ function TrafficSettings({
           </div>
           {!target && (
             <p className="traffic-help">
-              Add your website domain in Project settings before testing the
-              connection.
+              Enter the website URL where you installed the script.
             </p>
           )}
           {result && (
@@ -604,6 +623,21 @@ function TrafficSettings({
             </p>
           )}
           <ErrorNotice error={error || status.error} />
+          {status.data?.sites?.length ? (
+            <div className="traffic-detected-sites">
+              <h3>Detected websites</h3>
+              {status.data.sites.map((site) => (
+                <div key={site.origin}>
+                  <a href={site.origin} target="_blank" rel="noreferrer">
+                    {site.origin}
+                  </a>
+                  <span>
+                    Last seen {new Date(site.lastSeenAt).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {status.data?.lastReceivedAt && (
             <p className="traffic-help">
               Last event received{' '}
@@ -778,7 +812,7 @@ export default function TrafficView({
           ) : (
             data && (
               <>
-                {!data.status.hasEvents && (
+                {!data.status.installed && !data.status.hasEvents && (
                   <div className="traffic-setup-banner">
                     <span className="traffic-banner-icon">
                       <Activity size={22} />
@@ -795,6 +829,21 @@ export default function TrafficView({
                       onClick={() => setTab('settings')}
                     >
                       Set up tracking <ChevronRight size={15} />
+                    </button>
+                  </div>
+                )}
+                {data.status.installed && !data.status.hasEvents && (
+                  <div className="traffic-installation-notice">
+                    <Check size={18} />
+                    <span>
+                      Tracker detected
+                      {data.status.sites?.[0]?.origin
+                        ? ` on ${new URL(data.status.sites[0].origin).hostname}`
+                        : ''}
+                      . AI referral visits will appear here as they arrive.
+                    </span>
+                    <button onClick={() => setTab('settings')}>
+                      Connection details
                     </button>
                   </div>
                 )}

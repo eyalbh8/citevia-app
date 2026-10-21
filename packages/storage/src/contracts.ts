@@ -16,6 +16,7 @@ import type {
   TrafficStatus,
   TrafficFilters,
   TrafficAggregate,
+  TrafficInstallationReceipt,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 import type { McpRepository } from './mcp.js';
@@ -29,6 +30,7 @@ export interface SavedAnalysis {
   analysis: Analysis | null;
 }
 export interface Repository extends UserRepository, McpRepository {
+  recordTrafficInstallation(receipt: TrafficInstallationReceipt): Promise<void>;
   collectTrafficEvent(event: TrafficEvent): Promise<void>;
   trafficStatus(projectId: string, testId?: string): Promise<TrafficStatus>;
   aggregateTraffic(projectId: string, filters: TrafficFilters): Promise<TrafficAggregate>;

@@ -23,6 +23,8 @@ const definitions: Tool[] = [
   { name: 'settings', description: 'Read account settings and version, including competitors and scan providers.', method: 'GET', path: 'settings' },
   { name: 'competitor_suggestions', description: 'Find competitor suggestions in already saved answers. Makes no provider calls.', method: 'GET', path: 'competitors/suggestions' },
   { name: 'tracked_urls', description: 'List tracked content URLs with citation measurements. Optional query: providers (comma-separated), days (1/7/14/30/90/custom), start, end, page (zero-based), pageSize (25/50/100), q, status, sort.', method: 'GET', path: 'tracked-urls' },
+  { name: 'ai_traffic', description: 'Read AI referral visits, provider trends and website breakdowns. Optional query: days, start, end, providers and countries.', method: 'GET', path: 'traffic' },
+  { name: 'traffic_connection', description: 'Read tracker installation status, detected website origins and last receipt time. Optional query: testId for an exact connection test.', method: 'GET', path: 'traffic/status' },
   { name: 'tracking_summary', description: 'Read tracked-content coverage and trends.', method: 'GET', path: 'tracked-urls/summary' },
   { name: 'tracked_url_answers', description: 'Read answers citing a tracked URL.', method: 'GET', path: 'tracked-urls/{trackedUrlId}/answers', id: 'trackedUrlId' },
   { name: 'onboarding_status', description: 'Read account setup progress.', method: 'GET', path: 'onboarding' },

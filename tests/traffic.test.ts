@@ -175,7 +175,7 @@ describe('public tracker and authenticated reports', () => {
     ).json();
     expect(unmatched.testReceived).toBe(false);
   });
-  it('validates origins, website domains, body limits and source evidence', async () => {
+  it('validates matching browser origins, body limits and source evidence', async () => {
     const f = await fixture();
     const payload = {
       id: randomUUID(),
@@ -184,14 +184,6 @@ describe('public tracker and authenticated reports', () => {
       utmSource: 'chatgpt',
     };
     expect((await f.send(payload, 'https://evil.example'))?.status).toBe(403);
-    expect(
-      (
-        await f.send(
-          { ...payload, url: 'https://northstar.example.evil.example/' },
-          'https://northstar.example.evil.example',
-        )
-      )?.status,
-    ).toBe(403);
     expect((await f.send({ ...payload, url: 'file:///tmp/a' }))?.status).toBe(
       403,
     );
@@ -230,6 +222,68 @@ describe('public tracker and authenticated reports', () => {
       )?.status,
     ).toBe(204);
     expect((await f.repository.trafficStatus(projectId)).hasEvents).toBe(true);
+  });
+  it('detects the script on any host on ordinary visits without adding AI referrals, and verifies that host by exact token', async () => {
+    const f = await fixture();
+    const payload = {
+      id: randomUUID(),
+      projectId,
+      url: 'https://citevia.io/pricing?private=discarded',
+      type: 'installation',
+      trackerVersion: 'citevia-v2',
+    };
+    expect((await f.send(payload, 'https://citevia.io'))?.status).toBe(204);
+    const status = await f.repository.trafficStatus(projectId);
+    expect(status).toMatchObject({
+      installed: true,
+      hasEvents: false,
+      testReceived: false,
+      sites: [{ origin: 'https://citevia.io', trackerVersion: 'citevia-v2' }],
+    });
+    expect((await (await f.call()).json()).current).toBe(0);
+    const testId = randomUUID();
+    expect(
+      (
+        await f.send(
+          { ...payload, id: randomUUID(), testId },
+          'https://citevia.io',
+        )
+      )?.status,
+    ).toBe(204);
+    expect(
+      (await f.repository.trafficStatus(projectId, testId)).testReceived,
+    ).toBe(true);
+    expect(
+      (await f.repository.trafficStatus(projectId, randomUUID())).testReceived,
+    ).toBe(false);
+    expect(
+      (await f.repository.trafficStatus('other-traffic', testId)).installed,
+    ).toBe(false);
+    expect(
+      (
+        await f.send(
+          {
+            ...payload,
+            id: randomUUID(),
+            type: 'pageview',
+            utmSource: 'chatgpt',
+          },
+          'https://citevia.io',
+        )
+      )?.status,
+    ).toBe(204);
+    expect((await (await f.call()).json()).current).toBe(1);
+    expect(
+      (
+        await f.send(
+          { ...payload, id: randomUUID(), url: 'https://second-site.example/' },
+          'https://second-site.example',
+        )
+      )?.status,
+    ).toBe(204);
+    expect(
+      (await f.repository.trafficStatus(projectId)).sites.map((s) => s.origin),
+    ).toEqual(['https://citevia.io', 'https://second-site.example']);
   });
   it('requires account membership for reports, lets viewers read, rejects invalid filters and does not expose raw events', async () => {
     const f = await fixture();
@@ -369,10 +423,60 @@ describe('PostgreSQL traffic aggregation', () => {
     expect(status).toMatchObject({ hasEvents: true, testReceived: true });
     const empty = await repository.trafficStatus('nonexistent');
     expect(empty).toEqual({
+      installed: false,
+      sites: [],
       hasEvents: false,
       lastReceivedAt: null,
       testReceived: false,
     });
+  });
+  it('persists independent installation signals and test receipts by account and origin without polluting SQL analytics', async () => {
+    const receipt = {
+      id: randomUUID(),
+      projectId,
+      origin: 'https://citevia.io',
+      url: 'https://citevia.io/',
+      timestamp: NOW.toISOString(),
+      trackerVersion: 'citevia-v2',
+      testId: null as string | null,
+    };
+    await repository.recordTrafficInstallation(receipt);
+    await repository.recordTrafficInstallation({
+      ...receipt,
+      id: randomUUID(),
+      timestamp: new Date(NOW.getTime() + 1000).toISOString(),
+    });
+    const status = await repository.trafficStatus(projectId);
+    expect(status.sites).toHaveLength(1);
+    expect(status.sites[0]).toMatchObject({
+      origin: receipt.origin,
+      firstSeenAt: receipt.timestamp,
+      lastSeenAt: new Date(NOW.getTime() + 1000).toISOString(),
+    });
+    const before = await repository.aggregateTraffic(projectId, filters);
+    const testId = randomUUID();
+    await repository.recordTrafficInstallation({
+      ...receipt,
+      id: randomUUID(),
+      testId,
+    });
+    expect(
+      (await repository.trafficStatus(projectId, testId)).testReceived,
+    ).toBe(true);
+    expect(
+      (await repository.trafficStatus('other-traffic', testId)).testReceived,
+    ).toBe(false);
+    expect(
+      (await repository.aggregateTraffic(projectId, filters)).current,
+    ).toBe(before.current);
+    expect(
+      (
+        await db.query(
+          "SELECT count(*)::int AS count FROM analytics_events WHERE source='INSTALLATION' AND connection_test_id=$1",
+          [testId],
+        )
+      ).rows[0].count,
+    ).toBe(1);
   });
   it('reads existing iGEO referral rows using the native account ID without counting crawler traffic or spoofed domains', async () => {
     await db.query(

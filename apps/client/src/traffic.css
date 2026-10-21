@@ -546,3 +546,69 @@
     padding: 20px;
   }
 }
+
+.traffic-test-url {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 18px 43px;
+  font-size: 12px;
+  max-width: 650px;
+}
+.traffic-test-url input {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  width: 100%;
+  background: var(--surface);
+}
+.traffic-detected-sites {
+  margin: 24px 0 0 43px;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.traffic-detected-sites h3 {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.traffic-detected-sites > div {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  padding: 9px 0;
+}
+.traffic-detected-sites span {
+  color: var(--subtle);
+  font-size: 11px;
+}
+.traffic-installation-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 18px;
+  border-radius: 12px;
+  background: #eff8f3;
+  color: var(--success);
+  margin-bottom: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.traffic-installation-notice > svg {
+  flex-shrink: 0;
+}
+.traffic-installation-notice button {
+  margin-left: auto;
+  color: var(--primary);
+  white-space: nowrap;
+  font-size: 11px;
+}
+@media (max-width: 600px) {
+  .traffic-test-url,
+  .traffic-detected-sites {
+    margin-left: 0;
+  }
+  .traffic-installation-notice {
+    flex-wrap: wrap;
+  }
+}
