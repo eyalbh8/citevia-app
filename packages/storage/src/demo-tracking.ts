@@ -30,8 +30,13 @@ interface ScenarioTrackingHooks {
 /** Small enrollment metadata; counts use the same captures as the answer screens. */
 export function createScenarioTracking(project: Project, hooks: ScenarioTrackingHooks) {
   const urls = new Map<string, TrackedUrl>();
+  const normalizedKeys = new Map<string, string | null>();
+  const urlKey = (url: string) => {
+    if (!normalizedKeys.has(url)) normalizedKeys.set(url, trackedUrlKey(url));
+    return normalizedKeys.get(url)!;
+  };
   for (const item of project.demo?.trackedUrls || []) {
-    const normalizedUrl = trackedUrlKey(item.url);
+    const normalizedUrl = urlKey(item.url);
     if (!normalizedUrl || urls.has(normalizedUrl)) continue;
     const createdAt = new Date(item.createdAt || item.publishedAt).toISOString();
     const publishedAt = new Date(item.publishedAt).toISOString();
@@ -54,11 +59,18 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
       })),
     });
   }
+  const urlList = [...urls.values()];
+  const enrolledAt = (url: TrackedUrl, at: string) => at >= url.publishedAt && trackingEnabledAt(url, at);
+  const enrolledCitation = (citation: Citation, at: string) => {
+    const key = urlKey(citation.url);
+    const url = key ? urls.get(key) : undefined;
+    return !!url && enrolledAt(url, at);
+  };
 
   // This cache belongs to the scenario adapter, never a database or object store.
   let matches: TrackingMatch[] | undefined;
   const listTrackingMatches = (trackedUrlId?: string): TrackingMatch[] => {
-    if (trackedUrlId && ![...urls.values()].some((url) => url.id === trackedUrlId)) return [];
+    if (trackedUrlId && !urlList.some((url) => url.id === trackedUrlId)) return [];
     if (!matches) {
       matches = [];
       if (urls.size && project.demo) {
@@ -68,19 +80,20 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
           const run = runs.get(result.runId);
           if (!run || run.reportingExcludedAt || !['completed', 'partial'].includes(run.status)) continue;
           const capturedAt = result.capturedAt || run.createdAt;
-          if (![...urls.values()].some((url) => capturedAt >= url.publishedAt && trackingEnabledAt(url, capturedAt))) continue;
-          if (hooks.citations && !hooks.citations(run, result.prompt).some((citation) => {
-            const key = trackedUrlKey(citation.url);
-            const url = key ? urls.get(key) : undefined;
-            return url && capturedAt >= url.publishedAt && trackingEnabledAt(url, capturedAt);
-          })) continue;
+          if (!urlList.some((url) => enrolledAt(url, capturedAt))) continue;
+          if (hooks.citations && !hooks.citations(run, result.prompt).some((citation) => enrolledCitation(citation, capturedAt))) continue;
           const evidence = hooks.evidence(run, result.prompt);
-          const measurement = citationMeasurement(evidence.result, run, evidence.answer, evidence.analysis);
+          // Citation counts and company attribution are independent for each URL.
+          // Keeping only tracked annotations preserves their native measurement
+          // while avoiding repeated parsing of every unrelated source per company.
+          const citations = evidence.answer.citations.filter((citation) => enrolledCitation(citation, evidence.answer.createdAt));
+          if (!citations.length) continue;
+          const measurement = citationMeasurement(evidence.result, run, { ...evidence.answer, citations }, evidence.analysis);
           if (!measurement) continue;
           for (const citation of measurement.evidence) {
             const url = urls.get(citation.normalizedUrl);
             const at = measurement.capture.capturedAt;
-            if (url && at >= url.publishedAt && trackingEnabledAt(url, at))
+            if (url && enrolledAt(url, at))
               matches.push({ trackedUrlId: url.id, capture: measurement.capture, evidence: citation });
           }
         }
@@ -90,5 +103,5 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
     return trackedUrlId ? matches.filter((match) => match.trackedUrlId === trackedUrlId) : matches;
   };
 
-  return { listTrackedUrls: () => [...urls.values()], listTrackingMatches };
+  return { listTrackedUrls: () => [...urlList], listTrackingMatches };
 }

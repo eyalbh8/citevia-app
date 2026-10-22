@@ -257,7 +257,17 @@ function sampleFor(project: Project, prompt: Prompt) {
 }
 
 const citationPoolCache = new WeakMap<Project, Map<string, { url: string; title?: string }[]>>();
+const trackedCitationCache = new WeakMap<Project, {
+  keys: Set<string | null>;
+  eligible: Map<string, NonNullable<DemoConfig['trackedUrls']>>;
+}>();
 function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[] {
+  const tracked = configFor(project)!.trackedUrls || [];
+  let trackedIndex = trackedCitationCache.get(project);
+  if (!trackedIndex) {
+    trackedIndex = { keys: new Set(tracked.map(item => trackedUrlKey(item.url))), eligible: new Map() };
+    trackedCitationCache.set(project, trackedIndex);
+  }
   let pools = citationPoolCache.get(project);
   if (!pools) { pools = new Map(); citationPoolCache.set(project, pools); }
   let unique = pools.get(prompt.id);
@@ -269,16 +279,19 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
       ...(configFor(project)!.samples || []).flatMap((item) => item.citations || []), ...fallback].filter((citation) => {
       try { return ['http:', 'https:'].includes(new URL(citation.url).protocol); } catch { return false; }
     });
-    unique = [...new Map(candidates.map((citation) => [citation.url, citation])).values()];
+    unique = [...new Map(candidates.map((citation) => [citation.url, citation])).values()]
+      .filter(citation => !trackedIndex.keys.has(trackedUrlKey(citation.url)))
+      .map(citation => ({ ...citation, title: citation.title || new URL(citation.url).hostname }));
     pools.set(prompt.id, unique);
   }
   const size = Math.min(unique.length, 1 + Math.floor(progress(project, Date.parse(run.scheduledAt)) * 5));
   const at = iso(Date.parse(run.scheduledAt));
-  const tracked = configFor(project)!.trackedUrls || [];
-  const trackedKeys = new Set(tracked.map(item => trackedUrlKey(item.url)));
-  const candidates = unique.filter(item => !trackedKeys.has(trackedUrlKey(item.url)));
-  const eligible = tracked.filter(item => (item.createdAt || item.publishedAt) <= at && item.publishedAt <= at);
-  const base = candidates.slice(0, size);
+  let eligible = trackedIndex.eligible.get(at);
+  if (!eligible) {
+    eligible = tracked.filter(item => (item.createdAt || item.publishedAt) <= at && item.publishedAt <= at);
+    trackedIndex.eligible.set(at, eligible);
+  }
+  const base = unique.slice(0, size);
   // Gradual pickup of enrolled content; the same citations drive every tracking view.
   if (eligible.length && hash(`${run.snapshot.provider}:${prompt.id}`) % 5 < 2) {
     const item = eligible[hash(`${run.id}:${prompt.id}:content`) % eligible.length];
