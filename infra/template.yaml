@@ -642,6 +642,10 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../dist/scanner/
+      # Completing a job intentionally dispatches the next bounded SQS job.
+      # Default recursion protection stops this chain after about 16 invocations.
+      # Database admission, attempt budgets and deadlines remain authoritative.
+      RecursiveLoop: Allow
       VpcConfig: !If
         - UseAuroraDatabase
         - SecurityGroupIds: [!Ref LambdaSecurityGroup]

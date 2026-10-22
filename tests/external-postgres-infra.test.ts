@@ -110,6 +110,14 @@ describe('external PostgreSQL infrastructure stages', () => {
     expect(resumed.resources.ScannerFunction.Properties.Events.ScanJobs.Properties.Enabled).toBe(true);
     expect(resumed.resources.ScannerFunction.Properties.Events.Reconcile.Properties.State).toBe('ENABLED');
   });
+  it('allows the bounded scanner queue chain in both database modes without changing API recursion protection', () => {
+    for (const DatabaseMode of ['aurora', 'external']) {
+      const rendered = render({ DatabaseMode, ExternalDatabaseSecretArn: secret });
+      expect(rendered.resources.ScannerFunction.Properties.RecursiveLoop).toBe('Allow');
+      expect(rendered.resources.ApiFunction.Properties).not.toHaveProperty('RecursiveLoop');
+      expect(rendered.resources.ScannerFunction.Properties.Events.ScanJobs.Properties.ScalingConfig.MaximumConcurrency).toBeGreaterThan(0);
+    }
+  });
   it('detaches retained Aurora only after external cutover and cleanup, without dangling references', () => {
     for (const mode of ['aurora', 'external']) for (const cleanup of ['false', 'true']) for (const retirement of ['false', 'true']) for (const maintenance of ['false', 'true']) {
       const rendered = render({ DatabaseMode: mode, RemoveLegacyNetwork: cleanup, RetireLegacyDatabase: retirement, MaintenanceMode: maintenance, ExternalDatabaseSecretArn: secret });
