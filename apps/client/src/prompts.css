@@ -312,6 +312,12 @@
 .prompt-trend.unavailable {
   color: var(--muted);
 }
+.prompt-comparison-note {
+  margin: -6px 24px 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .prompt-created {
   display: flex;
   flex-direction: column;

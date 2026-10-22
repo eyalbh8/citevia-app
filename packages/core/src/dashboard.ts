@@ -71,6 +71,7 @@ export function dashboardObservations(
       result.projectId === project.id &&
       run.projectId === project.id &&
       result.runId === run.id &&
+      !run.reportingExcludedAt &&
       ['completed', 'partial'].includes(run.status) &&
       result.status === 'succeeded' &&
       enabled.includes(provider) &&

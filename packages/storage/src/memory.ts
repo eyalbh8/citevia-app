@@ -355,7 +355,8 @@ export class MemoryRepository implements Repository {
         if (url.projectId !== projectId || (trackedUrlId && url.id !== trackedUrlId)) continue;
         for (const captureId of this.state.trackingMatches?.[key(projectId,url.id)] || []) {
           const measurement = this.state.citationCaptures?.[captureId];
-          if (!measurement || !['completed','partial'].includes(this.state.runs[key(projectId,measurement.capture.runId)]?.status)) continue;
+          const measuredRun = measurement && this.state.runs[key(projectId,measurement.capture.runId)];
+          if (!measurement || !measuredRun || measuredRun.reportingExcludedAt || !['completed','partial'].includes(measuredRun.status)) continue;
           const evidence = measurement.evidence.find(e => e.normalizedUrl === url.normalizedUrl);
           if (evidence) matches.push({trackedUrlId: url.id, capture: measurement.capture, evidence});
         }
@@ -730,7 +731,7 @@ export class MemoryRepository implements Repository {
   listRuns(projectId: string, limit = 60) {
     return this.operation(() =>
       Object.values(this.state.runs)
-        .filter((r) => r.projectId === projectId)
+        .filter((r) => r.projectId === projectId && !r.reportingExcludedAt)
         .sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt))
         .slice(0, limit),
     );
@@ -743,7 +744,7 @@ export class MemoryRepository implements Repository {
   ) {
     return this.operation(() => {
       const runs = Object.values(this.state.runs).filter(
-        (run) => run.projectId === projectId,
+        (run) => run.projectId === projectId && !run.reportingExcludedAt,
       );
       const byId = new Map(runs.map((run) => [run.id, run]));
       const results = Object.values(this.state.results).filter((result) => {

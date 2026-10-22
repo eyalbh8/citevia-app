@@ -166,6 +166,33 @@ function capture(urls: string[]): CapturedAnswer {
 }
 
 describe('dashboard overview measurement semantics', () => {
+  it('omits excluded scan rounds and their reanalyses from every aggregate without mutating evidence', () => {
+    const value = project();
+    const earlier = observation(value, 'earlier', '2026-10-20');
+    earlier.run.reportingExcludedAt = '2026-10-23T00:00:00.000Z';
+    earlier.run.reportingExclusionReason = 'Keep one scan round on October 20';
+    earlier.answer = capture(['https://excluded.example/page']);
+    const reanalysis = structuredClone(earlier);
+    reanalysis.run.id = reanalysis.result.runId = 'earlier-reanalysis';
+    reanalysis.run.reanalysisOf = earlier.run.id;
+    const kept = observation(value, 'kept', '2026-10-20', { mentioned: false });
+    const data = aggregateDashboardOverview(value, period, filters, [earlier, reanalysis, kept]);
+    expect(data).toMatchObject({
+      analyzed: 1,
+      ranking: [],
+      sources: [],
+      trend: [{ date: '2026-10-20', mentions: {} }],
+      providers: [
+        { provider: 'openai', count: 0, change: 0 },
+        { provider: 'gemini', count: 0, change: null },
+      ],
+    });
+    expect(data.stages.find((row) => row.key === 'understand'))
+      .toMatchObject({ measuredPromptCount: 1, visibility: 0 });
+    expect(earlier.result.status).toBe('succeeded');
+    expect(earlier.answer.citations).toHaveLength(1);
+  });
+
   it('weights each active prompt equally and includes unmeasured prompts as zero', () => {
     const value = project();
     value.prompts.push({

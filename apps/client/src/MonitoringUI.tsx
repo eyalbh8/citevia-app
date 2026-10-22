@@ -264,14 +264,11 @@ function buckets(period: MonitoringPeriod) {
     },
   );
 }
-function curve(points: number[][]) {
-  return points
-    .map(([x, y], i) =>
-      i === 0
-        ? `M${x},${y}`
-        : `C${(points[i - 1][0] + x) / 2},${points[i - 1][1]} ${(points[i - 1][0] + x) / 2},${y} ${x},${y}`,
-    )
-    .join(' ');
+function MentionPoint({ provider }: { provider: ScanProvider }) {
+  // Nested sizes keep every provider visible when measurements coincide.
+  if (provider === 'openai') return <circle r="7" />;
+  if (provider === 'gemini') return <path d="M0,-5 L5,0 L0,5 L-5,0 Z" />;
+  return <rect x="-2" y="-2" width="4" height="4" />;
 }
 function ExpandedChart({
   children,
@@ -317,9 +314,18 @@ export function MentionsChart({
     [hidden, setHidden] = useState<ScanProvider[]>([]);
   const dates = buckets(summary.period),
     visible = summary.providers.filter((p) => !hidden.includes(p.provider));
+  const series = visible.map((p) => {
+    const counts = new Map(p.points.map((point) => [point.date, point.count]));
+    return {
+      provider: p.provider,
+      points: dates.flatMap((date, index) =>
+        counts.has(date) ? [{ date, index, count: counts.get(date)! }] : [],
+      ),
+    };
+  });
   const max = Math.max(
       1,
-      ...visible.flatMap((p) => p.points.map((v) => v.count)),
+      ...series.flatMap((p) => p.points.map((v) => v.count)),
     ),
     top = Math.ceil(max / 4) * 4;
   const x = (i: number) =>
@@ -333,6 +339,11 @@ export function MentionsChart({
           day: 'numeric',
           timeZone: 'UTC',
         });
+  const fullDate = (date: string) =>
+    summary.period.granularity === 'hourly'
+      ? `${date.slice(0, 10)} ${date.slice(11, 16)} UTC`
+      : `${format(date)}, ${date.slice(0, 4)} UTC`;
+  const hoverDate = hover === undefined ? undefined : dates[hover];
   const card = (
     <section className="monitor-card mentions-trend">
       <header>
@@ -359,7 +370,16 @@ export function MentionsChart({
               )
             }
           >
-            <i style={{ background: providerColors[p.provider] }} />
+            <svg
+              className="mentions-legend-point"
+              viewBox="-9 -9 18 18"
+              aria-hidden="true"
+              fill="var(--surface)"
+              stroke={providerColors[p.provider]}
+              strokeWidth="2"
+            >
+              <MentionPoint provider={p.provider} />
+            </svg>
             {PROVIDER_LABELS[p.provider]}
           </button>
         ))}
@@ -376,6 +396,11 @@ export function MentionsChart({
             role="img"
             aria-label="Brand mentions by provider over time"
           >
+            <desc>
+              Points show measured mentions. Dashed lines connect scans across
+              dates without a scan; those dates have no measured value.
+              All dates and times are UTC.
+            </desc>
             {[0, 1, 2, 3, 4].map((i) => (
               <g key={i}>
                 <line
@@ -399,50 +424,43 @@ export function MentionsChart({
             >
               citevia.
             </text>
-            {visible.map((p) => {
-              const map = new Map(p.points.map((v) => [v.date, v.count])),
-                segments: number[][][] = [];
-              let segment: number[][] = [];
-              for (let i = 0; i < dates.length; i++) {
-                if (map.has(dates[i]))
-                  segment.push([x(i), y(map.get(dates[i])!)]);
-                else if (segment.length) {
-                  segments.push(segment);
-                  segment = [];
-                }
-              }
-              if (segment.length) segments.push(segment);
-              return (
-                <g key={p.provider}>
-                  {segments.map((points, i) => {
-                    const path = curve(points);
-                    return (
-                      <g key={i}>
-                        <path
-                          d={`${path} L${points.at(-1)![0]},275 L${points[0][0]},275 Z`}
-                          fill={providerColors[p.provider]}
-                          opacity=".14"
-                        />
-                        <path
-                          d={path}
-                          fill="none"
-                          stroke={providerColors[p.provider]}
-                          strokeWidth="2.5"
-                        />
-                        {points.length === 1 && (
-                          <circle
-                            cx={points[0][0]}
-                            cy={points[0][1]}
-                            r="3"
-                            fill={providerColors[p.provider]}
-                          />
-                        )}
-                      </g>
-                    );
-                  })}
+            {series.map((p) => (
+              <g key={p.provider} data-provider={p.provider} className="mentions-series">
+                {p.points.slice(1).map((point, index) => {
+                  const previous = p.points[index];
+                  const gap = point.index - previous.index > 1;
+                  return (
+                    <line
+                      key={point.date}
+                      x1={x(previous.index)}
+                      y1={y(previous.count)}
+                      x2={x(point.index)}
+                      y2={y(point.count)}
+                      stroke={providerColors[p.provider]}
+                      strokeWidth="2.5"
+                      strokeDasharray={gap ? '6 5' : undefined}
+                      opacity={gap ? '.75' : undefined}
+                    />
+                  );
+                })}
+              </g>
+            ))}
+            {(['openai', 'gemini', 'perplexity'] as const).flatMap((provider) =>
+              (series.find((p) => p.provider === provider)?.points ?? []).map((point) => (
+                <g
+                  key={`${provider}:${point.date}`}
+                  className="mentions-measurement"
+                  data-provider={provider}
+                  transform={`translate(${x(point.index)},${y(point.count)})`}
+                  fill="var(--surface)"
+                  stroke={providerColors[provider]}
+                  strokeWidth="2"
+                >
+                  <title>{`${PROVIDER_LABELS[provider]}: ${point.count} mentions on ${fullDate(point.date)}`}</title>
+                  <MentionPoint provider={provider} />
                 </g>
-              );
-            })}
+              )),
+            )}
             {dates.map((date, i) => (
               <g key={date}>
                 {(i % Math.max(1, Math.ceil(dates.length / 7)) === 0 ||
@@ -458,7 +476,7 @@ export function MentionsChart({
                   height="260"
                   fill="transparent"
                   tabIndex={0}
-                  aria-label={`${format(date)}: ${visible.map((p) => `${PROVIDER_LABELS[p.provider]} ${p.points.find((v) => v.date === date)?.count ?? 'No scan'}`).join(', ')}`}
+                  aria-label={`${fullDate(date)}: ${visible.map((p) => `${PROVIDER_LABELS[p.provider]} ${p.points.find((v) => v.date === date)?.count ?? 'No scan'}`).join(', ')}`}
                   onMouseEnter={() => setHover(i)}
                   onMouseLeave={() => setHover(undefined)}
                   onFocus={() => setHover(i)}
@@ -466,7 +484,7 @@ export function MentionsChart({
                 />
               </g>
             ))}
-            {hover !== undefined && (
+            {hover !== undefined && hoverDate !== undefined && (
               <line
                 x1={x(hover)}
                 x2={x(hover)}
@@ -478,19 +496,19 @@ export function MentionsChart({
               />
             )}
           </svg>
-          {hover !== undefined && (
+          {hover !== undefined && hoverDate !== undefined && (
             <div
               className="monitor-tooltip chart-tooltip"
               style={{
                 left: `clamp(16px, calc(${(x(hover) / 880) * 100}% - 110px), calc(100% - 236px))`,
               }}
             >
-              <strong>{format(dates[hover])} · UTC</strong>
+              <strong>{fullDate(hoverDate)}</strong>
               {visible.map((p) => (
                 <span key={p.provider}>
                   {PROVIDER_LABELS[p.provider]}
                   <b>
-                    {p.points.find((v) => v.date === dates[hover])?.count ??
+                    {p.points.find((v) => v.date === hoverDate)?.count ??
                       'No scan'}
                   </b>
                 </span>
@@ -528,6 +546,10 @@ export function MentionsChart({
           </div>
         </div>
       </div>
+      <p className="mentions-chart-note">
+        Points show measured mentions. Dashed lines connect scans across gaps;
+        dates without a scan have no measured value. All times UTC.
+      </p>
     </section>
   );
   return (

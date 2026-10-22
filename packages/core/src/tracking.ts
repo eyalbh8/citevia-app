@@ -150,7 +150,12 @@ export function citationMeasurement(
   answer: CapturedAnswer | null,
   analysis: Analysis | null,
 ) {
-  if (!answer || answer.status !== 'completed' || !result.captureKey)
+  if (
+    run.reportingExcludedAt ||
+    !answer ||
+    answer.status !== 'completed' ||
+    !result.captureKey
+  )
     return null;
   const analyzed = result.status === 'succeeded' && !!analysis;
   const capture: CitationCapture = {

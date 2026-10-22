@@ -27,6 +27,7 @@ import {
   type PromptIntent,
   type PromptMetricsResponse,
   type PromptMetricsRow,
+  type PromptMetricComparison,
 } from '@citevia/core';
 import { downloadCsv, query, request, useApi } from './api';
 import {
@@ -57,24 +58,42 @@ type SortKey =
   'text' | 'avgVisibility' | 'avgSentimentScore' | 'avgRank' | 'createdAt';
 const PAGE_SIZE = 20;
 
-export function PromptMetricChange({ value }: { value: number | null }) {
+export function PromptMetricChange({
+  value,
+  comparison,
+  metric = 'visibility',
+}: {
+  value: number | null;
+  comparison?: PromptMetricComparison | null;
+  metric?: 'visibility' | 'sentiment' | 'rank';
+}) {
+  const shown = value === null
+    ? '—'
+    : value === 0 ? '0%' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
+  const dates = (range: { start: string; end: string }) => {
+    const start = range.start.slice(0, 10),
+      end = range.end.slice(0, 10);
+    return start === end ? start : `${start}–${end}`;
+  };
+  const basis = comparison
+    ? comparison.mode === 'first_last_day'
+      ? `First to latest scan day: ${dates(comparison.baseline)} → ${dates(comparison.current)} UTC. ${comparison.providers.length} matched provider${comparison.providers.length === 1 ? '' : 's'}, one answer per provider on each day. Values above average the entire selected period.`
+      : `Previous equal-length period: ${dates(comparison.baseline)} → ${dates(comparison.current)} UTC. ${comparison.baseline.measurementCount} → ${comparison.current.measurementCount} analyzed answers.`
+    : 'Needs comparable measurements in the previous period or on two distinct scan days in this period.';
+  const description = `${value === null ? 'No comparable score. ' : ''}${basis} Relative percent change${metric === 'visibility' ? ', not percentage points' : ''}. ${metric === 'rank' ? 'Positive means a lower, better rank.' : 'A zero baseline rising above zero is shown as +100%.'}`;
   return (
     <span
       className={`prompt-trend ${value === null ? 'unavailable' : value > 0 ? 'improved' : value < 0 ? 'declined' : ''}`}
-      title={
-        value === null
-          ? 'No comparable measurement in the previous period'
-          : 'Change from the previous equal-length period'
-      }
+      title={description}
+      role="img"
+      aria-label={`${labelize(metric)} change: ${shown}. ${description}`}
     >
       {value !== null &&
         value !== 0 &&
-        (value > 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />)}
-      {value === null
-        ? '—'
-        : value === 0
-          ? '0%'
-          : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`}
+        (value > 0
+          ? <TrendingUp size={13} aria-hidden="true" />
+          : <TrendingDown size={13} aria-hidden="true" />)}
+      {shown}
     </span>
   );
 }
@@ -188,6 +207,7 @@ export default function PromptsView({
           rankCount: 0,
           sentimentCount: 0,
           responseId: null,
+          comparison: null,
         };
   });
   const filtered = rows
@@ -328,6 +348,14 @@ export default function PromptsView({
         'Analyzed answers',
         'Previous analyzed answers',
         'Version',
+        'Change comparison',
+        'Comparison baseline start',
+        'Comparison baseline end',
+        'Comparison current start',
+        'Comparison current end',
+        'Comparison baseline answers',
+        'Comparison current answers',
+        'Comparison providers',
       ],
       exported.map((prompt) => [
         prompt.id,
@@ -351,6 +379,14 @@ export default function PromptsView({
         prompt.measurementCount,
         prompt.previousMeasurementCount,
         prompt.version,
+        prompt.comparison?.mode,
+        prompt.comparison?.baseline.start,
+        prompt.comparison?.baseline.end,
+        prompt.comparison?.current.start,
+        prompt.comparison?.current.end,
+        prompt.comparison?.baseline.measurementCount,
+        prompt.comparison?.current.measurementCount,
+        prompt.comparison?.providers.join(', '),
       ]),
     );
     notify(`${exported.length} prompts exported.`);
@@ -435,6 +471,10 @@ export default function PromptsView({
             />
           </div>
         </div>
+        <p className="prompt-comparison-note">
+          Values average the selected period. Percentage changes compare the previous period,
+          or the first and latest scan days when earlier data is unavailable.
+        </p>
         {pendingSetup && (
           <p className="prompt-notice">
             Account setup is preparing your prompts. You can edit them when
@@ -629,7 +669,10 @@ export default function PromptsView({
                           title={`${prompt.measurementCount} successfully analyzed answers`}
                         >
                           <VisibilityGauge value={prompt.avgVisibility} />
-                          <PromptMetricChange value={prompt.visibilityChange} />
+                          <PromptMetricChange
+                            value={prompt.visibilityChange}
+                            comparison={prompt.comparison}
+                          />
                         </div>
                       </td>
                       <td>
@@ -646,7 +689,11 @@ export default function PromptsView({
                               {prompt.avgSentimentScore}
                             </span>
                           )}
-                          <PromptMetricChange value={prompt.sentimentChange} />
+                          <PromptMetricChange
+                            value={prompt.sentimentChange}
+                            comparison={prompt.comparison}
+                            metric="sentiment"
+                          />
                         </div>
                       </td>
                       <td>
@@ -659,7 +706,11 @@ export default function PromptsView({
                               ? '—'
                               : Number(prompt.avgRank.toFixed(1))}
                           </span>
-                          <PromptMetricChange value={prompt.rankChange} />
+                          <PromptMetricChange
+                            value={prompt.rankChange}
+                            comparison={prompt.comparison}
+                            metric="rank"
+                          />
                         </div>
                       </td>
                       <td>

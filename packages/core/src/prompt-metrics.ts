@@ -9,6 +9,12 @@ import { sameTargetMethod } from './metrics.js';
 import { brandRank, brandSentimentScore } from './scoring.js';
 import { projectProviders, snapshotProvider } from './providers.js';
 
+export interface PromptMetricComparison {
+  mode: 'previous_period' | 'first_last_day';
+  baseline: { start: string; end: string; measurementCount: number };
+  current: { start: string; end: string; measurementCount: number };
+  providers: ScanProvider[];
+}
 export interface PromptMetricsRow extends Prompt {
   regions: string[];
   language: string;
@@ -23,6 +29,7 @@ export interface PromptMetricsRow extends Prompt {
   rankCount: number;
   sentimentCount: number;
   responseId: string | null;
+  comparison: PromptMetricComparison | null;
 }
 export interface PromptHistory {
   runs: ScanRun[];
@@ -43,6 +50,7 @@ export interface PromptMetricsResponse {
 export function matchesPromptMethod(project: Project, run: ScanRun) {
   return (
     run.projectId === project.id &&
+    !run.reportingExcludedAt &&
     sameTargetMethod(run.snapshot, {
       ...run.snapshot,
       brand: project.brand,
@@ -117,24 +125,53 @@ function metricRow(
   prompt: Prompt,
   rows: PromptResult[],
   prior: PromptResult[],
+  comparison: {
+    current: PromptResult[];
+    previous: PromptResult[];
+    metadata: PromptMetricComparison;
+  } | null = null,
 ): PromptMetricsRow {
   const current = aggregate(rows),
     previous = aggregate(prior);
+  const comparedCurrent = comparison ? aggregate(comparison.current) : current,
+    comparedPrevious = comparison ? aggregate(comparison.previous) : previous;
+  // Day comparisons pair one answer per provider. Unknown rank/sentiment on one
+  // side must not change the provider mix used for that particular score.
+  const comparableScore = (score: typeof brandRank) => {
+    if (comparison?.metadata.mode !== 'first_last_day') return null;
+    const indexes = comparison.current.flatMap((row, index) =>
+      score(row.target) !== null &&
+      score(comparison.previous[index].target) !== null
+        ? [index]
+        : [],
+    );
+    return {
+      current: aggregate(indexes.map((index) => comparison.current[index])),
+      previous: aggregate(indexes.map((index) => comparison.previous[index])),
+    };
+  };
+  const ranks = comparableScore(brandRank),
+    sentiments = comparableScore(brandSentimentScore);
   return {
     ...prompt,
     regions: [project.country],
     language: project.language,
     ...current,
     previousMeasurementCount: previous.measurementCount,
+    comparison: comparison?.metadata || null,
     visibilityChange: promptMetricChange(
-      current.avgVisibility,
-      previous.avgVisibility,
+      comparedCurrent.avgVisibility,
+      comparedPrevious.avgVisibility,
     ),
     sentimentChange: promptMetricChange(
-      current.avgSentimentScore,
-      previous.avgSentimentScore,
+      (sentiments?.current || comparedCurrent).avgSentimentScore,
+      (sentiments?.previous || comparedPrevious).avgSentimentScore,
     ),
-    rankChange: promptMetricChange(current.avgRank, previous.avgRank, true),
+    rankChange: promptMetricChange(
+      (ranks?.current || comparedCurrent).avgRank,
+      (ranks?.previous || comparedPrevious).avgRank,
+      true,
+    ),
   };
 }
 function matchesPrompt(prompt: Prompt, row: PromptResult) {
@@ -157,6 +194,7 @@ export function promptMetrics(
   const comparable =
     run &&
     previousRun &&
+    !previousRun.reportingExcludedAt &&
     previousRun.projectId === project.id &&
     sameTargetMethod(run.snapshot, previousRun.snapshot);
   return project.prompts.map((prompt) =>
@@ -187,6 +225,44 @@ export function promptMetrics(
 export function promptMeasuredAt(result: PromptResult, run: ScanRun) {
   return result.capturedAt || run.createdAt;
 }
+
+function firstLastDayComparison(
+  rows: PromptResult[],
+  runs: Map<string, ScanRun>,
+) {
+  const byDay = new Map<string, Map<ScanProvider, PromptResult>>();
+  // Rows are newest first, so a repeated scan on one day cannot give a provider
+  // extra weight in the change. The headline still averages the whole period.
+  for (const row of rows) {
+    const run = runs.get(row.runId)!,
+      day = new Date(promptMeasuredAt(row, run)).toISOString().slice(0, 10),
+      provider = snapshotProvider(run.snapshot);
+    const providers = byDay.get(day) || new Map<ScanProvider, PromptResult>();
+    if (!providers.has(provider)) providers.set(provider, row);
+    byDay.set(day, providers);
+  }
+  const days = [...byDay.keys()].sort();
+  if (days.length < 2) return null;
+  const first = days[0],
+    last = days[days.length - 1],
+    baseline = byDay.get(first)!,
+    current = byDay.get(last)!;
+  const providers = [...baseline.keys()]
+    .filter((provider) => current.has(provider))
+    .sort();
+  if (!providers.length) return null;
+  return {
+    current: providers.map((provider) => current.get(provider)!),
+    previous: providers.map((provider) => baseline.get(provider)!),
+    metadata: {
+      mode: 'first_last_day' as const,
+      baseline: { start: first, end: first, measurementCount: providers.length },
+      current: { start: last, end: last, measurementCount: providers.length },
+      providers,
+    },
+  };
+}
+
 export function promptPeriodMetrics(
   project: Project,
   history: PromptHistory,
@@ -242,12 +318,33 @@ export function promptPeriodMetrics(
         );
         return timestamp >= from && timestamp <= to;
       };
-      return metricRow(
-        project,
-        prompt,
-        rows.filter((row) => inWindow(row, startMs, endMs)),
-        rows.filter((row) => inWindow(row, previousStartMs, startMs - 1)),
-      );
+      const current = rows.filter((row) => inWindow(row, startMs, endMs)),
+        previous = rows.filter((row) =>
+          inWindow(row, previousStartMs, startMs - 1),
+        );
+      const comparison = previous.length
+        ? {
+            current,
+            previous,
+            metadata: {
+              mode: 'previous_period' as const,
+              baseline: {
+                start: new Date(previousStartMs).toISOString(),
+                end: new Date(startMs - 1).toISOString(),
+                measurementCount: previous.length,
+              },
+              current: { start, end, measurementCount: current.length },
+              providers: [
+                ...new Set(
+                  [...current, ...previous].map((row) =>
+                    snapshotProvider(runs.get(row.runId)!.snapshot),
+                  ),
+                ),
+              ].sort(),
+            },
+          }
+        : firstLastDayComparison(current, runs);
+      return metricRow(project, prompt, current, previous, comparison);
     }),
     period: {
       start,

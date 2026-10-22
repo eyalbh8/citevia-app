@@ -26,7 +26,7 @@ async function refreshCounters(
       FROM citevia_tracked_url_matches m
       JOIN citevia_response_citations c ON c.project_id=m.project_id AND c.capture_key=m.capture_key AND c.normalized_url=m.normalized_url
       JOIN citevia_citation_captures cap ON cap.project_id=m.project_id AND cap.capture_key=m.capture_key
-      JOIN citevia_runs r ON r.project_id=cap.project_id AND r.id=cap.run_id AND r.status IN ('completed','partial')
+      JOIN citevia_runs r ON r.project_id=cap.project_id AND r.id=cap.run_id AND r.status IN ('completed','partial') AND r.data->>'reportingExcludedAt' IS NULL
       WHERE m.project_id=u.project_id AND m.tracked_url_id=u.id
     ) evidence ON true WHERE u.project_id=$1 AND u.id=ANY($2::uuid[])) a WHERE tr.id=a.id`,
     [projectId, ids],
@@ -219,7 +219,7 @@ export async function listTrackingMatches(
     JOIN citevia_citation_captures cap ON cap.project_id=m.project_id AND cap.capture_key=m.capture_key
     JOIN citevia_response_citations c ON c.project_id=m.project_id AND c.capture_key=m.capture_key AND c.normalized_url=m.normalized_url
     JOIN citevia_runs r ON r.project_id=cap.project_id AND r.id=cap.run_id
-    WHERE m.project_id=$1 AND ($2::uuid IS NULL OR m.tracked_url_id=$2::uuid) AND r.status IN ('completed','partial') ORDER BY cap.captured_at DESC,m.capture_key`,
+    WHERE m.project_id=$1 AND ($2::uuid IS NULL OR m.tracked_url_id=$2::uuid) AND r.status IN ('completed','partial') AND r.data->>'reportingExcludedAt' IS NULL ORDER BY cap.captured_at DESC,m.capture_key`,
     [projectId, trackedUrlId || null],
   );
   return rows.rows.map((row) => ({

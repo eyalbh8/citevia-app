@@ -152,6 +152,15 @@ function sample(
   return { run, result, answer, analysis };
 }
 describe('iGEO URL identity and measurement semantics', () => {
+  it('does not regenerate monitoring measurements for an excluded scan', () => {
+    const project = newProject({ id: 'excluded', prompts: ['Which platform?'] });
+    const item = sample(project, 'excluded-run', '2026-10-20T12:00:00Z');
+    item.run.reportingExcludedAt = '2026-10-23T00:00:00.000Z';
+    expect(citationMeasurement(item.result, item.run, item.answer, item.analysis)).toBeNull();
+    expect(item.answer.citations).toHaveLength(2);
+    expect(item.result.status).toBe('succeeded');
+  });
+
   it('matches the reference summary pickup rounding, including even-sized cohorts', () => {
     expect(medianPickupDays([])).toBeNull();
     expect(medianPickupDays([4, 1])).toBe(3);

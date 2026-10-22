@@ -265,6 +265,17 @@
   height: 11px;
   border-radius: 50%;
 }
+.mentions-legend-point {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+.mentions-chart-note {
+  margin: 8px 24px 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .mentions-chart-body {
   padding: 0 16px;
   overflow-x: auto;

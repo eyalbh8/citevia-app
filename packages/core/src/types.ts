@@ -110,6 +110,9 @@ export type RunStatus =
 export interface ScanRun {
   /** Retained manifest prevents delayed kickoff deliveries from recreating a deleted scan. */
   cancelledAt?: string;
+  /** Preserve this scan and its evidence while omitting it from aggregate reporting. */
+  reportingExcludedAt?: string;
+  reportingExclusionReason?: string;
   reanalysisOf?: string;
   groupId?: string;
   projectId: string;

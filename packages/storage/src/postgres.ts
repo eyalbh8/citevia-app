@@ -589,7 +589,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
   async listRuns(projectId: string, limit = 60) {
     return (
       await this.db.query(
-        'SELECT * FROM citevia_runs WHERE project_id=$1 ORDER BY scheduled_at DESC LIMIT $2',
+        "SELECT * FROM citevia_runs WHERE project_id=$1 AND data->>'reportingExcludedAt' IS NULL ORDER BY scheduled_at DESC LIMIT $2",
         [projectId, limit],
       )
     ).rows.map(hydrateRun);
@@ -605,10 +605,11 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     const { rows } = await this.db.query(
       `WITH observations AS (
         SELECT result.data, result.run_id FROM citevia_prompt_results result
-        ${typedState ? '' : 'JOIN citevia_runs legacy_run ON legacy_run.project_id=result.project_id AND legacy_run.id=result.run_id'}
+        JOIN citevia_runs history_run ON history_run.project_id=result.project_id AND history_run.id=result.run_id
         WHERE result.project_id=$1
+          AND history_run.data->>'reportingExcludedAt' IS NULL
           AND ($4::text IS NULL OR result.prompt_id=$4)
-          AND ${typedState ? 'result.observed_at' : "COALESCE(result.data->>'capturedAt',legacy_run.data->>'createdAt')::timestamptz"} BETWEEN $2::timestamptz AND $3::timestamptz
+          AND ${typedState ? 'result.observed_at' : "COALESCE(result.data->>'capturedAt',history_run.data->>'createdAt')::timestamptz"} BETWEEN $2::timestamptz AND $3::timestamptz
       ) SELECT
         COALESCE((SELECT jsonb_agg(data) FROM observations),'[]'::jsonb) AS results,
         COALESCE((SELECT jsonb_agg(to_jsonb(run)) FROM citevia_runs run WHERE project_id=$1 AND id IN (SELECT run_id FROM observations)),'[]'::jsonb) AS runs`,
@@ -655,6 +656,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       FROM citevia_prompt_results result JOIN citevia_runs run
         ON run.project_id=result.project_id AND run.id=result.run_id
       WHERE result.project_id=$1 AND result.prompt_id=$2 AND result.observed_at BETWEEN $3::timestamptz AND $4::timestamptz
+        AND run.data->>'reportingExcludedAt' IS NULL
         AND ($5::text IS NULL OR COALESCE(run.data#>>'{snapshot,provider}','openai')=$5)
     ), prioritized AS (
       SELECT *,row_number() OVER (PARTITION BY provider,capture_identity ORDER BY succeeded DESC,run_created_at DESC) AS choice,

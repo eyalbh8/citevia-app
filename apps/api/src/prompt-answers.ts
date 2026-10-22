@@ -28,7 +28,7 @@ export function promptAnswers(
 ) {
   const runs = new Map(
     history.runs
-      .filter((run) => run.projectId === projectId)
+      .filter((run) => run.projectId === projectId && !run.reportingExcludedAt)
       .map((run) => [run.id, run]),
   );
   const captures = new Map<string, { result: PromptResult; run: ScanRun }>();

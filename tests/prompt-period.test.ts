@@ -109,6 +109,140 @@ function fixture() {
 }
 
 describe('iGEO prompt period metrics', () => {
+  it('compares first and latest scan days with equal matched-provider weights when the previous period is empty', () => {
+    const f = fixture();
+    f.observation('2026-10-16T09:00:00Z'); // An extra early scan cannot overweight OpenAI.
+    f.observation('2026-10-16T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-16T12:00:00Z', { provider: 'gemini', sentiment: 'neutral', rank: 3 });
+    f.observation('2026-10-20T12:00:00Z', { rank: 2 });
+    f.observation('2026-10-20T12:00:00Z', { provider: 'gemini', sentiment: 'neutral', rank: 2 });
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      avgVisibility: 80, // Headline remains the whole-period average.
+      measurementCount: 5,
+      previousMeasurementCount: 0,
+      visibilityChange: 100, // First day 50% -> latest day 100%.
+      rankChange: 33.33, // Only Gemini has a rank on both days: 3 -> 2.
+      sentimentChange: 0,
+      comparison: {
+        mode: 'first_last_day',
+        baseline: { start: '2026-10-16', end: '2026-10-16', measurementCount: 2 },
+        current: { start: '2026-10-20', end: '2026-10-20', measurementCount: 2 },
+        providers: ['gemini', 'openai'],
+      },
+    });
+  });
+
+  it('keeps the previous-period comparison when that prompt has a prior measurement', () => {
+    const f = fixture();
+    f.observation('2026-10-13T12:00:00Z');
+    f.observation('2026-10-16T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-20T12:00:00Z');
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      avgVisibility: 50,
+      visibilityChange: -50,
+      previousMeasurementCount: 1,
+      comparison: {
+        mode: 'previous_period',
+        baseline: { start: '2026-10-08T00:00:00.000Z', end: '2026-10-14T23:59:59.999Z', measurementCount: 1 },
+        current: { start, end, measurementCount: 2 },
+      },
+    });
+  });
+
+  it('does not compare two runs on the same UTC day or failed answers on a later day', () => {
+    const f = fixture();
+    f.observation('2026-10-16T00:00:00Z');
+    f.observation('2026-10-16T23:59:59Z', { mentioned: false });
+    f.observation('2026-10-20T12:00:00Z', { status: 'failed_extraction' });
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      measurementCount: 2, avgVisibility: 50, visibilityChange: null, comparison: null,
+    });
+  });
+
+  it('does not mistake missing providers for a change and preserves genuine zero changes', () => {
+    const f = fixture();
+    f.observation('2026-10-16T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-16T12:00:00Z', { provider: 'gemini' });
+    f.observation('2026-10-20T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-20T12:00:00Z', { provider: 'gemini', status: 'failed_extraction' });
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      avgVisibility: 33, visibilityChange: 0, rankChange: null, sentimentChange: null,
+      comparison: { providers: ['openai'], baseline: { measurementCount: 1 }, current: { measurementCount: 1 } },
+    });
+    expect(promptPeriodMetrics(f.project, f.history, start, end, 'gemini').items[0]).toMatchObject({
+      visibilityChange: null, comparison: null,
+    });
+  });
+
+  it('requires provider overlap between the earliest and latest observed days', () => {
+    const f = fixture();
+    f.observation('2026-10-16T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-20T12:00:00Z', { provider: 'gemini' });
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      visibilityChange: null, rankChange: null, sentimentChange: null, comparison: null,
+    });
+  });
+
+  it('keeps an edited prompt version unavailable until it has a comparable baseline', () => {
+    const f = fixture();
+    const old = f.observation('2026-10-16T12:00:00Z', { mentioned: false });
+    old.result.prompt.version = 0;
+    f.observation('2026-10-20T12:00:00Z');
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      measurementCount: 1, avgVisibility: 100, visibilityChange: null, comparison: null,
+    });
+  });
+
+  it('uses original capture days and the latest reanalysis without reviving excluded or incompatible answers', () => {
+    const f = fixture();
+    const original = f.observation('2026-10-16T12:00:00Z');
+    f.observation('2026-10-20T12:00:00Z');
+    const rescored = f.observation('2026-10-21T12:00:00Z', { mentioned: false });
+    rescored.run.reanalysisOf = original.run.id;
+    rescored.result.captureKey = original.result.captureKey;
+    rescored.result.capturedAt = original.result.capturedAt;
+    f.observation('2026-10-13T12:00:00Z').run.reportingExcludedAt = end;
+    f.observation('2026-10-15T12:00:00Z').run.reportingExcludedAt = end;
+    f.observation('2026-10-15T12:00:00Z').result.prompt.version = 2;
+    f.observation('2026-10-15T12:00:00Z').run.snapshot.generationModel = 'other-model';
+    f.observation('2026-10-15T12:00:00Z').run.snapshot.parserVersion = 'other-parser';
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      measurementCount: 2, previousMeasurementCount: 0, avgVisibility: 50, visibilityChange: 100,
+      comparison: { mode: 'first_last_day', baseline: { start: '2026-10-16' }, current: { start: '2026-10-20' } },
+    });
+  });
+
+  it('does not invent a sentiment change when only one provider has comparable classified scores', () => {
+    const f = fixture();
+    f.observation('2026-10-16T12:00:00Z', { sentiment: 'unknown' });
+    f.observation('2026-10-16T12:00:00Z', { provider: 'gemini', sentiment: 'neutral' });
+    f.observation('2026-10-20T12:00:00Z', { sentiment: 'positive' });
+    f.observation('2026-10-20T12:00:00Z', { provider: 'gemini', sentiment: 'neutral' });
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      avgSentimentScore: 67, sentimentChange: 0,
+    });
+  });
+
+  it('excludes reporting-only omissions from both current and comparison metrics', () => {
+    const f = fixture();
+    const excludedCurrent = f.observation('2026-10-20T09:00:00.000Z');
+    const current = f.observation('2026-10-20T12:00:00.000Z', { mentioned: false });
+    const excludedPrevious = f.observation('2026-10-13T12:00:00.000Z');
+    for (const { run } of [excludedCurrent, excludedPrevious])
+      run.reportingExcludedAt = '2026-10-23T00:00:00.000Z';
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 1,
+        previousMeasurementCount: 0,
+        avgVisibility: 0,
+        visibilityChange: null,
+      });
+    expect(promptMetrics(f.project, current.run, [current.result], excludedPrevious.run, [excludedPrevious.result])[0])
+      .toMatchObject({ measurementCount: 1, previousMeasurementCount: 0, visibilityChange: null });
+    expect(promptMetrics(f.project, excludedCurrent.run, [excludedCurrent.result])[0])
+      .toMatchObject({ measurementCount: 0, avgVisibility: null });
+  });
+
   it('retains target measurements when competitors change without relaxing full-report compatibility', () => {
     const f = fixture();
     const previous = f.observation('2026-10-13T12:00:00.000Z', { rank: 3 });
