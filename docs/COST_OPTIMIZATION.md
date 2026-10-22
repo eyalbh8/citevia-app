@@ -81,9 +81,18 @@ silently purchasing immediate replacements.
 
 ## Native Batch admission and recovery
 
-`ANALYSIS_BATCH_ENABLED` / SAM `AnalysisBatchEnabled` defaults to false until
-model quality, provider access and completion latency have been validated. Enabling
-it affects new scheduled manifests only. Turning it off does not abandon batches
+`ANALYSIS_BATCH_ENABLED` / SAM `AnalysisBatchEnabled` defaults to false for new
+stacks. Production was explicitly enabled on 22 October 2026 after read-only
+provider-access and database-schema checks, 31 targeted Batch/deployment tests,
+and a settings-only CloudFormation update. Existing account models were preserved;
+no additional scan or paid inference was started during enablement. The first new
+scheduled scan exercises the live provider completion/import path.
+
+The deployment workflow inherits the deployed Batch flag when its GitHub variable
+is absent; an explicit `true` or `false` overrides it. The local production SAM
+configuration also stores the enabled flag. Enabling Batch affects new scheduled
+manifests only. Manual scans and saved-answer reanalysis stay immediate. Turning
+it off does not abandon batches
 already in progress. Keep their configured provider credential available.
 
 The coordinator waits until collection work in a provider run has completed,

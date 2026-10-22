@@ -49,7 +49,7 @@ function resolveWorkflow(parameters: { ParameterKey: string; ParameterValue: str
   const envFile = join(directory, 'github-env');
   writeFileSync(envFile, '');
   const script = workflow.jobs.deploy.steps.find((step: CfnObject) => step.name === 'Resolve database deployment configuration').run;
-  execFileSync('bash', ['-c', script], { env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNNER_TEMP: directory, STACK_NAME: 'test-stack', AWS_REGION: 'eu-west-1', GITHUB_ENV: envFile, FAKE_PARAMETERS: JSON.stringify(parameters), DATABASE_MODE: '', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: '', MAINTENANCE_MODE: '', COMPACT_RUN_STATE: '', RETIRE_LEGACY_DATABASE: '', ...variables }, stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync('bash', ['-c', script], { env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNNER_TEMP: directory, STACK_NAME: 'test-stack', AWS_REGION: 'eu-west-1', GITHUB_ENV: envFile, FAKE_PARAMETERS: JSON.stringify(parameters), DATABASE_MODE: '', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: '', MAINTENANCE_MODE: '', COMPACT_RUN_STATE: '', RETIRE_LEGACY_DATABASE: '', ANALYSIS_BATCH_ENABLED: '', ...variables }, stdio: ['ignore', 'pipe', 'pipe'] });
   return Object.fromEntries(readFileSync(envFile, 'utf8').trim().split('\n').map((line) => { const separator = line.indexOf('='); return [line.slice(0, separator), line.slice(separator + 1)]; }));
 }
 
@@ -133,8 +133,16 @@ describe('external PostgreSQL infrastructure stages', () => {
 
 describe('database deployment workflow safeguards', () => {
   it('keeps old stacks on Aurora and inherits an already completed external cutover', () => {
-    expect(resolveWorkflow([])).toEqual({ DATABASE_MODE: 'aurora', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: 'false', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false' });
-    expect(resolveWorkflow([{ ParameterKey: 'DatabaseMode', ParameterValue: 'external' }, { ParameterKey: 'ExternalDatabaseSecretArn', ParameterValue: secret }, { ParameterKey: 'RemoveLegacyNetwork', ParameterValue: 'true' }])).toEqual({ DATABASE_MODE: 'external', EXTERNAL_DATABASE_SECRET_ARN: secret, REMOVE_LEGACY_NETWORK: 'true', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false' });
+    expect(resolveWorkflow([])).toEqual({ DATABASE_MODE: 'aurora', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: 'false', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false' });
+    expect(resolveWorkflow([{ ParameterKey: 'DatabaseMode', ParameterValue: 'external' }, { ParameterKey: 'ExternalDatabaseSecretArn', ParameterValue: secret }, { ParameterKey: 'RemoveLegacyNetwork', ParameterValue: 'true' }])).toEqual({ DATABASE_MODE: 'external', EXTERNAL_DATABASE_SECRET_ARN: secret, REMOVE_LEGACY_NETWORK: 'true', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false' });
+  });
+  it('preserves deployed Batch admission unless explicitly overridden', () => {
+    expect(workflow.jobs.deploy.env.ANALYSIS_BATCH_ENABLED).toBe('${{ vars.ANALYSIS_BATCH_ENABLED }}');
+    const enabled = [{ ParameterKey: 'AnalysisBatchEnabled', ParameterValue: 'true' }];
+    expect(resolveWorkflow(enabled).ANALYSIS_BATCH_ENABLED).toBe('true');
+    expect(resolveWorkflow(enabled, { ANALYSIS_BATCH_ENABLED: 'false' }).ANALYSIS_BATCH_ENABLED).toBe('false');
+    expect(resolveWorkflow([], { ANALYSIS_BATCH_ENABLED: 'true' }).ANALYSIS_BATCH_ENABLED).toBe('true');
+    expect(() => resolveWorkflow(enabled, { ANALYSIS_BATCH_ENABLED: 'invalid' })).toThrow();
   });
   it('inherits deployed compact state unless the rollout setting is explicitly overridden', () => {
     expect(workflow.jobs.deploy.env.COMPACT_RUN_STATE).toBe('${{ vars.CITEVIA_COMPACT_RUN_STATE }}');

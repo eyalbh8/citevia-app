@@ -18,7 +18,9 @@ The final implementation passes 644 tests, TypeScript/build, and SAM validation.
 Production uses the pooled endpoint through the reviewed Secrets Manager JSON
 credential, strict TLS, `DatabaseMode=external`, `MaintenanceMode=false`,
 `CompactRunState=true`, `WriteCompatibilityResults=true`, and
-`AnalysisBatchEnabled=false`. Launch is configured for seven-day PITR and daily
+`AnalysisBatchEnabled=true`. Batch was enabled for new scheduled scans after the
+cutover; manual scans remain immediate and existing run snapshots keep their
+original processing mode. Launch is configured for seven-day PITR and daily
 03:00 UTC snapshots retained for 14 days, plus the post-migration recovery snapshot.
 
 `RemoveLegacyNetwork=true` and `RetireLegacyDatabase=true` preserve the completed

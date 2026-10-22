@@ -48,7 +48,7 @@ jobs:
       CONTENT_MODEL: ${{ vars.OPENAI_CONTENT_MODEL || 'gpt-6-astra' }}
       EXTRACTION_MODEL: ${{ vars.OPENAI_EXTRACTION_MODEL || 'gpt-6-luna' }}
       EXTRACTION_FALLBACK_MODEL: ${{ vars.OPENAI_EXTRACTION_FALLBACK_MODEL }}
-      ANALYSIS_BATCH_ENABLED: ${{ vars.ANALYSIS_BATCH_ENABLED || 'false' }}
+      ANALYSIS_BATCH_ENABLED: ${{ vars.ANALYSIS_BATCH_ENABLED }}
       ANALYSIS_CACHE_ENABLED: ${{ vars.ANALYSIS_CACHE_ENABLED || 'true' }}
       WRITE_COMPATIBILITY_RESULTS: ${{ vars.CITEVIA_WRITE_COMPATIBILITY_RESULTS || 'true' }}
       COMPACT_RUN_STATE: ${{ vars.CITEVIA_COMPACT_RUN_STATE }}
@@ -126,10 +126,12 @@ jobs:
           selected_maintenance="${selected_maintenance:-false}"
           selected_compact_state="${COMPACT_RUN_STATE:-$(read_parameter CompactRunState)}"
           selected_compact_state="${selected_compact_state:-false}"
+          selected_batch="${ANALYSIS_BATCH_ENABLED:-$(read_parameter AnalysisBatchEnabled)}"
+          selected_batch="${selected_batch:-false}"
           deployed_retirement="$(read_parameter RetireLegacyDatabase)"
           selected_retirement="${RETIRE_LEGACY_DATABASE:-${deployed_retirement:-false}}"
-          if [[ ! "$selected_mode" =~ ^(aurora|external)$ || ! "$selected_cleanup" =~ ^(true|false)$ || ! "$selected_maintenance" =~ ^(true|false)$ || ! "$selected_compact_state" =~ ^(true|false)$ || ! "$selected_retirement" =~ ^(true|false)$ ]]; then
-            echo 'Database mode, cleanup flag, maintenance flag, compact run state flag or retirement flag is invalid.' >&2
+          if [[ ! "$selected_mode" =~ ^(aurora|external)$ || ! "$selected_cleanup" =~ ^(true|false)$ || ! "$selected_maintenance" =~ ^(true|false)$ || ! "$selected_compact_state" =~ ^(true|false)$ || ! "$selected_retirement" =~ ^(true|false)$ || ! "$selected_batch" =~ ^(true|false)$ ]]; then
+            echo 'Database mode, cleanup flag, maintenance flag, compact run state flag, retirement flag or analysis batch flag is invalid.' >&2
             exit 1
           fi
           if [[ ( "$selected_mode" == external || -n "$selected_secret" ) && ! "$selected_secret" =~ ^arn:aws[a-z-]*:secretsmanager:${AWS_REGION}:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$ ]]; then
@@ -148,7 +150,7 @@ jobs:
             echo 'Retained Aurora cannot be reattached by clearing the retirement flag. Use a reviewed restore/import procedure.' >&2
             exit 1
           fi
-          printf '%s\n' "DATABASE_MODE=$selected_mode" "EXTERNAL_DATABASE_SECRET_ARN=$selected_secret" "REMOVE_LEGACY_NETWORK=$selected_cleanup" "MAINTENANCE_MODE=$selected_maintenance" "COMPACT_RUN_STATE=$selected_compact_state" "RETIRE_LEGACY_DATABASE=$selected_retirement" >> "$GITHUB_ENV"
+          printf '%s\n' "DATABASE_MODE=$selected_mode" "EXTERNAL_DATABASE_SECRET_ARN=$selected_secret" "REMOVE_LEGACY_NETWORK=$selected_cleanup" "MAINTENANCE_MODE=$selected_maintenance" "COMPACT_RUN_STATE=$selected_compact_state" "RETIRE_LEGACY_DATABASE=$selected_retirement" "ANALYSIS_BATCH_ENABLED=$selected_batch" >> "$GITHUB_ENV"
       - name: Resolve shared content photo configuration
         shell: bash
         run: |
