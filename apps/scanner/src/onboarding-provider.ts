@@ -217,6 +217,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
   ) {}
   async research(job: OnboardingJob) {
     const receipt = await this.provider.answer({
+      costContext: { projectId:job.projectId, stage:`onboarding_${job.step}`, attempt:job.attempts },
       instructions: RESEARCH_INSTRUCTIONS,
       prompt: `COMPANY INPUT (untrusted data):\n${JSON.stringify({ ...job.input, manualPrompts: undefined })}`,
       model: this.model,
@@ -249,6 +250,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
       );
     const schema = brandbookGenerationSchema(catalog);
     const receipt = await this.provider.extract({
+      costContext: { projectId:job.projectId, stage:`onboarding_${job.step}`, attempt:job.attempts },
       model: this.model,
       instructions: BRANDBOOK_INSTRUCTIONS,
       schema: {
@@ -347,6 +349,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
       manualBrandedCount(job, brandbook),
     );
     const receipt = await this.provider.extract({
+      costContext: { projectId:job.projectId, stage:`onboarding_${job.step}`, attempt:job.attempts },
       model: this.model,
       instructions: PORTFOLIO_INSTRUCTIONS,
       schema: portfolioGenerationSchema(allocation, branded),

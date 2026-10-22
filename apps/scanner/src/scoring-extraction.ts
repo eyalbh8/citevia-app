@@ -93,6 +93,9 @@ export function scoredExtractionRequest(
   });
   return {
     model: snapshot.extractionModel,
+    ...(snapshot.extractionModel === 'gpt-6-luna'
+      ? { reasoningEffort: 'none' as const }
+      : {}),
     instructions: SCORED_EXTRACTION_INSTRUCTIONS,
     input: {
       brands: brands.map((b) => ({
@@ -100,7 +103,9 @@ export function scoredExtractionRequest(
         name: b.name,
         aliases: b.aliases,
       })),
-      evidence_catalog: catalog,
+      // The model returns catalog IDs only. Offsets and block identities stay
+      // server-side for exact evidence validation rather than consuming tokens.
+      evidence_catalog: catalog.map(({ id, quote }) => ({ id, quote })),
     },
     schema: {
       ...shape({

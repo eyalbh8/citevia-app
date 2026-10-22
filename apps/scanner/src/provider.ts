@@ -16,24 +16,35 @@ export interface ProviderReceipt {
   receivedAt: string;
 }
 
+export interface ProviderCallContext {
+  projectId?: string;
+  runId?: string;
+  promptId?: string;
+  attempt?: number;
+  stage?: string;
+}
 export interface AnswerRequest {
+  /** Local cost attribution, excluded from the provider body. */
+  costContext?: ProviderCallContext;
   prompt: string;
   instructions?: string;
   model: string;
   language: string;
   country: string;
   timezone: string;
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
   maxOutputTokens?: number;
   /** Restrict research to these account domains; ordinary scan requests stay unrestricted. */
   allowedDomains?: string[];
 }
 
 export interface ExtractionRequest {
+  /** Local cost attribution, excluded from the provider body. */
+  costContext?: ProviderCallContext;
   /** Content-only transport override; never sent to the model API. */
   requestTimeoutMs?: number;
   schemaName?: string;
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
   maxOutputTokens?: number;
   model: string;
   instructions: string;

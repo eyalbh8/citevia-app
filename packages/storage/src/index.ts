@@ -5,3 +5,6 @@ export * from './postgres.js';
 export * from './sql.js';
 export * from './users.js';
 export * from './mcp.js';
+export * from './costs.js';
+export * from './maintenance.js';
+export * from './analysis-batch.js';

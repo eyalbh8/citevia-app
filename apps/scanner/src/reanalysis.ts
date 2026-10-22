@@ -32,6 +32,8 @@ export async function reanalyzeCapturedRun(
     const results: PromptResult[] = [];
     const snapshot = {
       ...source.snapshot,
+      projectId,
+      analysisMode: 'realtime' as const,
       competitors: structuredClone(project.competitors),
       parserVersion: PARSER_VERSION,
     };

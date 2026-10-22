@@ -6,6 +6,7 @@ import {
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
+import { externalDatabaseConfig } from './database-config.js';
 
 export interface SqlSession {
   query<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -48,6 +49,17 @@ export function productionDatabase(): SqlDatabase {
     if (poolPromise) return poolPromise;
     poolCreatedAt = Date.now();
     return (poolPromise = (async () => {
+      const mode = process.env.DATABASE_MODE || 'aurora';
+      if (mode !== 'aurora' && mode !== 'external')
+        throw new Error('DATABASE_MODE must be aurora or external');
+      if (mode === 'external') {
+        const secretId = process.env.DATABASE_SECRET_ARN;
+        if (!secretId) throw new Error('Configure DATABASE_SECRET_ARN for external PostgreSQL');
+        const secret = await new SecretsManagerClient({}).send(
+          new GetSecretValueCommand({ SecretId: secretId }),
+        );
+        return connectionPool(externalDatabaseConfig(secret.SecretString || ''));
+      }
       if (process.env.DATABASE_URL)
         return connectionPool({
           connectionString: process.env.DATABASE_URL,
@@ -134,6 +146,9 @@ export async function migrateDatabase(
   ),
 ) {
   await db.transaction(async (tx) => {
+    // Unqualified migration DDL must create objects in public regardless of the
+    // caller's path. pg_catalog remains implicitly first for built-in lookups.
+    await tx.query('SET LOCAL search_path = public');
     await tx.query('SELECT pg_advisory_xact_lock(867530919)');
     await tx.exec(
       'CREATE TABLE IF NOT EXISTS citevia_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())',
@@ -149,6 +164,9 @@ export async function migrateDatabase(
       '008_traffic_installations.sql',
       '009_agent_posts.sql',
       '010_agent_images.sql',
+      '011_storage_efficiency.sql',
+      '012_analysis_batches.sql',
+      '013_provider_costs.sql',
     ]) {
       const source = await readFile(resolve(directory, name), 'utf8'),
         checksum = createHash('sha256').update(source).digest('hex');

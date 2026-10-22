@@ -27,6 +27,8 @@ export const MAX_MANUAL_RETRIES = 32;
 export const LEASE_MS = 12 * 60_000;
 const RUN_DEADLINE_MS =
   Number(process.env.SCAN_RUN_DEADLINE_HOURS || 3) * 60 * 60_000;
+// Provider Batch has a 24h window; leave time for queueing, polling and result imports.
+const BATCH_RUN_DEADLINE_MS = Math.max(30, Number(process.env.ANALYSIS_BATCH_DEADLINE_HOURS || 30)) * 60 * 60_000;
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex').slice(0, 24);
 export const runIdFor = (message: Extract<ScanMessage, { kind: 'kickoff' }>) =>
@@ -107,6 +109,8 @@ export class Scanner {
       case 'retry':
         return this.retry(message);
       case 'reconcile':
+        try { await this.dependencies.maintenance?.reconcile(); }
+        catch { console.error(JSON.stringify({ event: 'scanner_maintenance_failed' })); }
         await this.dependencies.agents?.reconcile();
         await this.dependencies.onboarding?.reconcile();
         return this.reconcile();
@@ -155,6 +159,8 @@ export class Scanner {
         Math.floor(now.getTime() / 1000) + RETENTION_DAYS * 86400;
       const configs = scanProvidersSchema.parse(projectProviders(project));
       const snapshot = structuredClone({
+        projectId: project.id,
+        analysisMode: message.trigger !== 'manual' && process.env.ANALYSIS_BATCH_ENABLED === 'true' && this.dependencies.analysisBatch ? 'batch' as const : 'realtime' as const,
         projectName: project.name,
         brand: project.brand,
         competitors: project.competitors,
@@ -166,6 +172,8 @@ export class Scanner {
         provider: configs[0].provider,
         scanProviders: configs,
         extractionModel: project.extractionModel,
+        ...(process.env.OPENAI_EXTRACTION_FALLBACK_MODEL?.trim() && process.env.OPENAI_EXTRACTION_FALLBACK_MODEL.trim() !== project.extractionModel
+          ? { extractionFallbackModel: process.env.OPENAI_EXTRACTION_FALLBACK_MODEL.trim() } : {}),
         parserVersion: project.parserVersion,
         configVersion: project.version,
       });
@@ -183,7 +191,7 @@ export class Scanner {
         succeededCount: 0,
         capturedCount: 0,
         resultVersion: 0,
-        deadlineAt: new Date(now.getTime() + RUN_DEADLINE_MS).toISOString(),
+        deadlineAt: new Date(now.getTime() + (snapshot.analysisMode === 'batch' ? BATCH_RUN_DEADLINE_MS : RUN_DEADLINE_MS)).toISOString(),
         expiresAt,
       };
       await repository.createRun(primary, this.initialResults(primary));
@@ -277,7 +285,7 @@ export class Scanner {
       : 0;
     return Math.max(
       Date.parse(run.deadlineAt),
-      retriedAt ? retriedAt + RUN_DEADLINE_MS : 0,
+      retriedAt ? retriedAt + (run.snapshot.analysisMode === 'batch' ? BATCH_RUN_DEADLINE_MS : RUN_DEADLINE_MS) : 0,
     );
   }
 
@@ -297,6 +305,12 @@ export class Scanner {
       return;
     }
     if (this.hasLiveLease(existing)) return;
+    if (existing.status === 'analysis_pending') {
+      if (this.deadlineFor(run, existing) <= this.now().getTime())
+        await this.exhaust(existing, 'analysis_batch_deadline', 'Analysis batch exceeded its deadline. Review its submission before retrying.');
+      else await this.processAnalysisBatch(run);
+      return;
+    }
     const deadline = this.deadlineFor(run, existing);
     if (existing.attempts >= MAX_ATTEMPTS || deadline <= this.now().getTime()) {
       await this.exhaust(
@@ -344,7 +358,7 @@ export class Scanner {
             'A previous API attempt has no saved answer. Retry explicitly after review.',
             false,
           );
-        answer = await provider.collect(current.prompt.text, run.snapshot);
+        answer = await provider.collect(current.prompt.text, { ...run.snapshot, projectId: run.projectId, execution: { runId: run.id, promptId: current.promptId, attempt: current.attempts } });
         await artifacts.put(captureKey, answer);
       }
       const captured: PromptResult = {
@@ -388,6 +402,15 @@ export class Scanner {
       const analysisKey = current.analysisKey ?? analysisKeyFor(current);
       let analysis = await artifacts.get<Analysis>(analysisKey);
       if (!analysis) {
+        if (run.snapshot.analysisMode === 'batch') {
+          if (!this.dependencies.analysisBatch)
+            throw new ProviderError('analysis_batch_unavailable', 'Batch analysis is unavailable. No realtime replacement call was purchased.', false);
+          const pending: PromptResult = { ...withoutLease(current), version: current.version + 1, status: 'analysis_pending' };
+          if (!(await repository.commitResult(pending, current))) return;
+          current = pending;
+          await this.processAnalysisBatch(run);
+          return;
+        }
         if (
           run.snapshot.parserVersion === 'igeo-evidence-v2' &&
           existing.attempts > 0
@@ -397,7 +420,7 @@ export class Scanner {
             'A previous analysis attempt has no saved result. Retry explicitly after review.',
             false,
           );
-        analysis = await provider.extract(answer, run.snapshot);
+        analysis = await provider.extract(answer, { ...run.snapshot, projectId: run.projectId, execution: { runId: run.id, promptId: current.promptId, attempt: current.attempts } });
         await artifacts.put(analysisKey, analysis);
       }
       const target = analysis.brands.find(
@@ -423,6 +446,8 @@ export class Scanner {
       if (await repository.commitResult(succeeded, current))
         await this.finalize(message.projectId, message.runId);
     } catch (error) {
+      // Batch transport/storage failures are reconciled from durable state, without resetting item attempts.
+      if (current.status === 'analysis_pending') throw error;
       const failure = scanError(error);
       if (error instanceof ExtractionError) {
         await artifacts.put(
@@ -452,6 +477,37 @@ export class Scanner {
       if (retryable) throw error;
       await this.finalize(message.projectId, message.runId);
     }
+  }
+
+  private async processAnalysisBatch(run: ScanRun): Promise<void> {
+    const { repository, analysisBatch } = this.dependencies;
+    if (!analysisBatch || run.snapshot.analysisMode !== 'batch') return;
+    const results = await repository.listResults(run.projectId, run.id);
+    if (results.some((result) => !isTerminal(result.status) && result.status !== 'analysis_pending')) return;
+    const { batchId, updates } = await analysisBatch.process(run, results);
+    for (const update of updates) {
+      const result = await repository.getResult(run.projectId, run.id, update.promptId);
+      if (!result || result.status !== 'analysis_pending' || result.captureKey !== update.captureKey || result.lastRetryRequestId !== update.retryRequestId) continue;
+      const target = update.analysis?.brands.find((brand) => brand.brandId === run.snapshot.brand.id);
+      const next: PromptResult = {
+        ...withoutLease(result), version: result.version + 1,
+        status: target && update.analysis && update.analysisKey ? 'succeeded' : 'failed_extraction',
+        completedAt: this.now().toISOString(),
+      };
+      if (target && update.analysis && update.analysisKey) {
+        next.analysisKey = update.analysisKey;
+        next.target = target;
+        next.brands = update.analysis.brands;
+        next.extractionUsage = update.analysis.usage;
+        delete next.error;
+      } else next.error = update.error ?? { code: 'analysis_batch_invalid_analysis', message: 'Batch analysis did not contain the tracked brand.', retryable: false };
+      await repository.commitResult(next, result);
+    }
+    if (batchId) {
+      const remaining = await repository.listResults(run.projectId, run.id);
+      if (!remaining.some((result) => result.status === 'analysis_pending' && updates.some((update) => update.promptId === result.promptId && update.captureKey === result.captureKey && update.retryRequestId === result.lastRetryRequestId))) await analysisBatch.complete(batchId);
+    }
+    await this.finalize(run.projectId, run.id);
   }
 
   private async exhaust(
@@ -577,7 +633,7 @@ export class Scanner {
             'retry_exhausted',
             'The scan exceeded its retry or time limit.',
           );
-        } else
+        } else if (result.status !== 'analysis_pending')
           jobs.push({
             kind: 'prompt',
             projectId: run.projectId,
@@ -586,6 +642,7 @@ export class Scanner {
           });
       }
       await queue.send(jobs);
+      await this.processAnalysisBatch(run);
       await this.finalize(run.projectId, run.id);
     }
   }
@@ -609,6 +666,9 @@ export class Scanner {
         message.runId,
         message.promptId,
       );
+      // SQS delivery exhaustion must not terminate a successfully submitted asynchronous batch.
+      // Durable batch state has its own deadline and is recovered by scheduled reconciliation.
+      if (result?.status === 'analysis_pending') return;
       if (result && !this.hasLiveLease(result))
         await this.exhaust(
           result,

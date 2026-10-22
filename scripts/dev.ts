@@ -83,7 +83,7 @@ await assertRealLocalData(db);
 const runtime = { repository, artifacts, queue };
 let scanner: Scanner | undefined;
 if (configured) {
-  const provider = createScanProviderFromEnv();
+  const provider = createScanProviderFromEnv(runtime);
   const onboarding = new OnboardingEngine(
     runtime,
     new OpenAIOnboardingProvider(await createResponseProviderFromEnv()),

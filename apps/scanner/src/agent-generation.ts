@@ -59,6 +59,7 @@ export function agentGenerationRequest(
 ): ExtractionRequest {
   const blog = post.channel === 'blog';
   return {
+    costContext: { projectId:post.projectId, promptId:post.id, stage:`content_${post.channel}_${post.stage}` },
     model: post.model,
     ...agentReasoning(post.model),
     ...(post.model === DEFAULT_AGENT_CONTENT_MODEL

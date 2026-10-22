@@ -15,10 +15,17 @@ const nonnegative = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 export function usage(response: NativeResponse): Usage {
   const value = object(response.usage);
+  const inputDetails = object(value?.input_tokens_details);
+  const outputDetails = object(value?.output_tokens_details);
   return {
     inputTokens: nonnegative(value?.input_tokens),
     outputTokens: nonnegative(value?.output_tokens),
     totalTokens: nonnegative(value?.total_tokens),
+    ...(inputDetails ? {
+      cachedInputTokens: nonnegative(inputDetails.cached_tokens),
+      cacheWriteTokens: nonnegative(inputDetails.cache_write_tokens),
+    } : {}),
+    ...(outputDetails ? { reasoningTokens: nonnegative(outputDetails.reasoning_tokens) } : {}),
     searchCalls: (response.output ?? []).filter(
       (item) => object(item)?.type === 'web_search_call',
     ).length,

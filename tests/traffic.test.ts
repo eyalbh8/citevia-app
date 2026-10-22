@@ -305,6 +305,24 @@ describe('public tracker and authenticated reports', () => {
       404,
     );
   });
+  it('preserves each AI pageview after an installation heartbeat and independently receives connection tests', async () => {
+    const f = await fixture();
+    const payload = {
+      projectId,
+      url: 'https://northstar.example/',
+      trackerVersion: 'citevia-v2',
+    };
+    await f.send({ ...payload, id: randomUUID(), type: 'installation' });
+    for (const path of ['/', '/pricing', '/'])
+      expect((await f.send({
+        ...payload, id: randomUUID(), type: 'pageview',
+        url: `https://northstar.example${path}`, utmSource: 'chatgpt',
+      }))?.status).toBe(204);
+    const testId = randomUUID();
+    await f.send({ ...payload, id: randomUUID(), type: 'installation', testId });
+    expect((await (await f.call()).json()).current).toBe(3);
+    expect((await f.repository.trafficStatus(projectId, testId)).testReceived).toBe(true);
+  });
   it('serves the public tracker and collector before the Descope boundary while keeping reports protected', async () => {
     const f = await fixture();
     const authenticate = vi.fn(async () => {
@@ -451,7 +469,7 @@ describe('PostgreSQL traffic aggregation', () => {
     expect(status.sites[0]).toMatchObject({
       origin: receipt.origin,
       firstSeenAt: receipt.timestamp,
-      lastSeenAt: new Date(NOW.getTime() + 1000).toISOString(),
+      lastSeenAt: receipt.timestamp,
     });
     const before = await repository.aggregateTraffic(projectId, filters);
     const testId = randomUUID();
@@ -477,6 +495,52 @@ describe('PostgreSQL traffic aggregation', () => {
         )
       ).rows[0].count,
     ).toBe(1);
+  });
+  it('coalesces passive installation writes per origin while refreshing stale, changed-version and explicit-test receipts', async () => {
+    const origin = 'https://heartbeat.example';
+    const receipt = {
+      id: randomUUID(), projectId, origin, url: `${origin}/`,
+      timestamp: NOW.toISOString(), trackerVersion: 'citevia-v2', testId: null as string | null,
+    };
+    const transaction = vi.spyOn(db, 'transaction');
+    try {
+      await repository.recordTrafficInstallation(receipt);
+      for (const minutes of [1, 10, 29])
+        await repository.recordTrafficInstallation({
+          ...receipt, id: randomUUID(),
+          timestamp: new Date(NOW.getTime() + minutes * 60000).toISOString(),
+        });
+      const site = async () => (await repository.trafficStatus(projectId)).sites.find((s) => s.origin === origin)!;
+      expect(await site()).toMatchObject({ firstSeenAt: receipt.timestamp, lastSeenAt: receipt.timestamp });
+      const refreshedAt = new Date(NOW.getTime() + 30 * 60000).toISOString();
+      await repository.recordTrafficInstallation({ ...receipt, id: randomUUID(), timestamp: refreshedAt });
+      await repository.recordTrafficInstallation({ ...receipt, id: randomUUID() });
+      expect((await site()).lastSeenAt).toBe(refreshedAt);
+      const upgradedAt = new Date(NOW.getTime() + 31 * 60000).toISOString();
+      await repository.recordTrafficInstallation({
+        ...receipt, id: randomUUID(), timestamp: upgradedAt, trackerVersion: 'citevia-v3',
+      });
+      expect(await site()).toMatchObject({
+        firstSeenAt: receipt.timestamp, lastSeenAt: upgradedAt, trackerVersion: 'citevia-v3',
+      });
+      await repository.recordTrafficInstallation({
+        ...receipt, id: randomUUID(), origin: 'https://second-heartbeat.example', url: 'https://second-heartbeat.example/',
+      });
+      await repository.recordTrafficInstallation({ ...receipt, id: randomUUID(), projectId: 'other-traffic' });
+      expect((await repository.trafficStatus(projectId)).sites.some((s) => s.origin === 'https://second-heartbeat.example')).toBe(true);
+      expect((await repository.trafficStatus('other-traffic')).sites.some((s) => s.origin === origin)).toBe(true);
+      expect(transaction).not.toHaveBeenCalled();
+      const testId = randomUUID();
+      const testedAt = new Date(NOW.getTime() + 32 * 60000).toISOString();
+      await repository.recordTrafficInstallation({
+        ...receipt, id: randomUUID(), timestamp: testedAt, trackerVersion: 'citevia-v3', testId,
+      });
+      expect(transaction).toHaveBeenCalledOnce();
+      expect((await site()).lastSeenAt).toBe(testedAt);
+      expect((await repository.trafficStatus(projectId, testId)).testReceived).toBe(true);
+    } finally {
+      transaction.mockRestore();
+    }
   });
   it('reads existing iGEO referral rows using the native account ID without counting crawler traffic or spoofed domains', async () => {
     await db.query(

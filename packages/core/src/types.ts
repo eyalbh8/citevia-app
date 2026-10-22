@@ -79,6 +79,12 @@ export interface Membership {
   role: 'owner' | 'viewer';
 }
 export interface RunSnapshot {
+  /** Tenant scope for private analysis caches and usage attribution. */
+  projectId?: string;
+  analysisMode?: 'realtime' | 'batch';
+  extractionFallbackModel?: string;
+  /** Per-call attribution, never part of the frozen measurement methodology. */
+  execution?: { runId: string; promptId: string; attempt: number };
   projectName: string;
   brand: Brand;
   competitors: Brand[];
@@ -126,6 +132,7 @@ export type ResultStatus =
   | 'collecting'
   | 'captured'
   | 'extracting'
+  | 'analysis_pending'
   | 'succeeded'
   | 'refused'
   | 'incomplete'
@@ -154,6 +161,9 @@ export interface Usage {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
   searchCalls?: number;
   searchQueries?: number;
 }
@@ -167,6 +177,8 @@ export interface CompanyAnalysis {
   sentimentEvidence?: EvidenceSpan | null;
 }
 export interface Analysis {
+  /** Reference to an exact compatible saved analysis reused without a model call. */
+  reusedFrom?: string;
   brands: BrandAnalysis[];
   validationVersion?: string;
   validationWarnings?: string[];

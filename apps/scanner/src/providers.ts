@@ -1,15 +1,17 @@
 import { snapshotProvider, type ScanProvider } from '@citevia/core';
-import type { AnswerProvider } from '@citevia/storage';
+import { PostgresCallLedger, productionDatabase, type AnswerProvider, type CallLedger, type Runtime } from '@citevia/storage';
 import { GeminiCollector } from './gemini.js';
 import { PerplexityCollector } from './perplexity.js';
 import { createOpenAIProviderFromEnv } from './openai.js';
 import { providerApiKey } from './provider-http.js';
+import { optimizeScanProvider } from './analysis-costs.js';
 
 /** Collection uses each native API. A common OpenAI extractor validates exactly the saved answer. */
-export function createScanProviderFromEnv(): AnswerProvider {
+export function createScanProviderFromEnv(runtime?: Pick<Runtime,'artifacts'>, suppliedLedger?: CallLedger): AnswerProvider {
+  const ledger = suppliedLedger ?? (process.env.APP_MODE === 'aws' ? new PostgresCallLedger(productionDatabase(),runtime?.artifacts) : undefined);
   let openai: Promise<AnswerProvider> | undefined;
   const extractor = () =>
-    (openai ??= createOpenAIProviderFromEnv().catch((error) => {
+    (openai ??= createOpenAIProviderFromEnv(ledger).catch((error) => {
       openai = undefined;
       throw error;
     }));
@@ -36,10 +38,11 @@ export function createScanProviderFromEnv(): AnswerProvider {
     }
     return pending;
   }
-  return {
+  const provider: AnswerProvider = {
     collect: async (prompt, snapshot) =>
       (await collector(snapshotProvider(snapshot))).collect(prompt, snapshot),
     extract: async (answer, snapshot) =>
       (await extractor()).extract(answer, snapshot),
   };
+  return runtime ? optimizeScanProvider(provider,{artifacts:runtime.artifacts,ledger}) : provider;
 }

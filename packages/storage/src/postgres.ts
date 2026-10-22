@@ -1,4 +1,5 @@
 import * as traffic from './traffic-postgres.js';
+import { createHash } from 'node:crypto';
 import * as agents from './agents-postgres.js';
 import {
   isTerminal,
@@ -22,12 +23,54 @@ import {
 } from '@citevia/core';
 import * as tracking from './tracking-postgres.js';
 import * as mcp from './mcp.js';
-import type { Repository, SavedAnalysis, SavedAnalysisRef } from './contracts.js';
+import type { Repository, SavedAnalysis, SavedAnalysisRef, PromptAnswerPageOptions, PromptAnswerPage } from './contracts.js';
 import { uuidFor, type SqlDatabase, type SqlSession } from './sql.js';
 import { AccessError, PostgresUsers } from './users.js';
 
 const data = <T>(rows: Record<string, unknown>[]): T | null =>
   rows.length ? (rows[0].data as T) : null;
+
+/** Run JSON is an immutable manifest; frequently changing state lives in columns. */
+function hydrateRun(row: Record<string, unknown>): ScanRun {
+  if (row.succeeded_count === undefined) return row.data as ScanRun;
+  const run = { ...(row.data as ScanRun), ...hydrateRunState(row) };
+  // Omitted optional column state must clear values from older JSON manifests.
+  for (const [field, column] of [['startedAt','started_at'],['completedAt','completed_at'],
+    ['summaryKey','summary_key'],['summaryVersion','summary_version']] as const) {
+    if (row[column] === null || row[column] === undefined) delete run[field];
+  }
+  return run;
+}
+
+type RunState = Pick<ScanRun, 'projectId' | 'id' | 'status' | 'resultVersion' | 'terminalCount' |
+  'totalCount' | 'succeededCount' | 'capturedCount' | 'deadlineAt' | 'startedAt' |
+  'completedAt' | 'summaryKey' | 'summaryVersion'>;
+const runStateColumns = `project_id,id,status,result_version,terminal_count,total_count,
+  succeeded_count,captured_count,started_at,completed_at,deadline_at,summary_key,summary_version`;
+
+function hydrateRunState(row: Record<string, unknown>): RunState {
+  const iso = (value: unknown) => new Date(value as string | Date).toISOString();
+  const run: RunState = {
+    projectId: String(row.project_id), id: String(row.id),
+    status: row.status as ScanRun['status'], resultVersion: Number(row.result_version),
+    terminalCount: Number(row.terminal_count), totalCount: Number(row.total_count),
+    succeededCount: Number(row.succeeded_count), capturedCount: Number(row.captured_count),
+    deadlineAt: iso(row.deadline_at),
+  };
+  if (row.started_at) run.startedAt = iso(row.started_at);
+  if (row.completed_at) run.completedAt = iso(row.completed_at);
+  if (row.summary_key !== null && row.summary_key !== undefined) run.summaryKey = String(row.summary_key);
+  if (row.summary_version !== null && row.summary_version !== undefined) run.summaryVersion = Number(row.summary_version);
+  return run;
+}
+
+export interface PostgresRepositoryOptions {
+  /** Legacy external reporting only. Application dashboards read the compact projections. */
+  writeCompatibilityResults?: boolean;
+  /** Disable for the first deployment while JSON-only scanner invocations drain. */
+  compactRunState?: boolean;
+}
+
 export class PostgresRepository extends PostgresUsers implements Repository {
   reserveAgentImage(post: import('@citevia/core').AgentPostJob, image?: import('@citevia/core').AgentImage) { return agents.reserveAgentImage(this.db, post, image); }
   getAgentPost(projectId: string, postId: string) { return agents.getAgentPost(this.db, projectId, postId); }
@@ -35,8 +78,29 @@ export class PostgresRepository extends PostgresUsers implements Repository {
   listActiveAgentPosts() { return agents.listActiveAgentPosts(this.db); }
   reserveAgentPost(post: import('@citevia/core').AgentPostJob, expectedVersion: number | null) { return agents.reserveAgentPost(this.db, post, expectedVersion); }
   saveAgentPost(post: import('@citevia/core').AgentPostJob, expectedVersion: number) { return agents.saveAgentPost(this.db, post, expectedVersion); }
-  constructor(db: SqlDatabase) {
+  private readonly writeCompatibilityResults: boolean;
+  private readonly compactRunState: boolean;
+  private typedStateCapability?: { supported: boolean; checkedAt: number };
+  constructor(db: SqlDatabase, options: PostgresRepositoryOptions = {}) {
     super(db);
+    this.writeCompatibilityResults = options.writeCompatibilityResults ?? process.env.CITEVIA_WRITE_COMPATIBILITY_RESULTS === 'true';
+    this.compactRunState = options.compactRunState ?? process.env.CITEVIA_COMPACT_RUN_STATE !== 'false';
+  }
+  /** Migration-first and deploy-first rollouts both remain usable during011. */
+  private async supportsTypedState() {
+    const cached = this.typedStateCapability;
+    if (cached && (cached.supported || Date.now() - cached.checkedAt < 1000)) return cached.supported;
+    const { rows } = await this.db.query(`SELECT EXISTS(SELECT 1 FROM information_schema.columns
+      WHERE table_schema=current_schema() AND table_name='citevia_runs' AND column_name='succeeded_count') AS supported`);
+    const supported = rows[0].supported === true;
+    this.typedStateCapability = { supported, checkedAt: Date.now() };
+    return supported;
+  }
+  private runState(row: Record<string, unknown>) {
+    const typed = row.succeeded_count !== undefined;
+    if (typed) this.typedStateCapability = { supported: true, checkedAt: Date.now() };
+    return { run: typed && this.compactRunState ? hydrateRunState(row) : hydrateRun(row),
+      typed: typed && this.compactRunState };
   }
   recordTrafficInstallation(receipt: import('@citevia/core').TrafficInstallationReceipt) { return traffic.recordTrafficInstallation(this.db, receipt); }
   collectTrafficEvent(event: TrafficEvent) { return traffic.collectTrafficEvent(this.db, event); }
@@ -491,22 +555,19 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     });
   }
   async getRun(projectId: string, id: string) {
-    return data<ScanRun>(
-      (
-        await this.db.query(
-          'SELECT data FROM citevia_runs WHERE project_id=$1 AND id=$2',
-          [projectId, id],
-        )
-      ).rows,
+    const { rows } = await this.db.query(
+      'SELECT * FROM citevia_runs WHERE project_id=$1 AND id=$2',
+      [projectId, id],
     );
+    return rows.length ? hydrateRun(rows[0]) : null;
   }
   async listRuns(projectId: string, limit = 60) {
     return (
       await this.db.query(
-        'SELECT data FROM citevia_runs WHERE project_id=$1 ORDER BY scheduled_at DESC LIMIT $2',
+        'SELECT * FROM citevia_runs WHERE project_id=$1 ORDER BY scheduled_at DESC LIMIT $2',
         [projectId, limit],
       )
-    ).rows.map((row) => row.data as ScanRun);
+    ).rows.map(hydrateRun);
   }
   async listPromptHistory(
     projectId: string,
@@ -514,30 +575,82 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     end: string,
     promptId?: string,
   ) {
+    const typedState = await this.supportsTypedState();
     // One statement gives a consistent snapshot and avoids the scan-list page limit.
     const { rows } = await this.db.query(
       `WITH observations AS (
         SELECT result.data, result.run_id FROM citevia_prompt_results result
-        JOIN citevia_runs run ON run.project_id=result.project_id AND run.id=result.run_id
+        ${typedState ? '' : 'JOIN citevia_runs legacy_run ON legacy_run.project_id=result.project_id AND legacy_run.id=result.run_id'}
         WHERE result.project_id=$1
           AND ($4::text IS NULL OR result.prompt_id=$4)
-          AND COALESCE(result.data->>'capturedAt',run.data->>'createdAt')::timestamptz BETWEEN $2::timestamptz AND $3::timestamptz
+          AND ${typedState ? 'result.observed_at' : "COALESCE(result.data->>'capturedAt',legacy_run.data->>'createdAt')::timestamptz"} BETWEEN $2::timestamptz AND $3::timestamptz
       ) SELECT
         COALESCE((SELECT jsonb_agg(data) FROM observations),'[]'::jsonb) AS results,
-        COALESCE((SELECT jsonb_agg(data) FROM citevia_runs WHERE project_id=$1 AND id IN (SELECT run_id FROM observations)),'[]'::jsonb) AS runs`,
+        COALESCE((SELECT jsonb_agg(to_jsonb(run)) FROM citevia_runs run WHERE project_id=$1 AND id IN (SELECT run_id FROM observations)),'[]'::jsonb) AS runs`,
       [projectId, start, end, promptId || null],
     );
     return {
-      runs: rows[0].runs as ScanRun[],
+      runs: (rows[0].runs as Record<string, unknown>[]).map(hydrateRun),
       results: rows[0].results as PromptResult[],
     };
   }
   async listActiveRuns() {
     return (
       await this.db.query(
-        `SELECT data FROM citevia_runs WHERE status IN ('queued','running') ORDER BY scheduled_at LIMIT 1000`,
+        `SELECT * FROM citevia_runs WHERE status IN ('queued','running') ORDER BY scheduled_at LIMIT 1000`,
       )
-    ).rows.map((row) => row.data as ScanRun);
+    ).rows.map(hydrateRun);
+  }
+  async listPromptAnswerPage(projectId: string, options: PromptAnswerPageOptions): Promise<PromptAnswerPage | null> {
+    // JavaScript localeCompare and database collations need not order arbitrary
+    // model identifiers identically. Keep that legacy sort on its existing path.
+    if (options.sort === 'model' || !(await this.supportsTypedState())) return null;
+    if (!Number.isSafeInteger(options.offset) || options.offset < 0 ||
+      !Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100)
+      throw new Error('Invalid answer page bounds');
+    const sorts = { date: 'observed_at', rank: 'rank_score', citations: 'citation_score', sentiment: 'sentiment_score' };
+    const sort = sorts[options.sort];
+    if (!sort || !['asc', 'desc'].includes(options.direction)) throw new Error('Invalid answer page sort');
+    const ordering = `${sort} ${options.direction.toUpperCase()} NULLS LAST,response_id COLLATE "C" ASC`;
+    const { rows } = await this.db.query(`WITH candidates AS (
+      SELECT result.data AS result, result.run_id, result.observed_at,
+        result.data->>'responseId' AS response_id,
+        COALESCE(run.data#>>'{snapshot,provider}','openai') AS provider,
+        COALESCE(NULLIF(result.data->>'captureKey',''),result.data->>'responseId') AS capture_identity,
+        result.data->>'status'='succeeded' AS succeeded,
+        run.data->>'createdAt' AS run_created_at,
+        CASE WHEN result.data->>'status'='succeeded' AND result.data#>>'{target,mentioned}'='true'
+          THEN COALESCE((result.data#>>'{target,appearanceRank}')::double precision,
+            (result.data#>>'{target,explicitRank}')::double precision) END AS rank_score,
+        CASE WHEN NULLIF(result.data->>'captureKey','') IS NOT NULL
+          THEN (result.data->>'citationCount')::integer END AS citation_score,
+        CASE WHEN result.data->>'status'='succeeded' AND result.data#>>'{target,mentioned}'='true'
+          THEN CASE result.data#>>'{target,sentiment}' WHEN 'positive' THEN 100 WHEN 'neutral' THEN 50
+            WHEN 'mixed' THEN 50 WHEN 'negative' THEN 0 END END AS sentiment_score
+      FROM citevia_prompt_results result JOIN citevia_runs run
+        ON run.project_id=result.project_id AND run.id=result.run_id
+      WHERE result.project_id=$1 AND result.prompt_id=$2 AND result.observed_at BETWEEN $3::timestamptz AND $4::timestamptz
+        AND ($5::text IS NULL OR COALESCE(run.data#>>'{snapshot,provider}','openai')=$5)
+    ), prioritized AS (
+      SELECT *,row_number() OVER (PARTITION BY provider,capture_identity ORDER BY succeeded DESC,run_created_at DESC) AS choice,
+        count(*) OVER (PARTITION BY provider,capture_identity,succeeded,run_created_at) AS tied_choice_count
+      FROM candidates
+    ), selected AS (SELECT * FROM prioritized WHERE choice=1),
+    page AS (SELECT * FROM selected ORDER BY ${ordering} LIMIT $6 OFFSET $7)
+    SELECT (SELECT count(*)::int FROM selected) AS total,
+      COALESCE((SELECT bool_or(response_id !~ '^run_[0-9a-f]{24}~' OR substring(response_id from 30)<>$2 OR tied_choice_count>1) FROM selected),false) AS legacy_order,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('result',page.result,'runId',page.run_id) ORDER BY ${ordering})
+        FROM page),'[]'::jsonb) AS items,
+      COALESCE((SELECT jsonb_agg(to_jsonb(run)) FROM citevia_runs run WHERE run.project_id=$1
+        AND run.id IN (SELECT run_id FROM page)),'[]'::jsonb) AS runs`,
+      [projectId, options.promptId, options.start, options.end, options.provider || null, options.limit, options.offset]);
+    // Fixed-length generated run IDs have the same ASCII and JS tie order for a
+    // single prompt. Older arbitrary IDs and indistinguishable reanalyses keep
+    // the exact historical comparator rather than silently changing selection.
+    if (rows[0].legacy_order) return null;
+    const runs = new Map((rows[0].runs as Record<string, unknown>[]).map(row => [String(row.id), hydrateRun(row)]));
+    return { total: Number(rows[0].total), items: (rows[0].items as { result: PromptResult; runId: string }[])
+      .map(item => ({ result: item.result, run: runs.get(item.runId)! })) };
   }
   async listResults(projectId: string, runId: string) {
     return (
@@ -557,14 +670,25 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       ).rows,
     );
   }
-  private async updateRun(tx: SqlSession, run: ScanRun) {
-    await tx.query(
-      'UPDATE citevia_runs SET status=$1,result_version=$2,terminal_count=$3,data=$4::jsonb WHERE project_id=$5 AND id=$6',
+  private async updateRun(tx: SqlSession, run: RunState | ScanRun, typed = true) {
+    if (!typed) {
+      await tx.query('UPDATE citevia_runs SET status=$1,result_version=$2,terminal_count=$3,data=$4::jsonb WHERE project_id=$5 AND id=$6',
+        [run.status, run.resultVersion, run.terminalCount, JSON.stringify(run), run.projectId, run.id]);
+    } else await tx.query(
+      `UPDATE citevia_runs SET status=$1,result_version=$2,terminal_count=$3,
+       succeeded_count=$4,captured_count=$5,started_at=$6,completed_at=$7,
+       deadline_at=$8,summary_key=$9,summary_version=$10 WHERE project_id=$11 AND id=$12`,
       [
         run.status,
         run.resultVersion,
         run.terminalCount,
-        JSON.stringify(run),
+        run.succeededCount,
+        run.capturedCount,
+        run.startedAt || null,
+        run.completedAt || null,
+        run.deadlineAt,
+        run.summaryKey || null,
+        run.summaryVersion ?? null,
         run.projectId,
         run.id,
       ],
@@ -575,6 +699,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     ]);
   }
   async commitResult(next: PromptResult, previous: PromptResult) {
+    const typedState = await this.supportsTypedState();
     return this.db.transaction(async (tx) => {
       if (
         next.version !== previous.version + 1 ||
@@ -584,15 +709,12 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       )
         throw new Error('Invalid result transition');
       // Consistent lock order: run first, result second. Every counter change shares this transaction.
-      const run = data<ScanRun>(
-        (
-          await tx.query(
-            'SELECT data FROM citevia_runs WHERE project_id=$1 AND id=$2 FOR UPDATE',
-            [previous.projectId, previous.runId],
-          )
-        ).rows,
+      const { rows } = await tx.query(
+        `SELECT ${typedState && this.compactRunState ? runStateColumns : '*'} FROM citevia_runs WHERE project_id=$1 AND id=$2 FOR UPDATE`,
+        [previous.projectId, previous.runId],
       );
-      if (!run) return false;
+      if (!rows.length) return false;
+      const { run, typed } = this.runState(rows[0]);
       const result = await tx.query(
         'UPDATE citevia_prompt_results SET version=$1,data=$2::jsonb WHERE project_id=$3 AND run_id=$4 AND prompt_id=$5 AND version=$6 RETURNING prompt_id',
         [
@@ -616,26 +738,25 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       run.status = 'running';
       run.startedAt ||= new Date().toISOString();
       delete run.completedAt;
-      await this.updateRun(tx, run);
+      await this.updateRun(tx, run, typed);
       return true;
     });
   }
   async markRunRunning(projectId: string, id: string, deadlineAt?: string) {
+    const typedState = await this.supportsTypedState();
     await this.db.transaction(async (tx) => {
-      const run = data<ScanRun>(
-        (
-          await tx.query(
-            'SELECT data FROM citevia_runs WHERE project_id=$1 AND id=$2 FOR UPDATE',
-            [projectId, id],
-          )
-        ).rows,
+      const { rows } = await tx.query(
+        `SELECT ${typedState && this.compactRunState ? runStateColumns : '*'} FROM citevia_runs WHERE project_id=$1 AND id=$2 FOR UPDATE`,
+        [projectId, id],
       );
-      if (run && run.terminalCount < run.totalCount) {
+      if (!rows.length) return;
+      const { run, typed } = this.runState(rows[0]);
+      if (run.terminalCount < run.totalCount) {
         run.status = 'running';
         run.startedAt ||= new Date().toISOString();
         delete run.completedAt;
         if (deadlineAt) run.deadlineAt = deadlineAt;
-        await this.updateRun(tx, run);
+        await this.updateRun(tx, run, typed);
       }
     });
   }
@@ -647,18 +768,16 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     summaryKey: string,
     completedAt: string,
   ) {
+    const typedState = await this.supportsTypedState();
     return this.db.transaction(async (tx) => {
       await tx.query('SELECT id FROM citevia_projects WHERE id=$1 FOR UPDATE', [projectId]);
-      const run = data<ScanRun>(
-        (
-          await tx.query(
-            'SELECT data FROM citevia_runs WHERE project_id=$1 AND id=$2 FOR UPDATE',
-            [projectId, id],
-          )
-        ).rows,
+      const { rows } = await tx.query(
+        `SELECT ${typedState && this.compactRunState ? runStateColumns : '*'} FROM citevia_runs WHERE project_id=$1 AND id=$2 FOR UPDATE`,
+        [projectId, id],
       );
+      if (!rows.length) return false;
+      const { run, typed } = this.runState(rows[0]);
       if (
-        !run ||
         run.resultVersion !== version ||
         run.terminalCount !== run.totalCount
       )
@@ -669,7 +788,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         summaryVersion: version,
         completedAt,
       });
-      await this.updateRun(tx, run);
+      await this.updateRun(tx, run, typed);
       await tracking.refreshRunCounters(tx,projectId,id);
       return true;
     });
@@ -679,8 +798,13 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     run: ScanRun,
     answer: CapturedAnswer | null,
     analysis: Analysis | null,
+    options: { force?: boolean } = {},
   ) {
     if (result.projectId !== run.projectId || result.runId !== run.id) return;
+    const typedState = await this.supportsTypedState();
+    const measurementHash = createHash('sha256').update(JSON.stringify({
+      result, answer, analysis, compatibilityResults: this.writeCompatibilityResults,
+    })).digest('hex');
     await this.db.transaction(async (tx) => {
       await tx.query('SELECT id FROM citevia_projects WHERE id=$1 FOR UPDATE', [run.projectId]);
       // Prevent an older finalizer from publishing rows after a newer retry changed the result.
@@ -689,10 +813,13 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         [run.projectId, run.id],
       );
       const current = await tx.query(
-        'SELECT version FROM citevia_prompt_results WHERE project_id=$1 AND run_id=$2 AND prompt_id=$3 FOR UPDATE',
+        `SELECT ${typedState ? 'version,measurement_hash' : '*'} FROM citevia_prompt_results WHERE project_id=$1 AND run_id=$2 AND prompt_id=$3 FOR UPDATE`,
         [result.projectId, result.runId, result.promptId],
       );
       if (current.rows[0]?.version !== result.version) return;
+      // Duplicate queue delivery and concurrent finalizers must not rewrite all
+      // native rows, citation matches and their indexes for the same measurement.
+      if (!options.force && current.rows[0].measurement_hash === measurementHash) return;
       await tracking.saveCitationMeasurement(tx,result,run,answer,analysis);
       const responseId = uuidFor(
           `${run.projectId}:response:${result.responseId}`,
@@ -719,7 +846,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
               result.status === 'succeeded'
                 ? reportingCompanies(analysis, run.snapshot, answer)
                 : [],
-            analysis,
+            analysis: analysis ? { ...analysis, raw: undefined } : null,
             measurement: {
               responseId: result.responseId,
               captureKey: result.captureKey || null,
@@ -733,9 +860,9 @@ export class PostgresRepository extends PostgresUsers implements Repository {
                 : null,
             error: result.error || null,
             providerResponseId: answer?.providerResponseId,
-            blocks: answer?.blocks || [],
-            retrievedSources: answer?.sources || [],
-            nativeResponse: answer?.raw || null,
+            // Complete blocks, retrieved sources and provider receipts remain in
+            // the immutable capture/analysis artifacts referenced above.
+            evidenceStorage: 'artifacts',
             promptSnapshot: result.prompt,
           }),
           JSON.stringify(reportingCitations(answer)),
@@ -757,6 +884,11 @@ export class PostgresRepository extends PostgresUsers implements Repository {
           snapshotProvider(run.snapshot),
         ],
       );
+      if ('measurement_hash' in current.rows[0]) await tx.query(
+        'UPDATE citevia_prompt_results SET measurement_hash=$4 WHERE project_id=$1 AND run_id=$2 AND prompt_id=$3',
+        [result.projectId, result.runId, result.promptId, measurementHash],
+      );
+      if (!this.writeCompatibilityResults) return;
       await tx.query(
         'DELETE FROM results WHERE account_id=$1 AND scan_id=$2 AND prompt_id=$3',
         [accountId, scanId, promptId],

@@ -45,6 +45,7 @@ export function blogResearchRequest(
     );
   const internal = post.stage === 'links';
   return {
+    costContext: { projectId:post.projectId, promptId:post.id, stage:`content_research_${post.stage}` },
     model: post.model,
     ...agentReasoning(post.model),
     language: post.context.language,

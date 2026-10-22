@@ -15,6 +15,25 @@ import {
   type IdentityProvider,
 } from './descope.js';
 
+/** Checked per request so a cached application cannot bypass a cutover freeze. */
+function maintenanceResponse(origin: string | null, frontendOrigin = process.env.ALLOWED_ORIGIN): Response {
+  const headers = new Headers({
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Retry-After': '60',
+    'X-Content-Type-Options': 'nosniff',
+    Vary: 'Origin',
+  });
+  if (origin && frontendOrigin && origin === frontendOrigin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Expose-Headers', 'Retry-After');
+  }
+  return new Response(JSON.stringify({
+    maintenance: true,
+    error: { code: 'MAINTENANCE_MODE', message: 'Database maintenance is in progress. Please retry shortly.' },
+  }), { status: 503, headers });
+}
+
 export function createAuthenticatedApi(
   runtime: Runtime,
   identity: IdentityProvider,
@@ -41,6 +60,8 @@ export function createAuthenticatedApi(
   }
   const mcp = createMcp(runtime, identity, mcpConfig, app);
   return async (request: Request, sourceIp?: string): Promise<Response> => {
+    if (process.env.CITEVIA_MAINTENANCE_MODE === 'true')
+      return maintenanceResponse(request.headers.get('origin'), mcpConfig.frontendUrl);
     const traffic = await publicTrafficRoute(runtime, request, (options.now || (() => new Date()))(), () => trafficCountry(sourceIp));
     if (traffic) return traffic;
     const mcpResponse = await mcp(request);
@@ -70,6 +91,12 @@ let app: ReturnType<typeof createAuthenticatedApi> | undefined;
 export async function handler(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyStructuredResultV2> {
+  // Stop before constructing runtime/auth clients, including health and public tracker writes.
+  if (process.env.CITEVIA_MAINTENANCE_MODE === 'true') {
+    const origin = Object.entries(event.headers || {}).find(([name]) => name.toLowerCase() === 'origin')?.[1] || null;
+    const response = maintenanceResponse(origin);
+    return { statusCode: response.status, headers: Object.fromEntries(response.headers), body: await response.text() };
+  }
   app ||= createAuthenticatedApi(
     createAwsRuntime(),
     createDescopeIdentityProvider(),

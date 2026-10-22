@@ -46,7 +46,21 @@ jobs:
       GEMINI_GENERATION_MODEL: ${{ vars.GEMINI_GENERATION_MODEL || 'gemini-3.8-flash' }}
       GENERATION_MODEL: ${{ vars.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14' }}
       CONTENT_MODEL: ${{ vars.OPENAI_CONTENT_MODEL || 'gpt-6-astra' }}
-      EXTRACTION_MODEL: ${{ vars.OPENAI_EXTRACTION_MODEL || 'gpt-4.1-mini-2025-04-14' }}
+      EXTRACTION_MODEL: ${{ vars.OPENAI_EXTRACTION_MODEL || 'gpt-6-luna' }}
+      EXTRACTION_FALLBACK_MODEL: ${{ vars.OPENAI_EXTRACTION_FALLBACK_MODEL }}
+      ANALYSIS_BATCH_ENABLED: ${{ vars.ANALYSIS_BATCH_ENABLED || 'false' }}
+      ANALYSIS_CACHE_ENABLED: ${{ vars.ANALYSIS_CACHE_ENABLED || 'true' }}
+      WRITE_COMPATIBILITY_RESULTS: ${{ vars.CITEVIA_WRITE_COMPATIBILITY_RESULTS || 'true' }}
+      COMPACT_RUN_STATE: ${{ vars.CITEVIA_COMPACT_RUN_STATE }}
+      LLM_MONTHLY_BUDGET_USD: ${{ vars.LLM_MONTHLY_BUDGET_USD || '0' }}
+      AURORA_MIN_CAPACITY: ${{ vars.AURORA_MIN_CAPACITY || '1' }}
+      AURORA_AUTO_PAUSE_SECONDS: ${{ vars.AURORA_AUTO_PAUSE_SECONDS || '900' }}
+      # Blank values inherit the current stack selection, preventing later deploys from undoing a cutover.
+      DATABASE_MODE: ${{ vars.DATABASE_MODE }}
+      EXTERNAL_DATABASE_SECRET_ARN: ${{ vars.EXTERNAL_DATABASE_SECRET_ARN }}
+      REMOVE_LEGACY_NETWORK: ${{ vars.REMOVE_LEGACY_NETWORK }}
+      MAINTENANCE_MODE: ${{ vars.CITEVIA_MAINTENANCE_MODE }}
+      RETIRE_LEGACY_DATABASE: ${{ vars.RETIRE_LEGACY_DATABASE }}
       ONBOARDING_MODEL: ${{ vars.OPENAI_ONBOARDING_MODEL || 'gpt-4.1-2025-04-14' }}
       ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
       SAM_CLI_TELEMETRY: '0'
@@ -85,6 +99,56 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: citevia-deploy-${{ github.run_id }}
+      - name: Resolve database deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          parameter_file="$(mktemp "${RUNNER_TEMP:-/tmp}/citevia-db-parameters.XXXXXX")"
+          error_file="$(mktemp "${RUNNER_TEMP:-/tmp}/citevia-db-error.XXXXXX")"
+          trap 'rm -f "$parameter_file" "$error_file"' EXIT
+          if ! aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Parameters' --output json > "$parameter_file" 2> "$error_file"; then
+            if node -e 'const fs=require("node:fs");process.exit(/Stack with id .+ does not exist/.test(fs.readFileSync(process.argv[1],"utf8"))?0:1)' "$error_file"; then
+              echo '[]' > "$parameter_file"
+            else
+              cat "$error_file" >&2
+              exit 1
+            fi
+          fi
+          read_parameter() {
+            node -e 'const fs=require("node:fs");const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(p.find(x=>x.ParameterKey===process.argv[2])?.ParameterValue||"")' "$parameter_file" "$1"
+          }
+          deployed_mode="$(read_parameter DatabaseMode)"
+          selected_mode="${DATABASE_MODE:-${deployed_mode:-aurora}}"
+          selected_secret="${EXTERNAL_DATABASE_SECRET_ARN:-$(read_parameter ExternalDatabaseSecretArn)}"
+          selected_cleanup="${REMOVE_LEGACY_NETWORK:-$(read_parameter RemoveLegacyNetwork)}"
+          selected_cleanup="${selected_cleanup:-false}"
+          selected_maintenance="${MAINTENANCE_MODE:-$(read_parameter MaintenanceMode)}"
+          selected_maintenance="${selected_maintenance:-false}"
+          selected_compact_state="${COMPACT_RUN_STATE:-$(read_parameter CompactRunState)}"
+          selected_compact_state="${selected_compact_state:-false}"
+          deployed_retirement="$(read_parameter RetireLegacyDatabase)"
+          selected_retirement="${RETIRE_LEGACY_DATABASE:-${deployed_retirement:-false}}"
+          if [[ ! "$selected_mode" =~ ^(aurora|external)$ || ! "$selected_cleanup" =~ ^(true|false)$ || ! "$selected_maintenance" =~ ^(true|false)$ || ! "$selected_compact_state" =~ ^(true|false)$ || ! "$selected_retirement" =~ ^(true|false)$ ]]; then
+            echo 'Database mode, cleanup flag, maintenance flag, compact run state flag or retirement flag is invalid.' >&2
+            exit 1
+          fi
+          if [[ ( "$selected_mode" == external || -n "$selected_secret" ) && ! "$selected_secret" =~ ^arn:aws[a-z-]*:secretsmanager:${AWS_REGION}:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$ ]]; then
+            echo 'External database mode requires a same-region Secrets Manager secret ARN; credentials must remain in that secret.' >&2
+            exit 1
+          fi
+          if [[ "$selected_cleanup" == true && ( "$selected_mode" != external || "$deployed_mode" != external ) ]]; then
+            echo 'Deploy and verify external database mode before requesting a separate legacy-network cleanup deployment.' >&2
+            exit 1
+          fi
+          if [[ "$selected_retirement" == true && ( "$selected_mode" != external || "$selected_cleanup" != true || "$deployed_mode" != external ) ]]; then
+            echo 'Legacy database retirement requires an already deployed external database and explicit legacy-network cleanup.' >&2
+            exit 1
+          fi
+          if [[ "$deployed_retirement" == true && "$selected_retirement" != true ]]; then
+            echo 'Retained Aurora cannot be reattached by clearing the retirement flag. Use a reviewed restore/import procedure.' >&2
+            exit 1
+          fi
+          printf '%s\n' "DATABASE_MODE=$selected_mode" "EXTERNAL_DATABASE_SECRET_ARN=$selected_secret" "REMOVE_LEGACY_NETWORK=$selected_cleanup" "MAINTENANCE_MODE=$selected_maintenance" "COMPACT_RUN_STATE=$selected_compact_state" "RETIRE_LEGACY_DATABASE=$selected_retirement" >> "$GITHUB_ENV"
       - name: Resolve shared content photo configuration
         shell: bash
         run: |
@@ -126,10 +190,24 @@ jobs:
               "GenerationModel=$GENERATION_MODEL" \
               "ContentGenerationModel=$CONTENT_MODEL" \
               "ExtractionModel=$EXTRACTION_MODEL" \
+              "ExtractionFallbackModel=$EXTRACTION_FALLBACK_MODEL" \
+              "AnalysisBatchEnabled=$ANALYSIS_BATCH_ENABLED" \
+              "AnalysisCacheEnabled=$ANALYSIS_CACHE_ENABLED" \
+              "WriteCompatibilityResults=$WRITE_COMPATIBILITY_RESULTS" \
+              "CompactRunState=$COMPACT_RUN_STATE" \
+              "LlmMonthlyBudgetUsd=$LLM_MONTHLY_BUDGET_USD" \
+              "AuroraMinCapacity=$AURORA_MIN_CAPACITY" \
+              "AuroraAutoPauseSeconds=$AURORA_AUTO_PAUSE_SECONDS" \
+              "DatabaseMode=$DATABASE_MODE" \
+              "ExternalDatabaseSecretArn=$EXTERNAL_DATABASE_SECRET_ARN" \
+              "RemoveLegacyNetwork=$REMOVE_LEGACY_NETWORK" \
+              "MaintenanceMode=$MAINTENANCE_MODE" \
+              "RetireLegacyDatabase=$RETIRE_LEGACY_DATABASE" \
               "OnboardingModel=$ONBOARDING_MODEL" \
               "AlertEmail=$ALERT_EMAIL" \
               'EnableDevOrigin=false'
       - name: Migrate the private PostgreSQL schema
+        if: env.MAINTENANCE_MODE != 'true'
         shell: bash
         run: |
           set -euo pipefail

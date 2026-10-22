@@ -34,16 +34,25 @@ export async function recordTrafficInstallation(
   db: SqlDatabase,
   receipt: TrafficInstallationReceipt,
 ) {
-  await db.transaction(async (tx) => {
+  const record = async (tx: SqlSession) => {
     await tx.query(
       `INSERT INTO citevia_traffic_installations(project_id,origin,first_seen_at,last_seen_at,tracker_version)
-      VALUES($1,$2,$3,$3,$4) ON CONFLICT(project_id,origin) DO UPDATE
-      SET last_seen_at=greatest(citevia_traffic_installations.last_seen_at,excluded.last_seen_at), tracker_version=excluded.tracker_version`,
+      SELECT $1,$2,$3::timestamptz,$3::timestamptz,$4
+      WHERE $5::boolean OR NOT EXISTS (
+        SELECT 1 FROM citevia_traffic_installations
+        WHERE project_id=$1 AND origin=$2 AND tracker_version=$4
+          AND last_seen_at > $3::timestamptz - interval '30 minutes'
+      )
+      ON CONFLICT(project_id,origin) DO UPDATE
+      SET last_seen_at=greatest(citevia_traffic_installations.last_seen_at,excluded.last_seen_at), tracker_version=excluded.tracker_version
+      WHERE $5::boolean OR citevia_traffic_installations.tracker_version IS DISTINCT FROM excluded.tracker_version
+        OR excluded.last_seen_at >= citevia_traffic_installations.last_seen_at + interval '30 minutes'`,
       [
         receipt.projectId,
         receipt.origin,
         receipt.timestamp,
         receipt.trackerVersion,
+        Boolean(receipt.testId),
       ],
     );
     if (receipt.testId)
@@ -60,7 +69,10 @@ export async function recordTrafficInstallation(
           receipt.testId,
         ],
       );
-  });
+  };
+  // Passive heartbeats need one statement. Test receipts remain atomic with their proof event.
+  if (receipt.testId) await db.transaction(record);
+  else await record(db);
 }
 export async function trafficStatus(
   db: SqlSession,

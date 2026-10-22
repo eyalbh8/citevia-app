@@ -4,6 +4,9 @@ import {
   createAwsRuntime,
   migrateDatabase,
   productionDatabase,
+  SqlAnalysisBatchStore,
+  PostgresCallLedger,
+  cleanupExpiredAuthState,
 } from '@citevia/storage';
 import type { ScanMessage } from '@citevia/core';
 import { Scanner } from './engine.js';
@@ -16,6 +19,9 @@ import { syncProjectSchedule } from '../../api/src/scheduler.js';
 import { ProviderError } from './provider.js';
 import { reanalyzeCapturedRun } from './reanalysis.js';
 import { refreshPortfolio } from './portfolio-refresh.js';
+import { AnalysisBatchCoordinator } from './analysis-batch.js';
+import { OpenAIBatchClient, type BatchClient } from './openai-batch.js';
+import { providerApiKey } from './provider-http.js';
 
 const id = z
   .string()
@@ -55,6 +61,14 @@ const messageSchema = z.discriminatedUnion('kind', [
 export const parseScanMessage = (value: unknown): ScanMessage =>
   messageSchema.parse(value);
 
+function maintenanceResult(event: SQSEvent | { kind: string }): SQSBatchResponse | { maintenance: true } | null {
+  if (process.env.CITEVIA_MAINTENANCE_MODE !== 'true') return null;
+  // Returning success for SQS would delete queued work. Preserve every record for retry, including DLQ deliveries.
+  return 'Records' in event
+    ? { batchItemFailures: event.Records.map(record => ({ itemIdentifier: record.messageId })) }
+    : { maintenance: true };
+}
+
 let scanner: Scanner | undefined;
 function awsScanner(): Scanner {
   if (scanner) return scanner;
@@ -78,11 +92,23 @@ function awsScanner(): Scanner {
     },
     syncProjectSchedule,
   );
+  let batchClient: Promise<OpenAIBatchClient> | undefined;
+  const client = () => (batchClient ??= providerApiKey('openai').then((apiKey) => new OpenAIBatchClient({ apiKey })).catch((error) => { batchClient = undefined; throw error; }));
+  const lazyBatchClient: BatchClient = {
+    upload: async (...args) => (await client()).upload(...args),
+    create: async (...args) => (await client()).create(...args),
+    retrieve: async (...args) => (await client()).retrieve(...args),
+    find: async (...args) => (await client()).find(...args),
+    download: async (...args) => (await client()).download(...args),
+  };
   scanner = new Scanner({
     ...runtime,
     agents: new AgentPostEngine(runtime, createResponseProviderFromEnv),
     onboarding,
-    provider: createScanProviderFromEnv(),
+    provider: createScanProviderFromEnv(runtime),
+    // Keep the port available for already-frozen Batch runs even if new batch admission is disabled.
+    analysisBatch: new AnalysisBatchCoordinator({ store: new SqlAnalysisBatchStore(productionDatabase()), artifacts: runtime.artifacts, client: lazyBatchClient, ledger: new PostgresCallLedger(productionDatabase(), runtime.artifacts) }),
+    maintenance: { reconcile: async () => { await cleanupExpiredAuthState(productionDatabase(), { dryRun: false, limit: 100, rateLimitRetentionDays: 7 }); } },
   });
   return scanner;
 }
@@ -93,7 +119,9 @@ export function createHandler(
 ) {
   return async (
     event: SQSEvent | ScanMessage,
-  ): Promise<SQSBatchResponse | { ok: true }> => {
+  ): Promise<SQSBatchResponse | { ok: true } | { maintenance: true }> => {
+    const paused = maintenanceResult(event);
+    if (paused) return paused;
     if ('Records' in event) {
       const batchItemFailures: { itemIdentifier: string }[] = [];
       for (const record of event.Records) {
@@ -135,6 +163,9 @@ export const handler = async (
       }
     | { kind: 'users:bootstrap-admin'; userId: string },
 ) => {
+  // Includes direct migrations/admin/reanalysis invocations; no source database writer bypasses the freeze.
+  const paused = maintenanceResult(event);
+  if (paused) return paused;
   if ('kind' in event && event.kind === 'prompts:refresh') {
     const input = z
       .object({

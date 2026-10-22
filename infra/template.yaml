@@ -75,14 +75,79 @@ Parameters:
     Description: Independent Responses API model for agent content creation, web research and editorial revisions. Does not change visibility scans.
   ExtractionModel:
     Type: String
-    Default: gpt-4.1-mini-2025-04-14
+    Default: gpt-6-luna
     Description: Responses API model supporting strict structured output.
+  ExtractionFallbackModel:
+    Type: String
+    Default: ''
+    Description: Optional single realtime validation-failure fallback. Never retries an uncertain paid call.
+  AnalysisBatchEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Opt in to asynchronous analysis after evaluating extraction quality and scan completion latency.
+  AnalysisCacheEnabled:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Reuse matching response analysis in the project-scoped evidence cache.
+  WriteCompatibilityResults:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Preserve the native compatibility mirror until its consumers are verified; disable explicitly after review.
+  CompactRunState:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable after all pre-optimization scanner workers have drained. First release mirrors run state to JSON for mixed-version safety.
+  LlmMonthlyBudgetUsd:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    Description: Optional estimated monthly LLM budget in USD. Zero disables the budget limit.
   OnboardingModel:
     Type: String
     Default: gpt-4.1-2025-04-14
   AuroraEngineVersion:
     Type: String
     Default: "16.9"
+  DatabaseMode:
+    Type: String
+    Default: aurora
+    AllowedValues: [aurora, external]
+    Description: Select the existing Aurora database or an externally managed PostgreSQL database. Switching does not migrate data or retire Aurora.
+  ExternalDatabaseSecretArn:
+    Type: String
+    Default: ''
+    Description: Existing same-region Secrets Manager secret using aws/secretsmanager, with host,port,database,username,password JSON fields. Credentials never enter template parameters.
+    AllowedPattern: '^$|arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+'
+  RemoveLegacyNetwork:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Explicit second-stage removal of the legacy NAT gateway, EIP, default route and SSM tunnel after external PostgreSQL is verified. Aurora and its private network remain.
+  MaintenanceMode:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Freeze application database writes and pause scanner queue polling/reconciliation during a reviewed database copy or cutover. Drain existing invocations before copying.
+  RetireLegacyDatabase:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: After verified external cutover and network cleanup, detach retained Aurora cluster/writer from this stack for explicit operator deletion after a final snapshot. Retain does not delete resources or stop charges.
+  AuroraMinCapacity:
+    Type: Number
+    Default: 0.5
+    AllowedValues: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8]
+    Description: Minimum Aurora Serverless v2 ACUs. Zero opts in to auto-pause on supported engine versions and Regions; review resume latency before enabling.
+  AuroraAutoPauseSeconds:
+    Type: Number
+    Default: 900
+    MinValue: 300
+    MaxValue: 86400
+    Description: Idle seconds before Aurora attempts to pause. Applies only when AuroraMinCapacity is zero; background connections can prevent pausing.
   MaxAccountsPerOwner:
     Type: Number
     Default: 100
@@ -117,6 +182,36 @@ Conditions:
   HasPerplexitySecret: !Not [!Equals [!Ref PerplexitySecretArn, '']]
   HasGeminiSecret: !Not [!Equals [!Ref GeminiSecretArn, '']]
   HasUnsplashSecret: !Not [!Equals [!Ref UnsplashSecretArn, '']]
+  AuroraAutoPauseEnabled: !Equals [!Ref AuroraMinCapacity, 0]
+  KeepLegacyDatabase: !Not [!Equals [!Ref RetireLegacyDatabase, 'true']]
+  UseAuroraDatabase: !And
+    - !Equals [!Ref DatabaseMode, aurora]
+    - !Not [!Equals [!Ref RetireLegacyDatabase, 'true']]
+  HasExternalDatabaseSecret: !Not [!Equals [!Ref ExternalDatabaseSecretArn, '']]
+  MaintenanceEnabled: !Equals [!Ref MaintenanceMode, 'true']
+  KeepLegacyEgress: !Not
+    - !And
+      - !Equals [!Ref DatabaseMode, external]
+      - !Equals [!Ref RemoveLegacyNetwork, 'true']
+
+Rules:
+  ExternalDatabaseRequiresSecret:
+    RuleCondition: !Equals [!Ref DatabaseMode, external]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ExternalDatabaseSecretArn, '']]
+        AssertDescription: External database mode requires an existing Secrets Manager secret ARN.
+  LegacyNetworkCleanupRequiresExternalDatabase:
+    RuleCondition: !Equals [!Ref RemoveLegacyNetwork, 'true']
+    Assertions:
+      - Assert: !Equals [!Ref DatabaseMode, external]
+        AssertDescription: Legacy network removal is allowed only after selecting external PostgreSQL.
+  LegacyDatabaseRetirementRequiresCompletedCutover:
+    RuleCondition: !Equals [!Ref RetireLegacyDatabase, 'true']
+    Assertions:
+      - Assert: !Equals [!Ref DatabaseMode, external]
+        AssertDescription: Retiring legacy Aurora requires external PostgreSQL mode.
+      - Assert: !Equals [!Ref RemoveLegacyNetwork, 'true']
+        AssertDescription: Retiring legacy Aurora requires explicit legacy network cleanup.
 
 Globals:
   Function:
@@ -126,15 +221,23 @@ Globals:
     Environment:
       Variables:
         APP_MODE: aws
-        DATABASE_HOST: !GetAtt Database.Endpoint.Address
-        DATABASE_SECRET_ARN: !GetAtt Database.MasterUserSecret.SecretArn
-        DATABASE_NAME: citevia
+        DATABASE_MODE: !Ref DatabaseMode
+        CITEVIA_MAINTENANCE_MODE: !Ref MaintenanceMode
+        DATABASE_HOST: !If [UseAuroraDatabase, !GetAtt Database.Endpoint.Address, !Ref 'AWS::NoValue']
+        DATABASE_SECRET_ARN: !If [UseAuroraDatabase, !GetAtt Database.MasterUserSecret.SecretArn, !Ref ExternalDatabaseSecretArn]
+        DATABASE_NAME: !If [UseAuroraDatabase, citevia, !Ref 'AWS::NoValue']
         MAX_ACCOUNTS_PER_OWNER: !Ref MaxAccountsPerOwner
         SCAN_RUN_DEADLINE_HOURS: '24'
         EVIDENCE_BUCKET: !Ref EvidenceBucket
         QUEUE_URL: !Ref ScanQueue
         QUEUE_ARN: !GetAtt ScanQueue.Arn
         RETENTION_DAYS: '400'
+        ANALYSIS_BATCH_ENABLED: !Ref AnalysisBatchEnabled
+        ANALYSIS_CACHE_ENABLED: !Ref AnalysisCacheEnabled
+        CITEVIA_WRITE_COMPATIBILITY_RESULTS: !Ref WriteCompatibilityResults
+        CITEVIA_COMPACT_RUN_STATE: !Ref CompactRunState
+        OPENAI_EXTRACTION_FALLBACK_MODEL: !Ref ExtractionFallbackModel
+        LLM_MONTHLY_BUDGET_USD: !Ref LlmMonthlyBudgetUsd
 
 Resources:
   Vpc:
@@ -178,9 +281,11 @@ Resources:
     Properties: {SubnetId: !Ref PublicSubnet, RouteTableId: !Ref PublicRoutes}
   NatAddress:
     Type: AWS::EC2::EIP
+    Condition: KeepLegacyEgress
     Properties: {Domain: vpc}
   NatGateway:
     Type: AWS::EC2::NatGateway
+    Condition: KeepLegacyEgress
     DependsOn: InternetAttachment
     Properties: {AllocationId: !GetAtt NatAddress.AllocationId, SubnetId: !Ref PublicSubnet}
   PrivateRoutes:
@@ -188,6 +293,7 @@ Resources:
     Properties: {VpcId: !Ref Vpc}
   PrivateRoute:
     Type: AWS::EC2::Route
+    Condition: KeepLegacyEgress
     Properties: {RouteTableId: !Ref PrivateRoutes, DestinationCidrBlock: 0.0.0.0/0, NatGatewayId: !Ref NatGateway}
   PrivateAssociationA:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -222,6 +328,7 @@ Resources:
       Parameters: {rds.force_ssl: '1'}
   Database:
     Type: AWS::RDS::DBCluster
+    Condition: KeepLegacyDatabase
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -236,9 +343,15 @@ Resources:
       StorageEncrypted: true
       BackupRetentionPeriod: 14
       DeletionProtection: true
-      ServerlessV2ScalingConfiguration: {MinCapacity: 1, MaxCapacity: 8}
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: !Ref AuroraMinCapacity
+        MaxCapacity: 8
+        SecondsUntilAutoPause: !If [AuroraAutoPauseEnabled, !Ref AuroraAutoPauseSeconds, !Ref 'AWS::NoValue']
   DatabaseWriter:
     Type: AWS::RDS::DBInstance
+    Condition: KeepLegacyDatabase
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       DBClusterIdentifier: !Ref Database
       DBInstanceClass: db.serverless
@@ -248,6 +361,7 @@ Resources:
 
   DatabaseTunnelRole:
     Type: AWS::IAM::Role
+    Condition: KeepLegacyEgress
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -259,6 +373,7 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
   DatabaseTunnelInstanceProfile:
     Type: AWS::IAM::InstanceProfile
+    Condition: KeepLegacyEgress
     Properties:
       Roles: [!Ref DatabaseTunnelRole]
   DatabaseTunnelSecurityGroup:
@@ -271,6 +386,7 @@ Resources:
         - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, CidrIp: 10.48.0.0/16}
   DatabaseTunnel:
     Type: AWS::EC2::Instance
+    Condition: KeepLegacyEgress
     Properties:
       InstanceType: t4g.nano
       ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}'
@@ -303,6 +419,11 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpiration: {NoncurrentDays: 30}
             AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+          # Cached analysis can be recomputed; captured scan evidence keeps its existing retention.
+          - Id: AnalysisCacheRetention
+            Status: Enabled
+            Prefix: analysis-cache/
+            ExpirationInDays: 90
 
   EvidenceBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -450,9 +571,11 @@ Resources:
     Properties:
       CodeUri: ../dist/api/
       ReservedConcurrentExecutions: !If [UseReservedConcurrency, 20, !Ref 'AWS::NoValue']
-      VpcConfig:
-        SecurityGroupIds: [!Ref LambdaSecurityGroup]
-        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      VpcConfig: !If
+        - UseAuroraDatabase
+        - SecurityGroupIds: [!Ref LambdaSecurityGroup]
+          SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        - !Ref 'AWS::NoValue'
       MemorySize: 512
       Timeout: 29
       Environment:
@@ -479,12 +602,13 @@ Resources:
           SCHEDULE_GROUP: !Ref ProjectScheduleGroup
           DLQ_ARN: !GetAtt ScanDeadLetterQueue.Arn
       Policies:
-        - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
           Statement:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
-              Resource: [!GetAtt Database.MasterUserSecret.SecretArn, !Ref DescopeSecretArn]
+              Resource:
+                - !If [UseAuroraDatabase, !GetAtt Database.MasterUserSecret.SecretArn, !If [HasExternalDatabaseSecret, !Ref ExternalDatabaseSecretArn, !Ref 'AWS::NoValue']]
+                - !Ref DescopeSecretArn
             - Effect: Allow
               Action: s3:GetObject
               Resource: !Sub '${EvidenceBucket.Arn}/*'
@@ -515,9 +639,11 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../dist/scanner/
-      VpcConfig:
-        SecurityGroupIds: [!Ref LambdaSecurityGroup]
-        SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+      VpcConfig: !If
+        - UseAuroraDatabase
+        - SecurityGroupIds: [!Ref LambdaSecurityGroup]
+          SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        - !Ref 'AWS::NoValue'
       MemorySize: 1024
       Timeout: 300
       ReservedConcurrentExecutions: !If [UseReservedConcurrency, !Ref ScannerReservedConcurrency, !Ref 'AWS::NoValue']
@@ -537,12 +663,19 @@ Resources:
           SCHEDULE_GROUP: !Ref ProjectScheduleGroup
           DLQ_ARN: !GetAtt ScanDeadLetterQueue.Arn
       Policies:
-        - AWSLambdaVPCAccessExecutionRole
         - Version: '2012-10-17'
           Statement:
-            - Effect: Allow
-              Action: secretsmanager:GetSecretValue
-              Resource: !GetAtt Database.MasterUserSecret.SecretArn
+            - !If
+              - UseAuroraDatabase
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !GetAtt Database.MasterUserSecret.SecretArn
+              - !If
+                - HasExternalDatabaseSecret
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref ExternalDatabaseSecretArn
+                - !Ref 'AWS::NoValue'
             - !If
               - HasUnsplashSecret
               - Effect: Allow
@@ -584,6 +717,7 @@ Resources:
           Type: SQS
           Properties:
             Queue: !GetAtt ScanQueue.Arn
+            Enabled: !If [MaintenanceEnabled, false, true]
             BatchSize: 1
             FunctionResponseTypes: [ReportBatchItemFailures]
             ScalingConfig: {MaximumConcurrency: !Ref QueueConcurrency}
@@ -592,7 +726,7 @@ Resources:
           Properties:
             Schedule: rate(15 minutes)
             Input: '{"kind":"reconcile"}'
-            Enabled: true
+            State: !If [MaintenanceEnabled, DISABLED, ENABLED]
 
   ApiFunctionLogs:
     Type: AWS::Logs::LogGroup
@@ -689,12 +823,27 @@ Outputs:
   DescopeBaseUrl:
     Value: !Ref DescopeBaseUrl
   DatabaseHost:
+    Condition: UseAuroraDatabase
     Value: !GetAtt Database.Endpoint.Address
   DatabaseSecretArn:
-    Value: !GetAtt Database.MasterUserSecret.SecretArn
+    Value: !If [UseAuroraDatabase, !GetAtt Database.MasterUserSecret.SecretArn, !Ref ExternalDatabaseSecretArn]
   DatabaseName:
+    Condition: UseAuroraDatabase
     Value: citevia
+  ActiveDatabaseMode:
+    Value: !Ref DatabaseMode
+  LegacyDatabaseHost:
+    Condition: KeepLegacyDatabase
+    Description: Retained Aurora endpoint for reviewed migration or rollback. External mode continues to retain and bill Aurora.
+    Value: !GetAtt Database.Endpoint.Address
+  LegacyDatabaseSecretArn:
+    Condition: KeepLegacyDatabase
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
+  LegacyDatabaseRetired:
+    Description: True means Aurora was detached under Retain. Verify its physical deletion separately; this flag does not prove billing stopped.
+    Value: !Ref RetireLegacyDatabase
   DatabaseTunnelInstanceId:
+    Condition: KeepLegacyEgress
     Description: Private Session Manager target used to forward PostgreSQL to a local port.
     Value: !Ref DatabaseTunnel
   EvidenceBucketName:

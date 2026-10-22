@@ -20,7 +20,15 @@
     "bootstrap": "node --env-file-if-exists=.env --import tsx scripts/admin-bootstrap.ts",
     "admin:bootstrap": "node --env-file-if-exists=.env --import tsx scripts/admin-bootstrap.ts",
     "scan:spike": "node --env-file-if-exists=.env --import tsx scripts/spike.ts",
-    "tracking:backfill": "node --env-file-if-exists=.env --import tsx scripts/backfill-tracking.ts"
+    "tracking:backfill": "node --env-file-if-exists=.env --import tsx scripts/backfill-tracking.ts",
+    "analysis:eval": "node --env-file-if-exists=.env --import tsx scripts/evaluate-analysis.ts",
+    "analysis:configure": "node --env-file-if-exists=.env --import tsx scripts/configure-analysis.ts",
+    "costs:report": "node --env-file-if-exists=.env --import tsx scripts/provider-costs.ts",
+    "db:audit": "node --env-file-if-exists=.env --import tsx scripts/database-maintenance.ts audit",
+    "db:cleanup-auth": "node --env-file-if-exists=.env --import tsx scripts/database-maintenance.ts cleanup-auth",
+    "db:compact-evidence": "node --env-file-if-exists=.env --import tsx scripts/database-maintenance.ts compact-evidence",
+    "db:rehydrate-runs": "node --env-file-if-exists=.env --import tsx scripts/database-maintenance.ts rehydrate-run-manifests",
+    "db:neon-migration": "node --env-file-if-exists=.env --import tsx scripts/neon-migration.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cloudformation": "^3.900.0",

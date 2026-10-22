@@ -1,4 +1,5 @@
 import { testIdentity } from './fixtures/users.js';
+import { readdir } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { localPostgres } from '../packages/storage/src/local-postgres.js';
 import {
@@ -18,7 +19,7 @@ import { ProviderError } from '../apps/scanner/src/provider.js';
 let db: SqlDatabase, repository: PostgresRepository;
 beforeAll(async () => {
   db = await localPostgres();
-  repository = new PostgresRepository(db);
+  repository = new PostgresRepository(db, { writeCompatibilityResults: true });
   await repository.syncUser(testIdentity('paging-owner'));
   await repository.syncUser(testIdentity('postgres-owner'));
 }, 30000);
@@ -76,7 +77,9 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
     await migrateDatabase(db);
     const migrations = (await db.query('SELECT name FROM citevia_migrations')).rows;
     expect(migrations).toEqual(expect.arrayContaining([{ name: '009_agent_posts.sql' }]));
-    expect(migrations).toHaveLength(10);
+    expect(migrations.map(row => row.name).sort()).toEqual(
+      (await readdir('database/migrations')).filter(name => name.endsWith('.sql')).sort(),
+    );
     const fields = (
       await db.query(
         `SELECT column_name,data_type FROM information_schema.columns WHERE table_name='prompt_responses'`,

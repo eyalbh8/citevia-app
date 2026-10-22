@@ -19,6 +19,7 @@ import type {
   TrafficInstallationReceipt,
   AgentPostJob,
   AgentImage,
+  ScanProvider,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 import type { McpRepository } from './mcp.js';
@@ -30,6 +31,20 @@ export interface SavedAnalysisRef {
 export interface SavedAnalysis {
   responseId: string;
   analysis: Analysis | null;
+}
+export interface PromptAnswerPageOptions {
+  start: string;
+  end: string;
+  promptId: string;
+  provider?: ScanProvider;
+  sort: 'date' | 'model' | 'rank' | 'citations' | 'sentiment';
+  direction: 'asc' | 'desc';
+  offset: number;
+  limit: number;
+}
+export interface PromptAnswerPage {
+  items: { result: PromptResult; run: ScanRun }[];
+  total: number;
 }
 export interface Repository extends UserRepository, McpRepository {
   /** Atomically claim a photo forever within this account/channel; recover this generation’s claim. */
@@ -73,6 +88,7 @@ export interface Repository extends UserRepository, McpRepository {
     run: ScanRun,
     answer: CapturedAnswer | null,
     analysis: Analysis | null,
+    options?: { force?: boolean },
   ): Promise<void>;
   getProject(id: string): Promise<Project | null>;
   listProjects(userId: string): Promise<Project[]>;
@@ -95,6 +111,8 @@ export interface Repository extends UserRepository, McpRepository {
     end: string,
     promptId?: string,
   ): Promise<PromptHistory>;
+  /** Null retains legacy ordering for model collation or ambiguous old capture identities. */
+  listPromptAnswerPage?(projectId: string, options: PromptAnswerPageOptions): Promise<PromptAnswerPage | null>;
   listActiveRuns(): Promise<ScanRun[]>;
   listResults(projectId: string, runId: string): Promise<PromptResult[]>;
   getResult(
@@ -141,7 +159,24 @@ export interface AnswerProvider {
     snapshot: ScanRun['snapshot'],
   ): Promise<Analysis>;
 }
+export interface AnalysisBatchUpdate {
+  promptId: string;
+  captureKey: string;
+  retryRequestId?: string;
+  analysisKey?: string;
+  analysis?: Analysis;
+  error?: import('@citevia/core').ScanError;
+}
+export interface AnalysisBatchPort {
+  process(run: ScanRun, results: PromptResult[]): Promise<{
+    batchId?: string;
+    updates: AnalysisBatchUpdate[];
+  }>;
+  complete(batchId: string): Promise<void>;
+}
 export interface ScannerDependencies extends Runtime {
+  analysisBatch?: AnalysisBatchPort;
+  maintenance?: { reconcile(): Promise<void> };
   agents?: {
     handle(projectId: string, postId: string): Promise<void>;
     reconcile(): Promise<void>;

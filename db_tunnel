@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Forward the private Citevia database to localhost for DBeaver.
+# Forward private Aurora to localhost, or show external PostgreSQL connection guidance.
 # Usage: ./db_tunnel prod
 set -euo pipefail
 
@@ -17,6 +17,18 @@ remote_port="5432"
 if ! command -v aws >/dev/null 2>&1; then
   echo "The AWS CLI is not installed." >&2
   exit 1
+fi
+database_mode="$(aws cloudformation describe-stacks \
+  --stack-name "${stack}" \
+  --region "${region}" \
+  --profile "${profile}" \
+  --query "Stacks[0].Parameters[?ParameterKey=='DatabaseMode'].ParameterValue | [0]" \
+  --output text)"
+if [[ "${database_mode}" == "external" ]]; then
+  echo "Production uses external PostgreSQL (Neon); no AWS SSM database tunnel is needed."
+  echo "Get connection details from the database provider console and connect your SQL client directly with TLS certificate verification (sslmode=verify-full)."
+  echo "Use the direct endpoint for migrations and the pooled endpoint for normal application connections."
+  exit 0
 fi
 if ! command -v session-manager-plugin >/dev/null 2>&1; then
   echo "The Session Manager plugin is not installed. Install it, then run this again:" >&2

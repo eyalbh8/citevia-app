@@ -119,6 +119,7 @@ export function sameTargetMethod(a: RunSnapshot, b: RunSnapshot): boolean {
     (a.provider ?? 'openai') === (b.provider ?? 'openai') &&
     a.generationModel === b.generationModel &&
     a.extractionModel === b.extractionModel &&
+    a.extractionFallbackModel === b.extractionFallbackModel &&
     a.parserVersion === b.parserVersion &&
     a.country === b.country &&
     a.language === b.language &&

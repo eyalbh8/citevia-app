@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { SqlDatabase, SqlSession } from './sql.js';
 import { migrateDatabase } from './sql.js';
-export async function localPostgres(path?: string): Promise<SqlDatabase> {
+export async function localPostgres(path?: string, options: { migrate?: boolean } = {}): Promise<SqlDatabase> {
   if (path && !path.startsWith('memory:'))
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const pg = await PGlite.create(path || 'memory://');
@@ -22,6 +22,6 @@ export async function localPostgres(path?: string): Promise<SqlDatabase> {
     transaction: (work) => pg.transaction((tx) => work(wrap(tx))),
     close: () => pg.close(),
   };
-  await migrateDatabase(db);
+  if (options.migrate !== false) await migrateDatabase(db);
   return db;
 }

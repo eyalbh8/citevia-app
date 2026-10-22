@@ -28,6 +28,11 @@ Click a prompt to open its paginated answer history across scans and providers, 
 
 Read the [complete local setup and validation guide](docs/LOCAL_DEVELOPMENT.md), [onboarding/database mapping](docs/ONBOARDING.md) and [AWS deployment guide](docs/DEPLOYMENT.md). Local development needs no Docker or AWS account when using direct provider keys. `npm run dev:live` is an alias for the same real-only environment. Tests use isolated fixtures that cannot run inside the application.
 
+See [cost optimization and rollout](docs/COST_OPTIMIZATION.md) for exact analysis reuse,
+optional native Batch, provider cost accounting, database compaction/audits and the
+coordinated schema/model/capacity rollout. New accounts default to Luna analysis;
+existing accounts retain their selected model until an evaluated configuration rollout.
+
 A small real-response validation command is ready for later:
 
 ```sh

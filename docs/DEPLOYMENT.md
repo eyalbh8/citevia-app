@@ -77,7 +77,9 @@ The build writes `dist/api/index.mjs` and `dist/scanner/index.mjs`. The template
 - `UnsplashSecretArn`: the server-only photo service secret, raw or JSON with `UNSPLASH_ACCESS_KEY`. Set this shared parameter to enable content creation for every account. No per-account provider key or social connection is needed. Both API and scanner receive the ARN; only the scanner may read its value. An empty parameter disables new content generation globally. Existing account membership and owner permissions still apply.
 - `PerplexityPreset`: defaults to `fast@2026-10-16.0`, a pinned Agent API preset. Validate this version with your account before deployment.
 - `GeminiGenerationModel`: defaults to `gemini-3.8-flash`. Validate Google Search grounding, billing and model access with your Gemini API project.
-- `GenerationModel` and `ExtractionModel`: defaults are `gpt-4.1-2025-04-14` and `gpt-4.1-mini-2025-04-14`. Check availability with your OpenAI project before accepting them.
+- `GenerationModel` and `ExtractionModel`: defaults are `gpt-4.1-2025-04-14` and `gpt-6-luna`. Check availability and evaluate extraction quality with your OpenAI project before accepting them. Existing account analysis settings remain pinned until an explicit configuration rollout.
+- `AnalysisBatchEnabled`: false initially; enables native asynchronous analysis for new scheduled scans after quality/latency validation. Manual scans stay immediate. `AnalysisCacheEnabled` defaults true. `ExtractionFallbackModel` optionally adds one realtime validation-only fallback.
+- `CompactRunState`: keep false for the first optimization release while pre-optimization workers drain; enable true in a subsequent coordinated configuration rollout. An unset GitHub variable `CITEVIA_COMPACT_RUN_STATE` preserves the deployed value; stacks without the parameter default to false. Set the variable explicitly to change it. `WriteCompatibilityResults` defaults true in production until external consumers are confirmed. `LlmMonthlyBudgetUsd` defaults zero (no admission limit). Follow [the optimization migration and rollout guide](COST_OPTIMIZATION.md).
 - `ContentGenerationModel`: defaults to `gpt-6-astra` for agent content creation and blog web research only. Exposed server-side as `OPENAI_CONTENT_MODEL`; set the matching GitHub environment variable to override. Existing visibility-scan and onboarding models remain independent. Validate model access, structured outputs and web search before deployment.
 - `AlertEmail`: an optional operations email. After deployment, confirm the SNS subscription email; alarms exist without an email, but notifications do not.
 - `EnableDevOrigin`: keep `false` in production. A development stack can use `true` with `DevOrigin=http://localhost:5173` to permit localhost OAuth callbacks and CORS.
@@ -85,7 +87,7 @@ The build writes `dist/api/index.mjs` and `dist/scanner/index.mjs`. The template
 - `ScannerReservedConcurrency`: defaults to 12; keep it at least two higher than `QueueConcurrency`. The API reserves 20 invocations; each Lambda pool uses at most two database connections. The AWS account must have sufficient concurrency quota.
 - `OnboardingModel`: research, brandbook and portfolio model, independent of answer/extraction models.
 - `MaxAccountsPerOwner`: default 100; configurable up to 10,000. This is an ownership cap, not a throughput promise.
-- `AuroraEngineVersion`: default 16.9. Verify the PostgreSQL 16 minor is available in your region before deploying. Aurora scales from 1 to 8 ACUs in this template.
+- `AuroraEngineVersion`: default 16.9. Verify the PostgreSQL 16 minor is available in your region before deploying. `AuroraMinCapacity` supports a 0.5-ACU new-stack default with an 8-ACU maximum; the deployment workflow preserves 1 ACU unless `AURORA_MIN_CAPACITY` is set explicitly. Zero enables optional auto-pause with `AuroraAutoPauseSeconds`, on supported versions/regions. Measure load and resume latency before changing existing capacity.
 
 Review the CloudFormation change set before executing a production deployment. `infra/samconfig.example.toml` is a non-secret example for repeat deployments. If a deployed frontend URL changes, update `FrontendOrigin` and redeploy so CORS matches exactly, then update the allowed origin in Descope.
 
@@ -254,3 +256,126 @@ Read [PROVIDERS.md](PROVIDERS.md) before enabling schedules. A new 50-prompt acc
 Apply `007_ai_traffic.sql` and `008_traffic_installations.sql` after `006_mcp.sql` before publishing the updated API/client. It adds provider attribution and isolated connection-test IDs to the existing iGEO `analytics_events` table. The build packages the offline country database, its lookup runtime, and license notices with the API Lambda. There are no new secrets or outbound lookup calls. After deployment, use **AI Traffic → Settings** to install the account’s script on its real website and verify the connection. Existing iGEO tracker URLs continue sending to iGEO until replaced with Citevia’s generated snippet. See [AI Traffic setup and measurement boundaries](../README.md#ai-traffic).
 
 Tracker installation detection is independent of brandbook domains and AI referrals. Version 2 sends an installation signal on direct visits and records each actual origin in `citevia_traffic_installations`. The original script URL automatically serves the updated code (a previous browser cache entry may last up to five minutes). The Settings page shows detected websites and accepts any installation URL for verification. Installation signals and connection tests never enter AI Traffic totals.
+
+## External PostgreSQL cutover and legacy network cleanup
+
+The template supports Neon or another externally managed PostgreSQL service through
+`DatabaseMode=external`. The default remains `DatabaseMode=aurora` with
+`RemoveLegacyNetwork=false`, so an existing deployment keeps its current database
+and networking. Changing the mode changes connections; it does not copy data.
+
+Store the destination credentials in a same-region AWS Secrets Manager secret
+using the default `aws/secretsmanager` key. Its JSON fields are `host`, `port`,
+`database`, `username`, and `password`. Use the provider's pooled endpoint for the
+Lambda application connections. Supply only the secret ARN through the
+`ExternalDatabaseSecretArn` parameter or GitHub environment variable
+`EXTERNAL_DATABASE_SECRET_ARN`. Neither a connection URL nor a password belongs
+in CloudFormation parameters, Lambda environment variables, GitHub variables, or
+deployment logs. The runtime fetches the secret and verifies database TLS.
+
+Use separate reviewed deployments:
+
+1. First deploy `MaintenanceMode=true` while retaining `DatabaseMode=aurora` and
+   `RemoveLegacyNetwork=false`. The GitHub variable is
+   `CITEVIA_MAINTENANCE_MODE=true`. This sets the application maintenance guard,
+   disables scanner SQS polling and disables its reconciliation rule. Existing
+   per-project schedules may continue adding jobs to the queue without processing
+   them. Wait for old invocations to drain: at least the scanner's 300-second
+   timeout and the API's 29-second timeout after those versions stop receiving
+   work. Preserve the current reserved-concurrency setting.
+2. Complete the data-copy and final-sync procedure while the source is frozen.
+   Apply destination migrations through the reviewed direct operator procedure
+   and verify destination schema, rows and access before selecting it. The
+   deployment workflow skips its automatic `database:migrate` Lambda invocation
+   while maintenance is true, so it cannot mutate the frozen source as a
+   deployment check.
+3. Cut over with `MaintenanceMode=true`, `DatabaseMode=external`, the reviewed
+   `ExternalDatabaseSecretArn`, and `RemoveLegacyNetwork=false`. For the deployment
+   workflow, set `DATABASE_MODE=external`, `EXTERNAL_DATABASE_SECRET_ARN` to that
+   ARN, and `REMOVE_LEGACY_NETWORK=false`; keep maintenance enabled. Both Lambdas
+   leave the VPC and connect
+   directly to the external service over TLS. Their IAM permissions select that
+   database secret. The existing Aurora database, private subnets, NAT gateway
+   and SSM tunnel remain available for rollback. Verify destination integrity
+   through the operator connection while application writers remain paused.
+4. Explicitly deploy `MaintenanceMode=false` / `CITEVIA_MAINTENANCE_MODE=false`
+   with the same external database and retained-network settings. This resumes
+   the scanner event source, reconciliation rule and application access. Verify
+   authenticated reads, reviewed writes, reconciliation and provider access.
+5. After those checks, use a separate cleanup deployment with the same external database
+   settings and `RemoveLegacyNetwork=true` / `REMOVE_LEGACY_NETWORK=true`. This
+   removes only the legacy NAT gateway, its EIP, the private default internet
+   route, and the SSM tunnel instance/role/profile. The workflow rejects cleanup
+   unless the currently deployed stack already uses external database mode.
+   CloudFormation also rejects cleanup in Aurora mode and external mode without
+   a secret ARN.
+
+The Aurora cluster and writer remain managed retained resources while
+`RetireLegacyDatabase=false` (the default). The cluster stays deletion-protected,
+and the VPC, private subnets, subnet group and database security groups remain
+attached to it. **Aurora continues to incur charges after this cutover.**
+Selecting Neon or removing legacy egress does not delete it automatically. This
+template also creates retained Aurora when creating a new external-mode stack
+with the default retirement setting.
+
+`DatabaseSecretArn` identifies the selected database secret;
+`ActiveDatabaseMode` identifies the connection mode. `LegacyDatabaseHost` and
+`LegacyDatabaseSecretArn` identify managed Aurora for reviewed operations while
+`RetireLegacyDatabase=false`; both outputs disappear after retirement.
+`DatabaseHost` and `DatabaseName` are present only in Aurora mode, since external
+connection details remain in Secrets Manager. `DatabaseTunnelInstanceId` is
+omitted after explicit tunnel cleanup. No output contains credentials or a
+database connection URL.
+
+`./db_tunnel prod` detects external mode and prints direct PostgreSQL connection
+guidance without opening an SSM tunnel. Use the database provider console for
+connection details and enable TLS certificate verification in your SQL client.
+Aurora mode continues to use the SSM port-forwarding helper.
+
+When the new GitHub variables are unset, the workflow inherits the deployed
+mode, secret ARN, cleanup flag, maintenance flag, compact run state flag and retirement flag rather than
+reverting a completed cutover to Aurora, unfreezing an offline migration or
+recreating retired Aurora. A stack without these parameters uses the existing
+Aurora defaults with maintenance, compact run state and retirement disabled.
+
+For rollback after egress cleanup, first keep external mode and deploy
+`RemoveLegacyNetwork=false` to recreate its NAT gateway, EIP and SSM tunnel.
+Then complete a reviewed data reconciliation while writers are paused before
+switching to `DatabaseMode=aurora`. The retained source becomes stale as soon as
+new writes reach Neon; a connection-mode change alone is not a data rollback.
+Use the same maintenance/drain and integrity-verification procedure before
+resuming application writers on the restored destination.
+
+### Explicit Aurora retirement after verified migration
+
+Once the Neon copy, constraints, sequences and application checks are verified,
+retain a final Aurora cluster snapshot and wait until AWS reports it available.
+Record the physical cluster/writer identifiers, snapshot ARN and relevant legacy
+configuration before removing the legacy stack outputs. Preserve S3 evidence.
+
+Deploy `RetireLegacyDatabase=true` / GitHub `RETIRE_LEGACY_DATABASE=true` only with
+`DatabaseMode=external` and `RemoveLegacyNetwork=true`. CloudFormation rules reject
+other combinations, and the workflow also requires an already deployed external
+database. This removes the Aurora cluster and writer from CloudFormation's
+management under their `DeletionPolicy: Retain`; it **does not delete either
+physical resource or stop billing**. Maintenance mode and the Neon configuration
+are independent and remain at their selected values.
+
+After confirming the final snapshot is available and Neon remains authoritative,
+use the explicitly authorized RDS retirement procedure: disable deletion
+protection on the retained cluster, delete its retained writer and cluster, and
+verify both physical resources are gone. Preserve the final snapshot for the
+agreed recovery window. Aurora compute/storage charges end only when deletion
+completes; retained snapshots still incur backup storage charges. Confirm the
+actual resource state and subsequent AWS billing rather than treating the
+CloudFormation flag as proof of savings. The remaining VPC, private subnets,
+route tables and security groups are kept for operator recovery work.
+
+Clearing the retirement flag cannot reconnect an orphaned or deleted database:
+CloudFormation would attempt to provision new resources. The workflow rejects
+this reversal; rollback after retirement requires a reviewed snapshot restore
+and resource import or another explicit database migration.
+
+AWS references: [conditional property removal with AWS::NoValue](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/conditions-section-structure.html),
+[CloudFormation parameter rules](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/rules-section-structure.html),
+[Retain during stack updates](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-deletionpolicy.html).

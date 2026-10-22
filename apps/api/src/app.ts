@@ -1082,29 +1082,20 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           !['asc', 'desc'].includes(direction)
         )
           throw new HttpError(400, 'INVALID_SORT', 'Invalid answer sort.');
-        paging(query);
+        const { offset, limit } = paging(query);
         const end = now(),
           start =
             days === 'all'
               ? new Date(0)
               : new Date(end.getTime() - Number(days) * 86400000 + 1);
-        const history = await repository.listPromptHistory(
-          projectId,
-          start.toISOString(),
-          end.toISOString(),
-          promptId,
-        );
-        const page = paginate(
-          promptAnswers(
-            history,
-            projectId,
-            promptId,
-            providerFilter,
-            sort as AnswerSort,
-            direction as 'asc' | 'desc',
-          ),
-          query,
-        );
+        const indexedPage = await repository.listPromptAnswerPage?.(projectId, {
+          start: start.toISOString(), end: end.toISOString(), promptId,
+          provider: providerFilter, sort: sort as AnswerSort, direction: direction as 'asc' | 'desc', offset, limit,
+        });
+        const page = indexedPage ? { ...indexedPage, nextCursor: offset + limit < indexedPage.total
+          ? Buffer.from(String(offset + limit)).toString('base64url') : null }
+          : paginate(promptAnswers(await repository.listPromptHistory(projectId, start.toISOString(), end.toISOString(), promptId),
+            projectId, promptId, providerFilter, sort as AnswerSort, direction as 'asc' | 'desc'), query);
         const items: PromptAnswerRow[] = [];
         // Read only this page's immutable evidence, with bounded S3 concurrency.
         for (let i = 0; i < page.items.length; i += 5) {

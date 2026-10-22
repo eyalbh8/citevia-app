@@ -56,7 +56,7 @@ export async function backfillTracking(
         missing++;
         continue;
       }
-      await runtime.repository.saveMeasurement(result, run, answer, analysis);
+      await runtime.repository.saveMeasurement(result, run, answer, analysis, { force: true });
       processed++;
     }
     checkpoint?.({

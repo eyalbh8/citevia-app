@@ -1,6 +1,6 @@
 # Native scan providers
 
-Each account owns one portfolio of up to 50 active prompts. A weekly or manual kickoff freezes the prompts, brand, competitors, locale, provider list and models, then creates a separate run for each enabled provider. All three providers produce up to 150 answers and 150 separate analysis calls per account per week. Onboarding research, generation and retries add calls. Provider APIs are billed separately.
+Each account owns one portfolio of up to 50 active prompts. A weekly or manual kickoff freezes the prompts, brand, competitors, locale, provider list and models, then creates a separate run for each enabled provider. All three providers produce up to 150 answers and 150 independent analyses per account per week. Exact compatible analysis reuse can avoid paid calls; scheduled analyses can use native Batch. Onboarding research, generation and retries add calls. Provider APIs are billed separately. See [cost optimization and rollout](COST_OPTIMIZATION.md).
 
 New accounts enable ChatGPT, Perplexity and Gemini. Existing accounts with no `scanProviders` setting retain OpenAI only. An owner or system administrator can enable providers and edit their models/presets in **Settings → Scan providers**. Saving changes applies to future kickoffs; captured answers and historical snapshots are preserved. At least one provider must remain enabled.
 
@@ -15,7 +15,7 @@ OPENAI_API_KEY=YOUR_OPENAI_KEY
 PERPLEXITY_API_KEY=YOUR_PERPLEXITY_KEY
 GEMINI_API_KEY=YOUR_GEMINI_KEY
 OPENAI_GENERATION_MODEL=gpt-4.1-2025-04-14
-OPENAI_EXTRACTION_MODEL=gpt-4.1-mini-2025-04-14
+OPENAI_EXTRACTION_MODEL=gpt-6-luna
 PERPLEXITY_PRESET=fast@2026-10-16.0
 GEMINI_GENERATION_MODEL=gemini-3.8-flash
 ```
@@ -34,7 +34,7 @@ OpenAI remains required for generating brandbooks/prompts and for structured evi
 
 The checked-in Gemini and Perplexity defaults are candidates taken from current documentation, **not live-validated configuration**. Run the commands below using your accounts before production. Prefer versioned presets/model IDs; a moving alias can change underlying behavior. The native returned model/version remains in each capture for audit. Comparisons require the same provider, configured model/preset, extraction model, parser, brand/competitors, locale and matching prompt versions.
 
-Native receipts are stored privately before analysis, with separate S3 paths for every provider run. PostgreSQL keeps the unchanged iGEO schema: `account_settings.ai_engines` records configurations; `scans` gets one record per provider run; `prompt_responses.provider` and `results.provider` contain `openai`, `perplexity` or `gemini`. Workflow JSON stores `snapshot.provider`, the frozen `scanProviders` and `groupId`. Historical snapshots with no provider mean OpenAI. No schema migration or rewrite of historical data is required.
+Native receipts are stored privately before analysis, with separate S3 paths for every provider run. PostgreSQL retains the iGEO baseline: `account_settings.ai_engines` records configurations; `scans` gets one record per provider run; `prompt_responses.provider` and the optional `results.provider` mirror contain `openai`, `perplexity` or `gemini`. Workflow snapshots store `provider`, the frozen `scanProviders` and `groupId`. Historical snapshots with no provider mean OpenAI. Cost optimizations add migrations 011–013; originals and historical methodology remain preserved.
 
 Google may return Google-hosted redirect URLs for citations. Citevia preserves those exact native links and aggregates their returned URL hosts; it does not guess a publisher domain from a title or fetch arbitrary citation destinations. The native receipt is the authority for attribution. API observations also differ from personalized consumer ChatGPT, Perplexity or Gemini browser sessions.
 

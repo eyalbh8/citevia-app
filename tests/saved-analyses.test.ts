@@ -65,6 +65,11 @@ function measurement(project: Project, id: string) {
 describe.each(['memory', 'postgres'] as const)(
   'indexed saved analyses (%s)',
   (backend) => {
+    const indexedAnalysis = (value: Analysis): Analysis => {
+      if (backend !== 'postgres') return value;
+      const { raw: _raw, ...projection } = value;
+      return projection;
+    };
     it('uses project and receipt identity, returns authoritative null, and omits missing/stale records', async () => {
       const db = backend === 'postgres' ? await localPostgres() : undefined;
       const repository: Repository = db
@@ -114,7 +119,7 @@ describe.each(['memory', 'postgres'] as const)(
         expect(rows).toHaveLength(2);
         expect(
           rows.find((row) => row.responseId === first.ref.responseId)?.analysis,
-        ).toEqual(first.saved);
+        ).toEqual(indexedAnalysis(first.saved));
         expect(
           rows.find((row) => row.responseId === empty.ref.responseId),
         ).toEqual({ responseId: empty.ref.responseId, analysis: null });
@@ -182,7 +187,7 @@ describe.each(['memory', 'postgres'] as const)(
         expect(
           await repository.listSavedAnalyses(project.id, [updatedRef]),
         ).toEqual([
-          { responseId: first.ref.responseId, analysis: updatedAnalysis },
+          { responseId: first.ref.responseId, analysis: indexedAnalysis(updatedAnalysis) },
         ]);
         expect(
           await repository.listSavedAnalyses(project.id, [first.ref]),
@@ -198,7 +203,7 @@ describe.each(['memory', 'postgres'] as const)(
           expect(
             await repository.listSavedAnalyses(project.id, [updatedRef]),
           ).toEqual([
-            { responseId: first.ref.responseId, analysis: updatedAnalysis },
+            { responseId: first.ref.responseId, analysis: indexedAnalysis(updatedAnalysis) },
           ]);
           await db.query(
             "UPDATE prompt_responses SET s3_key='another-capture' WHERE id=$1",

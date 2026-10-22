@@ -155,6 +155,8 @@ export function normalizeGemini(
       outputTokens:
         count(usage?.candidatesTokenCount) + count(usage?.thoughtsTokenCount),
       totalTokens: count(usage?.totalTokenCount),
+      cachedInputTokens: count(usage?.cachedContentTokenCount),
+      reasoningTokens: count(usage?.thoughtsTokenCount),
       ...(Array.isArray(grounding?.webSearchQueries)
         ? { searchQueries: grounding.webSearchQueries.length }
         : {}),

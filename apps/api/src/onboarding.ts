@@ -60,7 +60,7 @@ export async function createAccounts(
       generationModel:
         process.env.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14',
       extractionModel:
-        process.env.OPENAI_EXTRACTION_MODEL || 'gpt-4.1-mini-2025-04-14',
+        process.env.OPENAI_EXTRACTION_MODEL || 'gpt-6-luna',
       scanProviders: [
         {
           provider: 'openai',
