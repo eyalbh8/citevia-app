@@ -93,6 +93,17 @@ export interface DemoConfig {
     companies?: string[];
   }[];
   traffic?: { pages?: string[]; countries?: string[]; browsers?: string[]; devices?: string[] };
+  trackedUrls?: {
+    url: string;
+    title: string;
+    publishedAt: string;
+    createdAt?: string;
+    contentType?: 'BLOG' | 'WEBSITE' | 'SOCIAL';
+    imageUrl?: string;
+    sourcePublishedAt?: string;
+    sourceTrackedAt?: string;
+    trackingPeriods?: { start: string; end: string | null }[];
+  }[];
 }
 export interface Membership {
   projectId: string;

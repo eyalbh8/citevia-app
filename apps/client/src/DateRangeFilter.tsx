@@ -92,8 +92,8 @@ export default function DateRangeFilter({
   const historyEnd = today < maxDay ? today : maxDay;
   const demoPresets = demo
     ? [
-        { label: 'Demo history', start: demo.startDate, end: historyEnd },
-        { label: 'Full demo year', start: demo.startDate, end: demo.endDate },
+        { label: 'All history', start: demo.startDate, end: historyEnd },
+        { label: 'Full year', start: demo.startDate, end: demo.endDate },
       ]
     : [];
   const presets = includeLast24Hours
@@ -112,10 +112,10 @@ export default function DateRangeFilter({
       : draft.start > effectiveEnd
         ? 'End date must be on or after start date.'
         : minDay && draft.start < minDay
-          ? `Demo data starts on ${shortDate(minDay)}.`
+          ? `Choose dates on or after ${shortDate(minDay)}.`
         : effectiveEnd > maxDay
           ? demo
-            ? `Demo data ends on ${shortDate(maxDay)}.`
+            ? `Choose dates up to ${shortDate(maxDay)}.`
             : 'Choose dates up to today.'
           : dateOf(effectiveEnd).getTime() -
                 dateOf(draft.start).getTime() +
@@ -500,7 +500,7 @@ export default function DateRangeFilter({
                 (draft.start && !draft.end
                   ? 'Choose an end date, or apply to view this day.'
                   : demo
-                    ? 'Includes both dates (UTC). Future dates are synthetic projections.'
+                    ? 'Includes both dates (UTC).'
                     : 'Includes both dates. Times shown in UTC.')}
             </p>
             <footer className="date-range-actions">

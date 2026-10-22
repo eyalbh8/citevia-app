@@ -482,9 +482,7 @@ export default function PromptsView({
         )}
         {!owner && (
           <p className="prompt-notice">
-            {project.demo
-              ? 'This read-only demo includes 50 prompts and two simulated scans each week.'
-              : 'You have view access. A project owner can manage prompts.'}
+            You have view access. A project owner can manage prompts.
           </p>
         )}
         {selected.length > 0 && (

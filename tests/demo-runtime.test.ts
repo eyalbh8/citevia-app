@@ -165,8 +165,8 @@ describe('virtual demo measurements', () => {
     const results = await demo.repository.listResults(project.id, run.id);
     const result = results.find((item) => item.target!.mentioned)!;
     const answer = await demo.artifacts.get<CapturedAnswer>(result.captureKey!);
-    expect(answer?.text).toContain('Synthetic demo scenario');
-    expect(answer?.text).toContain('Saved source example:');
+    expect(answer?.text).not.toMatch(/demo|synthetic|Saved source example:/i);
+    expect(answer?.text).toContain('Nayax offers a comprehensive unattended payment solution.');
     expect(answer?.citations).toHaveLength(result.citationCount);
     const citations = await demo.repository.listNativeCitations(project.id, [`${run.snapshot.provider}:${result.captureKey}`]);
     expect(citations).toEqual([{ captureKey: `${run.snapshot.provider}:${result.captureKey}`, citations: answer!.citations }]);
@@ -191,7 +191,7 @@ describe('virtual demo measurements', () => {
     for (const result of history.results.slice(0, 150)) {
       const analysis = (await demo.artifacts.get<Analysis>(result.analysisKey!))!;
       const answer = (await demo.artifacts.get<CapturedAnswer>(result.captureKey!))!;
-      const measuredText = answer.text.split('Saved source example:')[0];
+      const measuredText = answer.text;
       expect(analysis.companies!.map((company) => company.rank)).toEqual(analysis.companies!.map((_, index) => index + 1));
       expect(new Set(analysis.companies!.map((company) => company.name)).size).toBe(analysis.companies!.length);
       for (const company of analysis.companies!) {
@@ -239,7 +239,7 @@ describe('virtual demo measurements', () => {
       trafficFilters('2026-10-22T12:37:00.000Z', '2026-10-23T12:36:59.999Z', 'hourly'));
     expect(hourly.current).toBeGreaterThan(0);
     expect(hourly.series.reduce((sum, item) => sum + Object.values(item.values).reduce((total, visits) => total + visits, 0), 0)).toBe(hourly.current);
-    expect((await demo.repository.trafficStatus(project.id)).sites[0].trackerVersion).toBe('demo-v1');
+    expect((await demo.repository.trafficStatus(project.id)).sites[0].trackerVersion).toBe('citevia-v1');
   });
 
   it('preserves source traffic category ordering across small hourly country and provider counts', async () => {

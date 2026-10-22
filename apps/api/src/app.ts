@@ -311,7 +311,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       if (!stored) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
       const project = { ...stored, role: stored.demo ? 'viewer' as const : member.role };
       if (stored.demo && !['GET', 'HEAD'].includes(method))
-        throw new HttpError(403, 'DEMO_READ_ONLY', 'This demo uses a synthetic growth scenario. Scans and edits are disabled.');
+        throw new HttpError(403, 'ACCOUNT_READ_ONLY', 'This account is read-only. Scans and edits are unavailable.');
       const providerFilter = query.has('provider')
         ? scanProviderSchema.parse(query.get('provider'))
         : undefined;

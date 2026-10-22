@@ -157,7 +157,7 @@ export default function TrackingView({
   onResponse: (id: string) => void;
   notify: (s: string) => void;
 }) {
-  const [selection, setSelection] = useState(() => initialSelection('30')),
+  const [selection, setSelection] = useState(() => initialSelection('30', project.demo)),
     [status, setStatus] = useState('all'),
     [sort, setSort] = useState('newest'),
     [group, setGroup] = useState('status'),
@@ -192,7 +192,7 @@ export default function TrackingView({
       refresh((r) => r + 1);
       setStatus(saved.active ? 'all' : 'paused');
       setPage(0);
-      setSelection(initialSelection('30'));
+      setSelection(initialSelection('30', project.demo));
       notify(
         saved.active
           ? 'Tracking activated. Future scans will check this URL.'

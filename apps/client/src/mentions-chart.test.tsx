@@ -155,4 +155,82 @@ describe('Mentions chart', () => {
     expect(container.querySelectorAll('.mentions-measurement')).toHaveLength(3);
     expect(lines('openai')).toHaveLength(0);
   });
+
+  it('keeps long histories readable with sparse point markers while preserving every measurement and hover value', async () => {
+    const value = summary();
+    value.period.start = '2026-09-01T00:00:00.000Z';
+    value.providers = [value.providers[0]];
+    value.providers[0].points = Array.from({ length: 52 }, (_, index) => ({
+      date: new Date(Date.UTC(2026, 8, 1 + index)).toISOString().slice(0, 10),
+      count: 20 + index,
+    }));
+    await render(value);
+    expect(lines('openai')).toHaveLength(51);
+    expect(container.querySelectorAll('.mentions-measurement').length).toBeLessThanOrEqual(15);
+    const tooltip = await focusDate('Sep 2, 2026 UTC');
+    expect(tooltip.textContent).toContain('ChatGPT21');
+    expect(container.querySelector('.mentions-measurement[data-active="true"] title')?.textContent)
+      .toContain('21 mentions on Sep 2, 2026 UTC');
+    const targets = [...container.querySelectorAll<SVGRectElement>('rect[tabindex="0"]')];
+    expect(Number(targets[0].getAttribute('x')) + Number(targets[0].getAttribute('width')))
+      .toBeCloseTo(Number(targets[1].getAttribute('x')));
+  });
+
+  it('groups published URLs by day into a scrolling popup with accurate counts and opens tracking details', async () => {
+    const value = summary();
+    const items = Array.from({ length: 8 }, (_, index) => ({
+      id: `article-${index}`,
+      url: `https://example.com/blog/article-${index}`,
+      title: `Article ${index}`,
+      appearances: index * 3,
+      contentType: 'BLOG' as const,
+      publishedAt: '2026-10-20T09:30:00.000Z',
+      ...(index === 0 ? { imageUrl: 'https://example.com/article.jpg' } : {}),
+    }));
+    value.markers = [
+      { date: '2026-10-20', items: items.slice(0, 4) },
+      { date: '2026-10-20T12:00:00.000Z', items: items.slice(3) },
+      { date: '2026-10-19', items: [] },
+    ];
+    await render(value);
+    const badges = container.querySelectorAll<HTMLButtonElement>('.chart-publication-badge');
+    expect(badges).toHaveLength(1);
+    const badge = [...badges].find((button) => button.getAttribute('aria-label')?.startsWith('8 tracked URLs'))!;
+    expect(badge).toBeDefined();
+    await act(async () => badge.click());
+    const popup = container.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(badge.getAttribute('aria-expanded')).toBe('true');
+    expect(popup.getAttribute('aria-label')).toBe('Tracked URLs on Oct 20, 2026 UTC');
+    expect(popup.querySelectorAll('li')).toHaveLength(8);
+    expect([...popup.querySelectorAll('.marker-content-citations')].map((element) => element.textContent))
+      .toEqual(['Cited: 0', 'Cited: 3', 'Cited: 6', 'Cited: 9', 'Cited: 12', 'Cited: 15', 'Cited: 18', 'Cited: 21']);
+    expect(popup.querySelector('.marker-content-meta')?.textContent).toContain('Blog');
+    expect(popup.querySelector('time')?.getAttribute('datetime')).toBe('2026-10-20T09:30:00.000Z');
+    expect(popup.querySelector('.marker-content-image')?.getAttribute('src')).toBe('https://example.com/article.jpg');
+    expect(Number.parseFloat(popup.style.maxHeight)).toBeLessThanOrEqual(360);
+    await act(async () => popup.querySelector<HTMLButtonElement>('[aria-label="Open tracking details for Article 7"]')!.click());
+    expect(tracked).toHaveBeenCalledWith('article-7');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('keeps one publication popup open and dismisses it with Escape or an outside click', async () => {
+    const value = summary();
+    value.markers = ['2026-10-20', '2026-10-22'].map((date) => ({
+      date,
+      items: [{ id: date, title: 'Blog post', url: 'https://example.com/blog', appearances: 4 }],
+    }));
+    await render(value);
+    const [first, second] = container.querySelectorAll<HTMLButtonElement>('.chart-publication-badge');
+    await act(async () => first.click());
+    await act(async () => second.click());
+    expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(first.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(second);
+    await act(async () => first.click());
+    await act(async () => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(first.getAttribute('aria-expanded')).toBe('false');
+  });
 });

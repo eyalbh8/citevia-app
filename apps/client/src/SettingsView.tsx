@@ -75,7 +75,7 @@ export default function SettingsView({
                       <strong>{scheduleLabel(project)}</strong>
                       <br />
                       {project.demo
-                        ? 'Simulated schedule for the demo. No live scans are scheduled.'
+                        ? 'Two scans per week.'
                         : project.enabled
                         ? (project.nextScanAt || nextScanAt)
                           ? `Next scan: ${new Date((project.nextScanAt || nextScanAt)!).toLocaleString('en', { timeZone: project.timezone, dateStyle: 'medium', timeStyle: 'short' })} (${project.timezone})`

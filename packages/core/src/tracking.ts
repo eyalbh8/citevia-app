@@ -59,6 +59,7 @@ export interface TrackedUrl {
   url: string;
   normalizedUrl: string;
   title: string;
+  imageUrl?: string;
   contentType: 'BLOG' | 'WEBSITE' | 'SOCIAL';
   active: boolean;
   createdAt: string;
@@ -270,7 +271,7 @@ export interface MentionsSummary {
   comparison: 'first_to_last_observed_day';
   markers: {
     date: string;
-    items: { id: string; url: string; title: string; appearances: number }[];
+    items: { id: string; url: string; title: string; appearances: number; contentType?: TrackedUrl['contentType']; imageUrl?: string; publishedAt?: string }[];
   }[];
 }
 export interface MentionAnswer extends PromptAnswerRow {

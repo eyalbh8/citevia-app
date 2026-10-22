@@ -54,11 +54,15 @@ Open **MCP connections** to connect an assistant through OAuth or a named API ke
 
 ## Nayax demo account
 
-`Nayax Demo` is an explicitly marked, read-only synthetic growth scenario based on a sanitized copy of Nayax's iGEO brand, 50 existing prompts, competitor identities, answer excerpts and traffic categories. It covers 23 April 2026 through 23 April 2027, with two simulated scan groups per week across three providers. The date picker offers **Demo history** and **Full demo year**; future dates are projections.
+`Nayax` uses the regular account presentation, backed internally by a read-only synthetic growth scenario based on a sanitized copy of Nayax's iGEO brand, 50 existing prompts, competitor identities, answer excerpts and traffic categories. It covers 23 April 2026 through 23 April 2027, with two simulated scan groups per week across three providers. The date picker offers **All history** and **Full year**. The UI does not show special scenario labels; future measurements remain generated projections internally.
 
 Only the compact project configuration and normal account/prompt mirrors are saved. Demo answers, scans, citations and traffic totals are generated deterministically when requested; no synthetic result/event rows, S3 evidence objects or paid provider calls are created. Authentication and account membership still apply. Scans, edits, tracker collection and scheduler provisioning are disabled for the demo; ordinary accounts retain their existing behavior.
 
+Traffic targets 2,000 ChatGPT visits in October 2026, with 18–54 visits for each other provider, and approximately 10% calendar-month growth. Each total reconciles across date/provider/country filters, charts and dimension tables. Tracked blog metadata is compact configuration; appearances are derived from the same generated answer citations used in Tracking and Mentions. Publication badges open a scrollable list with titles, dates and citation counts, then link to tracking details.
+
 To preview or create the account from an authorized sanitized source export, use `npm run demo:nayax -- --source /private/path/sanitized-source.json --mode local|aws [--apply]`. The default is a preview; applying is idempotent and refuses to replace a real account. The command never connects to iGEO. Source journey stages were unset, so demo stages are inferred from the original questions. Metrics are illustrative growth values, not copied historical measurements or forecasts. Standard database storage and API compute still apply; the demo adds no AI usage.
+
+To refresh only this account's display metadata and enroll verified official Nayax blogs, use `npm run demo:nayax -- --refresh --blogs /private/path/nayax-blogs.json --mode local|aws [--apply]`. Each item needs `url` and `title`; original publication/tracking dates may be retained as `sourcePublishedAt` and `sourceTrackedAt`. Scenario enrollment dates are distributed across the configured year. The operation is idempotent, uses optimistic version checks, and requires the saved Nayax source identity.
 
 ## AI Traffic
 

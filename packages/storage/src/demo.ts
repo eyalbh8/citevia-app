@@ -1,8 +1,7 @@
 import {
   buildSummary,
   projectProviders,
-  TRAFFIC_PROVIDERS,
-  trafficBuckets,
+  trackedUrlKey,
   type Analysis,
   type BrandAnalysis,
   type CapturedAnswer,
@@ -14,12 +13,10 @@ import {
   type PromptResult,
   type ScanProvider,
   type ScanRun,
-  type TrafficAggregate,
-  type TrafficFilters,
-  type TrafficProvider,
-  type TrafficRow,
 } from '@citevia/core';
 import type { Repository, Runtime, SavedAnalysisRef } from './contracts.js';
+import { aggregateScenarioTraffic } from './demo-traffic.js';
+import { createScenarioTracking } from './demo-tracking.js';
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -166,9 +163,14 @@ function measurementPlan(project: Project, provider: ScanProvider) {
   const plan = { promptOrder: new Map(ordered.map((prompt, index) => [prompt.id, index])),
     scans: new Map<number, { phase: number; mentionCount: number; positiveCount: number }>() };
   let previousCount = 0, previousPositive = 0;
+  const profile = {
+    openai: { baseline: 0.42, growth: 0.54, curve: 1 },
+    perplexity: { baseline: 0.34, growth: 0.56, curve: 1.08 },
+    gemini: { baseline: 0.28, growth: 0.58, curve: 1.18 },
+  }[provider];
   for (const at of scanTimes(project)) {
     const phase = progress(project, at);
-    const mentionCount = Math.min(prompts.length, Math.floor(prompts.length * (0.32 + 0.64 * phase)));
+    const mentionCount = Math.min(prompts.length, Math.floor(prompts.length * (profile.baseline + profile.growth * phase ** profile.curve)));
     // Preserve the previous positive share when a new prompt starts mentioning
     // the brand; otherwise rounding could create small misleading downward ticks.
     const positiveCount = Math.min(mentionCount, Math.max(
@@ -271,7 +273,18 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     pools.set(prompt.id, unique);
   }
   const size = Math.min(unique.length, 1 + Math.floor(progress(project, Date.parse(run.scheduledAt)) * 5));
-  return unique.slice(0, size).map((citation, index) => ({
+  const at = iso(Date.parse(run.scheduledAt));
+  const tracked = configFor(project)!.trackedUrls || [];
+  const trackedKeys = new Set(tracked.map(item => trackedUrlKey(item.url)));
+  const candidates = unique.filter(item => !trackedKeys.has(trackedUrlKey(item.url)));
+  const eligible = tracked.filter(item => (item.createdAt || item.publishedAt) <= at && item.publishedAt <= at);
+  const base = candidates.slice(0, size);
+  // Gradual pickup of enrolled content; the same citations drive every tracking view.
+  if (eligible.length && hash(`${run.snapshot.provider}:${prompt.id}`) % 5 < 2) {
+    const item = eligible[hash(`${run.id}:${prompt.id}:content`) % eligible.length];
+    base.push({ url: item.url, title: item.title });
+  }
+  return [...new Map(base.map(item => [item.url, item])).values()].map((citation, index) => ({
     id: `citation_${index + 1}`, blockId: 'answer', url: citation.url,
     title: citation.title || new URL(citation.url).hostname, start: null, end: null,
   }));
@@ -321,9 +334,9 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
   // The source excerpt is a reusable illustration, not a second provider call.
   const excerpt = result.target?.mentioned ? sample?.answerText?.trim().slice(0, 1800) : undefined;
   const text = [
-    'Synthetic demo scenario. Projected measurements and example answers are illustrative.',
+    'For unattended retail, compare payment acceptance, integration coverage, remote management, and support when selecting a platform.',
     selection || 'Compare payment platforms by integration coverage, support, and total cost.',
-    excerpt ? `Saved source example:\n${excerpt}` : '',
+    excerpt || '',
   ].filter(Boolean).join('\n\n');
   const companySpans = companies.map((company, index) => ({
     blockId: 'answer', quote: sentences[index],
@@ -378,106 +391,25 @@ function historyFor(project: Project, start: string, end: string, promptId?: str
   return { runs, results };
 }
 
-function add(counts: Map<string, number>, label: string, visits: number) {
-  if (visits) counts.set(label, (counts.get(label) || 0) + visits);
-}
-
-function rows(counts: Map<string, number>): TrafficRow[] {
-  return [...counts].map(([label, visits]) => ({ label, visits }))
-    .sort((a, b) => b.visits - a.visits || a.label.localeCompare(b.label));
-}
-
-/** Integer partitions reconcile every traffic panel without visitor-level rows. */
-function partition(total: number, labels: string[], counts: Map<string, number>) {
-  const denominator = labels.length * (labels.length + 1) / 2;
-  let consumed = 0;
-  for (let index = 0; index < labels.length; index++) {
-    const cumulative = ((index + 1) * (2 * labels.length - index)) / 2;
-    const next = Math.floor(total * cumulative / denominator);
-    add(counts, labels[index], next - consumed);
-    consumed = next;
-  }
-}
-
-function trafficFor(project: Project, filters: TrafficFilters): TrafficAggregate {
-  const config = configFor(project)!;
-  const dimensions = config.traffic;
-  const clean = (values: string[] | undefined, fallback: string[]) => [...new Set(values?.filter(Boolean).slice(0, 12) || fallback)];
-  const countries = clean(dimensions?.countries?.map((country) => country.toUpperCase()).filter((country) => /^[A-Z]{2}$/.test(country)), ['US', 'GB', 'DE', 'IL']);
-  if (!countries.length) countries.push('US');
-  const pages = clean(dimensions?.pages, ['/', '/solutions/', '/products/', '/contact/']);
-  const browsers = clean(dimensions?.browsers, ['Chrome', 'Safari', 'Edge', 'Firefox']);
-  const devices = clean(dimensions?.devices, ['desktop', 'mobile', 'tablet']);
-  if (!pages.length) pages.push('/');
-  if (!browsers.length) browsers.push('Chrome');
-  if (!devices.length) devices.push('desktop');
-  const providers = TRAFFIC_PROVIDERS.filter((provider) => !filters.providers.length || filters.providers.includes(provider));
-  const totals = new Map(providers.map((provider) => [provider, { provider, visits: 0, previous: 0 }]));
-  const series = trafficBuckets(filters.period).map((date) => ({ date, values: {} as Partial<Record<TrafficProvider, number>> }));
-  const seriesIndex = new Map(series.map((point) => [point.date, point.values]));
-  const sources = new Map<string, number>(), pageCounts = new Map<string, number>(), locations = new Map<string, number>();
-  const browserCounts = new Map<string, number>(), deviceCounts = new Map<string, number>();
-  const hosts: Record<TrafficProvider, string> = {
-    openai: 'chatgpt.com', claude: 'claude.ai', perplexity: 'perplexity.ai',
-    gemini: 'gemini.google.com', copilot: 'copilot.microsoft.com', deepseek: 'deepseek.com',
-  };
-  const scales: Record<TrafficProvider, number> = { openai: 1, perplexity: 0.61, gemini: 0.47, claude: 0.32, copilot: 0.23, deepseek: 0.12 };
-  const currentStart = Date.parse(filters.period.start), currentEnd = Date.parse(filters.period.end);
-  const previousStart = Date.parse(filters.previous.start), previousEnd = Date.parse(filters.previous.end);
-  const from = Math.max(day(config.startDate), Math.min(previousStart, currentStart));
-  const to = Math.min(day(config.endDate) + DAY - 1, Math.max(previousEnd, currentEnd));
-  const step = filters.period.granularity === 'hourly' ? HOUR : DAY;
-  for (let at = Math.floor(from / DAY) * DAY; at <= to; at += DAY) {
-    const phase = progress(project, at);
-    for (const provider of providers) {
-      const daily = Math.round((52 + 590 * phase + 340 * phase * phase) * scales[provider]);
-      const perCountry = new Map<string, number>();
-      partition(daily, countries, perCountry);
-      for (const [country, count] of perCountry) {
-        if (filters.countries.length && !filters.countries.includes(country)) continue;
-        for (let hour = 0; hour < 24; hour++) {
-          const timestamp = at + hour * HOUR;
-          const hourly = Math.floor(count * (hour + 1) / 24) - Math.floor(count * hour / 24);
-          const amount = (start: number, end: number) => {
-            const begin = Math.max(timestamp, start), finish = Math.min(timestamp + HOUR - 1, end);
-            if (begin > finish) return 0;
-            return Math.floor(hourly * (finish - timestamp + 1) / HOUR) - Math.floor(hourly * (begin - timestamp) / HOUR);
-          };
-          const visits = amount(currentStart, currentEnd), previous = amount(previousStart, previousEnd);
-          const total = totals.get(provider)!;
-          total.visits += visits;
-          total.previous += previous;
-          if (!visits) continue;
-          const bucket = seriesIndex.get(iso(Math.floor(timestamp / step) * step));
-          if (bucket) bucket[provider] = (bucket[provider] || 0) + visits;
-          add(sources, hosts[provider], visits);
-          add(locations, country, visits);
-        }
-      }
-    }
-  }
-  const current = [...totals.values()].reduce((sum, item) => sum + item.visits, 0);
-  // Partition the complete filtered total: rounding tiny hourly counts would
-  // otherwise send most visits to the last category and reverse source order.
-  partition(current, pages, pageCounts);
-  partition(current, browsers, browserCounts);
-  partition(current, devices, deviceCounts);
-  return {
-    current,
-    previous: [...totals.values()].reduce((sum, item) => sum + item.previous, 0),
-    providers: [...totals.values()], series,
-    sources: rows(sources), pages: rows(pageCounts), locations: rows(locations),
-    devices: rows(deviceCounts), browsers: rows(browserCounts),
-    countries: to >= currentStart ? [...countries].sort() : [],
-  };
-}
-
 /**
  * Scope virtual reads to an explicitly marked saved project. Authentication and
  * membership stay on the real repository; ordinary projects pass through.
  */
 export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Date()): Runtime {
   const projects = new Map<string, { until: number; value: Promise<Project | null> }>();
+  const tracking = new WeakMap<Project, ReturnType<typeof createScenarioTracking>>();
+  const trackingFor = (project: Project) => {
+    let value = tracking.get(project);
+    if (!value) {
+      value = createScenarioTracking(project, {
+        history: (start, end) => historyFor(project, start, end),
+        citations: (run, prompt) => citationsFor(project, run, prompt),
+        evidence: (run, prompt) => evidenceFor(project, run, prompt),
+      });
+      tracking.set(project, value);
+    }
+    return value;
+  };
   async function demoProject(id: string) {
     const cached = projects.get(id);
     if (cached && cached.until > Date.now()) return cached.value;
@@ -506,6 +438,14 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
     return { project, run, prompt, kind };
   }
   const overrides: Partial<Repository> = {
+    async listTrackedUrls(projectId) {
+      const project = await demoProject(projectId);
+      return project ? trackingFor(project).listTrackedUrls() : runtime.repository.listTrackedUrls(projectId);
+    },
+    async listTrackingMatches(projectId, trackedUrlId) {
+      const project = await demoProject(projectId);
+      return project ? trackingFor(project).listTrackingMatches(trackedUrlId) : runtime.repository.listTrackingMatches(projectId, trackedUrlId);
+    },
     async listRuns(projectId, limit = 60) {
       const project = await demoProject(projectId);
       if (!project) return runtime.repository.listRuns(projectId, limit);
@@ -565,7 +505,7 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
     },
     async aggregateTraffic(projectId, filters) {
       const project = await demoProject(projectId);
-      return project ? trafficFor(project, filters) : runtime.repository.aggregateTraffic(projectId, filters);
+      return project ? aggregateScenarioTraffic(project, filters) : runtime.repository.aggregateTraffic(projectId, filters);
     },
     async trafficStatus(projectId, testId) {
       const project = await demoProject(projectId);
@@ -577,7 +517,7 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
         testReceived: false,
         sites: project.brand.domains.slice(0, 3).flatMap((domain) => {
           try { return [{ origin: new URL(/^https?:\/\//.test(domain) ? domain : `https://${domain}`).origin,
-            firstSeenAt: iso(day(config.startDate)), lastSeenAt: last, trackerVersion: 'demo-v1' }]; }
+            firstSeenAt: iso(day(config.startDate)), lastSeenAt: last, trackerVersion: 'citevia-v1' }]; }
           catch { return []; }
         }),
       };

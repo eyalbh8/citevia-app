@@ -266,9 +266,180 @@ function buckets(period: MonitoringPeriod) {
 }
 function MentionPoint({ provider }: { provider: ScanProvider }) {
   // Nested sizes keep every provider visible when measurements coincide.
-  if (provider === 'openai') return <circle r="7" />;
-  if (provider === 'gemini') return <path d="M0,-5 L5,0 L0,5 L-5,0 Z" />;
-  return <rect x="-2" y="-2" width="4" height="4" />;
+  if (provider === 'openai') return <circle r="3.5" />;
+  if (provider === 'gemini') return <path d="M0,-2.8 L2.8,0 L0,2.8 L-2.8,0 Z" />;
+  return <rect x="-1.4" y="-1.4" width="2.8" height="2.8" />;
+}
+
+type PublicationMarker = MentionsSummary['markers'][number];
+
+function TrackedPublicationMarker({
+  marker,
+  left,
+  label,
+  open,
+  onToggle,
+  onClose,
+  onTracked,
+}: {
+  marker: PublicationMarker;
+  left: number;
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onTracked: (id: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [position, setPosition] = useState<CSSProperties>();
+  const popupId = `tracked-publications-${marker.date.replace(/\W/g, '')}`;
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const bounds = buttonRef.current!.getBoundingClientRect();
+      const width = Math.min(320, window.innerWidth - 24);
+      const above = bounds.top >= 220;
+      setPosition({
+        width,
+        left: Math.max(
+          12,
+          Math.min(bounds.left + bounds.width / 2 - width / 2, window.innerWidth - width - 12),
+        ),
+        top: above ? bounds.top - 10 : bounds.bottom + 10,
+        maxHeight: Math.max(
+          120,
+          Math.min(360, above ? bounds.top - 22 : window.innerHeight - bounds.bottom - 22),
+        ),
+        transform: above ? 'translateY(-100%)' : undefined,
+      });
+    };
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !ref.current?.contains(event.target)) {
+        onClose();
+      }
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      buttonRef.current?.focus();
+    };
+    place();
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape, true);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', escape, true);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open, onClose]);
+  return (
+    <div
+      ref={ref}
+      className="chart-publication-marker"
+      style={{ left: `${left}%` }}
+    >
+      <button
+        ref={buttonRef}
+        className="chart-publication-badge"
+        aria-label={`${marker.items.length} tracked URLs on ${label}`}
+        aria-expanded={open}
+        aria-controls={open ? popupId : undefined}
+        onClick={onToggle}
+      >
+        <Link2 size={12} aria-hidden="true" />
+        {marker.items.length}
+      </button>
+      {open && position && (
+        <div
+          id={popupId}
+          className="marker-tooltip"
+          role="dialog"
+          aria-label={`Tracked URLs on ${label}`}
+          style={position}
+        >
+          <header>
+            <div>
+              <strong>Tracked content</strong>
+              <small>{label} · {marker.items.length} URLs</small>
+            </div>
+            <button
+              aria-label="Close tracked content"
+              onClick={() => {
+                onClose();
+                buttonRef.current?.focus();
+              }}
+            >
+              <X size={16} />
+            </button>
+          </header>
+          <ul className="marker-content-list" aria-label="Tracked URL citation counts">
+            {marker.items.map((item) => {
+              const contentType = item.contentType;
+              const imageUrl = item.imageUrl;
+              const published = item.publishedAt ?? marker.date;
+              return (
+                <li key={item.id}>
+                  <button
+                    className="marker-content-card"
+                    aria-label={`Open tracking details for ${item.title}`}
+                    onClick={() => {
+                      onClose();
+                      onTracked(item.id);
+                    }}
+                  >
+                    <span className="marker-content-meta">
+                      <span>
+                        <DomainLogo domain={item.url} size={19} />
+                        {contentType === 'BLOG'
+                          ? 'Blog'
+                          : contentType === 'SOCIAL'
+                            ? 'Social post'
+                            : contentType === 'WEBSITE'
+                              ? 'Website'
+                              : 'Tracked URL'}
+                      </span>
+                      <time dateTime={published}>
+                        {new Date(published).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          timeZone: 'UTC',
+                        })}
+                      </time>
+                    </span>
+                    {imageUrl && (
+                      <img
+                        className="marker-content-image"
+                        src={imageUrl}
+                        alt=""
+                        loading="lazy"
+                      />
+                    )}
+                    <strong>{item.title}</strong>
+                    <small className="marker-content-url">
+                      {item.url.replace(/^https?:\/\//, '')}
+                    </small>
+                    <span
+                      className="marker-content-citations"
+                      title="Source appearances in the selected period"
+                    >
+                      Cited: <b>{item.appearances.toLocaleString()}</b>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 function ExpandedChart({
   children,
@@ -311,9 +482,22 @@ export function MentionsChart({
 }) {
   const [expanded, setExpanded] = useState(false),
     [hover, setHover] = useState<number>(),
-    [hidden, setHidden] = useState<ScanProvider[]>([]);
+    [hidden, setHidden] = useState<ScanProvider[]>([]),
+    [openMarker, setOpenMarker] = useState<string>();
   const dates = buckets(summary.period),
     visible = summary.providers.filter((p) => !hidden.includes(p.provider));
+  const markerGroups = new Map<string, Map<string, PublicationMarker['items'][number]>>();
+  for (const marker of summary.markers) {
+    const date = summary.period.granularity === 'hourly'
+      ? `${marker.date.slice(0, 13)}:00:00.000Z`
+      : marker.date.slice(0, 10);
+    const items = markerGroups.get(date) ?? new Map();
+    for (const item of marker.items) {
+      const previous = items.get(item.id);
+      if (!previous || item.appearances > previous.appearances) items.set(item.id, item);
+    }
+    markerGroups.set(date, items);
+  }
   const series = visible.map((p) => {
     const counts = new Map(p.points.map((point) => [point.date, point.count]));
     return {
@@ -330,7 +514,8 @@ export function MentionsChart({
     top = Math.ceil(max / 4) * 4;
   const x = (i: number) =>
       52 + (dates.length === 1 ? 0.5 : i / (dates.length - 1)) * 790,
-    y = (n: number) => 275 - (n / top) * 235;
+    y = (n: number) => 275 - (n / top) * 235,
+    bucketWidth = dates.length > 1 ? 790 / (dates.length - 1) : 40;
   const format = (date: string) =>
     summary.period.granularity === 'hourly'
       ? `${date.slice(11, 16)}`
@@ -370,6 +555,7 @@ export function MentionsChart({
               )
             }
           >
+            <i style={{ background: providerColors[p.provider] }} aria-hidden="true" />
             <ProviderMark provider={p.provider} />
             {PROVIDER_LABELS[p.provider]}
           </button>
@@ -437,7 +623,13 @@ export function MentionsChart({
               </g>
             ))}
             {(['openai', 'gemini', 'perplexity'] as const).flatMap((provider) =>
-              (series.find((p) => p.provider === provider)?.points ?? []).map((point) => (
+              (series.find((p) => p.provider === provider)?.points ?? [])
+                .filter((point, index, points) =>
+                  index === 0 || index === points.length - 1 ||
+                  index % Math.max(1, Math.ceil(points.length / 14)) === 0 ||
+                  point.index === hover,
+                )
+                .map((point) => (
                 <g
                   key={`${provider}:${point.date}`}
                   className="mentions-measurement"
@@ -445,7 +637,8 @@ export function MentionsChart({
                   transform={`translate(${x(point.index)},${y(point.count)})`}
                   fill="var(--surface)"
                   stroke={providerColors[provider]}
-                  strokeWidth="2"
+                  strokeWidth="1.5"
+                  data-active={point.index === hover || undefined}
                 >
                   <title>{`${PROVIDER_LABELS[provider]}: ${point.count} mentions on ${fullDate(point.date)}`}</title>
                   <MentionPoint provider={provider} />
@@ -461,9 +654,9 @@ export function MentionsChart({
                   </text>
                 )}
                 <rect
-                  x={x(i) - Math.max(5, 790 / dates.length / 2)}
+                  x={x(i) - bucketWidth / 2}
                   y="25"
-                  width={Math.max(10, 790 / dates.length)}
+                  width={bucketWidth}
                   height="260"
                   fill="transparent"
                   tabIndex={0}
@@ -487,7 +680,7 @@ export function MentionsChart({
               />
             )}
           </svg>
-          {hover !== undefined && hoverDate !== undefined && (
+          {!openMarker && hover !== undefined && hoverDate !== undefined && (
             <div
               className="monitor-tooltip chart-tooltip"
               style={{
@@ -507,31 +700,20 @@ export function MentionsChart({
             </div>
           )}
           <div className="chart-markers">
-            {summary.markers.map((marker) => {
-              const index = dates.indexOf(marker.date);
-              if (index < 0) return null;
+            {[...markerGroups].map(([date, items]) => {
+              const index = dates.indexOf(date);
+              if (index < 0 || !items.size) return null;
               return (
-                <details
-                  key={marker.date}
-                  data-align={index > dates.length / 2 ? 'right' : 'left'}
-                  style={{ left: `${(x(index) / 880) * 100}%` }}
-                >
-                  <summary
-                    aria-label={`${marker.items.length} tracked URLs on ${format(marker.date)}`}
-                  >
-                    <Link2 size={11} />
-                    {marker.items.length}
-                  </summary>
-                  <div className="monitor-tooltip marker-tooltip">
-                    {marker.items.map((item) => (
-                      <button key={item.id} onClick={() => onTracked(item.id)}>
-                        <strong>{item.title}</strong>
-                        <small>{item.url}</small>
-                        <span>{item.appearances} appearances</span>
-                      </button>
-                    ))}
-                  </div>
-                </details>
+                <TrackedPublicationMarker
+                  key={date}
+                  marker={{ date, items: [...items.values()] }}
+                  left={(x(index) / 880) * 100}
+                  label={fullDate(date)}
+                  open={openMarker === date}
+                  onToggle={() => setOpenMarker(openMarker === date ? undefined : date)}
+                  onClose={() => setOpenMarker(undefined)}
+                  onTracked={onTracked}
+                />
               );
             })}
           </div>

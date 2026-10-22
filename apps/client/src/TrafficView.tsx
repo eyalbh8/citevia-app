@@ -683,7 +683,7 @@ export default function TrafficView({
   notify: (message: string) => void;
 }) {
   const [tab, setTab] = useState<'traffic' | 'settings'>('traffic');
-  const [range, setRange] = useState<DateRangeSelection>(() => initialDateRange(project.demo));
+  const [range, setRange] = useState<DateRangeSelection>(() => project.demo ? { days: '30', start: '', end: '' } : initialDateRange());
   const [providers, setProviders] = useState<TrafficProvider[]>([]),
     [countries, setCountries] = useState<string[]>([]);
   const filters = query({
@@ -789,7 +789,7 @@ export default function TrafficView({
         <button
           aria-pressed={tab === 'settings'}
           disabled={Boolean(project.demo)}
-          title={project.demo ? 'Website tracking is simulated in this read-only demo' : undefined}
+          title={project.demo ? 'Owner access is required to change website tracking.' : undefined}
           onClick={() => setTab('settings')}
         >
           Settings

@@ -46,8 +46,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('Demo date ranges', () => {
-  it('opens demo reports on their historical growth and caps history at the scenario end', () => {
+describe('Account date ranges', () => {
+  it('opens configured reports on their history and caps it at the available end date', () => {
     expect(initialDateRange(demo)).toEqual({ days: 'custom', start: demo.startDate, end: '2026-10-23' });
     expect(initialDateRange()).toEqual({ days: '7', start: '2026-10-17', end: '2026-10-23' });
     vi.setSystemTime(new Date('2027-06-01T12:00:00Z'));
@@ -59,37 +59,39 @@ describe('Demo date ranges', () => {
     expect(button('Next month').disabled).toBe(true);
     expect(document.querySelector<HTMLButtonElement>('[data-date="2026-10-24"]')!.disabled).toBe(true);
     expect(document.querySelector<HTMLInputElement>('[name="range-end"]')!.max).toBe('2026-10-23');
-    expect(document.body.textContent).not.toContain('Full demo year');
+    expect(document.body.textContent).not.toContain('Full year');
   });
 
-  it('allows future dates through the demo end and identifies projections', async () => {
+  it('allows dates through the configured year and uses ordinary date-range copy', async () => {
     await render(demo, { days: 'custom', start: '2027-04-22', end: '2027-04-23' });
     expect(button('Next month').disabled).toBe(true);
     expect(document.querySelector<HTMLButtonElement>('[data-date="2027-04-23"]')!.disabled).toBe(false);
     expect(document.querySelector<HTMLButtonElement>('[data-date="2027-04-24"]')!.disabled).toBe(true);
     expect(document.querySelector<HTMLInputElement>('[name="range-end"]')!.max).toBe(demo.endDate);
-    expect(document.body.textContent).toContain('Future dates are synthetic projections');
+    expect(document.body.textContent).toContain('Includes both dates (UTC).');
+    expect(document.body.textContent).not.toMatch(/\bdemo\b|synthetic|projections/i);
     await click('Apply');
     expect(onChange).toHaveBeenCalledWith({ days: 'custom', start: '2027-04-22', end: '2027-04-23' });
   });
 
-  it('rejects dates outside the demo year', async () => {
+  it('rejects dates outside the available year with standard date validation', async () => {
     await render(demo, { days: 'custom', start: '2026-04-22', end: '2026-04-23' });
     expect(button('Apply').disabled).toBe(true);
-    expect(document.body.textContent).toContain('Demo data starts on Apr 23, 2026');
+    expect(document.body.textContent).toContain('Choose dates on or after Apr 23, 2026.');
     await act(async () => container.querySelector('button')!.click());
     await render(demo, { days: 'custom', start: '2027-04-23', end: '2027-04-24' });
     expect(button('Apply').disabled).toBe(true);
-    expect(document.body.textContent).toContain('Demo data ends on Apr 23, 2027');
+    expect(document.body.textContent).toContain('Choose dates up to Apr 23, 2027.');
+    expect(document.body.textContent).not.toMatch(/\bdemo\b|synthetic|projections/i);
   });
 
-  it('offers history and the full scenario as custom ranges while last N days stay relative to today', async () => {
+  it('offers All history and Full year while last N days stay relative to today', async () => {
     vi.setSystemTime(new Date('2026-10-25T12:00:00Z'));
     await render(demo);
-    await click('Demo history');
+    await click('All history');
     expect(onChange).toHaveBeenLastCalledWith({ days: 'custom', start: demo.startDate, end: '2026-10-25' });
     await act(async () => container.querySelector('button')!.click());
-    await click('Full demo year');
+    await click('Full year');
     expect(onChange).toHaveBeenLastCalledWith({ days: 'custom', start: demo.startDate, end: demo.endDate });
     await act(async () => container.querySelector('button')!.click());
     await click('Last 7 days');

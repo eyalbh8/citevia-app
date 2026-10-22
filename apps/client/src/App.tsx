@@ -714,18 +714,6 @@ function Workspace() {
           tabIndex={-1}
           className={`content ${['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'agents', 'integrations'].includes(view) ? 'prompts-content' : ''}`}
         >
-          {project?.demo && (
-            <aside className="demo-banner" aria-label="Demo data notice">
-              <Sparkles size={18} aria-hidden="true" />
-              <div className="demo-banner-copy">
-                <strong>Demo data · {project.brand.name} · Synthetic growth scenario</strong>
-                <span>
-                  50 prompts · 2 simulated scans per week · {project.demo.startDate} to {project.demo.endDate}.
-                  {' '}Future dates are projections. This demo is read-only.
-                </span>
-              </div>
-            </aside>
-          )}
           {!['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'agents', 'integrations'].includes(view) && (
             <div className="page-heading">
               <div>
@@ -889,7 +877,7 @@ function Workspace() {
                       <span className="status-right">
                         <Clock3 size={11} />
                         {project.demo
-                          ? '2 simulated scans per week'
+                          ? '2 scans per week'
                           : project.enabled
                           ? `Next scan ${formatDate(dashboard.data?.nextScanAt)}`
                           : 'Schedule paused'}
@@ -951,11 +939,11 @@ function Workspace() {
                 {view !== 'agents' && <footer className="page-footer">
                   <span>
                     <Cloud size={11} />
-                    {project.demo ? 'Simulated ChatGPT, Perplexity and Gemini results' : 'Native ChatGPT, Perplexity and Gemini API answers'}
+                    {project.demo ? 'ChatGPT, Perplexity and Gemini results' : 'Native ChatGPT, Perplexity and Gemini API answers'}
                   </span>
                   <span>
                     <ShieldCheck size={11} />
-                    {project.demo ? 'Nayax source examples · Illustrative growth scenario' : 'Weekly snapshots · Original answers preserved'}
+                    {project.demo ? 'Twice-weekly scans · Answer history' : 'Weekly snapshots · Original answers preserved'}
                   </span>
                 </footer>}
               </>

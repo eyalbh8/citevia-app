@@ -366,6 +366,9 @@ export async function monitoringRoute(
         id: url.id,
         url: url.url,
         title: url.title,
+        contentType: url.contentType,
+        imageUrl: url.imageUrl,
+        publishedAt: url.publishedAt,
         appearances: relevant.reduce(
           (sum, m) => sum + m.evidence.appearances,
           0,

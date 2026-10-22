@@ -132,7 +132,7 @@ async function render(selectedProject = project) {
 }
 
 describe('AI Traffic screen interactions', () => {
-  it('keeps simulated demo traffic separate from live tracker setup, even for an owner', async () => {
+  it('defaults configured traffic to the last month and keeps live tracker setup disabled with ordinary account copy', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-23T12:00:00Z'));
     await render({
@@ -147,10 +147,13 @@ describe('AI Traffic screen interactions', () => {
         sourceCopiedAt: '2026-10-23T00:00:00Z',
       },
     });
-    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('days=custom');
-    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('start=2026-04-23');
-    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('end=2026-10-23');
+    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('days=30');
+    expect(mocks.useApi.mock.calls.at(-1)?.[0]).not.toContain('start=');
+    expect(mocks.useApi.mock.calls.at(-1)?.[0]).not.toContain('end=');
+    expect(container.querySelector('.date-range-trigger')?.textContent).toContain('Last 30 days');
     expect(buttons('Settings')[0].disabled).toBe(true);
+    expect(buttons('Settings')[0].title).toBe('Owner access is required to change website tracking.');
+    expect(container.textContent).not.toMatch(/\bdemo\b|synthetic|projections/i);
     await click('Settings');
     expect(container.textContent).not.toContain('data-project-id');
     expect(mocks.request).not.toHaveBeenCalled();
@@ -158,13 +161,15 @@ describe('AI Traffic screen interactions', () => {
     await act(async () => container.querySelector<HTMLButtonElement>('.date-range-trigger')!.click());
     await act(async () => {
       [...document.querySelectorAll<HTMLButtonElement>('.date-range-presets button')]
-        .find((element) => element.textContent?.trim() === 'Last 30 days')!.click();
+        .find((element) => element.textContent?.trim() === 'Full year')!.click();
     });
     await render({ ...project, demo: {
       version: 1, source: 'igeo-nayax', anchorDate: '2026-10-23', startDate: '2026-04-23', endDate: '2027-04-23',
       sourceAccountId: 'nayax', sourceCopiedAt: '2026-10-23T00:00:00Z',
     } });
-    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('days=30');
+    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('days=custom');
+    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('start=2026-04-23');
+    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('end=2027-04-23');
   });
 
   it('renders all providers and breakdowns, pages lists, toggles chart series and exports the filtered report', async () => {
