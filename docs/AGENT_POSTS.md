@@ -15,6 +15,8 @@ Owners and system administrators can create drafts with images in **Agents → G
 
 Facebook, Instagram and X captions, titles and hashtags must omit the account brand name, aliases and branded handles, including when the saved question names the brand. The appended Facebook website remains allowed. A deterministic check rejects brand mentions and allows one checkpointed rewrite before failing visibly; Pinterest and Reddit retain their own editorial rules.
 
+Every agent writes a standalone editorial post for its audience. A yes/no prompt must become a useful insight, benefit or practical hook that answers the question within the first one or two sentences. Titles and opening prose must not begin with conversational replies such as “Yes”, “Sure”, “Absolutely”, “Great question” or “Here is the answer”, including behind Markdown headings or formatting. Social posts get one checkpointed rewrite for an invalid opening; the rewrite preserves channel rules and any required Reddit affiliation. Blog formatting and repair receive a `standalone-opening` editorial check, and a blog still failing that check cannot finish. Existing FAQs may use natural yes/no answers; the guard applies to the post opening.
+
 Social copy uses platform-specific paragraph breaks and short sentences. Long dashes and spaced double hyphens are replaced with ordinary punctuation outside URLs. Captions with sentences exceeding 40 words fail validation.
 
 No channel may invent evidence, source URLs, customer results, capabilities, offers or publication status. Invalid structured output, refusals and channel length violations become visible failures. Editing also enforces channel length limits.

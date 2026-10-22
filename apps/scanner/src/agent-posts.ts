@@ -14,6 +14,7 @@ import {
   parseBlogDraft,
   agentOutput,
   finalizeSocialCopy,
+  assertStandalonePost,
   verifiedBlogLinks,
 } from './agent-generation.js';
 export {
@@ -142,7 +143,10 @@ export class AgentPostEngine {
           draft = {
             ...parseAgentContent(current, source),
             revision:
-              'Remove every account brand name, alias, branded hashtag and handle from the title and caption. Rewrite naturally without losing the answer. Use neutral descriptions such as the platform or provider when the selected prompt names the brand. Keep the existing platform-specific style and length limits.',
+              'Rewrite this as a creative standalone post for the platform audience, not a chat response. Remove conversational prefaces such as Yes, No, Sure, Absolutely, Of course and Great question. Open with a concrete insight, benefit or practical hook and answer the selected question in the first one or two sentences. Preserve the useful answer, verified facts, platform formatting and length limits. ' +
+              (['facebook', 'instagram', 'x'].includes(current.channel)
+                ? 'Remove every account brand name, alias, branded hashtag and handle from title and body. Use neutral references if the prompt names the brand.'
+                : 'Preserve any required affiliation disclosure and the channel’s other editorial rules.'),
           };
         } else if (current.stage && current.stage !== 'links') {
           const sourceKey =
@@ -290,6 +294,7 @@ export class AgentPostEngine {
             'Web search and editorial revision could not produce valid internal and external blog links. Retry generation to search for sources again.',
             false,
           );
+        assertStandalonePost(draft);
         content = {
           ...draft,
           blog: {
@@ -381,9 +386,11 @@ export class AgentPostEngine {
     } catch (error) {
       if (error instanceof ProviderError) {
         if (
-          error.code === 'agent_brand_mention' &&
+          ['agent_brand_mention', 'agent_conversational_opening'].includes(
+            error.code,
+          ) &&
           !current.stage &&
-          ['facebook', 'instagram', 'x'].includes(current.channel)
+          current.channel !== 'blog'
         ) {
           await this.advance(current, 'social-repair');
           return;

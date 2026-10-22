@@ -8,6 +8,7 @@ import {
   blogBodyText,
   naturalPunctuation,
   descriptiveLinkLabel,
+  hasConversationalOpening,
   type AgentPostJob,
   type AgentContent,
 } from '@citevia/core';
@@ -220,6 +221,20 @@ export function verifiedBlogLinks(
     (_match, index) => kept[Number(index)],
   );
 }
+export function assertStandalonePost(
+  content: Pick<AgentContent, 'title' | 'body'>,
+) {
+  if (
+    hasConversationalOpening(content.title) ||
+    hasConversationalOpening(content.body, true)
+  )
+    throw new ProviderError(
+      'agent_conversational_opening',
+      'The post starts like a chat reply. Retry generation for a creative standalone opening that answers the question.',
+      false,
+    );
+}
+
 export function assertUnbrandedSocial(
   post: AgentPostJob,
   content: AgentContent,
@@ -344,6 +359,7 @@ export function finalizeSocialCopy(
     body,
     hashtags,
   };
+  assertStandalonePost(result);
   assertUnbrandedSocial(post, result);
   if (!agentCopyValid(post.channel, result))
     throw new ProviderError(

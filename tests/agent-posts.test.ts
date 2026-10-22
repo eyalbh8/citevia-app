@@ -625,7 +625,7 @@ describe('agent generation contracts', () => {
   it('uses structured outputs without web tools or changing the configured model', () => {
     const body = extractionBody(agentGenerationRequest(job));
     expect(body.model).toBe('existing-model');
-    expect(body.instructions).toContain('Answer that question directly');
+    expect(body.instructions).toContain('standalone published post');
     expect(agentGenerationRequest(job).input).toMatchObject({
       prompt: question,
     });

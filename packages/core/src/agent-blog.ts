@@ -1,5 +1,9 @@
 import type { AgentContent, AgentPostJob, BlogDraft } from './agents.js';
-import { blogBodyText, descriptiveLinkLabel } from './agent-editorial.js';
+import {
+  blogBodyText,
+  descriptiveLinkLabel,
+  hasConversationalOpening,
+} from './agent-editorial.js';
 import { normalizeDomain } from './urls.js';
 
 const plain = (value: string) =>
@@ -97,6 +101,14 @@ export function blogSeoChecks(
         sentences.filter((item) => count(item) > 20).length /
           sentences.length <=
           0.25,
+    },
+    {
+      id: 'standalone-opening',
+      label:
+        'Title and opening read as a standalone post, without chat-reply prefaces',
+      passed:
+        !hasConversationalOpening(title) &&
+        !hasConversationalOpening(body, true),
     },
     {
       id: 'faqs',
