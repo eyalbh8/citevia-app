@@ -347,7 +347,7 @@ function Workspace() {
     ? SCAN_PROVIDERS.filter((provider) => !runtime.data!.providers[provider])
     : [];
   const activePrompts =
-    project?.prompts.filter((prompt) => prompt.active).length || 0;
+    project?.activePromptCount ?? project?.prompts.filter((prompt) => prompt.active).length ?? 0;
   const owner = project?.role === 'owner' && !project.demo;
 
   useEffect(() => {
