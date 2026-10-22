@@ -9,10 +9,12 @@ export default function BrandbookView({
   path,
   onSaved,
   notify,
+  readOnly = false,
 }: {
   path: string;
   onSaved: () => void;
   notify: (text: string) => void;
+  readOnly?: boolean;
 }) {
   const { data, error, loading } = useApi<BookData>(
     `${path}/brandbook`,
@@ -29,6 +31,7 @@ export default function BrandbookView({
           path={path}
           onSaved={onSaved}
           notify={notify}
+          readOnly={readOnly}
         />
       ) : error ? null : (
         <section className="card">
@@ -46,16 +49,18 @@ function BrandbookForm({
   path,
   onSaved,
   notify,
+  readOnly,
 }: {
   data: BookData & { brandbook: Brandbook };
   path: string;
   onSaved: () => void;
   notify: (text: string) => void;
+  readOnly: boolean;
 }) {
   const [draft, setDraft] = useState(data.brandbook),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<Error>();
-  const owner = data.role === 'owner';
+  const owner = data.role === 'owner' && !readOnly;
   async function save(event: FormEvent) {
     event.preventDefault();
     setBusy(true);

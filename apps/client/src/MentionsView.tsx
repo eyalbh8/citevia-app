@@ -24,7 +24,7 @@ export default function MentionsView({
   project: Project;
   onResponse: (id: string) => void;
 }) {
-  const [selection, setSelection] = useState(() => initialSelection()),
+  const [selection, setSelection] = useState(() => initialSelection('7', project.demo)),
     [page, setPage] = useState(0),
     [size, setSize] = useState(25),
     [sort, setSort] = useState('date'),

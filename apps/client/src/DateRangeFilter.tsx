@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
+import type { Project } from '@citevia/core';
 import {
   CalendarDays,
   Check,
@@ -51,14 +52,25 @@ const fullDate = (value: string) =>
     timeZone: 'UTC',
   });
 
+export function initialDateRange(demo?: Project['demo']): DateRangeSelection {
+  const today = isoDay(new Date());
+  if (demo) {
+    const end = today < demo.endDate ? today : demo.endDate;
+    return { days: 'custom', start: demo.startDate, end: end < demo.startDate ? demo.startDate : end };
+  }
+  return { days: '7', start: moveDay(today, -6), end: today };
+}
+
 export default function DateRangeFilter({
   value,
   onChange,
   includeLast24Hours = true,
+  demo,
 }: {
   value: DateRangeSelection;
   onChange: (next: DateRangeSelection) => void;
   includeLast24Hours?: boolean;
+  demo?: Project['demo'];
 }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -75,6 +87,15 @@ export default function DateRangeFilter({
     maxHeight: 600,
   });
   const today = isoDay(new Date());
+  const maxDay = demo?.endDate || today;
+  const minDay = demo?.startDate;
+  const historyEnd = today < maxDay ? today : maxDay;
+  const demoPresets = demo
+    ? [
+        { label: 'Demo history', start: demo.startDate, end: historyEnd },
+        { label: 'Full demo year', start: demo.startDate, end: demo.endDate },
+      ]
+    : [];
   const presets = includeLast24Hours
     ? ['1', '7', '14', '30', '90']
     : ['7', '14', '30', '90'];
@@ -90,8 +111,12 @@ export default function DateRangeFilter({
       ? 'Choose a valid start and end date.'
       : draft.start > effectiveEnd
         ? 'End date must be on or after start date.'
-        : effectiveEnd > today
-          ? 'Choose dates up to today.'
+        : minDay && draft.start < minDay
+          ? `Demo data starts on ${shortDate(minDay)}.`
+        : effectiveEnd > maxDay
+          ? demo
+            ? `Demo data ends on ${shortDate(maxDay)}.`
+            : 'Choose dates up to today.'
           : dateOf(effectiveEnd).getTime() -
                 dateOf(draft.start).getTime() +
                 DAY >
@@ -113,7 +138,7 @@ export default function DateRangeFilter({
             end: today,
           };
     setDraft(selected);
-    const initialDay = selected.end > today ? today : selected.end;
+    const initialDay = selected.end > maxDay ? maxDay : selected.end;
     setMonth(monthOf(initialDay));
     setFocusDay(initialDay);
     setOpen(true);
@@ -213,7 +238,13 @@ export default function DateRangeFilter({
   const navigate = (amount: number) => {
     const nextMonth = moveMonth(month, amount);
     setMonth(nextMonth);
-    setFocusDay(nextMonth === monthOf(today) ? today : nextMonth);
+    setFocusDay(
+      nextMonth === monthOf(maxDay)
+        ? maxDay
+        : minDay && nextMonth === monthOf(minDay)
+          ? minDay
+          : nextMonth,
+    );
   };
   const calendarKey = (
     event: KeyboardEvent<HTMLButtonElement>,
@@ -233,7 +264,8 @@ export default function DateRangeFilter({
       next = `${nextMonth.slice(0, 8)}${String(Math.min(Number(day.slice(-2)), lastDay)).padStart(2, '0')}`;
     } else return;
     event.preventDefault();
-    if (next > today) next = today;
+    if (next > maxDay) next = maxDay;
+    if (minDay && next < minDay) next = minDay;
     pendingCalendarFocus.current = true;
     setFocusDay(next);
     setMonth(monthOf(next));
@@ -294,6 +326,26 @@ export default function DateRangeFilter({
                     )}
                   </button>
                 ))}
+                {demoPresets.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    aria-pressed={
+                      draft.days === 'custom' &&
+                      draft.start === preset.start &&
+                      draft.end === preset.end
+                    }
+                    onClick={() => {
+                      onChange({ days: 'custom', start: preset.start, end: preset.end });
+                      close(true);
+                    }}
+                  >
+                    <span>{preset.label}</span>
+                    {draft.days === 'custom' &&
+                      draft.start === preset.start &&
+                      draft.end === preset.end && <Check size={14} aria-hidden="true" />}
+                  </button>
+                ))}
                 <button
                   type="button"
                   aria-pressed={draft.days === 'custom'}
@@ -322,6 +374,7 @@ export default function DateRangeFilter({
                   <button
                     type="button"
                     aria-label="Previous month"
+                    disabled={Boolean(minDay && month <= monthOf(minDay))}
                     onClick={() => navigate(-1)}
                   >
                     <ChevronLeft size={17} />
@@ -336,7 +389,7 @@ export default function DateRangeFilter({
                   <button
                     type="button"
                     aria-label="Next month"
-                    disabled={month >= monthOf(today)}
+                    disabled={month >= monthOf(maxDay)}
                     onClick={() => navigate(1)}
                   >
                     <ChevronRight size={17} />
@@ -381,7 +434,7 @@ export default function DateRangeFilter({
                                 aria-current={
                                   day === today ? 'date' : undefined
                                 }
-                                disabled={day > today}
+                                disabled={day > maxDay || Boolean(minDay && day < minDay)}
                                 tabIndex={day === focusDay ? 0 : -1}
                                 className={`${selected ? 'in-range' : ''}${endpoint ? ' range-endpoint' : ''}`}
                                 onFocus={() => setFocusDay(day)}
@@ -406,7 +459,8 @@ export default function DateRangeFilter({
                   name="range-start"
                   type="date"
                   value={draft.start}
-                  max={today}
+                  min={minDay}
+                  max={maxDay}
                   aria-describedby={error ? `${id}-error` : undefined}
                   onChange={(event) =>
                     setDraft({
@@ -424,8 +478,8 @@ export default function DateRangeFilter({
                   name="range-end"
                   type="date"
                   value={draft.end}
-                  min={draft.start || undefined}
-                  max={today}
+                  min={draft.start || minDay}
+                  max={maxDay}
                   aria-describedby={error ? `${id}-error` : undefined}
                   onChange={(event) =>
                     setDraft({
@@ -445,7 +499,9 @@ export default function DateRangeFilter({
               {error ||
                 (draft.start && !draft.end
                   ? 'Choose an end date, or apply to view this day.'
-                  : 'Includes both dates. Times shown in UTC.')}
+                  : demo
+                    ? 'Includes both dates (UTC). Future dates are synthetic projections.'
+                    : 'Includes both dates. Times shown in UTC.')}
             </p>
             <footer className="date-range-actions">
               <button

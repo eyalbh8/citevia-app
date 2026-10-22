@@ -60,7 +60,7 @@ export default function AgentsView({
   onIntegrations: (highlight?: string) => void;
 }) {
   const path = `/projects/${encodeURIComponent(project.id)}/agents`;
-  const owner = project.role === 'owner';
+  const owner = project.role === 'owner' && !project.demo;
   const [generateOpen, setGenerateOpen] = useState(false);
   const [channel, setChannel] = useState(AGENTS[0].id);
   const [promptId, setPromptId] = useState('');

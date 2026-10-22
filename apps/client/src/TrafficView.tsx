@@ -31,7 +31,7 @@ import { downloadCsv, query, request, useApi } from './api';
 import { invalidateApiQueries } from './query-cache';
 import { Empty, ErrorNotice } from './components';
 import { Skeleton } from './Loading';
-import DateRangeFilter, { type DateRangeSelection } from './DateRangeFilter';
+import DateRangeFilter, { initialDateRange, type DateRangeSelection } from './DateRangeFilter';
 import FilterDropdown from './FilterDropdown';
 import './monitoring.css';
 import './traffic.css';
@@ -683,11 +683,7 @@ export default function TrafficView({
   notify: (message: string) => void;
 }) {
   const [tab, setTab] = useState<'traffic' | 'settings'>('traffic');
-  const [range, setRange] = useState<DateRangeSelection>({
-    days: '7',
-    start: '',
-    end: '',
-  });
+  const [range, setRange] = useState<DateRangeSelection>(() => initialDateRange(project.demo));
   const [providers, setProviders] = useState<TrafficProvider[]>([]),
     [countries, setCountries] = useState<string[]>([]);
   const filters = query({
@@ -770,7 +766,7 @@ export default function TrafficView({
                 })),
               ]}
             />
-            <DateRangeFilter value={range} onChange={setRange} />
+            <DateRangeFilter value={range} onChange={setRange} demo={project.demo} />
             <button
               className="icon-button traffic-export"
               aria-label="Export traffic CSV"
@@ -792,6 +788,8 @@ export default function TrafficView({
         </button>
         <button
           aria-pressed={tab === 'settings'}
+          disabled={Boolean(project.demo)}
+          title={project.demo ? 'Website tracking is simulated in this read-only demo' : undefined}
           onClick={() => setTab('settings')}
         >
           Settings

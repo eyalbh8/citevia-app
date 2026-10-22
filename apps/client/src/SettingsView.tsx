@@ -74,7 +74,9 @@ export default function SettingsView({
                     <span>
                       <strong>{scheduleLabel(project)}</strong>
                       <br />
-                      {project.enabled
+                      {project.demo
+                        ? 'Simulated schedule for the demo. No live scans are scheduled.'
+                        : project.enabled
                         ? (project.nextScanAt || nextScanAt)
                           ? `Next scan: ${new Date((project.nextScanAt || nextScanAt)!).toLocaleString('en', { timeZone: project.timezone, dateStyle: 'medium', timeStyle: 'short' })} (${project.timezone})`
                           : 'Next scan time is unavailable.'
@@ -119,7 +121,7 @@ export default function SettingsView({
                         key={run.id}
                         run={run}
                         path={path}
-                        owner={project.role === 'owner'}
+                        owner={project.role === 'owner' && !project.demo}
                         onSaved={onSaved}
                         notify={notify}
                       />
@@ -192,7 +194,7 @@ function ProjectForm({
   const [scanProviders, setScanProviders] = useState(projectProviders(project));
   const [saving, setSaving] = useState(false),
     [error, setError] = useState<Error>();
-  const owner = project.role === 'owner';
+  const owner = project.role === 'owner' && !project.demo;
   const split = (value: string) => [
     ...new Set(
       value

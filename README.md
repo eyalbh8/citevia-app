@@ -52,6 +52,14 @@ The first administrator is established explicitly after their first Descope sign
 
 Open **MCP connections** to connect an assistant through OAuth or a named API key. Creating a key also shows a copyable URL-only connection and Claude/ChatGPT setup buttons. System administrators use one connection for all accounts; other users connect one assigned account at a time. Viewer connections are read-only and owner connections retain the account's existing permissions. Credentials support expiry and immediate revocation. See [connection setup, tools and deployment](docs/MCP.md). Apply migration `006_mcp.sql` before publishing this update.
 
+## Nayax demo account
+
+`Nayax Demo` is an explicitly marked, read-only synthetic growth scenario based on a sanitized copy of Nayax's iGEO brand, 50 existing prompts, competitor identities, answer excerpts and traffic categories. It covers 23 April 2026 through 23 April 2027, with two simulated scan groups per week across three providers. The date picker offers **Demo history** and **Full demo year**; future dates are projections.
+
+Only the compact project configuration and normal account/prompt mirrors are saved. Demo answers, scans, citations and traffic totals are generated deterministically when requested; no synthetic result/event rows, S3 evidence objects or paid provider calls are created. Authentication and account membership still apply. Scans, edits, tracker collection and scheduler provisioning are disabled for the demo; ordinary accounts retain their existing behavior.
+
+To preview or create the account from an authorized sanitized source export, use `npm run demo:nayax -- --source /private/path/sanitized-source.json --mode local|aws [--apply]`. The default is a preview; applying is idempotent and refuses to replace a real account. The command never connects to iGEO. Source journey stages were unset, so demo stages are inferred from the original questions. Metrics are illustrative growth values, not copied historical measurements or forecasts. Standard database storage and API compute still apply; the demo adds no AI usage.
+
 ## AI Traffic
 
 Open **AI Traffic** to measure page visits referred by ChatGPT, Claude, Perplexity, Gemini, Copilot and DeepSeek. The screen includes provider totals and change versus the preceding period, a zero-filled UTC trend chart, provider/region/date filters, CSV export, and independently paginated sources, pages, countries, devices and browsers. These are received page visits, not unique visitors or citation counts. A zero baseline with new traffic is labeled **New**.

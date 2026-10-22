@@ -348,7 +348,7 @@ function Workspace() {
     : [];
   const activePrompts =
     project?.prompts.filter((prompt) => prompt.active).length || 0;
-  const owner = project?.role === 'owner';
+  const owner = project?.role === 'owner' && !project.demo;
 
   useEffect(() => {
     const handle = () => {
@@ -420,7 +420,7 @@ function Workspace() {
     refresh();
   }
   async function startScan() {
-    if (!path || starting) return;
+    if (!path || starting || project?.demo) return;
     setStarting(true);
     setActionError(undefined);
     try {
@@ -714,6 +714,18 @@ function Workspace() {
           tabIndex={-1}
           className={`content ${['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'agents', 'integrations'].includes(view) ? 'prompts-content' : ''}`}
         >
+          {project?.demo && (
+            <aside className="demo-banner" aria-label="Demo data notice">
+              <Sparkles size={18} aria-hidden="true" />
+              <div className="demo-banner-copy">
+                <strong>Demo data · {project.brand.name} · Synthetic growth scenario</strong>
+                <span>
+                  50 prompts · 2 simulated scans per week · {project.demo.startDate} to {project.demo.endDate}.
+                  {' '}Future dates are projections. This demo is read-only.
+                </span>
+              </div>
+            </aside>
+          )}
           {!['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'agents', 'integrations'].includes(view) && (
             <div className="page-heading">
               <div>
@@ -750,7 +762,7 @@ function Workspace() {
               </div>
             </div>
           )}
-          {!['mcp', 'agents', 'integrations'].includes(view) && missingProviders.length > 0 && (
+          {!project?.demo && !['mcp', 'agents', 'integrations'].includes(view) && missingProviders.length > 0 && (
             <div className="provider-banner" role="status">
               <Info size={16} />
               <span>
@@ -876,7 +888,9 @@ function Workspace() {
                       </span>
                       <span className="status-right">
                         <Clock3 size={11} />
-                        {project.enabled
+                        {project.demo
+                          ? '2 simulated scans per week'
+                          : project.enabled
                           ? `Next scan ${formatDate(dashboard.data?.nextScanAt)}`
                           : 'Schedule paused'}
                       </span>
@@ -900,6 +914,7 @@ function Workspace() {
                   <PromptsView
                     key={project.id}
                     path={path}
+                    demo={project.demo}
                     onSaved={settingsSaved}
                     notify={setToast}
                   />
@@ -912,6 +927,7 @@ function Workspace() {
                 ) : view === 'brandbook' ? (
                   <BrandbookView
                     path={path}
+                    readOnly={Boolean(project.demo)}
                     onSaved={settingsSaved}
                     notify={setToast}
                   />

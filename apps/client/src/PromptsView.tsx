@@ -47,10 +47,11 @@ import {
   promptTypeOptions,
   regionOptions,
 } from './filter-options';
-import DateRangeFilter, { type DateRangeSelection } from './DateRangeFilter';
+import DateRangeFilter, { initialDateRange, type DateRangeSelection } from './DateRangeFilter';
 
 type Props = {
   path: string;
+  demo?: Project['demo'];
   onSaved: () => void;
   notify: (text: string) => void;
 };
@@ -142,12 +143,9 @@ export default function PromptsView({
   path,
   onSaved,
   notify,
+  demo,
 }: Props) {
-  const [dateRange, setDateRange] = useState<DateRangeSelection>(() => ({
-      days: '7',
-      start: new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10),
-      end: new Date().toISOString().slice(0, 10),
-    })),
+  const [dateRange, setDateRange] = useState<DateRangeSelection>(() => initialDateRange(demo)),
     [provider, setProvider] = useState<ScanProvider | ''>('');
   const [search, setSearch] = useState(''),
     [region, setRegion] = useState('');
@@ -184,7 +182,7 @@ export default function PromptsView({
   const pendingSetup = Boolean(
     project.onboardingJobId && !project.onboardingAppliedJobId,
   );
-  const owner = project.role === 'owner',
+  const owner = project.role === 'owner' && !project.demo,
     editable = owner && !pendingSetup;
   const metricMap = new Map(scores.data?.items.map((row) => [row.id, row]));
   // Never attach a stale measurement to a newly edited question while refreshing.
@@ -436,6 +434,7 @@ export default function PromptsView({
             value={dateRange}
             onChange={(range) => filter(() => setDateRange(range))}
             includeLast24Hours={false}
+            demo={project.demo}
           />
         </div>
       </div>
@@ -483,7 +482,9 @@ export default function PromptsView({
         )}
         {!owner && (
           <p className="prompt-notice">
-            You have view access. A project owner can manage prompts.
+            {project.demo
+              ? 'This read-only demo includes 50 prompts and two simulated scans each week.'
+              : 'You have view access. A project owner can manage prompts.'}
           </p>
         )}
         {selected.length > 0 && (

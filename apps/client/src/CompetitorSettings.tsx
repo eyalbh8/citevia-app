@@ -30,7 +30,7 @@ export default function CompetitorSettings({
     showSuggestions ? `${path}/competitors/suggestions` : null,
     retry,
   );
-  const owner = project.role === 'owner';
+  const owner = project.role === 'owner' && !project.demo;
   const names = new Set(
     [project.brand, ...value].flatMap((brand) =>
       [brand.name, ...brand.aliases].map(promptFingerprint),

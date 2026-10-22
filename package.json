@@ -11,6 +11,7 @@
     "packages/*"
   ],
   "scripts": {
+    "demo:nayax": "node --env-file-if-exists=.env --import tsx scripts/create-nayax-demo.ts",
     "dev": "node --env-file-if-exists=.env --import tsx scripts/dev.ts",
     "dev:live": "node --env-file-if-exists=.env --import tsx scripts/dev.ts",
     "typecheck": "tsc --noEmit && npm run typecheck --workspace @citevia/client",

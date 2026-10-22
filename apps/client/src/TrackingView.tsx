@@ -239,7 +239,7 @@ export default function TrackingView({
           <h2>Track your content in AI answers</h2>
           <p>Follow every URL from publication to its first citation.</p>
         </div>
-        {project.role === 'owner' && (
+        {project.role === 'owner' && !project.demo && (
           <button className="tracking-add" onClick={() => setAdding(true)}>
             <Plus size={17} />
             Track results
@@ -550,7 +550,7 @@ export default function TrackingView({
           id={selected}
           selection={selection}
           revision={localRevision}
-          owner={project.role === 'owner'}
+          owner={project.role === 'owner' && !project.demo}
           onChanged={() => refresh((r) => r + 1)}
           onClose={() => setSelected(undefined)}
           onResponse={(id) => {

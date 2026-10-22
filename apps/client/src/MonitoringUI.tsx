@@ -31,7 +31,7 @@ import AnswerMarkdown from './AnswerMarkdown';
 import DomainLogo from './DomainLogo';
 import './monitoring.css';
 import ProviderFilter from './ProviderFilter';
-import DateRangeFilter from './DateRangeFilter';
+import DateRangeFilter, { initialDateRange } from './DateRangeFilter';
 import FilterDropdown from './FilterDropdown';
 import {
   brandingOptions,
@@ -52,10 +52,9 @@ export type MonitorSelection = {
   branded: string;
   stage: JourneyStage | '';
 };
-export const initialSelection = (days = '7'): MonitorSelection => ({
-  days,
-  start: new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10),
-  end: new Date().toISOString().slice(0, 10),
+export const initialSelection = (days = '7', demo?: Project['demo']): MonitorSelection => ({
+  ...initialDateRange(demo),
+  days: demo ? 'custom' : days,
   providers: [],
   region: '',
   branded: '',
@@ -128,6 +127,7 @@ export function MonitoringHeader({
         <DateRangeFilter
           value={value}
           onChange={(range) => onChange({ ...value, ...range })}
+          demo={project.demo}
         />
         {children}
       </div>

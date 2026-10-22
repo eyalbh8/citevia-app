@@ -46,7 +46,7 @@ import {
   type ScanRun,
   type SourceRow,
 } from '@citevia/core';
-import { AccessError, type Runtime } from '@citevia/storage';
+import { AccessError, withDemoRuntime, type Runtime } from '@citevia/storage';
 import { verifiedIdentitySchema, type VerifiedIdentity } from '@citevia/core';
 import { AuthenticationError } from './descope.js';
 import { adminRoute } from './admin.js';
@@ -88,6 +88,7 @@ const response = (data: unknown, status = 200) =>
   });
 
 export function createApi(runtime: Runtime, options: ApiOptions) {
+  runtime = withDemoRuntime(runtime, options.now);
   const { repository, artifacts, queue } = runtime;
   const now = options.now || (() => new Date());
   async function body(request: Request): Promise<unknown> {
@@ -308,7 +309,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       if (!member) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
       const stored = await repository.getProject(projectId);
       if (!stored) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
-      const project = { ...stored, role: member.role };
+      const project = { ...stored, role: stored.demo ? 'viewer' as const : member.role };
+      if (stored.demo && !['GET', 'HEAD'].includes(method))
+        throw new HttpError(403, 'DEMO_READ_ONLY', 'This demo uses a synthetic growth scenario. Scans and edits are disabled.');
       const providerFilter = query.has('provider')
         ? scanProviderSchema.parse(query.get('provider'))
         : undefined;
@@ -1078,7 +1081,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         )
           throw new HttpError(400, 'INVALID_SORT', 'Invalid answer sort.');
         const { offset, limit } = paging(query);
-        const end = now(),
+        const end = days === 'all' && stored.demo ? new Date(`${stored.demo.endDate}T23:59:59.999Z`) : now(),
           start =
             days === 'all'
               ? new Date(0)

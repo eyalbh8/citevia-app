@@ -7,6 +7,7 @@ export const projectScheduleName = (projectId: string) =>
   `citevia-${createHash('sha256').update(projectId).digest('hex').slice(0, 32)}`;
 
 export async function syncProjectSchedule(project: Project, options: { mode?: 'local' | 'aws' } = {}): Promise<void> {
+  if (project.demo) return;
   if ((options.mode || process.env.APP_MODE) === 'local') return;
   const required = (name: string) => { const value = process.env[name]; if (!value) throw new Error(`Missing ${name}`); return value; };
   if (project.scanSchedule && !validScanSchedule(project.scanSchedule)) throw new Error('Invalid saved scan schedule');

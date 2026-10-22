@@ -33,6 +33,8 @@ export interface Prompt {
   tags?: string[];
 }
 export interface Project {
+  /** Explicit synthetic scenario; never dispatches paid scans or records real visits. */
+  demo?: DemoConfig;
   id: string;
   name: string;
   brand: Brand;
@@ -74,6 +76,23 @@ export interface Project {
     brandbookHash: string;
     error?: string;
   };
+}
+export interface DemoConfig {
+  version: 1;
+  source: 'igeo-nayax';
+  anchorDate: string;
+  startDate: string;
+  endDate: string;
+  sourceAccountId: string;
+  sourceCopiedAt: string;
+  samples?: {
+    promptId?: string;
+    promptText?: string;
+    answerText: string;
+    citations?: { url: string; title?: string }[];
+    companies?: string[];
+  }[];
+  traffic?: { pages?: string[]; countries?: string[]; browsers?: string[]; devices?: string[] };
 }
 export interface Membership {
   projectId: string;

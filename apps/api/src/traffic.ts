@@ -72,6 +72,7 @@ export async function publicTrafficRoute(
     const payload = parsed.data;
     const project = await runtime.repository.getProject(payload.projectId);
     if (!project) return json({ error: 'Unknown website' }, 404);
+    if (project.demo) return new Response(null, { status: 204 });
     const url = siteUrl(payload.url),
       origin = siteUrl(request.headers.get('origin') || '');
     if (!url || !origin || origin.origin !== url.origin)

@@ -152,7 +152,7 @@ export function DashboardView({
   actions?: ReactNode;
 }) {
   const [selection, setSelection] =
-    useState<MonitorSelection>(initialSelection);
+    useState<MonitorSelection>(() => initialSelection('7', project.demo));
   const [retry, setRetry] = useState(0);
   const overview = useApi<DashboardOverview>(
     `${path}/dashboard/overview${selectionQuery(selection)}`,
@@ -328,7 +328,7 @@ export function DashboardView({
                     </h2>
                     <p className="card-description">Top brands by visibility</p>
                   </div>
-                  {project.role === 'owner' && (
+                  {project.role === 'owner' && !project.demo && (
                     <a
                       className="button button-quiet overview-manage-competitors"
                       href="#settings"

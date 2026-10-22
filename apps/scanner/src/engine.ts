@@ -207,7 +207,7 @@ export class Scanner {
     if (primary?.cancelledAt) return;
     if (!primary) {
       const project = await repository.getProject(message.projectId);
-      if (!project || (!project.enabled && message.trigger !== 'manual'))
+      if (!project || project.demo || (!project.enabled && message.trigger !== 'manual'))
         return;
       if (message.trigger !== 'manual' && !isCurrentScheduledOccurrence(project, message)) return;
       if (project.onboardingJobId) {
