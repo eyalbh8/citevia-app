@@ -56,7 +56,11 @@ describe('agents and integrations interactions', () => {
       globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
     vi.clearAllMocks();
-    useApi.mockReturnValue({ data: { connections: [] } });
+    useApi.mockImplementation((path: string | null) => ({
+      data: !path ? undefined : path.endsWith('/prompts')
+        ? { items: [], version: 1 }
+        : { connections: [] },
+    }));
     HTMLElement.prototype.scrollIntoView = vi.fn();
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);

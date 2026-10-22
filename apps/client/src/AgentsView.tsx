@@ -21,6 +21,7 @@ import {
   type AgentContent,
   type AgentPost,
   type AgentPostPage,
+  type Prompt,
   type Project,
 } from '@citevia/core';
 import { idempotentPost, query, request, useApi } from './api';
@@ -67,6 +68,13 @@ export default function AgentsView({
   const [selectedId, setSelectedId] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<Error>();
+  // Account summaries omit prompts. Fetch the saved collection when the drawer
+  // opens rather than treating a summary's empty array as the real prompt list.
+  const promptsPath =
+    '/projects/' + encodeURIComponent(project.id) + '/prompts';
+  const accountPrompts = useApi<{ items: Prompt[]; version: number }>(
+    generateOpen ? promptsPath : null,
+  );
   const history = useApi<AgentPostPage>(
     `${path}/posts${query({ cursor: page * 10, limit: 10 })}`,
   );
@@ -76,8 +84,14 @@ export default function AgentsView({
   const posts = history.data?.items || [];
   const generating = posts.some(active) || active(detail.data?.post);
   const available = history.data?.generationAvailable === true;
-  const prompts = project.prompts.filter((item) => item.active);
-  const selectedPrompt = prompts.find((item) => item.id === promptId);
+  const prompts =
+    accountPrompts.data?.items.filter((item) => item.active) || [];
+  const promptsLoading =
+    accountPrompts.loading || (!accountPrompts.data && !accountPrompts.error);
+  const selectedPrompt =
+    !promptsLoading && !accountPrompts.error
+      ? prompts.find((item) => item.id === promptId)
+      : undefined;
   useEffect(() => {
     if (!generating) return;
     const timer = setInterval(() => void invalidateApiQueries(path), 3000);
@@ -306,22 +320,30 @@ export default function AgentsView({
               </span>
               <h3>Answer a prompt. Reach your audience.</h3>
               <p>
-                Choose the prompt to answer and the target agent for{' '}
+                Choose one of the saved account prompts and the target agent for{' '}
                 {project.brand.name}. Your brandbook guides the voice and
                 content.
               </p>
             </div>
             <ErrorNotice error={error} />
+            <ErrorNotice
+              error={accountPrompts.error}
+              retry={() => void invalidateApiQueries(promptsPath)}
+            />
             <fieldset className="agent-generation-fields" disabled={submitting}>
               <label htmlFor="agent-tracked-prompt">Prompt to answer</label>
               <select
                 id="agent-tracked-prompt"
                 required
+                disabled={Boolean(promptsLoading || accountPrompts.error)}
+                aria-busy={promptsLoading}
                 value={promptId}
                 onChange={(event) => setPromptId(event.target.value)}
               >
                 <option value="" disabled>
-                  Select a prompt
+                  {promptsLoading
+                    ? 'Loading account prompts…'
+                    : 'Select an account prompt'}
                 </option>
                 {prompts.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -344,16 +366,19 @@ export default function AgentsView({
                 }))}
               />
             </fieldset>
-            {!prompts.length && (
-              <div className="setting-note" role="status">
-                <Info size={17} />
-                <span>
-                  No active prompts available.{' '}
-                  <a href="#prompts">Add or activate a prompt</a> before
-                  generating an answer.
-                </span>
-              </div>
-            )}
+            {accountPrompts.data &&
+              !accountPrompts.error &&
+              !promptsLoading &&
+              !prompts.length && (
+                <div className="setting-note" role="status">
+                  <Info size={17} />
+                  <span>
+                    No active prompts available.{' '}
+                    <a href="#prompts">View account prompts</a> to activate an
+                    existing question.
+                  </span>
+                </div>
+              )}
             {!available && (
               <div className="setting-note" role="status">
                 <Info size={17} />

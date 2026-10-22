@@ -2,7 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentPost, AgentPostPage, Project } from '@citevia/core';
+import type { AgentPost, AgentPostPage, Project, Prompt } from '@citevia/core';
 const mocks = vi.hoisted(() => ({
   useApi: vi.fn(),
   request: vi.fn(),
@@ -50,7 +50,10 @@ const newPost = (): AgentPost => ({
 let root: Root,
   container: HTMLDivElement,
   report: AgentPostPage,
-  post: AgentPost;
+  post: AgentPost,
+  savedPrompts: Prompt[],
+  promptsLoading: boolean,
+  promptsError: Error | undefined;
 const button = (name: string) =>
   [...container.querySelectorAll<HTMLButtonElement>('button')].find(
     (item) =>
@@ -63,9 +66,7 @@ async function click(name: string) {
 }
 async function fill(id: string, value: string) {
   const element = document.getElementById(id) as
-    | HTMLInputElement
-    | HTMLTextAreaElement
-    | HTMLSelectElement;
+    HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
   expect(element).toBeTruthy();
   await act(async () => {
     const prototype =
@@ -118,9 +119,21 @@ describe('agent creation UI', () => {
       nextCursor: null,
       generationAvailable: true,
     };
+    savedPrompts = [...project.prompts];
+    promptsLoading = false;
+    promptsError = undefined;
     mocks.useApi.mockImplementation((path: string | null) => ({
-      data: !path ? undefined : path.includes('/posts/') ? { post } : report,
-      loading: false,
+      data: !path
+        ? undefined
+        : path.endsWith('/prompts')
+          ? promptsLoading || promptsError
+            ? undefined
+            : { items: savedPrompts, version: 1 }
+          : path.includes('/posts/')
+            ? { post }
+            : report,
+      loading: Boolean(path?.endsWith('/prompts') && promptsLoading),
+      error: path?.endsWith('/prompts') ? promptsError : undefined,
     }));
     mocks.idempotentPost.mockImplementation(async (path: string) => {
       post = { ...post, status: 'queued', content: null };
@@ -194,6 +207,7 @@ describe('agent creation UI', () => {
     expect(button('Generate content').disabled).toBe(true);
     expect(mocks.idempotentPost).not.toHaveBeenCalled();
     await click('Cancel');
+    savedPrompts = savedPrompts.map((prompt) => ({ ...prompt, active: false }));
     await render({
       ...project,
       prompts: project.prompts.map((prompt) => ({ ...prompt, active: false })),
@@ -204,6 +218,62 @@ describe('agent creation UI', () => {
     expect(
       document.querySelectorAll('#agent-tracked-prompt option'),
     ).toHaveLength(1);
+  });
+
+  it('loads saved account prompts even when the supplied account summary omits them', async () => {
+    savedPrompts.push({
+      ...project.prompts[0],
+      id: 'archived',
+      text: 'An archived account question',
+      active: false,
+    });
+    await render({ ...project, prompts: [], activePromptCount: 1 });
+    expect(mocks.useApi).not.toHaveBeenCalledWith(
+      '/projects/account-A/prompts',
+    );
+    await click('Generate');
+    expect(mocks.useApi).toHaveBeenCalledWith('/projects/account-A/prompts');
+    expect(container.textContent).not.toContain('No active prompts available');
+    expect(
+      document.querySelector('#agent-tracked-prompt option[value="tracked-1"]')
+        ?.textContent,
+    ).toBe('Which metrics should I track?');
+    expect(document.querySelector('textarea')).toBeNull();
+    expect(
+      document.querySelector('#agent-tracked-prompt option[value="archived"]'),
+    ).toBeNull();
+    await fill('agent-tracked-prompt', 'tracked-1');
+    await click('Generate content');
+    expect(mocks.idempotentPost).toHaveBeenCalledWith(
+      '/projects/account-A/agents/posts',
+      { channel: 'facebook', promptId: 'tracked-1' },
+    );
+  });
+
+  it('shows loading and fetch errors instead of a false empty account prompt list', async () => {
+    promptsLoading = true;
+    await render({ ...project, prompts: [] });
+    await click('Generate');
+    expect(container.textContent).toContain('Loading account prompts');
+    expect(container.textContent).not.toContain('No active prompts available');
+    expect(button('Generate content').disabled).toBe(true);
+    promptsLoading = false;
+    promptsError = new Error('Account prompts could not be loaded.');
+    await render({ ...project, prompts: [] });
+    expect(container.textContent).toContain(
+      'Account prompts could not be loaded.',
+    );
+    expect(container.textContent).not.toContain('No active prompts available');
+    expect(button('Generate content').disabled).toBe(true);
+    await click('Try again');
+    expect(mocks.invalidate).toHaveBeenCalledWith(
+      '/projects/account-A/prompts',
+    );
+    promptsError = undefined;
+    await render({ ...project, prompts: [] });
+    expect(
+      document.querySelector('#agent-tracked-prompt option[value="tracked-1"]'),
+    ).toBeTruthy();
   });
 
   it('supports keyboard agent selection with icons in every option', async () => {
@@ -286,6 +356,13 @@ describe('agent creation UI', () => {
     await render();
     await click('Generate');
     await fill('agent-tracked-prompt', 'tracked-1');
+    savedPrompts = [
+      {
+        ...project.prompts[0],
+        id: 'account-b-question',
+        text: 'A saved question for the other account',
+      },
+    ];
     await render({
       ...project,
       id: 'account-B',
@@ -300,5 +377,14 @@ describe('agent creation UI', () => {
     expect(mocks.useApi).toHaveBeenCalledWith(
       '/projects/account-B/agents/posts?cursor=0&limit=10',
     );
+    expect(mocks.useApi).toHaveBeenCalledWith('/projects/account-B/prompts');
+    expect(
+      document.querySelector('#agent-tracked-prompt option[value="tracked-1"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector(
+        '#agent-tracked-prompt option[value="account-b-question"]',
+      )?.textContent,
+    ).toBe('A saved question for the other account');
   });
 });
