@@ -18,6 +18,7 @@ import type {
   TrafficAggregate,
   TrafficInstallationReceipt,
   AgentPostJob,
+  AgentImage,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 import type { McpRepository } from './mcp.js';
@@ -31,6 +32,8 @@ export interface SavedAnalysis {
   analysis: Analysis | null;
 }
 export interface Repository extends UserRepository, McpRepository {
+  /** Atomically claim a photo forever within this account/channel; recover this generation’s claim. */
+  reserveAgentImage(post: AgentPostJob, image?: AgentImage): Promise<AgentImage | null>;
   getAgentPost(projectId: string, postId: string): Promise<AgentPostJob | null>;
   listAgentPosts(projectId: string, offset: number, limit: number): Promise<{ items: AgentPostJob[]; total: number }>;
   listActiveAgentPosts(): Promise<AgentPostJob[]>;

@@ -73,7 +73,7 @@ afterEach(async () => {
 });
 
 describe('blog post preview and export', () => {
-  it('renders the attributed photo, inline screenshots, FAQs and honest SEO feedback', async () => {
+  it('renders the attributed photo, no legacy screenshots, FAQs and honest SEO feedback', async () => {
     (
       globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -89,14 +89,14 @@ describe('blog post preview and export', () => {
         </>,
       ),
     );
-    expect(container.querySelectorAll('img')).toHaveLength(3);
+    expect(container.querySelectorAll('img')).toHaveLength(1);
     expect(container.textContent).toContain(
       'Photo by Photographer on Unsplash',
     );
     expect(
       container.querySelectorAll('.agent-example-screenshot'),
-    ).toHaveLength(2);
-    expect(container.textContent).toContain('Illustrative example data.');
+    ).toHaveLength(0);
+    expect(container.textContent).not.toContain('Illustrative example data.');
     expect(container.textContent).toContain('Visible answer 3.');
     expect(container.textContent).toContain('Confirm the final score in Yoast');
     expect(container.textContent).not.toContain('[[example-');
@@ -105,14 +105,14 @@ describe('blog post preview and export', () => {
       content.image!.photographerUrl,
     );
   });
-  it('exports HTML with embedded PNGs, SEO metadata and JSON-LD matching visible FAQs', async () => {
+  it('exports HTML with only the Unsplash hero, SEO metadata and JSON-LD matching visible FAQs', async () => {
     const html = (await blogArticleHtml(content))!;
     const doc = new DOMParser().parseFromString(html, 'text/html');
     expect(doc.title).toBe(content.blog!.seoTitle);
     expect(
       doc.querySelector('meta[name=description]')?.getAttribute('content'),
     ).toBe(content.blog!.metaDescription);
-    expect(doc.querySelectorAll('article img')).toHaveLength(3);
+    expect(doc.querySelectorAll('article img')).toHaveLength(1);
     const schema = JSON.parse(
       doc.querySelector('script[type="application/ld+json"]')!.textContent!,
     );

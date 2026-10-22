@@ -3,12 +3,15 @@ import {
   MemoryRepository,
   MemoryArtifacts,
   MemoryQueue,
+  PostgresRepository,
 } from '@citevia/storage';
 import {
   AGENT_CHANNELS,
   agentPostText,
   agentCopyValid,
   refreshAgentBlog,
+  blogSeoChecks,
+  type Brandbook,
   type AgentPostJob,
   type AgentImage,
   type BlogDraft,
@@ -19,11 +22,13 @@ import {
   parseAgentContent,
   parseBlogDraft,
   finalizeSocialCopy,
+  verifiedBlogLinks,
 } from '../apps/scanner/src/agent-generation.js';
 import { AGENT_PROMPTS } from '../apps/scanner/src/agent-prompts.js';
 import { UnsplashImages } from '../apps/scanner/src/agent-images.js';
-import { renderExampleScreenshot } from '../apps/scanner/src/agent-screenshots.js';
 import type { ProviderReceipt } from '../apps/scanner/src/provider.js';
+import { localPostgres } from '../packages/storage/src/local-postgres.js';
+import { readFile } from 'node:fs/promises';
 import { newProject } from './fixtures/scanner.js';
 
 const project = newProject({ id: 'platform-account' });
@@ -58,7 +63,7 @@ const image: AgentImage = {
   downloadLocation:
     'https://api.unsplash.com/photos/photo-test/download?ixid=retain-me',
 };
-const example = (id: string): BlogDraft['examples'][number] => ({
+const example = (id: string): NonNullable<BlogDraft['examples']>[number] => ({
   id,
   title: 'Example reporting decisions',
   caption: 'Choose a metric that answers the decision.',
@@ -84,7 +89,7 @@ const blog: BlogDraft = {
 };
 const copy = {
   title: 'Choosing useful reporting metrics',
-  body: 'Reporting metrics answer a clear question.\n\n## Reporting metrics in practice\n\n[[example-1]]\n\nUse a measure you can act on.\n\n[[example-2]]\n\n[Learn more](https://northstar.example/)',
+  body: 'Reporting metrics answer a clear question.\n\n## Reporting metrics in practice\n\n[[example-1]]\n\nUse a measure you can act on.\n\n[[example-2]]\n\n[Northstar reporting tools](https://northstar.example/)\n\nUse the [primary reporting guidance](https://example.org/primary) to evaluate each metric.',
   hashtags: [] as string[],
   blog,
 };
@@ -148,6 +153,13 @@ describe('platform-specific generation', () => {
         website: 'https://northstar.example/',
       });
     }
+    expect(agentGenerationRequest(post()).input).toMatchObject({
+      requiredAccountLink: {
+        url: 'https://northstar.example/',
+        markdown: '[Northstar](https://northstar.example/)',
+      },
+    });
+    expect(agentGenerationRequest(post()).input).not.toHaveProperty('topic');
     expect(agentGenerationRequest(post('x')).instructions).not.toContain(
       'Facebook',
     );
@@ -191,7 +203,7 @@ describe('platform-specific generation', () => {
         ...content,
         body: 'Read more. Link in bio.',
       }).body,
-    ).toBe('Read more. Link in bio.');
+    ).toBe('Read more.\n\nLink in bio.');
     const missing = post('facebook');
     missing.context.brand = { ...missing.context.brand, domains: [] };
     expect(() => finalizeSocialCopy(missing, content)).toThrow(
@@ -242,6 +254,33 @@ describe('Unsplash API selection', () => {
       );
     },
   );
+  it('skips reserved candidates and searches the next page rather than reusing a photo', async () => {
+    const request = vi.fn(async (url: string) =>
+      Response.json({
+        total_pages: 2,
+        results:
+          new URL(url).searchParams.get('page') === '1'
+            ? Array.from({ length: 30 }, (_, id) => ({
+                ...photo,
+                id: 'used-' + id,
+              }))
+            : [{ ...photo, id: 'fresh' }],
+      }),
+    );
+    const claim = vi.fn(
+      async (candidate: AgentImage) => candidate.photoId === 'fresh',
+    );
+    const api = new UnsplashImages('test', request as typeof fetch);
+    const selected = await api.select(
+      post('facebook'),
+      'analytics',
+      'Alt',
+      claim,
+    );
+    expect(selected.photoId).toBe('fresh');
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(claim).toHaveBeenCalledTimes(31);
+  });
   it('never substitutes a fabricated image when the API fails or has no results', async () => {
     const empty = new UnsplashImages(
       'test',
@@ -300,6 +339,80 @@ describe('blog recovery', () => {
     expect(answer).toHaveBeenCalledTimes(1);
     expect(extract).toHaveBeenCalledTimes(1);
   });
+  it('recovers a reserved photo even if saving the image checkpoint was interrupted', async () => {
+    const repository = new MemoryRepository(),
+      artifacts = new MemoryArtifacts(),
+      queue = new MemoryQueue();
+    await repository.saveProject(project, null);
+    const job = post('facebook');
+    await repository.reserveAgentPost(job, null);
+    await repository.reserveAgentImage(job, image);
+    await artifacts.put(
+      'projects/' +
+        project.id +
+        '/agent-posts/' +
+        job.id +
+        '/generation-1.json',
+      receipt({
+        title: 'A clear answer',
+        body: 'Choose one useful metric. Review it weekly.',
+        hashtags: [],
+      }),
+    );
+    const select = vi.fn(),
+      track = vi.fn(async () => {}),
+      provider = vi.fn();
+    const engine = new AgentPostEngine(
+      { repository, artifacts, queue },
+      provider,
+      () => new Date('2026-10-22T09:00:00Z'),
+      async () => ({ select, track }),
+    );
+    await engine.handle(project.id, job.id);
+    const saved = (await repository.getAgentPost(project.id, job.id))!;
+    expect(saved.status).toBe('draft');
+    expect(saved.content?.image).toEqual(image);
+    expect(select).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+    expect(track).toHaveBeenCalledTimes(1);
+  });
+  it.each(['internal', 'external'] as const)(
+    'does not finish a blog missing its %s link after editorial repair',
+    async (kind) => {
+      const repository = new MemoryRepository(),
+        artifacts = new MemoryArtifacts(),
+        queue = new MemoryQueue();
+      await repository.saveProject(project, null);
+      const job = { ...post(), stage: 'repair' as const };
+      await repository.reserveAgentPost(job, null);
+      const prefix =
+        'projects/' + project.id + '/agent-posts/' + job.id + '/generation-1';
+      await artifacts.put(prefix + '.json', researchReceipt);
+      await artifacts.put(prefix + '-format.json', receipt(copy));
+      const broken = {
+        ...copy,
+        body:
+          kind === 'internal'
+            ? '[Primary reporting guidance](https://example.org/primary)'
+            : '[Northstar reporting tools](https://northstar.example/)',
+      };
+      const select = vi.fn(),
+        track = vi.fn(),
+        extract = vi.fn(async () => receipt(broken));
+      const engine = new AgentPostEngine(
+        { repository, artifacts, queue },
+        async () => ({ answer: vi.fn(), extract }),
+        () => new Date('2026-10-22T09:00:00Z'),
+        async () => ({ select, track }),
+      );
+      await engine.handle(project.id, job.id);
+      expect(await repository.getAgentPost(project.id, job.id)).toMatchObject({
+        status: 'failed',
+        error: { code: 'agent_blog_links_missing' },
+      });
+      expect(select).not.toHaveBeenCalled();
+    },
+  );
   it('reuses final editorial and photo checkpoints after a database interruption', async () => {
     const repository = new MemoryRepository(),
       artifacts = new MemoryArtifacts(),
@@ -348,51 +461,20 @@ describe('blog recovery', () => {
 });
 
 describe('blog article pipeline', () => {
-  it('renders a real PNG of escaped example data with bundled fonts', async () => {
-    const screenshot = await renderExampleScreenshot({
-      ...example('example-1'),
-      title: '<script>alert("test")</script>',
-    });
-    const png = Buffer.from(screenshot.dataUrl.split(',')[1], 'base64');
-    expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
-    expect(png.readUInt32BE(16)).toBe(1200);
-    expect(png.readUInt32BE(20)).toBeGreaterThan(500);
-    expect(png.length).toBeGreaterThan(5000);
+  it('recovers legacy receipts without generating or retaining screenshots', () => {
+    const parsed = parseBlogDraft(receipt(copy));
+    expect(parsed.blog).not.toHaveProperty('examples');
+    expect(parsed.body).not.toContain('[[example-');
+    expect(parsed.body).toContain('Use a measure you can act on.');
+    const schema = agentGenerationRequest(post()).schema as {
+      properties: { blog: { properties: object } };
+    };
+    expect(schema.properties.blog.properties).not.toHaveProperty('examples');
+    expect(() =>
+      parseBlogDraft(receipt({ ...copy, hashtags: ['#Wrong'] })),
+    ).toThrow('separate FAQs');
   });
-  it('rejects missing screenshots, repeated example IDs and inconsistent data rows', () => {
-    expect(parseBlogDraft(receipt(copy))).toEqual(copy);
-    expect(() =>
-      parseBlogDraft(
-        receipt({ ...copy, body: copy.body.replace('[[example-1]]', '') }),
-      ),
-    ).toThrow('inline example');
-    expect(() =>
-      parseBlogDraft(
-        receipt({
-          ...copy,
-          blog: {
-            ...blog,
-            examples: [example('example-1'), example('example-1')],
-          },
-        }),
-      ),
-    ).toThrow('inline example');
-    expect(() =>
-      parseBlogDraft(
-        receipt({
-          ...copy,
-          blog: {
-            ...blog,
-            examples: [
-              { ...example('example-1'), rows: [['one cell']] },
-              example('example-2'),
-            ],
-          },
-        }),
-      ),
-    ).toThrow();
-  });
-  it('writes, formats, repairs SEO once, then saves screenshots, image attribution and matching schema', async () => {
+  it('writes, formats, repairs SEO once, then saves one hero image, attribution and matching schema', async () => {
     const repository = new MemoryRepository();
     await repository.saveProject(project, null);
     const job = post();
@@ -436,7 +518,8 @@ describe('blog article pipeline', () => {
       { url: 'https://example.org/primary', title: 'Primary source' },
     ]);
     const result = saved.content!.blog!;
-    expect(result.screenshots).toHaveLength(2);
+    expect(result).not.toHaveProperty('screenshots');
+    expect(result).not.toHaveProperty('examples');
     expect(result.articleSchema).toMatchObject({
       '@type': 'BlogPosting',
       headline: copy.title,
@@ -451,8 +534,8 @@ describe('blog article pipeline', () => {
       })),
     );
     const text = agentPostText('blog', saved.content!);
-    expect(text).toContain('data:image/png;base64,');
-    expect(text).toContain('Illustrative example data');
+    expect(text).not.toContain('data:image/png;base64,');
+    expect(text.match(/!\[/g)).toHaveLength(1);
     expect(text).toContain('application/ld+json');
     expect(text).not.toContain('[[example-');
     const edited = refreshAgentBlog(saved, {
@@ -471,3 +554,187 @@ describe('blog article pipeline', () => {
     ).toBe(false);
   });
 });
+
+describe('human editorial copy and supplied links', () => {
+  it.each(['facebook', 'instagram', 'pinterest', 'reddit'] as const)(
+    'formats %s into readable paragraphs without long dashes',
+    (channel) => {
+      const result = finalizeSocialCopy(post(channel), {
+        title: 'A useful — answer',
+        body: 'Choose a useful measure — start with the decision. Review it weekly. Keep the process simple.',
+        hashtags: [],
+      });
+      expect(result.body).toContain(
+        'Choose a useful measure, start with the decision.',
+      );
+      expect(result.body).toContain('\n\n');
+      expect(result.body + result.title).not.toMatch(/[\u2012-\u2015]/);
+      expect(agentCopyValid(channel, result)).toBe(true);
+    },
+  );
+  it('keeps hashtags in one separate block without duplicating them in the caption', () => {
+    const content = finalizeSocialCopy(post('facebook'), {
+      title: 'A caption',
+      body: 'Choose useful metrics.\n\n#AIsearch #Analytics',
+      hashtags: ['#AIsearch', '#Analytics', '#analytics'],
+    });
+    expect(content.body).toBe(
+      'Choose useful metrics.\n\nhttps://northstar.example/',
+    );
+    expect(content.hashtags).toEqual(['#AIsearch', '#analytics']);
+    expect(agentPostText('facebook', content).match(/#AIsearch/g)).toHaveLength(
+      1,
+    );
+  });
+  it('rejects a run-on caption rather than presenting it as finished copy', () => {
+    expect(() =>
+      finalizeSocialCopy(post('facebook'), {
+        title: 'A title',
+        body: 'word '.repeat(45) + '.',
+        hashtags: [],
+      }),
+    ).toThrow('run-on sentence');
+  });
+  it('keeps X within 280 characters after punctuation cleanup', () => {
+    const result = finalizeSocialCopy(post('x'), {
+      title: 'Metadata',
+      body: 'Choose useful metrics — then review them.',
+      hashtags: ['#Metrics'],
+    });
+    expect(result.body).toBe('Choose useful metrics, then review them.');
+    expect(agentCopyValid('x', result)).toBe(true);
+  });
+  it('preserves exact account hosts, allows supplied deep links and removes invented or repeated destinations', () => {
+    const job = post();
+    job.context.brand = {
+      ...job.context.brand,
+      domains: ['https://app.northstar.example/'],
+    };
+    job.context.brandbook = {
+      evidence: [{ url: 'https://app.northstar.example/guides/metrics' }],
+      caseStudies: [],
+    } as unknown as Brandbook;
+    const body =
+      '[Reporting guide](https://app.northstar.example/guides/metrics) and [Primary research](https://example.org/primary). [Duplicate](https://example.org/primary) [Invented](https://example.org/fake) [Click here](https://app.northstar.example/) [https://app.northstar.example/](https://app.northstar.example/) https://invented.example/ <https://example.org/evil>\n\n[ref]: https://bad.example/';
+    const clean = verifiedBlogLinks(job, body, [
+      { url: 'https://example.org/primary' },
+    ]);
+    expect(clean).toContain(
+      '[Reporting guide](https://app.northstar.example/guides/metrics)',
+    );
+    expect(clean).toContain('[Primary research](https://example.org/primary)');
+    expect(clean.match(/\]\(https:/g)).toHaveLength(2);
+    expect(clean).not.toContain('https://invented');
+    expect(clean).not.toContain('/fake');
+    expect(clean).not.toContain('/evil');
+    expect(clean).not.toContain('bad.example');
+    const checks = blogSeoChecks(
+      copy.title,
+      clean,
+      blog,
+      'en',
+      'https://app.northstar.example/',
+    );
+    expect(
+      checks
+        .filter((check) =>
+          ['internal-link', 'external-link'].includes(check.id),
+        )
+        .every((check) => check.passed),
+    ).toBe(true);
+  });
+});
+
+describe.each(['memory', 'postgres'] as const)(
+  '%s account/channel photo reservations',
+  (mode) => {
+    it('serializes competing selections, isolates accounts/channels, and recovers the reserved photo', async () => {
+      const db = mode === 'postgres' ? await localPostgres() : null;
+      const repository = db
+        ? new PostgresRepository(db)
+        : new MemoryRepository();
+      try {
+        await repository.saveProject(project, null);
+        const first = post('facebook'),
+          second = { ...post('facebook'), id: 'second' };
+        await repository.reserveAgentPost(first, null);
+        await repository.reserveAgentPost(second, null);
+        const claims = await Promise.all([
+          repository.reserveAgentImage(first, image),
+          repository.reserveAgentImage(second, image),
+        ]);
+        expect(claims.filter(Boolean)).toHaveLength(1);
+        const winner = claims[0] ? first : second,
+          loser = claims[0] ? second : first;
+        expect(await repository.reserveAgentImage(winner)).toEqual(image);
+        expect(
+          await repository.reserveAgentImage(winner, {
+            ...image,
+            photoId: 'alternative',
+          }),
+        ).toEqual(image);
+        expect(await repository.reserveAgentImage(loser, image)).toBeNull();
+        const next = { ...image, photoId: 'unused' };
+        expect(await repository.reserveAgentImage(loser, next)).toEqual(next);
+        const otherChannel = { ...post('instagram'), id: 'instagram' };
+        await repository.reserveAgentPost(otherChannel, null);
+        expect(await repository.reserveAgentImage(otherChannel, image)).toEqual(
+          image,
+        );
+        const otherProject = { ...project, id: 'other-account' };
+        await repository.saveProject(otherProject, null);
+        const otherAccount = {
+          ...post('facebook'),
+          projectId: otherProject.id,
+        };
+        await repository.reserveAgentPost(otherAccount, null);
+        expect(await repository.reserveAgentImage(otherAccount, image)).toEqual(
+          image,
+        );
+        const retry = { ...winner, generation: 2, version: 2 };
+        await repository.saveAgentPost(retry, 1);
+        expect(await repository.reserveAgentImage(retry, image)).toBeNull();
+        expect(
+          await repository.reserveAgentImage(retry, {
+            ...image,
+            photoId: 'retry-unused',
+          }),
+        ).toMatchObject({ photoId: 'retry-unused' });
+      } finally {
+        await db?.close();
+      }
+    }, 30000);
+    it('excludes photos already present in legacy saved drafts', async () => {
+      const db = mode === 'postgres' ? await localPostgres() : null;
+      const repository = db
+        ? new PostgresRepository(db)
+        : new MemoryRepository();
+      try {
+        await repository.saveProject(project, null);
+        const legacy = {
+          ...post('facebook'),
+          status: 'draft' as const,
+          content: {
+            title: 'Legacy',
+            body: 'Legacy body.',
+            hashtags: [],
+            image,
+          },
+        };
+        await repository.reserveAgentPost(legacy, null);
+        if (db) {
+          const migration = await readFile(
+            'database/migrations/010_agent_images.sql',
+            'utf8',
+          );
+          await db.exec(migration.slice(migration.indexOf('INSERT INTO')));
+        }
+        const fresh = { ...post('facebook'), id: 'fresh' };
+        await repository.reserveAgentPost(fresh, null);
+        expect(await repository.reserveAgentImage(fresh, image)).toBeNull();
+      } finally {
+        await db?.close();
+      }
+    }, 30000);
+  },
+);

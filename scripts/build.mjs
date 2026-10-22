@@ -1,5 +1,7 @@
 import { build } from 'esbuild';
-import { mkdir, cp } from 'node:fs/promises';
+import { mkdir, cp, rm } from 'node:fs/promises';
+// Remove media renderer assets left by builds before the hero-only blog flow.
+await rm('dist/scanner/agent-assets', {recursive:true, force:true});
 for (const app of ['api', 'scanner']) {
   await mkdir(`dist/${app}`, { recursive: true });
   await build({
@@ -22,9 +24,6 @@ for (const app of ['api', 'scanner']) {
 await cp('node_modules/geoip-country', 'dist/api/node_modules/geoip-country', {
   recursive: true,
 });
-
-await cp('apps/scanner/assets', 'dist/scanner/agent-assets', { recursive: true });
-await cp('node_modules/@resvg/resvg-wasm/index_bg.wasm', 'dist/scanner/agent-assets/index_bg.wasm');
 
 // Bundle country lookup runtime dependencies, while retaining its data and notices.
 await build({

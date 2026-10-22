@@ -1,4 +1,5 @@
 import type { AgentContent, AgentPostJob, BlogDraft } from './agents.js';
+import { blogBodyText, descriptiveLinkLabel } from './agent-editorial.js';
 import { normalizeDomain } from './urls.js';
 
 const plain = (value: string) =>
@@ -20,14 +21,12 @@ export function blogSeoChecks(
   const key = blog.focusKeyphrase.toLocaleLowerCase();
   const has = (value: string) => value.toLocaleLowerCase().includes(key);
   const text = plain(body);
-  // FAQs and captions are visible article content in the preview and HTML export.
+  // FAQs are visible article content in the preview and HTML export.
   // Include them in the word count just as the published post's content editor does.
   const visibleText =
     text +
     '\n' +
-    blog.faqs.map((item) => item.question + ' ' + item.answer).join('\n') +
-    '\n' +
-    blog.examples.map((item) => item.caption).join('\n');
+    blog.faqs.map((item) => item.question + ' ' + item.answer).join('\n');
   const words = visibleText.match(/[\p{L}\p{N}]+/gu) || [];
   const paragraphs = text.split(/\n\s*\n/).filter(Boolean);
   const sentences = plain(
@@ -100,13 +99,6 @@ export function blogSeoChecks(
           0.25,
     },
     {
-      id: 'examples',
-      label: 'Both example-data screenshots appear inside the article',
-      passed: ['example-1', 'example-2'].every(
-        (id) => body.split('[[' + id + ']]').length === 2,
-      ),
-    },
-    {
       id: 'faqs',
       label: 'Three to five visible FAQs with matching schema',
       passed: blog.faqs.length >= 3 && blog.faqs.length <= 5,
@@ -114,10 +106,24 @@ export function blogSeoChecks(
     {
       id: 'internal-link',
       label: 'Article includes a supplied account website link',
-      passed: [...body.matchAll(/\[[^\]]+\]\((https?:\/\/[^)]+)\)/g)].some(
+      passed: [...body.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g)].some(
         (match) =>
-          !website || normalizeDomain(match[1]) === normalizeDomain(website),
+          Boolean(website) &&
+          normalizeDomain(match[2]) === normalizeDomain(website!) &&
+          descriptiveLinkLabel(match[1]),
       ),
+    },
+    {
+      id: 'external-link',
+      label:
+        'Article cites a supplied external source with descriptive anchor text',
+      passed:
+        Boolean(website) &&
+        [...body.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g)].some(
+          (match) =>
+            normalizeDomain(match[2]) !== normalizeDomain(website!) &&
+            descriptiveLinkLabel(match[1]),
+        ),
     },
     {
       id: 'article-title',
@@ -136,22 +142,15 @@ export function refreshAgentBlog(
   content: AgentContent,
 ): AgentContent {
   if (!content.blog) return content;
-  const blog = content.blog;
-  let bodyWithExamples = content.body;
-  for (const example of blog.examples) {
-    bodyWithExamples = bodyWithExamples.replace(
-      '[[' + example.id + ']]',
-      example.title +
-        '\nIllustrative example data: ' +
-        example.columns.join(' | ') +
-        '\n' +
-        example.rows.map((row) => row.join(' | ')).join('\n') +
-        '\n' +
-        example.caption,
-    );
-  }
+  const {
+    examples: _examples,
+    screenshots: _screenshots,
+    ...blog
+  } = content.blog;
+  content = { ...content, body: blogBodyText(content.body) };
+  const visibleBody = content.body;
   const articleBody =
-    plain(bodyWithExamples) +
+    plain(visibleBody) +
     '\n\n' +
     blog.faqs.map((item) => item.question + '\n' + item.answer).join('\n\n');
   const author = { '@type': 'Organization', name: post.context.brand.name };

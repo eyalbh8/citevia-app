@@ -188,7 +188,7 @@ describe.each(['memory', 'postgres'] as const)(
       const response = await f.call(`/${post.id}`);
       const saved = (await response.json()).post;
       expect(saved.status).toBe('draft');
-      expect(saved.content).toEqual({...draft,body:draft.body + '\n\nhttps://northstar.example/',image:photo});
+      expect(saved.content).toEqual({...draft,body:'Start with one question.\n\nChoose metrics that help your team answer it.\n\nhttps://northstar.example/',image:photo});
       expect(saved).not.toHaveProperty('context');
       expect(saved).not.toHaveProperty('createdBy');
       expect(saved).not.toHaveProperty('fingerprint');

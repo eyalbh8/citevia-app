@@ -1,4 +1,9 @@
-import { agentJsonLd, type AgentContent, type AgentImage } from '@citevia/core';
+import {
+  blogBodyText,
+  agentJsonLd,
+  type AgentContent,
+  type AgentImage,
+} from '@citevia/core';
 import AnswerMarkdown from './AnswerMarkdown';
 
 export function AgentPhoto({ image }: { image: AgentImage }) {
@@ -24,26 +29,10 @@ export function AgentPhoto({ image }: { image: AgentImage }) {
 }
 export function AgentBlogBody({ content }: { content: AgentContent }) {
   const blog = content.blog;
-  if (!blog) return <AnswerMarkdown text={content.body} />;
+  if (!blog) return <AnswerMarkdown text={blogBodyText(content.body)} />;
   return (
     <>
-      {content.body.split(/(\[\[example-[12]\]\])/g).map((part, index) => {
-        const id = part.match(/^\[\[(example-[12])\]\]$/)?.[1];
-        if (!id) return <AnswerMarkdown key={index} text={part} />;
-        const example = blog.examples.find((item) => item.id === id);
-        const screenshot = blog.screenshots.find((item) => item.id === id);
-        return example && screenshot ? (
-          <figure key={index} className="agent-example-screenshot">
-            <img
-              src={screenshot.dataUrl}
-              alt={example.title + ' — illustrative example data'}
-            />
-            <figcaption>
-              <strong>Illustrative example data.</strong> {example.caption}
-            </figcaption>
-          </figure>
-        ) : null;
-      })}
+      <AnswerMarkdown text={blogBodyText(content.body)} />
       <section className="agent-blog-faqs">
         <h2>Frequently asked questions</h2>
         {blog.faqs.map((faq, index) => (

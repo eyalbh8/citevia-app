@@ -211,7 +211,6 @@ export default function AgentsView({
                   <tr>
                     <th>Agent</th>
                     <th>Date and time</th>
-                    <th>Topic</th>
                     <th>Prompt</th>
                     <th>Status</th>
                     <th>
@@ -240,7 +239,6 @@ export default function AgentsView({
                           })}
                         </small>
                       </td>
-                      <td>{post.topic}</td>
                       <td>
                         <span className="agent-history-prompt">
                           {post.prompt}
@@ -259,7 +257,7 @@ export default function AgentsView({
                       <td>
                         <button
                           className="button button-outline"
-                          aria-label={`Open post: ${post.topic}`}
+                          aria-label={`Open post: ${post.prompt}`}
                           onClick={() => setSelectedId(post.id)}
                         >
                           Open
@@ -527,8 +525,6 @@ function PostDetail({
         </span>
       </div>
       <dl className="agent-post-context">
-        <dt>Topic</dt>
-        <dd>{post.topic}</dd>
         <dt>Prompt</dt>
         <dd>{post.prompt}</dd>
       </dl>

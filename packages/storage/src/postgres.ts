@@ -29,6 +29,7 @@ import { AccessError, PostgresUsers } from './users.js';
 const data = <T>(rows: Record<string, unknown>[]): T | null =>
   rows.length ? (rows[0].data as T) : null;
 export class PostgresRepository extends PostgresUsers implements Repository {
+  reserveAgentImage(post: import('@citevia/core').AgentPostJob, image?: import('@citevia/core').AgentImage) { return agents.reserveAgentImage(this.db, post, image); }
   getAgentPost(projectId: string, postId: string) { return agents.getAgentPost(this.db, projectId, postId); }
   listAgentPosts(projectId: string, offset: number, limit: number) { return agents.listAgentPosts(this.db, projectId, offset, limit); }
   listActiveAgentPosts() { return agents.listActiveAgentPosts(this.db); }

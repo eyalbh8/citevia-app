@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import {
   blogSeoChecks,
   refreshAgentBlog,
+  normalizeUrl,
   type AgentImage,
   type AgentPostJob,
   type AgentContent,
@@ -20,7 +21,6 @@ export {
   parseAgentContent,
 } from './agent-generation.js';
 import { createAgentImages, type AgentImages } from './agent-images.js';
-import { renderExampleScreenshot } from './agent-screenshots.js';
 import { normalizeAnswer } from './normalize.js';
 import { accountWebsite } from './agent-prompts.js';
 import type { Runtime } from '@citevia/storage';
@@ -142,14 +142,24 @@ export class AgentPostEngine {
           const research = normalizeAnswer(researchReceipt, current.model);
           const sourceBrief = {
             text: research.text.slice(0, 18000),
-            sources: research.citations
-              .map((item) => ({ url: item.url, title: item.title }))
-              .slice(0, 3),
+            sources: [
+              ...new Map(
+                research.citations.map((item) => [
+                  item.url,
+                  { url: item.url, title: item.title },
+                ]),
+              ).values(),
+            ].slice(0, 3),
             researchedAt: researchReceipt.receivedAt,
           };
           if (current.stage === 'write') draft = { research: sourceBrief };
           else {
             const previous = parseBlogDraft(source);
+            previous.body = verifiedBlogLinks(
+              current,
+              previous.body,
+              sourceBrief.sources,
+            );
             draft = {
               ...previous,
               research: sourceBrief,
@@ -266,23 +276,27 @@ export class AgentPostEngine {
             ]);
           return;
         }
-        const screenshots = await Promise.all(
-          draft.blog.examples.map(renderExampleScreenshot),
-        );
-        const website = accountWebsite(current);
-        if (website && !draft.body.includes(website))
-          draft.body +=
-            '\n\n[' +
-            current.context.brand.name.replace(/[[\]\\]/g, '') +
-            '](' +
-            website +
-            ')';
+        if (
+          failedChecks.some((check) =>
+            ['internal-link', 'external-link'].includes(check.id),
+          )
+        )
+          throw new ProviderError(
+            'agent_blog_links_missing',
+            'The blog needs contextual links to a supplied account page and an external research source. Add relevant website evidence to the brandbook and retry generation.',
+            false,
+          );
         content = {
           ...draft,
           blog: {
             ...draft.blog,
-            screenshots,
-            sources,
+            sources: sources.filter((source) =>
+              [
+                ...draft.body.matchAll(/\[[^\]]+\]\((https?:\/\/[^)]+)\)/g),
+              ].some(
+                (match) => normalizeUrl(match[1]) === normalizeUrl(source.url),
+              ),
+            ),
             researchedAt: researchReceipt.receivedAt,
             articleSchema: {},
             faqSchema: {},
@@ -299,7 +313,7 @@ export class AgentPostEngine {
         query =
           agentOutput(receipt).imageSearchQuery ||
           current.context.brandbook?.industryCategory ||
-          current.topic;
+          current.prompt;
         alt = content.title;
       }
       const imageKey =
@@ -310,16 +324,36 @@ export class AgentPostEngine {
         '/generation-' +
         post.generation +
         '-image.json';
-      let image = await artifacts.get<AgentImage>(imageKey);
+      let image = await repository.reserveAgentImage(current);
       const images = await this.images();
       if (!image) {
-        image = await images.select(current, query, alt);
-        await artifacts.put(imageKey, image);
+        const checkpoint = await artifacts.get<AgentImage>(imageKey);
+        if (checkpoint)
+          image = await repository.reserveAgentImage(current, checkpoint);
       }
+      if (!image) {
+        const selected = await images.select(
+          current,
+          query,
+          alt,
+          async (candidate) =>
+            Boolean(await repository.reserveAgentImage(current, candidate)),
+        );
+        image = await repository.reserveAgentImage(current, selected);
+        if (!image)
+          throw new ProviderError(
+            'unsplash_photo_reused',
+            'This photo was already selected for this account and channel. Retry generation to choose an unused photo.',
+            false,
+          );
+      }
+      await artifacts.put(imageKey, image);
       const trackedKey = imageKey + '.tracked';
-      if (!(await artifacts.get(trackedKey))) {
+      const tracked = await artifacts.get<{ photoId?: string }>(trackedKey);
+      if (tracked?.photoId !== image.photoId) {
         await images.track(image);
         await artifacts.put(trackedKey, {
+          photoId: image.photoId,
           trackedAt: this.now().toISOString(),
         });
       }

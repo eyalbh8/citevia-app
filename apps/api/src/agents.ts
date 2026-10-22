@@ -84,8 +84,7 @@ export async function agentRoute(
     );
     return json({
       ...page,
-      // History uses metadata only. Embedded screenshots stay in the detail
-      // endpoint so a page of blog drafts cannot exceed Lambda response limits.
+      // History uses metadata only; fetch full blog content through the detail endpoint.
       items: page.items.map(post => ({...publicAgentPost(post),content:null})),
       nextCursor:
         Number(cursor) + limit < page.total

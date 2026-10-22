@@ -3,6 +3,10 @@ import {
   agentCopyValid,
   blogDraftSchema,
   normalizeUrl,
+  normalizeDomain,
+  blogBodyText,
+  naturalPunctuation,
+  descriptiveLinkLabel,
   type AgentPostJob,
   type AgentContent,
 } from '@citevia/core';
@@ -44,17 +48,6 @@ const blogOutputSchema = object({
   imageSearchQuery: string(100),
   imageAlt: string(300),
   faqs: array(object({ question: string(250), answer: string(1500) }), 3, 5),
-  examples: array(
-    object({
-      id: { type: 'string', enum: ['example-1', 'example-2'] },
-      title: string(90),
-      caption: string(300),
-      columns: array(string(30), 2, 4),
-      rows: array(array(string(55), 2, 4), 2, 5),
-    }),
-    2,
-    2,
-  ),
 });
 
 export function agentGenerationRequest(
@@ -125,6 +118,8 @@ export function parseAgentContent(
   const content = agentContentSchema
     .pick({ title: true, body: true, hashtags: true })
     .parse(copy);
+  content.title = naturalPunctuation(content.title);
+  content.body = naturalPunctuation(content.body);
   if (!agentCopyValid(post.channel, content))
     throw new ProviderError(
       'agent_content_too_long',
@@ -134,34 +129,32 @@ export function parseAgentContent(
   return content;
 }
 export function parseBlogDraft(receipt: ProviderReceipt) {
+  const output = agentOutput(receipt);
+  // Receipts from jobs started before the editorial change remain recoverable.
+  if (output.blog) {
+    delete output.blog.examples;
+    delete output.blog.screenshots;
+  }
   const parsed = agentContentSchema
     .pick({ title: true, body: true, hashtags: true })
     .extend({ blog: blogDraftSchema })
-    .parse(agentOutput(receipt));
-  // LLMs sometimes repeat a placement marker in an appendix. Keep its first
-  // placement so editorial formatting can proceed without duplicating an image.
-  for (const id of ['example-1', 'example-2']) {
-    let seen = false;
-    parsed.body = parsed.body.replaceAll('[[' + id + ']]', (match) => {
-      if (seen) return '';
-      seen = true;
-      return match;
-    });
-  }
+    .parse(output);
+  parsed.body = naturalPunctuation(blogBodyText(parsed.body));
+  parsed.title = naturalPunctuation(parsed.title);
+  parsed.blog.seoTitle = naturalPunctuation(parsed.blog.seoTitle);
+  parsed.blog.metaDescription = naturalPunctuation(parsed.blog.metaDescription);
+  parsed.blog.imageAlt = naturalPunctuation(parsed.blog.imageAlt);
+  parsed.blog.faqs = parsed.blog.faqs.map((item) => ({
+    question: naturalPunctuation(item.question),
+    answer: naturalPunctuation(item.answer),
+  }));
   if (
     parsed.hashtags.length ||
-    new Set(parsed.blog.examples.map((item) => item.id)).size !== 2 ||
-    parsed.blog.examples.some((item) =>
-      item.rows.some((row) => row.length !== item.columns.length),
-    ) ||
-    ['example-1', 'example-2'].some(
-      (id) => parsed.body.split('[[' + id + ']]').length !== 2,
-    ) ||
     /^#{1,3}\s+(?:frequently asked questions|faqs?)\s*$/im.test(parsed.body)
   )
     throw new ProviderError(
       'agent_invalid_blog',
-      'The blog must have two inline example screenshots and separate FAQs. Retry generation.',
+      'The blog must contain separate FAQs and no hashtags. Retry generation.',
       false,
     );
   return parsed;
@@ -172,7 +165,7 @@ export function verifiedBlogLinks(
   sources: { url: string }[] = [],
 ) {
   const book = post.context.brandbook;
-  const allowed = new Set(
+  const allowed = new Map(
     [
       accountWebsite(post),
       ...sources.map((item) => item.url),
@@ -182,18 +175,105 @@ export function verifiedBlogLinks(
         .map((item) => item.sourceUrl) || []),
     ]
       .filter((item): item is string => Boolean(item))
-      .map((item) => normalizeUrl(item)),
+      .map((item) => [normalizeUrl(item), item]),
   );
-  return body.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-    (match, label, url) => (allowed.has(normalizeUrl(url)) ? match : label),
+  const seen = new Set<string>();
+  const counts = { internal: 0, external: 0 };
+  const website = accountWebsite(post);
+  const kept: string[] = [];
+  // Only supplied inline destinations survive. Strip reference definitions,
+  // autolinks and bare model-invented URLs as well as ordinary Markdown links.
+  const cleaned = blogBodyText(body)
+    .replace(/^ {0,3}\[[^\]]+\]:.*$/gm, '')
+    .replace(
+      /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+      (_match, label: string, url: string) => {
+        const normalized = normalizeUrl(url);
+        const kind =
+          website && normalizeDomain(url) === normalizeDomain(website)
+            ? 'internal'
+            : 'external';
+        if (
+          !normalized ||
+          !allowed.has(normalized) ||
+          seen.has(normalized) ||
+          counts[kind] >= 3 ||
+          !descriptiveLinkLabel(label)
+        )
+          return label;
+        seen.add(normalized);
+        counts[kind]++;
+        const index =
+          kept.push('[' + label + '](' + allowed.get(normalized) + ')') - 1;
+        return '\u0000LINK' + index + '\u0000';
+      },
+    )
+    .replace(/<?https?:\/\/[^\s<>]+>?/g, '');
+  return cleaned.replace(
+    /\u0000LINK(\d+)\u0000/g,
+    (_match, index) => kept[Number(index)],
   );
 }
 export function finalizeSocialCopy(
   post: AgentPostJob,
   content: AgentContent,
 ): AgentContent {
-  let body = content.body;
+  const hashtags = [
+    ...new Map(
+      content.hashtags.map((tag) => [tag.toLocaleLowerCase(), tag]),
+    ).values(),
+  ];
+  let body = naturalPunctuation(content.body).trim();
+  // Some responses repeat the structured hashtag array inside their caption.
+  for (const tag of hashtags) {
+    const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    body = body.replace(
+      new RegExp('(^|\\s)' + escaped + '(?![\\p{L}\\p{N}_])', 'giu'),
+      '$1',
+    );
+  }
+  body = body
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const segmenter = new Intl.Segmenter(post.context.language, {
+    granularity: 'sentence',
+  });
+  if (
+    [...segmenter.segment(body)].some(
+      (item) =>
+        (
+          item.segment
+            .replace(/https?:\/\/[^\s]+/g, '')
+            .match(/[\p{L}\p{N}]+/gu) || []
+        ).length > 40,
+    )
+  )
+    throw new ProviderError(
+      'agent_sentence_too_long',
+      'The generated caption contains a run-on sentence. Retry generation for shorter, more readable copy.',
+      false,
+    );
+  if (post.channel !== 'x') {
+    body = body
+      .split(/\n\s*\n/)
+      .map((paragraph) => {
+        if (/^\s*(?:[-*]|\d+\.)\s/m.test(paragraph)) return paragraph;
+        const sentences = [...segmenter.segment(paragraph)]
+          .map((item) => item.segment.trim())
+          .filter(Boolean);
+        const group = post.channel === 'reddit' ? 2 : 1;
+        return sentences
+          .reduce<string[]>((parts, sentence, index) => {
+            if (index % group === 0) parts.push(sentence);
+            else parts[parts.length - 1] += ' ' + sentence;
+            return parts;
+          }, [])
+          .join('\n\n');
+      })
+      .join('\n\n');
+  }
+
   if (post.channel === 'facebook') {
     const website = accountWebsite(post);
     if (!website)
@@ -208,7 +288,12 @@ export function finalizeSocialCopy(
     body = body.replace(/https?:\/\/[^\s]+/g, '').trim();
     if (!/link in bio/i.test(body)) body += '\n\nLink in bio.';
   }
-  const result = { ...content, body };
+  const result = {
+    ...content,
+    title: naturalPunctuation(content.title),
+    body,
+    hashtags,
+  };
   if (!agentCopyValid(post.channel, result))
     throw new ProviderError(
       'agent_content_too_long',

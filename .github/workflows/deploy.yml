@@ -39,6 +39,7 @@ jobs:
       DESCOPE_BASE_URL: ${{ vars.DESCOPE_BASE_URL || 'https://api.descope.com' }}
       VITE_LOGO_DEV_API_KEY: ${{ vars.VITE_LOGO_DEV_API_KEY }}
       OPENAI_SECRET_ARN: ${{ vars.OPENAI_SECRET_ARN }}
+      UNSPLASH_SECRET_ARN: ${{ vars.UNSPLASH_SECRET_ARN }}
       PERPLEXITY_SECRET_ARN: ${{ vars.PERPLEXITY_SECRET_ARN }}
       GEMINI_SECRET_ARN: ${{ vars.GEMINI_SECRET_ARN }}
       PERPLEXITY_PRESET: ${{ vars.PERPLEXITY_PRESET || 'fast@2026-10-16.0' }}
@@ -83,6 +84,19 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: citevia-deploy-${{ github.run_id }}
+      - name: Resolve shared content photo configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          photo_secret_arn="$UNSPLASH_SECRET_ARN"
+          if [[ -z "$photo_secret_arn" ]]; then
+            photo_secret_arn="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Parameters[?ParameterKey=='UnsplashSecretArn'].ParameterValue | [0]" --output text)"
+          fi
+          if [[ ! "$photo_secret_arn" =~ ^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+ ]]; then
+            echo "Configure UNSPLASH_SECRET_ARN or enable the shared photo service on the existing stack before deployment." >&2
+            exit 1
+          fi
+          echo "UNSPLASH_SECRET_ARN=$photo_secret_arn" >> "$GITHUB_ENV"
       - name: Deploy reviewed backend
         shell: bash
         run: |
@@ -103,6 +117,7 @@ jobs:
               "DescopeSecretArn=$DESCOPE_SECRET_ARN" \
               "DescopeBaseUrl=$DESCOPE_BASE_URL" \
               "OpenAiSecretArn=$OPENAI_SECRET_ARN" \
+              "UnsplashSecretArn=$UNSPLASH_SECRET_ARN" \
               "PerplexitySecretArn=$PERPLEXITY_SECRET_ARN" \
               "GeminiSecretArn=$GEMINI_SECRET_ARN" \
               "PerplexityPreset=$PERPLEXITY_PRESET" \

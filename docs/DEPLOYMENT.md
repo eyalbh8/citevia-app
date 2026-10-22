@@ -52,7 +52,7 @@ Inspect the response file for `refreshed:true` and `scanStarted:false`, and chec
 4. A known production HTTPS frontend origin, without a trailing slash. An Amplify branch URL is sufficient; a custom domain is optional.
 5. A Descope project, a published login flow and a server management key permitting the required user lookups. Configure the production frontend origin in that project. The project ID and base URL must match between the browser and API.
 
-Create four separate Secrets Manager secrets using the console: OpenAI (`OPENAI_API_KEY`), Perplexity (`PERPLEXITY_API_KEY`), Gemini (`GEMINI_API_KEY`) and Descope (`DESCOPE_MANAGEMENT_KEY`). Each secret accepts a raw key or JSON containing that field. Use the default `aws/secretsmanager` encryption key. Save the secret ARN for deployment. Do not put the API key in a template, GitHub variable, Amplify environment variable, or Git repository. A customer-managed KMS key requires an additional scoped `kms:Decrypt` permission on the corresponding Lambda role (scanner for provider keys, API for Descope) and a matching key policy.
+Create five separate Secrets Manager secrets using the console: OpenAI (`OPENAI_API_KEY`), Perplexity (`PERPLEXITY_API_KEY`), Gemini (`GEMINI_API_KEY`), Descope (`DESCOPE_MANAGEMENT_KEY`) and Unsplash (`UNSPLASH_ACCESS_KEY`). Each secret accepts a raw key or JSON containing that field. Use the default `aws/secretsmanager` encryption key. Save the secret ARN for deployment. Do not put the API key in a template, GitHub variable, Amplify environment variable, or Git repository. A customer-managed KMS key requires an additional scoped `kms:Decrypt` permission on the corresponding Lambda role (scanner for provider keys, API for Descope) and a matching key policy.
 
 ## Build and deploy the backend
 
@@ -74,6 +74,7 @@ The build writes `dist/api/index.mjs` and `dist/scanner/index.mjs`. The template
 - `DescopeSecretArn`: the existing server-only user-lookup key secret ARN.
 - `DescopeBaseUrl`: the project API/custom domain URL, default `https://api.descope.com`. Use the matching value in the browser.
 - `OpenAiSecretArn`, `PerplexitySecretArn` and `GeminiSecretArn`: the existing provider secret ARNs, never their values. Only the scanner can read provider secret values. The API receives their ARNs to report configuration availability.
+- `UnsplashSecretArn`: the server-only photo service secret, raw or JSON with `UNSPLASH_ACCESS_KEY`. Set this shared parameter to enable content creation for every account. No per-account provider key or social connection is needed. Both API and scanner receive the ARN; only the scanner may read its value. An empty parameter disables new content generation globally. Existing account membership and owner permissions still apply.
 - `PerplexityPreset`: defaults to `fast@2026-10-16.0`, a pinned Agent API preset. Validate this version with your account before deployment.
 - `GeminiGenerationModel`: defaults to `gemini-3.8-flash`. Validate Google Search grounding, billing and model access with your Gemini API project.
 - `GenerationModel` and `ExtractionModel`: defaults are `gpt-4.1-2025-04-14` and `gpt-4.1-mini-2025-04-14`. Check availability with your OpenAI project before accepting them.
@@ -191,7 +192,7 @@ Refresh the workspace. As a system administrator, use **Accounts → New account
 - `AWS_DEPLOY_ROLE_ARN`: an IAM role trusted through GitHub OIDC.
 - `CLOUDFORMATION_ROLE_ARN`: the separate CloudFormation execution role.
 - `ARTIFACT_BUCKET`: an existing private S3 bucket for deployment bundles in the target region.
-- `FRONTEND_ORIGIN`, `DESCOPE_PROJECT_ID`, `DESCOPE_SECRET_ARN`, `OPENAI_SECRET_ARN`, `PERPLEXITY_SECRET_ARN` and `GEMINI_SECRET_ARN`: the backend parameter values above.
+- `FRONTEND_ORIGIN`, `DESCOPE_PROJECT_ID`, `DESCOPE_SECRET_ARN`, `OPENAI_SECRET_ARN`, `UNSPLASH_SECRET_ARN`, `PERPLEXITY_SECRET_ARN` and `GEMINI_SECRET_ARN`: the backend parameter values above. The deployment workflow requires these settings before publishing. For an existing stack, an unset GitHub variable `UNSPLASH_SECRET_ARN` inherits the already configured stack parameter; a new deployment must provide it explicitly.
 - Optional `DESCOPE_BASE_URL`, `OPENAI_GENERATION_MODEL`, `OPENAI_EXTRACTION_MODEL`, `OPENAI_ONBOARDING_MODEL`, `PERPLEXITY_PRESET`, `GEMINI_GENERATION_MODEL` and `ALERT_EMAIL`.
 
 Adapt `infra/github-oidc-trust.example.json` for your account, repository, and exact GitHub environment. Bind the role trust to that exact repository/environment and `sts.amazonaws.com` audience. Do not store long-lived AWS keys in GitHub.

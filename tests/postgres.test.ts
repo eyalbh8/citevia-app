@@ -76,7 +76,7 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
     await migrateDatabase(db);
     const migrations = (await db.query('SELECT name FROM citevia_migrations')).rows;
     expect(migrations).toEqual(expect.arrayContaining([{ name: '009_agent_posts.sql' }]));
-    expect(migrations).toHaveLength(9);
+    expect(migrations).toHaveLength(10);
     const fields = (
       await db.query(
         `SELECT column_name,data_type FROM information_schema.columns WHERE table_name='prompt_responses'`,

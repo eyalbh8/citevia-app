@@ -1,3 +1,5 @@
+import { refreshAgentBlog } from './agent-blog.js';
+import { blogBodyText } from './agent-editorial.js';
 import { z } from 'zod';
 import type { Brand, Brandbook } from './types.js';
 
@@ -91,7 +93,8 @@ export const blogDraftSchema = z
       )
       .min(3)
       .max(5),
-    examples: z.array(blogExampleSchema).length(2),
+    /** Legacy drafts only; new generation does not request example images. */
+    examples: z.array(blogExampleSchema).length(2).optional(),
   })
   .strict();
 export const agentBlogSchema = blogDraftSchema
@@ -108,7 +111,8 @@ export const agentBlogSchema = blogDraftSchema
           })
           .strict(),
       )
-      .length(2),
+      .length(2)
+      .optional(),
     articleSchema: z.record(z.unknown()),
     faqSchema: z.record(z.unknown()),
     checks: z.array(
@@ -168,19 +172,9 @@ export function agentCopyValid(channel: AgentChannel, content: AgentContent) {
   );
 }
 export function agentPostText(channel: AgentChannel, content: AgentContent) {
-  let body = content.body;
+  let body = channel === 'blog' ? blogBodyText(content.body) : content.body;
   if (channel === 'blog' && content.blog) {
-    for (const example of content.blog.examples) {
-      const screenshot = content.blog.screenshots.find(
-        (item) => item.id === example.id,
-      );
-      body = body.replace(
-        `[[${example.id}]]`,
-        screenshot
-          ? `![${example.title}](${screenshot.dataUrl})\n\n*Illustrative example data. ${example.caption}*`
-          : '',
-      );
-    }
+    body = blogBodyText(body);
     body += `\n\n## Frequently asked questions\n\n${content.blog.faqs.map((item) => `### ${item.question}\n\n${item.answer}`).join('\n\n')}`;
     if (content.blog.sources?.length)
       body +=
@@ -266,7 +260,7 @@ export function publicAgentPost(job: AgentPostJob): AgentPost {
     prompt,
     ...(promptId ? { promptId } : {}),
     status,
-    content,
+    content: content?.blog ? refreshAgentBlog(job, content) : content,
     createdAt,
     updatedAt,
     version,

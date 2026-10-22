@@ -10,7 +10,12 @@ import {
 import { ProviderError } from './provider.js';
 
 export interface AgentImages {
-  select(post: AgentPostJob, query: string, alt: string): Promise<AgentImage>;
+  select(
+    post: AgentPostJob,
+    query: string,
+    alt: string,
+    claim?: (image: AgentImage) => Promise<boolean>,
+  ): Promise<AgentImage>;
   track(image: AgentImage): Promise<void>;
 }
 export function unsplashConfigured() {
@@ -78,6 +83,7 @@ export class UnsplashImages implements AgentImages {
     post: AgentPostJob,
     query: string,
     alt: string,
+    claim: (image: AgentImage) => Promise<boolean> = async () => true,
   ): Promise<AgentImage> {
     const orientation =
       post.channel === 'instagram'
@@ -87,31 +93,41 @@ export class UnsplashImages implements AgentImages {
           : 'landscape';
     const params = new URLSearchParams({
       query: query.slice(0, 100),
-      per_page: '5',
+      per_page: '30',
       orientation,
       content_filter: 'high',
     });
-    const result = await this.get('/search/photos?' + params);
-    const photo = result.results?.[0];
-    if (!photo)
-      throw new ProviderError(
-        'unsplash_no_photo',
-        'No matching Unsplash photo was found. Retry generation.',
-        false,
-      );
-    const referral = '?utm_source=citevia&utm_medium=referral';
-    return agentImageSchema.parse({
-      url: photo.urls.regular,
-      alt: alt.slice(0, 300),
-      photoId: photo.id,
-      photographer: photo.user.name,
-      photographerUrl:
-        'https://unsplash.com/@' +
-        encodeURIComponent(photo.user.username) +
-        referral,
-      photoUrl: photo.links.html + referral,
-      downloadLocation: photo.links.download_location,
-    });
+    for (let page = 1; page <= 5; page++) {
+      params.set('page', String(page));
+      const result = await this.get('/search/photos?' + params);
+      for (const photo of result.results || []) {
+        const referral = '?utm_source=citevia&utm_medium=referral';
+        const image = agentImageSchema.parse({
+          url: photo.urls.regular,
+          alt: alt.slice(0, 300),
+          photoId: photo.id,
+          photographer: photo.user.name,
+          photographerUrl:
+            'https://unsplash.com/@' +
+            encodeURIComponent(photo.user.username) +
+            referral,
+          photoUrl: photo.links.html + referral,
+          downloadLocation: photo.links.download_location,
+        });
+        if (await claim(image)) return image;
+      }
+      if (
+        !result.results?.length ||
+        result.results.length < 30 ||
+        page >= result.total_pages
+      )
+        break;
+    }
+    throw new ProviderError(
+      'unsplash_no_photo',
+      'No matching unused Unsplash photo was found for this account and channel. Retry generation with another prompt.',
+      false,
+    );
   }
   async track(image: AgentImage) {
     // Construct the official endpoint ourselves: never fetch a model-supplied URL.

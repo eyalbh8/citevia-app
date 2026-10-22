@@ -1,4 +1,8 @@
-import { MAX_ACTIVE_AGENT_POSTS, type AgentPostJob } from '@citevia/core';
+import {
+  MAX_ACTIVE_AGENT_POSTS,
+  type AgentImage,
+  type AgentPostJob,
+} from '@citevia/core';
 import type { SqlDatabase } from './sql.js';
 
 export async function getAgentPost(
@@ -133,4 +137,35 @@ export async function reserveAgentPost(
     }
     return 'saved';
   });
+}
+
+export async function reserveAgentImage(
+  db: SqlDatabase,
+  post: AgentPostJob,
+  image?: AgentImage,
+): Promise<AgentImage | null> {
+  if (image)
+    await db.query(
+      `INSERT INTO citevia_agent_images(project_id,channel,photo_id,post_id,generation,image)
+     SELECT $1,$2,$3,$4,$5,$6::jsonb FROM citevia_agent_posts
+     WHERE project_id=$1 AND id=$4 AND data->>'channel'=$2 AND (data->>'generation')::int=$5
+     AND NOT EXISTS (SELECT 1 FROM citevia_agent_posts historical
+       WHERE historical.project_id=$1 AND historical.data->>'channel'=$2
+       AND historical.data->'content'->'image'->>'photoId'=$3
+       AND NOT (historical.id=$4 AND (historical.data->>'generation')::int=$5))
+     ON CONFLICT DO NOTHING`,
+      [
+        post.projectId,
+        post.channel,
+        image.photoId,
+        post.id,
+        post.generation,
+        JSON.stringify(image),
+      ],
+    );
+  const { rows } = await db.query(
+    'SELECT image FROM citevia_agent_images WHERE project_id=$1 AND channel=$2 AND post_id=$3 AND generation=$4',
+    [post.projectId, post.channel, post.id, post.generation],
+  );
+  return (rows[0]?.image as AgentImage) || null;
 }

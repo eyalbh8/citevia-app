@@ -301,8 +301,10 @@ describe('agent creation UI', () => {
     report = { ...report, items: [post], total: 1 };
     await render({ ...project, role: 'viewer' });
     expect(button('Generate').disabled).toBe(true);
-    await click('Open post: Reporting');
+    await click('Open post: Which metrics should I track?');
     expect(container.textContent).toContain(post.content!.body);
+    expect(container.textContent).not.toContain('Topic');
+    expect(container.textContent).not.toContain('Reporting');
     expect(button('Edit draft')).toBeUndefined();
     expect(button('Copy content')).toBeDefined();
     expect(mocks.idempotentPost).not.toHaveBeenCalled();
@@ -314,7 +316,7 @@ describe('agent creation UI', () => {
       new Error('This post changed. Refresh it before saving.'),
     );
     await render();
-    await click('Open post: Reporting');
+    await click('Open post: Which metrics should I track?');
     await click('Edit draft');
     await fill('agent-edit-body', 'My reviewed draft');
     await click('Save draft');

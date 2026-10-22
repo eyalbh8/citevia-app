@@ -1,5 +1,5 @@
 import { aggregateTraffic, type TrafficEvent, type TrafficFilters, type TrafficInstallationReceipt, type TrafficSite } from '@citevia/core';
-import { MAX_ACTIVE_AGENT_POSTS, type AgentPostJob } from '@citevia/core';
+import { MAX_ACTIVE_AGENT_POSTS, type AgentPostJob, type AgentImage } from '@citevia/core';
 import {
   verifiedIdentitySchema,
   type VerifiedIdentity,
@@ -33,6 +33,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State {
+  agentImages?: Record<string, {postId: string; generation: number; image: AgentImage}>;
   agentPosts?: Record<string, AgentPostJob>;
   trafficEvents?: Record<string, TrafficEvent>;
   trafficSites?: Record<string, TrafficSite & {projectId: string}>;
@@ -71,6 +72,27 @@ const copy = <T>(value: T): T => structuredClone(value);
 
 export class MemoryRepository implements Repository {
   protected state: State = blank();
+  reserveAgentImage(post: AgentPostJob, image?: AgentImage): Promise<AgentImage | null> {
+    return this.operation(() => {
+      const claims = this.state.agentImages ||= {};
+      // Include saved drafts created before photo reservations existed.
+      for (const saved of Object.values(this.state.agentPosts || {})) {
+        if (saved.content?.image) {
+          const id = key(saved.projectId, saved.channel, saved.content.image.photoId);
+          claims[id] ||= {postId: saved.id, generation: saved.generation, image: saved.content.image};
+        }
+      }
+      const prefix = key(post.projectId, post.channel) + ':';
+      const existing = Object.entries(claims).find(([id, claim]) => id.startsWith(prefix) && claim.postId === post.id && claim.generation === post.generation)?.[1];
+      if (existing) return existing.image;
+      const saved = this.state.agentPosts?.[key(post.projectId,post.id)];
+      if (!image || saved?.generation !== post.generation || saved.channel !== post.channel) return null;
+      const id = key(post.projectId,post.channel,image.photoId);
+      if (claims[id]) return null;
+      claims[id] = {postId: post.id, generation: post.generation, image};
+      return image;
+    }, true);
+  }
   getAgentPost(projectId: string, postId: string) {
     return this.operation(() => copy(this.state.agentPosts?.[key(projectId, postId)] || null));
   }

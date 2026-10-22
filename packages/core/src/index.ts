@@ -16,3 +16,5 @@ export * from './competitors.js';
 export * from './traffic.js';
 export * from './agents.js';
 export * from './agent-blog.js';
+
+export * from './agent-editorial.js';
