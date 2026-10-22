@@ -211,7 +211,7 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
   // increases as well; the target remains imperfect at the end of the scenario.
   const visibleCompetitors = project.competitors.filter((brand, competitorIndex) => {
     const threshold = (hash(`${prompt.id}:${brand.id}:${run.snapshot.provider}`) % 1000) / 1000;
-    return threshold < 0.69 - 0.16 * phase - competitorIndex * 0.025;
+    return threshold < 0.50 - 0.18 * phase - competitorIndex * 0.025;
   });
   // All earlier ordinal positions must have a company in the simulated answer.
   // Sparse fixtures without source alternatives use the highest supportable rank.
@@ -452,15 +452,18 @@ function trafficFor(project: Project, filters: TrafficFilters): TrafficAggregate
           if (bucket) bucket[provider] = (bucket[provider] || 0) + visits;
           add(sources, hosts[provider], visits);
           add(locations, country, visits);
-          partition(visits, pages, pageCounts);
-          partition(visits, browsers, browserCounts);
-          partition(visits, devices, deviceCounts);
         }
       }
     }
   }
+  const current = [...totals.values()].reduce((sum, item) => sum + item.visits, 0);
+  // Partition the complete filtered total: rounding tiny hourly counts would
+  // otherwise send most visits to the last category and reverse source order.
+  partition(current, pages, pageCounts);
+  partition(current, browsers, browserCounts);
+  partition(current, devices, deviceCounts);
   return {
-    current: [...totals.values()].reduce((sum, item) => sum + item.visits, 0),
+    current,
     previous: [...totals.values()].reduce((sum, item) => sum + item.previous, 0),
     providers: [...totals.values()], series,
     sources: rows(sources), pages: rows(pageCounts), locations: rows(locations),

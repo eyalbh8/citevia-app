@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  aggregateDashboardOverview,
   brandSentimentScore,
   promptPeriodMetrics,
   type Analysis,
@@ -9,6 +10,7 @@ import {
   type TrafficFilters,
 } from '@citevia/core';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, withDemoRuntime, type Runtime } from '@citevia/storage';
+import { buildNayaxDemo } from '../scripts/create-nayax-demo.js';
 import { newProject } from './fixtures/scanner.js';
 
 const now = () => new Date('2026-10-23T12:00:00.000Z');
@@ -121,6 +123,41 @@ describe('virtual demo measurements', () => {
     expect(metrics.items.every((item) => item.visibilityChange === null || item.visibilityChange >= 0)).toBe(true);
   });
 
+  it('keeps Nayax in the dashboard top five with positive growth across the default history and full year', async () => {
+    const tracked = [
+      ['Cantaloupe', 'cantaloupe.com'], ['Crane Payment Innovations', 'cranepi.com'],
+      ['Ingenico', 'ingenico.com'], ['PayRange', 'payrange.com'], ['365 Retail Markets', '365retailmarkets.com'],
+    ];
+    const alternatives = ['Adyen', 'Worldpay', 'Stripe', 'Square', 'Clover', 'PayPal', 'SumUp',
+      'Verifone', 'PAX Technology', 'Fiserv', 'FIS', 'NMI', 'ID TECH', 'Castles Technology'];
+    const project = buildNayaxDemo({
+      brand: { name: 'Nayax', aliases: [], domains: ['nayax.com'] },
+      competitors: [...tracked, ...alternatives.map((name, index) => [name, `payment-${index}.example`])]
+        .map(([name, domain]) => ({ name, aliases: [], domains: [domain] })),
+      prompts: Array.from({ length: 50 }, (_, index) => ({ text: `Which payment platform fits unattended retail use case ${index + 1}?` })),
+      brandbook: { companyCountry: 'US', language: 'en' },
+      samples: [{ text: 'Nayax provides cashless payments for unattended retail.' }],
+    }, '2026-10-23', now().toISOString());
+    const repository = new MemoryRepository();
+    await repository.saveProject(project, null);
+    const demo = withDemoRuntime({ repository, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() }, now);
+    for (const end of ['2026-10-22', '2027-04-23']) {
+      const period = { start: '2026-04-23T00:00:00.000Z', end: `${end}T23:59:59.999Z`, granularity: 'daily' as const, timezone: 'UTC' as const };
+      const history = await demo.repository.listPromptHistory(project.id, period.start, period.end);
+      const runs = new Map(history.runs.map((run) => [run.id, run]));
+      const overview = aggregateDashboardOverview(project, period,
+        { providers: [], region: '', tag: '', branded: '', intent: '', search: '' },
+        history.results.map((result) => ({ result, run: runs.get(result.runId)! })),
+      );
+      expect(overview.ranking).toHaveLength(5);
+      const target = overview.ranking.find((brand) => brand.isTarget);
+      expect(target, `Nayax is visible in the top five through ${end}`).toBeDefined();
+      expect(target!.rankChange).toBeGreaterThan(0);
+      expect(target!.mentionChange).toBeGreaterThan(0);
+      expect(target!.sentimentChange).toBeGreaterThan(0);
+    }
+  });
+
   it('serves response evidence, indexed citations, cached analyses and summaries without touching the base artifact store', async () => {
     const { project, base, demo } = await setup();
     const reads = vi.spyOn(base.artifacts, 'get');
@@ -190,6 +227,10 @@ describe('virtual demo measurements', () => {
     expect(traffic.series.reduce((sum, item) => sum + Object.values(item.values).reduce((total, visits) => total + visits, 0), 0)).toBe(traffic.current);
     for (const dimension of [traffic.sources, traffic.pages, traffic.locations, traffic.devices, traffic.browsers])
       expect(dimension.reduce((sum, item) => sum + item.visits, 0)).toBe(traffic.current);
+    for (const [dimension, first, last] of [
+      [traffic.pages, '/', '/contact'], [traffic.browsers, 'Chrome', 'Edge'], [traffic.devices, 'desktop', 'tablet'],
+    ] as const)
+      expect(dimension.find((row) => row.label === first)!.visits).toBeGreaterThan(dimension.find((row) => row.label === last)!.visits);
     const selected = await demo.repository.aggregateTraffic(project.id, { ...filters, providers: ['openai'], countries: ['IL'] });
     expect(selected.providers.map((item) => item.provider)).toEqual(['openai']);
     expect(selected.locations).toEqual([{ label: 'IL', visits: selected.current }]);
@@ -199,6 +240,24 @@ describe('virtual demo measurements', () => {
     expect(hourly.current).toBeGreaterThan(0);
     expect(hourly.series.reduce((sum, item) => sum + Object.values(item.values).reduce((total, visits) => total + visits, 0), 0)).toBe(hourly.current);
     expect((await demo.repository.trafficStatus(project.id)).sites[0].trackerVersion).toBe('demo-v1');
+  });
+
+  it('preserves source traffic category ordering across small hourly country and provider counts', async () => {
+    const { project, base, demo } = await setup();
+    const pages = Array.from({ length: 12 }, (_, index) => `/source-page-${index + 1}/`);
+    await base.repository.saveProject({ ...project, version: 2, demo: { ...project.demo!, traffic: {
+      countries: ['US', 'CA', 'GB', 'AU', 'IL', 'DE', 'FR', 'BR', 'NL', 'IT', 'ES', 'MX'],
+      pages, browsers: ['Chrome', 'Safari', 'Firefox', 'Other'], devices: ['desktop', 'mobile'],
+    } } }, 1);
+    const traffic = await demo.repository.aggregateTraffic(project.id,
+      trafficFilters('2026-04-23T00:00:00.000Z', '2026-10-22T23:59:59.999Z'));
+    for (const [dimension, first, last] of [
+      [traffic.pages, pages[0], pages.at(-1)!], [traffic.browsers, 'Chrome', 'Other'], [traffic.devices, 'desktop', 'mobile'],
+    ] as const) {
+      expect(dimension.reduce((sum, row) => sum + row.visits, 0)).toBe(traffic.current);
+      expect(dimension[0].label).toBe(first);
+      expect(dimension.find((row) => row.label === first)!.visits).toBeGreaterThan(dimension.find((row) => row.label === last)!.visits);
+    }
   });
 
   it('passes real accounts through and rejects artifacts and references from another project', async () => {

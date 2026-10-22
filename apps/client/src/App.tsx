@@ -951,11 +951,11 @@ function Workspace() {
                 {view !== 'agents' && <footer className="page-footer">
                   <span>
                     <Cloud size={11} />
-                    Native ChatGPT, Perplexity and Gemini API answers
+                    {project.demo ? 'Simulated ChatGPT, Perplexity and Gemini results' : 'Native ChatGPT, Perplexity and Gemini API answers'}
                   </span>
                   <span>
                     <ShieldCheck size={11} />
-                    Weekly snapshots · Original answers preserved
+                    {project.demo ? 'Nayax source examples · Illustrative growth scenario' : 'Weekly snapshots · Original answers preserved'}
                   </span>
                 </footer>}
               </>
