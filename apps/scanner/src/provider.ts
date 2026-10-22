@@ -1,3 +1,5 @@
+import { classifyProviderHttpError, providerFailureMessage } from './provider-errors.js';
+
 /** The native API response is deliberately retained, including fields we do not interpret. */
 export interface NativeResponse {
   id?: string;
@@ -57,15 +59,44 @@ export interface ResponseProvider {
   extract(input: ExtractionRequest): Promise<ProviderReceipt>;
 }
 
+export interface ProviderErrorOptions {
+  kind?: 'rate_limit' | 'quota' | 'transient' | 'permanent' | 'uncertain' | 'deferred';
+  retryAfterMs?: number;
+  /** True only for a definite rejection or admission deferral, never a lost receipt. */
+  safeToRetry?: boolean;
+  provider?: string;
+  model?: string;
+  providerCode?: string;
+  providerType?: string;
+  httpStatus?: number;
+}
+
 export class ProviderError extends Error {
+  readonly kind: NonNullable<ProviderErrorOptions['kind']>;
+  readonly retryAfterMs?: number;
+  readonly safeToRetry: boolean;
+  readonly provider?: string;
+  readonly model?: string;
+  readonly providerCode?: string;
+  readonly providerType?: string;
+  readonly httpStatus?: number;
   constructor(
     public readonly code: string,
     message: string,
     public readonly retryable: boolean,
     public readonly requestId: string | null = null,
+    options: ProviderErrorOptions = {},
   ) {
     super(message);
     this.name = 'ProviderError';
+    this.kind = options.kind ?? (retryable ? 'transient' : 'permanent');
+    this.retryAfterMs = options.retryAfterMs;
+    this.safeToRetry = options.safeToRetry ?? false;
+    this.provider = options.provider;
+    this.model = options.model;
+    this.providerCode = options.providerCode;
+    this.providerType = options.providerType;
+    this.httpStatus = options.httpStatus;
   }
 }
 
@@ -136,17 +167,17 @@ export class OpenAIProvider implements ResponseProvider {
         signal: controller.signal,
       });
       const requestId = response.headers.get('x-request-id');
+      const context = { provider: 'openai', model: typeof body.model === 'string' ? body.model : undefined };
       if (!response.ok) {
-        // Never log API error bodies: they may echo customer prompts or authentication data.
-        const retryable = response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500;
-        throw new ProviderError(`openai_http_${response.status}`, `OpenAI request failed (${response.status}).`, retryable, requestId);
+        const failure = await classifyProviderHttpError(response, { ...context, nowMs: this.options.now?.().getTime() });
+        throw new ProviderError(`openai_http_${response.status}`, providerFailureMessage('openai', response.status, failure.kind), failure.retryable, requestId, failure);
       }
       let data: unknown;
       try { data = await response.json(); } catch {
-        throw new ProviderError('openai_invalid_json', 'OpenAI returned invalid JSON.', true, requestId);
+        throw new ProviderError('openai_invalid_json', 'OpenAI returned invalid JSON.', false, requestId, { ...context, kind: 'uncertain', safeToRetry: false });
       }
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
-        throw new ProviderError('openai_invalid_response', 'OpenAI returned an invalid response envelope.', true, requestId);
+        throw new ProviderError('openai_invalid_response', 'OpenAI returned an invalid response envelope.', false, requestId, { ...context, kind: 'uncertain', safeToRetry: false });
       }
       return {
         response: data as NativeResponse,
@@ -156,7 +187,8 @@ export class OpenAIProvider implements ResponseProvider {
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       throw new ProviderError(controller.signal.aborted ? 'openai_timeout' : 'openai_network',
-        controller.signal.aborted ? 'OpenAI request timed out.' : 'OpenAI could not be reached.', true);
+        controller.signal.aborted ? 'OpenAI request timed out.' : 'OpenAI could not be reached.', false, null,
+        { provider: 'openai', model: typeof body.model === 'string' ? body.model : undefined, kind: 'uncertain', safeToRetry: false });
     } finally { clearTimeout(timeout); }
   }
 }

@@ -1,20 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ScanMessage, PromptResult, RunSummary, CapturedAnswer, Analysis } from '@citevia/core';
-import { MemoryArtifacts, MemoryQueue, MemoryRepository, type AnswerProvider } from '@citevia/storage';
+import type { ScanMessage, PromptResult, RunSummary, CapturedAnswer, Analysis, ScanRun } from '@citevia/core';
+import { MemoryArtifacts, MemoryQueue, MemoryRepository, type AnswerProvider, type AnalysisBatchPort } from '@citevia/storage';
 import { Scanner, captureKeyFor, MAX_ATTEMPTS, MAX_MANUAL_RETRIES, runIdFor } from '../src/engine.js';
 import { ProviderError } from '../src/provider.js';
 import { ExtractionError } from '../src/openai.js';
 import { analysis, captured, instant, project } from './fixtures.js';
 
 const kickoff: Extract<ScanMessage, { kind: 'kickoff' }> = { kind: 'kickoff', projectId: project.id, scheduledAt: instant };
-async function setup(options: { repository?: MemoryRepository; artifacts?: MemoryArtifacts; provider?: AnswerProvider; promptCount?: number } = {}) {
+async function setup(options: { repository?: MemoryRepository; artifacts?: MemoryArtifacts; provider?: AnswerProvider; promptCount?: number; parserVersion?: string; analysisBatch?: AnalysisBatchPort } = {}) {
   const repository = options.repository ?? new MemoryRepository();
   const artifacts = options.artifacts ?? new MemoryArtifacts();
   const queue = new MemoryQueue();
   const provider = options.provider ?? { collect: vi.fn(async () => captured()), extract: vi.fn(async (answer: CapturedAnswer) => analysis(answer)) };
   let time = new Date(instant);
-  const scanner = new Scanner({ repository, artifacts, queue, provider, now: () => time });
+  const scanner = new Scanner({ repository, artifacts, queue, provider, analysisBatch: options.analysisBatch, now: () => time });
   const saved = structuredClone(project);
+  if (options.parserVersion) saved.parserVersion = options.parserVersion;
   if (options.promptCount) saved.prompts = Array.from({ length: options.promptCount }, (_, index) => ({ ...project.prompts[0], id: `p${index}` }));
   await repository.saveProject(saved, null);
   return { scanner, repository, artifacts, queue, provider, advance: (ms: number) => { time = new Date(time.getTime() + ms); } };
@@ -86,12 +87,16 @@ describe('scanner engine lifecycle', () => {
     expect((await env.repository.getRun(project.id, job.runId))!.succeededCount).toBe(1);
   });
   it('retries extraction from the saved answer, without a new web-search call', async () => {
-    const provider = { collect: vi.fn(async () => captured()), extract: vi.fn().mockRejectedValueOnce(new ProviderError('openai_http_429', 'Rate limited.', true)).mockImplementation(async (answer: CapturedAnswer) => analysis(answer)) };
-    const env = await setup({ provider, promptCount: 1 });
+    const provider = { collect: vi.fn(async () => captured()), extract: vi.fn().mockRejectedValueOnce(new ProviderError('openai_http_429', 'Rate limited.', true, null, { kind: 'rate_limit', safeToRetry: true, retryAfterMs: 60_000 })).mockImplementation(async (answer: CapturedAnswer) => analysis(answer)) };
+    const env = await setup({ provider, promptCount: 1, parserVersion: 'igeo-evidence-v2' });
     await env.scanner.handle(kickoff);
     const job = promptMessages(env.queue.messages)[0];
-    await expect(env.scanner.handle(job)).rejects.toMatchObject({ code: 'openai_http_429' });
+    await env.scanner.handle(job);
     expect((await env.repository.getResult(project.id, job.runId, job.promptId))!.status).toBe('captured');
+    await env.scanner.handle(job); // An early duplicate cannot bypass the provider cooldown.
+    expect(provider.extract).toHaveBeenCalledOnce();
+    expect(env.queue.delays.at(-1)).toBe(60);
+    env.advance(60_000);
     await env.scanner.handle(job);
     expect(provider.collect).toHaveBeenCalledOnce();
     expect(provider.extract).toHaveBeenCalledTimes(2);
@@ -108,27 +113,28 @@ describe('scanner engine lifecycle', () => {
     const env = await setup({ repository: new InterruptedRepository(), promptCount: 1 });
     await env.scanner.handle(kickoff);
     const job = promptMessages(env.queue.messages)[0];
-    await expect(env.scanner.handle(job)).rejects.toThrow('interrupted');
+    await env.scanner.handle(job);
     const result = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
     expect(result.captureKey).toBeUndefined();
     expect(await env.artifacts.get(captureKeyFor(result))).not.toBeNull();
+    env.advance(60_000);
     await env.scanner.handle(job);
     expect(env.provider.collect).toHaveBeenCalledOnce();
     expect((await env.repository.getRun(project.id, job.runId))!.status).toBe('completed');
   });
-  it('keeps malformed extraction receipts and terminates after bounded attempts', async () => {
+  it('keeps malformed extraction receipts without replaying a paid invalid response', async () => {
     const receipt = { response: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: '{broken' }] }], usage: { total_tokens: 20 } }, requestId: 'extract-request', receivedAt: instant };
     const provider = { collect: vi.fn(async () => captured()), extract: vi.fn(async () => { throw new ExtractionError(new ProviderError('invalid_extraction', 'Malformed extraction.', true), receipt); }) };
     const env = await setup({ provider, promptCount: 1 });
     await env.scanner.handle(kickoff);
     const job = promptMessages(env.queue.messages)[0];
-    for (let attempt = 1; attempt < MAX_ATTEMPTS; attempt++) await expect(env.scanner.handle(job)).rejects.toMatchObject({ code: 'invalid_extraction' });
+    await env.scanner.handle(job);
     await env.scanner.handle(job);
     const result = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
-    expect(result).toMatchObject({ status: 'failed_extraction', attempts: MAX_ATTEMPTS, error: { retryable: false } });
+    expect(result).toMatchObject({ status: 'failed_extraction', attempts: 1, error: { retryable: false } });
     expect(provider.collect).toHaveBeenCalledOnce();
-    expect(provider.extract).toHaveBeenCalledTimes(MAX_ATTEMPTS);
-    expect([...env.artifacts.values.keys()].filter(key => key.includes('extraction-attempt'))).toHaveLength(MAX_ATTEMPTS);
+    expect(provider.extract).toHaveBeenCalledOnce();
+    expect([...env.artifacts.values.keys()].filter(key => key.includes('extraction-attempt'))).toHaveLength(1);
     expect((await env.repository.getRun(project.id, job.runId))!.status).toBe('failed');
   });
   it('saves refusals but does not analyze them or count them as captures', async () => {
@@ -204,7 +210,7 @@ describe('scanner engine lifecycle', () => {
     await env.scanner.handle({ ...retry, requestId: 'retry-request-2' });
     await env.scanner.handle(job);
     const second = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
-    expect(second).toMatchObject({ captureGeneration: 2, attempts: 1, retryRequestIds: ['retry-request-1', 'retry-request-2'] });
+    expect(second).toMatchObject({ captureGeneration: 2, attempts: 3, retryRequestIds: ['retry-request-1', 'retry-request-2'] });
     const queueCount = env.queue.messages.length;
     await env.scanner.handle(retry);
     expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toEqual(second);
@@ -247,10 +253,10 @@ describe('scanner engine lifecycle', () => {
     await expect(env.scanner.handle({ kind: 'retry', projectId: project.id, runId: job.runId, requestId: 'retry-request-1' })).rejects.toThrow('deadline update failed');
     await env.scanner.handle(job);
     const result = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
-    expect(result).toMatchObject({ attempts: 1, captureGeneration: 1, error: { code: 'openai_http_400' } });
+    expect(result).toMatchObject({ attempts: 2, captureGeneration: 1, error: { code: 'openai_http_400' } });
     expect(provider.collect).toHaveBeenCalledTimes(2);
   });
-  it('bounds the retry request ledger and requires a new scan after 32 manual retries', async () => {
+  it('bounds the retry request ledger to three manual retries', async () => {
     const env = await setup({ promptCount: 1 });
     await env.scanner.handle(kickoff);
     const job = promptMessages(env.queue.messages)[0];
@@ -287,6 +293,301 @@ describe('scanner engine lifecycle', () => {
     await env.scanner.handle({ kind: 'reconcile' });
     expect(await repository.getRun(project.id, job.runId)).toMatchObject({ status: 'completed', terminalCount: 1, succeededCount: 1, resultVersion: completed.resultVersion });
     expect(env.provider.collect).toHaveBeenCalledOnce();
+  });
+
+  it('allows exactly three retries per stage and retains the saved collection across extraction retries', async () => {
+    const rejected = () => new ProviderError('openai_http_429', 'Rate limited.', true, null, { kind: 'rate_limit', safeToRetry: true });
+    const provider = {
+      collect: vi.fn().mockRejectedValueOnce(rejected()).mockRejectedValueOnce(rejected()).mockRejectedValueOnce(rejected()).mockResolvedValue(captured()),
+      extract: vi.fn(async (_answer: CapturedAnswer) => { throw rejected(); }),
+    };
+    const env = await setup({ provider, promptCount: 1, parserVersion: 'igeo-evidence-v2' });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    for (let call = 0; call < 7; call++) {
+      await env.scanner.handle(job);
+      env.advance(15 * 60_000);
+    }
+    await env.scanner.handle(job);
+    await env.scanner.handle({ kind: 'reconcile' });
+    const result = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
+    expect(result).toMatchObject({ status: 'failed_extraction', collectionAttempts: MAX_ATTEMPTS, analysisAttempts: MAX_ATTEMPTS, error: { retryable: false } });
+    expect(provider.collect).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+    expect(provider.extract).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+    expect(provider.extract.mock.calls.every(([answer]) => answer.providerResponseId === captured().providerResponseId)).toBe(true);
+    // A manual retry uses the same durable budget; it cannot buy a fifth analysis.
+    await env.scanner.handle({ kind: 'retry', projectId: project.id, runId: job.runId, requestId: 'beyond-limit' });
+    await env.scanner.handle(job);
+    expect(provider.extract).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+  });
+
+  it('does not consume attempts while the shared provider admission gate is busy', async () => {
+    const deferred = new ProviderError('provider_admission_deferred', 'Waiting for provider capacity.', true, null,
+      { kind: 'deferred', safeToRetry: true, retryAfterMs: 10_000 });
+    const extract = vi.fn();
+    for (let i = 0; i < 6; i++) extract.mockRejectedValueOnce(deferred);
+    extract.mockImplementation(async (answer: CapturedAnswer) => analysis(answer));
+    const provider = { collect: vi.fn(async () => captured()), extract };
+    const env = await setup({ provider, promptCount: 1, parserVersion: 'igeo-evidence-v2' });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    for (let i = 0; i < 6; i++) {
+      await env.scanner.handle(job);
+      expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ collectionAttempts: 1, analysisAttempts: 0, attempts: 1, status: 'captured' });
+      env.advance(10_000);
+    }
+    await env.scanner.handle(job);
+    expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ status: 'succeeded', collectionAttempts: 1, analysisAttempts: 1 });
+    expect(provider.collect).toHaveBeenCalledOnce();
+  });
+
+  it('honors a cooldown beyond the SQS delay limit through duplicate deliveries and reconciliation', async () => {
+    const provider = {
+      collect: vi.fn().mockRejectedValueOnce(new ProviderError('openai_http_429', 'Rate limited.', true, null,
+        { kind: 'rate_limit', safeToRetry: true, retryAfterMs: 30 * 60_000 })).mockResolvedValue(captured()),
+      extract: vi.fn(async (answer: CapturedAnswer) => analysis(answer)),
+    };
+    const env = await setup({ provider, promptCount: 1 });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await env.scanner.handle(job);
+    expect(env.queue.delays.at(-1)).toBe(900);
+    const before = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
+    env.advance(15 * 60_000);
+    const queued = env.queue.messages.length;
+    await env.scanner.handle({ kind: 'reconcile' });
+    expect(env.queue.messages).toHaveLength(queued);
+    await env.scanner.handle(job);
+    await env.scanner.handleDeadLetter(job);
+    expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toEqual(before);
+    expect(provider.collect).toHaveBeenCalledOnce();
+    expect(env.queue.delays.at(-1)).toBe(900);
+    env.advance(15 * 60_000);
+    await env.scanner.handle(job);
+    expect(provider.collect).toHaveBeenCalledTimes(2);
+    expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ status: 'succeeded' });
+  });
+
+  it('recovers a failed delayed enqueue from persisted retry state', async () => {
+    const provider = {
+      collect: vi.fn(async () => captured()),
+      extract: vi.fn().mockRejectedValueOnce(new ProviderError('openai_http_503', 'Unavailable.', true, null,
+        { kind: 'transient', safeToRetry: true, retryAfterMs: 60_000 })).mockImplementation(async (answer: CapturedAnswer) => analysis(answer)),
+    };
+    const env = await setup({ provider, promptCount: 1 });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    env.queue.messages.length = 0;
+    const send = env.queue.send.bind(env.queue);
+    env.queue.send = vi.fn().mockRejectedValueOnce(new Error('SQS unavailable')).mockImplementation(send);
+    await expect(env.scanner.handle(job)).rejects.toThrow('SQS unavailable');
+    expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ status: 'captured', safeRetryStage: 'analysis', retryNotBefore: new Date(Date.parse(instant) + 60_000).toISOString() });
+    await env.scanner.handle({ kind: 'reconcile' });
+    expect(env.queue.messages).toHaveLength(0);
+    env.advance(60_000);
+    await env.scanner.handle({ kind: 'reconcile' });
+    expect(env.queue.messages).toEqual([job]);
+    await env.scanner.handle(job);
+    expect(provider.collect).toHaveBeenCalledOnce();
+    expect(provider.extract).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops a hard quota failure without repeatedly buying collection or analysis', async () => {
+    const provider = {
+      collect: vi.fn(async () => captured()),
+      extract: vi.fn(async () => { throw new ProviderError('openai_quota_exhausted', 'Provider billing quota requires attention.', false, null,
+        { kind: 'quota', safeToRetry: false }); }),
+    };
+    const env = await setup({ provider, promptCount: 1 });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await env.scanner.handle(job);
+    await env.scanner.handle(job);
+    await env.scanner.handle({ kind: 'reconcile' });
+    expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ status: 'failed_extraction', analysisAttempts: 1, error: { kind: 'quota', retryable: false } });
+    expect(provider.collect).toHaveBeenCalledOnce();
+    expect(provider.extract).toHaveBeenCalledOnce();
+  });
+
+  it('never repeats a provider call after an uncertain outcome', async () => {
+    const provider = {
+      collect: vi.fn(async () => { throw new ProviderError('openai_timeout', 'The outcome is unknown.', false, null,
+        { kind: 'uncertain', safeToRetry: false }); }),
+      extract: vi.fn(),
+    };
+    const env = await setup({ provider, promptCount: 1, parserVersion: 'igeo-evidence-v2' });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await env.scanner.handle(job);
+    env.advance(15 * 60_000);
+    await env.scanner.handle(job);
+    await env.scanner.handle({ kind: 'reconcile' });
+    expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ status: 'failed_collection', collectionAttempts: 1, error: { kind: 'uncertain', retryable: false } });
+    expect(provider.collect).toHaveBeenCalledOnce();
+    expect(provider.extract).not.toHaveBeenCalled();
+  });
+
+  it('does not consume a paid-call attempt when a known quota circuit blocks an explicit retry', async () => {
+    const extract = vi.fn()
+      .mockRejectedValueOnce(new ProviderError('openai_quota_exhausted', 'Billing quota exhausted.', false, null, { kind: 'quota', safeToRetry: false }))
+      .mockRejectedValueOnce(new ProviderError('provider_quota_blocked', 'Resolve provider billing first.', false, null, { kind: 'quota', safeToRetry: false }))
+      .mockImplementation(async (answer: CapturedAnswer) => analysis(answer));
+    const provider = { collect: vi.fn(async () => captured()), extract };
+    const env = await setup({ provider, promptCount: 1 });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await env.scanner.handle(job);
+    // The original HTTP quota rejection consumed one provider request.
+    expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ analysisAttempts: 1 });
+    await env.scanner.handle({ kind: 'retry', projectId: project.id, runId: job.runId, requestId: 'still-blocked' });
+    await env.scanner.handle(job);
+    const blocked = await env.repository.getResult(project.id, job.runId, job.promptId);
+    expect(blocked).toMatchObject({ status: 'failed_extraction', analysisAttempts: 1, error: { kind: 'quota', retryable: false } });
+    expect(blocked?.pendingCallStage).toBeUndefined();
+    await env.scanner.handle({ kind: 'retry', projectId: project.id, runId: job.runId, requestId: 'billing-resolved' });
+    await env.scanner.handle(job);
+    expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ status: 'succeeded', analysisAttempts: 2, collectionAttempts: 1 });
+    expect(provider.collect).toHaveBeenCalledOnce();
+  });
+
+  it('recovers a saved analysis after a metadata write fails without a second model call', async () => {
+    class InterruptedRepository extends MemoryRepository {
+      interrupted = false;
+      override async commitResult(next: PromptResult, previous: PromptResult) {
+        if (!this.interrupted && next.status === 'succeeded') { this.interrupted = true; throw new Error('interrupted after analysis checkpoint'); }
+        return super.commitResult(next, previous);
+      }
+    }
+    const env = await setup({ repository: new InterruptedRepository(), promptCount: 1, parserVersion: 'igeo-evidence-v2' });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await env.scanner.handle(job);
+    env.advance(60_000);
+    await env.scanner.handle(job);
+    expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ status: 'succeeded', collectionAttempts: 1, analysisAttempts: 1 });
+    expect(env.provider.collect).toHaveBeenCalledOnce();
+    expect(env.provider.extract).toHaveBeenCalledOnce();
+  });
+
+  it('does not revive a canceled scan through kickoff, retry, prompt or reconciliation', async () => {
+    class CanceledRepository extends MemoryRepository {
+      cancel(runId: string) {
+        return this.operation(() => { this.state.runs[`${project.id}:${runId}`].cancelledAt = instant; }, true);
+      }
+    }
+    const repository = new CanceledRepository();
+    const env = await setup({ repository, promptCount: 1 });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await repository.cancel(job.runId);
+    env.queue.messages.length = 0;
+    await env.scanner.handle(kickoff);
+    await env.scanner.handle(job);
+    await env.scanner.handle({ kind: 'retry', projectId: project.id, runId: job.runId, requestId: 'retry-canceled' });
+    await env.scanner.handleDeadLetter(job);
+    await env.scanner.handle({ kind: 'reconcile' });
+    expect(env.queue.messages).toHaveLength(0);
+    expect(env.provider.collect).not.toHaveBeenCalled();
+    expect(env.provider.extract).not.toHaveBeenCalled();
+  });
+
+  it('terminates a retry beyond the run deadline without overflowing dates or retrying early', async () => {
+    const provider = {
+      collect: vi.fn(async () => { throw new ProviderError('openai_http_429', 'Rate limited.', true, null,
+        { kind: 'rate_limit', safeToRetry: true, retryAfterMs: Number.MAX_SAFE_INTEGER }); }),
+      extract: vi.fn(),
+    };
+    const env = await setup({ provider, promptCount: 1 });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await env.scanner.handle(job);
+    const result = await env.repository.getResult(project.id, job.runId, job.promptId);
+    expect(result).toMatchObject({ status: 'failed_collection', error: { retryable: false } });
+    expect(result?.retryNotBefore).toBeUndefined();
+    expect(provider.collect).toHaveBeenCalledOnce();
+  });
+
+  it('retries only safely rejected batch items up to three times without recollecting their answers', async () => {
+    vi.stubEnv('ANALYSIS_BATCH_ENABLED', 'true');
+    try {
+      const process: AnalysisBatchPort['process'] = vi.fn(async (_run: ScanRun, results: PromptResult[]) => ({
+        batchId: `batch-${results[0].analysisAttempts}`,
+        updates: results.filter((result) => result.status === 'analysis_pending').map((result) => ({
+          promptId: result.promptId, captureKey: result.captureKey!, analysisAttempt: result.analysisAttempts,
+          error: { code: 'openai_http_429', message: 'Batch item rate limited.', retryable: true, kind: 'rate_limit' as const, safeToRetry: true, retryAfterMs: 60_000 },
+        })),
+      }));
+      const complete = vi.fn(async () => {});
+      const env = await setup({ promptCount: 1, analysisBatch: { process, complete } });
+      await env.scanner.handle(kickoff);
+      const job = promptMessages(env.queue.messages)[0];
+      for (let generation = 1; generation <= MAX_ATTEMPTS; generation++) {
+        await env.scanner.handle(job);
+        const result = await env.repository.getResult(project.id, job.runId, job.promptId);
+        expect(result).toMatchObject({ collectionAttempts: 1, analysisAttempts: generation, status: generation < MAX_ATTEMPTS ? 'captured' : 'failed_extraction' });
+        expect(complete).toHaveBeenCalledWith(`batch-${generation}`);
+        env.advance(15 * 60_000);
+      }
+      await env.scanner.handle(job);
+      await env.scanner.handle({ kind: 'reconcile' });
+      expect(env.provider.collect).toHaveBeenCalledOnce();
+      expect(env.provider.extract).not.toHaveBeenCalled();
+      expect(process).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it('ignores replayed output from a previous batch retry generation', async () => {
+    vi.stubEnv('ANALYSIS_BATCH_ENABLED', 'true');
+    try {
+      let replayOld = false;
+      const process: AnalysisBatchPort['process'] = vi.fn(async (_run: ScanRun, results: PromptResult[]) => ({
+        batchId: 'first-batch', updates: results.filter((result) => result.status === 'analysis_pending').map((result) => ({
+          promptId: result.promptId, captureKey: result.captureKey!, analysisAttempt: 1,
+          error: { code: 'openai_http_429', message: 'Batch item rate limited.', retryable: true, kind: 'rate_limit' as const, safeToRetry: true, retryAfterMs: 60_000 },
+        })),
+      }));
+      const complete = vi.fn(async () => { if (!replayOld) { replayOld = true; throw new Error('completion checkpoint interrupted'); } });
+      const env = await setup({ promptCount: 1, analysisBatch: { process, complete } });
+      await env.scanner.handle(kickoff);
+      const job = promptMessages(env.queue.messages)[0];
+      await expect(env.scanner.handle(job)).rejects.toThrow('completion checkpoint interrupted');
+      env.advance(60_000);
+      await env.scanner.handle(job);
+      // Completing the old record must not apply its failure a second time to generation two.
+      expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ status: 'analysis_pending', analysisAttempts: 2, collectionAttempts: 1 });
+      expect(complete).toHaveBeenCalledTimes(2);
+      expect(env.provider.collect).toHaveBeenCalledOnce();
+    } finally { vi.unstubAllEnvs(); }
+  });
+
+  it('imports a frozen batch created before per-stage attempt counters existed', async () => {
+    vi.stubEnv('ANALYSIS_BATCH_ENABLED', 'true');
+    try {
+      let ready = false;
+      const process: AnalysisBatchPort['process'] = vi.fn(async (_run: ScanRun, results: PromptResult[]) => ({
+        batchId: ready ? 'legacy-batch' : undefined,
+        updates: ready ? results.map((result) => ({
+          promptId: result.promptId, captureKey: result.captureKey!, analysisAttempt: 1,
+          analysisKey: `${result.captureKey}.analysis`, analysis: analysis(captured()),
+        })) : [],
+      }));
+      const complete = vi.fn(async () => {});
+      const env = await setup({ promptCount: 1, analysisBatch: { process, complete } });
+      await env.scanner.handle(kickoff);
+      const job = promptMessages(env.queue.messages)[0];
+      await env.scanner.handle(job);
+      const before = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
+      const legacy = { ...before, version: before.version + 1 };
+      delete legacy.collectionAttempts;
+      delete legacy.analysisAttempts;
+      await env.repository.commitResult(legacy, before);
+      ready = true;
+      await env.scanner.handle(job);
+      expect(await env.repository.getResult(project.id, job.runId, job.promptId)).toMatchObject({ status: 'succeeded', attempts: 1 });
+      expect(complete).toHaveBeenCalledWith('legacy-batch');
+      expect(env.provider.collect).toHaveBeenCalledOnce();
+      expect(env.provider.extract).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
   });
 
 });

@@ -23,6 +23,7 @@ import type {
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 import type { McpRepository } from './mcp.js';
+import type { ScanDispatchStore } from './scan-dispatch.js';
 export interface SavedAnalysisRef {
   responseId: string;
   captureKey: string;
@@ -91,6 +92,8 @@ export interface Repository extends UserRepository, McpRepository {
     options?: { force?: boolean },
   ): Promise<void>;
   getProject(id: string): Promise<Project | null>;
+  /** Assign stable fleet slots once, atomically across accounts. Custom legacy cron is preserved. */
+  ensureProjectScanSchedule(id: string, options?: { migrateCustom?: boolean }): Promise<Project | null>;
   listProjects(userId: string): Promise<Project[]>;
   listProjectSummaries(
     userId: string,
@@ -102,7 +105,7 @@ export interface Repository extends UserRepository, McpRepository {
   ): Promise<boolean>;
   getMembership(projectId: string, userId: string): Promise<Membership | null>;
   putMembership(membership: Membership): Promise<void>;
-  createRun(run: ScanRun, results: PromptResult[]): Promise<boolean>;
+  createRun(run: ScanRun, results: PromptResult[], options?: { onlyIfScheduledAccountIdle?: boolean }): Promise<boolean>;
   getRun(projectId: string, runId: string): Promise<ScanRun | null>;
   listRuns(projectId: string, limit?: number): Promise<ScanRun[]>;
   listPromptHistory(
@@ -142,7 +145,7 @@ export interface ArtifactStore {
   put(key: string, value: unknown): Promise<void>;
 }
 export interface JobQueue {
-  send(messages: ScanMessage[]): Promise<void>;
+  send(messages: ScanMessage[], delaySeconds?: number): Promise<void>;
 }
 export interface Runtime {
   repository: Repository;
@@ -162,6 +165,7 @@ export interface AnswerProvider {
 export interface AnalysisBatchUpdate {
   promptId: string;
   captureKey: string;
+  analysisAttempt?: number;
   retryRequestId?: string;
   analysisKey?: string;
   analysis?: Analysis;
@@ -170,11 +174,14 @@ export interface AnalysisBatchUpdate {
 export interface AnalysisBatchPort {
   process(run: ScanRun, results: PromptResult[]): Promise<{
     batchId?: string;
+    /** Fixed processing window measured from actual batch submission, never from a poll. */
+    deadlineAt?: string;
     updates: AnalysisBatchUpdate[];
   }>;
   complete(batchId: string): Promise<void>;
 }
 export interface ScannerDependencies extends Runtime {
+  dispatch?: ScanDispatchStore;
   analysisBatch?: AnalysisBatchPort;
   maintenance?: { reconcile(): Promise<void> };
   agents?: {

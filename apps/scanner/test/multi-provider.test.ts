@@ -355,7 +355,7 @@ describe('native provider collection', () => {
           },
         },
       ),
-    ).rejects.toMatchObject({ code: 'perplexity_network', retryable: true });
+    ).rejects.toMatchObject({ code: 'perplexity_network', retryable: false, kind: 'uncertain', safeToRetry: false });
   });
   it('reports configuration availability without loading or exposing keys', () => {
     vi.stubEnv('OPENAI_API_KEY', 'private');

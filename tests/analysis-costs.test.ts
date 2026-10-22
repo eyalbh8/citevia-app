@@ -90,6 +90,15 @@ describe('exact analysis reuse',()=>{
     });
     expect(extract).toHaveBeenCalledTimes(2);
   });
+  it('never hides a second paid fallback call inside a durable scanner attempt',async()=>{
+    const bad={...native(),response:{...native().response,output:[{type:'message',content:[{type:'output_text',text:'{}'}]}]}};
+    const extract=vi.fn().mockResolvedValue(bad);
+    const provider=new OpenAIAnswerProvider({extract,answer:vi.fn()});
+    await expect(provider.extract(captured(),{...saved,extractionFallbackModel:'fallback-model',
+      execution:{runId:'run-budgeted',promptId:'prompt-budgeted',attempt:4},
+    })).rejects.toMatchObject({code:'invalid_extraction',retryable:false});
+    expect(extract).toHaveBeenCalledOnce();
+  });
 });
 
 describe('provider cost observations and budgets',()=>{
@@ -122,6 +131,22 @@ describe('provider cost observations and budgets',()=>{
     await expect(provider.extract(analysisRequest(captured(),saved))).rejects.toMatchObject({code:'cost_budget_exceeded',retryable:false});
     expect(extract).not.toHaveBeenCalled();
     await expect(provider.extract(analysisRequest(captured(),{...saved,extractionModel:'unknown'}))).rejects.toMatchObject({code:'cost_unpriced_request'});
+  });
+  it('releases rejected request reservations while retaining ambiguous server costs',async()=>{
+    const ledger=new MemoryCallLedger();
+    const failures=[
+      new ProviderError('openai_http_429','Rate limit',true,null,{kind:'rate_limit',httpStatus:429,safeToRetry:true}),
+      new ProviderError('openai_quota_exhausted','Quota',false,null,{kind:'quota',httpStatus:429}),
+      new ProviderError('openai_http_500','Server error',true,null,{kind:'transient',httpStatus:500,safeToRetry:true}),
+    ];
+    const extract=vi.fn();
+    for(const failure of failures) extract.mockRejectedValueOnce(failure);
+    const provider=observeResponseProvider({extract,answer:vi.fn()},ledger);
+    for(const failure of failures) await expect(provider.extract(analysisRequest(captured(),saved))).rejects.toBe(failure);
+    const calls=[...ledger.calls.values()];
+    expect(calls[0].outcome).toMatchObject({status:'failed',estimatedUsd:0});
+    expect(calls[1].outcome).toMatchObject({status:'failed',estimatedUsd:0});
+    expect(calls[2].outcome).toMatchObject({status:'uncertain',estimatedUsd:null});
   });
   it('holds reservations for missing or partial native usage instead of recording a free request',async()=>{
     const ledger=new MemoryCallLedger();

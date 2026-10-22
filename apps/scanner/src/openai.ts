@@ -23,7 +23,7 @@ export class ExtractionError extends ProviderError {
     error: ProviderError,
     public readonly receipt: ProviderReceipt,
   ) {
-    super(error.code, error.message, error.retryable, error.requestId);
+    super(error.code, error.message, error.retryable, error.requestId, error);
   }
 }
 
@@ -53,7 +53,10 @@ export class OpenAIAnswerProvider implements AnswerProvider {
     } catch (error) {
       // A validation failure proves this paid call returned a response. Network,
       // timeout and submission uncertainty never purchase a hidden replacement.
-      if (error instanceof ProviderError && error.code === 'invalid_extraction' &&
+      // Durable scanner executions own each paid attempt in their checkpoint.
+      // A hidden second model call would bypass both admission and that budget.
+      // Standalone evaluation can still explicitly compare a fallback model.
+      if (!snapshot.execution && error instanceof ProviderError && error.code === 'invalid_extraction' &&
           snapshot.extractionFallbackModel && snapshot.extractionFallbackModel !== snapshot.extractionModel) {
         const fallbackSnapshot = { ...snapshot, extractionModel:snapshot.extractionFallbackModel, extractionFallbackModel:undefined };
         let fallback: ProviderReceipt;
@@ -64,7 +67,7 @@ export class OpenAIAnswerProvider implements AnswerProvider {
           );
           throw new ExtractionError(
             // The primary call is already paid. An uncertain fallback must not replay both calls.
-            new ProviderError(rejected.code,rejected.message,false,rejected.requestId),
+            new ProviderError(rejected.code,rejected.message,false,rejected.requestId,{...rejected,safeToRetry:false}),
             { ...receipt, fallbackRequestFailure:{code:rejected.code,requestId:rejected.requestId} } as ProviderReceipt,
           );
         }
@@ -76,7 +79,7 @@ export class OpenAIAnswerProvider implements AnswerProvider {
           };
         } catch (failure) {
           if (failure instanceof ProviderError) throw new ExtractionError(
-            new ProviderError(failure.code,failure.message,false,failure.requestId),
+            new ProviderError(failure.code,failure.message,false,failure.requestId,{...failure,safeToRetry:false}),
             {...fallback,rejectedPrimaryReceipt:receipt} as ProviderReceipt,
           );
           throw failure;
@@ -85,7 +88,7 @@ export class OpenAIAnswerProvider implements AnswerProvider {
       if (error instanceof ProviderError)
         throw new ExtractionError(
           snapshot.parserVersion === SCORED_PARSER_VERSION
-            ? new ProviderError(error.code, error.message, false, error.requestId)
+            ? new ProviderError(error.code, error.message, false, error.requestId, {...error,safeToRetry:false})
             : error,
           receipt,
         );

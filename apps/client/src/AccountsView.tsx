@@ -116,7 +116,7 @@ export default function AccountsView({
         return;
       }
       notify(
-        `${result.items.length} account${result.items.length === 1 ? '' : 's'} queued. Citevia will create the brandbook, generate all 50 prompts, start a scan and schedule weekly scans.`,
+        `${result.items.length} account${result.items.length === 1 ? '' : 's'} queued. Citevia will create the brandbook, generate all 50 prompts, start a scan and schedule two scans each week.`,
       );
       setRevision((value) => value + 1);
       onChanged();
@@ -330,13 +330,13 @@ export default function AccountsView({
                   ))}
                 </div>
                 <p className="card-description">
-                  Weekly scans start automatically on Monday at 06:00 UTC. You
-                  can change the timezone in Settings after setup.
+                  Two scans each week are assigned automatically, 3½ days apart.
+                  Start times are spread between accounts. View your times in Settings after setup.
                 </p>
               </div>
               <div className="setting-note">
                 {providerReady
-                  ? 'Submitting starts OpenAI research and generation calls. After validation, the first scans start on all three providers and weekly tracking is enabled automatically.'
+                  ? 'Submitting starts OpenAI research and generation calls. After validation, the first scans start on all three providers and twice-weekly tracking is enabled automatically.'
                   : 'Configure OpenAI, Perplexity and Gemini in .env and restart the server before creating accounts.'}
               </div>
               <div className="form-actions">
@@ -484,8 +484,8 @@ export default function AccountsView({
                 ) : (
                   <p className="card-description">
                     {account.enabled
-                      ? 'Weekly tracking enabled'
-                      : 'Weekly tracking paused'}
+                      ? 'Scheduled tracking enabled'
+                      : 'Scheduled tracking paused'}
                   </p>
                 )}
                 <div className="account-actions">

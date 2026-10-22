@@ -12,9 +12,10 @@ export class S3Artifacts implements ArtifactStore {
 }
 export class SqsQueue implements JobQueue {
   constructor(private client: SQSClient, private url: string) {}
-  async send(messages: ScanMessage[]) {
+  async send(messages: ScanMessage[], delaySeconds = 0) {
+    const delay = Math.min(900, Math.max(0, Math.ceil(Number.isFinite(delaySeconds) ? delaySeconds : 0)));
     for (let offset=0;offset<messages.length;offset+=10) {
-      const result = await this.client.send(new SendMessageBatchCommand({ QueueUrl:this.url, Entries: messages.slice(offset,offset+10).map((message,i)=>({ Id:String(i), MessageBody:JSON.stringify(message) })) }));
+      const result = await this.client.send(new SendMessageBatchCommand({ QueueUrl:this.url, Entries: messages.slice(offset,offset+10).map((message,i)=>({ Id:String(i), MessageBody:JSON.stringify(message), ...('projectId' in message ? { MessageGroupId: message.projectId } : {}), ...(delay ? { DelaySeconds: delay } : {}) })) }));
       if (result.Failed?.length) throw new Error(`Queue rejected ${result.Failed.length} jobs; unfinished manifest will be recovered`);
     }
   }

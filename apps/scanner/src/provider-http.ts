@@ -4,6 +4,7 @@ import {
 } from '@aws-sdk/client-secrets-manager';
 import { SCAN_PROVIDERS, type ScanProvider } from '@citevia/core';
 import { object, ProviderError, type ProviderReceipt } from './provider.js';
+import { classifyProviderHttpError, providerFailureMessage } from './provider-errors.js';
 
 export interface HttpOptions {
   apiKey: string;
@@ -17,6 +18,7 @@ export async function providerPost(
   body: unknown,
   options: HttpOptions,
 ): Promise<ProviderReceipt> {
+  const model = typeof object(body)?.model === 'string' ? String(object(body)?.model) : undefined;
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(),
@@ -37,13 +39,16 @@ export async function providerPost(
     const requestId =
       response.headers.get('x-request-id') ||
       response.headers.get('x-goog-request-id');
-    if (!response.ok)
+    if (!response.ok) {
+      const failure = await classifyProviderHttpError(response, { provider, model, nowMs: options.now?.().getTime() });
       throw new ProviderError(
         `${provider}_http_${response.status}`,
-        `${provider} request failed (${response.status}).`,
-        [408, 409, 429].includes(response.status) || response.status >= 500,
+        providerFailureMessage(provider, response.status, failure.kind),
+        failure.retryable,
         requestId,
+        failure,
       );
+    }
     let native: unknown;
     try {
       native = await response.json();
@@ -51,8 +56,9 @@ export async function providerPost(
       throw new ProviderError(
         `${provider}_invalid_json`,
         `${provider} returned invalid JSON.`,
-        true,
+        false,
         requestId,
+        { provider, model, kind: 'uncertain', safeToRetry: false },
       );
     }
     const data = object(native);
@@ -60,8 +66,9 @@ export async function providerPost(
       throw new ProviderError(
         `${provider}_invalid_response`,
         `${provider} returned an invalid response envelope.`,
-        true,
+        false,
         requestId,
+        { provider, model, kind: 'uncertain', safeToRetry: false },
       );
     return {
       response: data,
@@ -73,7 +80,9 @@ export async function providerPost(
     throw new ProviderError(
       `${provider}_${controller.signal.aborted ? 'timeout' : 'network'}`,
       `${provider} request ${controller.signal.aborted ? 'timed out' : 'could not be completed'}.`,
-      true,
+      false,
+      null,
+      { provider, model, kind: 'uncertain', safeToRetry: false },
     );
   } finally {
     clearTimeout(timer);

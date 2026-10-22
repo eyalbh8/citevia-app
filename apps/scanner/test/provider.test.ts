@@ -67,7 +67,7 @@ describe('OpenAI REST contract', () => {
       init.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
     }));
     const provider = new OpenAIProvider({ apiKey: 'test-only', fetch: fetcher, timeoutMs: 5 });
-    await expect(provider.answer(answer)).rejects.toMatchObject({ code: 'openai_timeout', retryable: true });
+    await expect(provider.answer(answer)).rejects.toMatchObject({ code: 'openai_timeout', retryable: false, kind: 'uncertain', safeToRetry: false });
   });
   it('keeps refusal, incomplete and missing search out of metrics', () => {
     expect(responseFailure({ status: 'completed', output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'No' }] }] })?.code).toBe('response_refused');

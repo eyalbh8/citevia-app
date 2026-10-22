@@ -86,7 +86,12 @@ export async function observeCall<T>(options: {
       ...(!usageComplete?{errorCode:'provider_usage_unavailable'}:{})});
     return result;
   } catch(error) {
-    await settleCall(options.ledger,id,{status:'uncertain',completedAt:at(),estimatedUsd:null,errorCode:error instanceof ProviderError?error.code:'provider_error'});
+    // Explicit admission rejection is not a purchased inference. Preserve the
+    // reservation for ambiguous transport/server failures, even if retriable.
+    const rejected = error instanceof ProviderError &&
+      (error.kind === 'deferred' || error.kind === 'quota' || error.httpStatus === 429 ||
+        [400, 401, 403, 404, 422].includes(error.httpStatus ?? 0));
+    await settleCall(options.ledger,id,{status:rejected?'failed':'uncertain',completedAt:at(),estimatedUsd:rejected?0:null,errorCode:error instanceof ProviderError?error.code:'provider_error'});
     throw error;
   }
 }

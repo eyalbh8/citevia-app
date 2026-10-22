@@ -12,8 +12,18 @@ export interface AnalysisBatchRecord {
   inputFileId?: string;
   providerBatchId?: string;
   providerStatus?: string;
+  /** Persisted before the paid create request, so ambiguous submissions retain a fixed recovery window. */
+  submissionAttemptedAt?: string;
+  /** Provider creation time, or the local submission time when recovering older API responses. */
+  submittedAt?: string;
+  /** Full provider processing window plus import/polling allowance, independent of collection wait. */
+  processingDeadlineAt?: string;
   leaseExpiresAt?: string;
   nextPollAt?: string;
+  /** Definite create rejections can be retried up to three times; uncertain creates cannot. */
+  submitAttempts?: number;
+  uploadFailures?: number;
+  pollFailures?: number;
   createdAt: string;
   updatedAt: string;
   expiresAt: number;

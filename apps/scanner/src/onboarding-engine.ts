@@ -7,6 +7,7 @@ import type {
   Prompt,
 } from '@citevia/core';
 import {
+  markScheduleSynced,
   isBrandedPrompt,
   MAX_BRANDED_PROMPTS,
   isShortBuyerPrompt,
@@ -203,16 +204,12 @@ export class OnboardingEngine {
         let synced = false;
         for (let i = 0; i < 3; i++) {
           await assertActive();
-          const latest = await repository.getProject(projectId);
+          const latest = await repository.ensureProjectScanSchedule(projectId);
           if (!latest) throw new Error('Account missing');
           await this.syncSchedule(latest);
           if (
             await repository.saveProject(
-              {
-                ...latest,
-                scheduleStatus: 'synced',
-                version: latest.version + 1,
-              },
+              markScheduleSynced(latest, this.now().toISOString()),
               latest.version,
             )
           ) {

@@ -43,6 +43,8 @@ export interface Project {
   language: string;
   timezone: string;
   scheduleExpression: string;
+  /** Two stable weekly UTC slots; account timezone is only used for display. */
+  scanSchedule?: { version: 1; slotsUtcMinutes: [number, number]; activatedAt?: string };
   enabled: boolean;
   generationModel: string;
   extractionModel: string;
@@ -106,6 +108,8 @@ export type RunStatus =
   | 'partial'
   | 'failed';
 export interface ScanRun {
+  /** Retained manifest prevents delayed kickoff deliveries from recreating a deleted scan. */
+  cancelledAt?: string;
   reanalysisOf?: string;
   groupId?: string;
   projectId: string;
@@ -226,6 +230,10 @@ export interface ScanError {
   code: string;
   message: string;
   retryable: boolean;
+  kind?: 'rate_limit' | 'quota' | 'transient' | 'permanent' | 'uncertain' | 'deferred';
+  safeToRetry?: boolean;
+  retryAfterMs?: number;
+  providerCode?: string;
 }
 export interface PromptResult {
   projectId: string;
@@ -236,6 +244,14 @@ export interface PromptResult {
   status: ResultStatus;
   version: number;
   attempts: number;
+  /** Durable paid-call budgets: the initial call plus at most three retries per stage. */
+  collectionAttempts?: number;
+  analysisAttempts?: number;
+  /** A checkpoint written before a provider call; an interrupted call is never replayed blindly. */
+  pendingCallStage?: 'collection' | 'analysis';
+  /** Only a definitive provider rejection or explicit manual retry permits another paid call. */
+  safeRetryStage?: 'collection' | 'analysis';
+  retryNotBefore?: string;
   captureGeneration?: number;
   lastRetryRequestId?: string;
   lastRetryRequestedAt?: string;
@@ -388,11 +404,15 @@ export type ScanMessage =
       scheduledAt: string;
       requestId?: string;
       trigger?: 'scheduled' | 'manual';
+      scheduleVersion?: 1;
+      scheduleSlotUtcMinute?: number;
     }
-  | { kind: 'prompt'; projectId: string; runId: string; promptId: string }
+  | { kind: 'prompt'; projectId: string; runId: string; promptId: string; dispatchToken?: string }
   | { kind: 'retry'; projectId: string; runId: string; requestId: string }
   | { kind: 'onboard'; projectId: string; jobId: string }
-  | { kind: 'reconcile' };
+  | { kind: 'reconcile' }
+  | { kind: 'reconcile-run'; projectId: string; runId: string }
+  | { kind: 'dispatch' };
 export const TERMINAL_STATUSES: ResultStatus[] = [
   'succeeded',
   'refused',

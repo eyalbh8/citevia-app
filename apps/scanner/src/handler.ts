@@ -7,15 +7,17 @@ import {
   SqlAnalysisBatchStore,
   PostgresCallLedger,
   cleanupExpiredAuthState,
+  SqlProviderAdmissionStore,
+  SqlScanDispatchStore,
 } from '@citevia/storage';
-import type { ScanMessage } from '@citevia/core';
+import type { Project, ScanMessage } from '@citevia/core';
 import { Scanner } from './engine.js';
 import { AgentPostEngine } from './agent-posts.js';
 import { createResponseProviderFromEnv } from './openai.js';
 import { createScanProviderFromEnv } from './providers.js';
 import { OpenAIOnboardingProvider } from './onboarding-provider.js';
 import { OnboardingEngine } from './onboarding-engine.js';
-import { syncProjectSchedule } from '../../api/src/scheduler.js';
+import { repairProjectSchedules, syncProjectSchedule } from '../../api/src/scheduler.js';
 import { ProviderError } from './provider.js';
 import { reanalyzeCapturedRun } from './reanalysis.js';
 import { refreshPortfolio } from './portfolio-refresh.js';
@@ -38,6 +40,8 @@ const messageSchema = z.discriminatedUnion('kind', [
       scheduledAt: z.string().datetime({ offset: true }),
       requestId: z.string().min(1).max(200).optional(),
       trigger: z.enum(['scheduled', 'manual']).optional(),
+      scheduleVersion: z.literal(1).optional(),
+      scheduleSlotUtcMinute: z.number().int().min(0).max(10079).optional(),
     })
     .strict(),
   z
@@ -46,6 +50,7 @@ const messageSchema = z.discriminatedUnion('kind', [
       projectId: id,
       runId: id,
       promptId: id,
+      dispatchToken: z.string().uuid().optional(),
     })
     .strict(),
   z
@@ -57,6 +62,8 @@ const messageSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
   z.object({ kind: z.literal('reconcile') }).strict(),
+  z.object({ kind: z.literal('reconcile-run'), projectId: id, runId: id }).strict(),
+  z.object({ kind: z.literal('dispatch') }).strict(),
 ]);
 export const parseScanMessage = (value: unknown): ScanMessage =>
   messageSchema.parse(value);
@@ -103,12 +110,21 @@ function awsScanner(): Scanner {
   };
   scanner = new Scanner({
     ...runtime,
+    dispatch: new SqlScanDispatchStore(productionDatabase()),
     agents: new AgentPostEngine(runtime, createResponseProviderFromEnv),
     onboarding,
     provider: createScanProviderFromEnv(runtime),
     // Keep the port available for already-frozen Batch runs even if new batch admission is disabled.
-    analysisBatch: new AnalysisBatchCoordinator({ store: new SqlAnalysisBatchStore(productionDatabase()), artifacts: runtime.artifacts, client: lazyBatchClient, ledger: new PostgresCallLedger(productionDatabase(), runtime.artifacts) }),
-    maintenance: { reconcile: async () => { await cleanupExpiredAuthState(productionDatabase(), { dryRun: false, limit: 100, rateLimitRetentionDays: 7 }); } },
+    analysisBatch: new AnalysisBatchCoordinator({ store: new SqlAnalysisBatchStore(productionDatabase()), artifacts: runtime.artifacts, client: lazyBatchClient, ledger: new PostgresCallLedger(productionDatabase(), runtime.artifacts), admission: new SqlProviderAdmissionStore(productionDatabase()) }),
+    maintenance: { reconcile: async () => {
+      const pending = await productionDatabase().query<{ data: Project }>(`SELECT data FROM citevia_projects
+        WHERE data->>'scheduleStatus' IN ('pending','error') AND data->>'enabled'='true'
+        ORDER BY data->>'updatedAt',id LIMIT 5`);
+      const repairs = await repairProjectSchedules(runtime.repository, pending.rows.map(row => row.data));
+      for (const repair of repairs) if (repair.status === 'error')
+        console.error(JSON.stringify({ event: 'scan_schedule_repair_failed', projectId: repair.projectId }));
+      await cleanupExpiredAuthState(productionDatabase(), { dryRun: false, limit: 100, rateLimitRetentionDays: 7 });
+    } },
   });
   return scanner;
 }

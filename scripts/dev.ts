@@ -5,6 +5,7 @@ import {
   FileArtifacts,
   PostgresRepository,
   MemoryQueue,
+  SqlScanDispatchStore,
 } from '@citevia/storage';
 import { localPostgres } from '../packages/storage/src/local-postgres.js';
 import { createAuthenticatedApi } from '../apps/api/src/handler.js';
@@ -89,7 +90,7 @@ if (configured) {
     new OpenAIOnboardingProvider(await createResponseProviderFromEnv()),
     async () => {},
   );
-  scanner = new Scanner({ ...runtime, provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv) });
+  scanner = new Scanner({ ...runtime, dispatch: new SqlScanDispatchStore(db), provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv) });
 }
 api = createAuthenticatedApi(runtime, createDescopeIdentityProvider(), {
   mode: 'live',

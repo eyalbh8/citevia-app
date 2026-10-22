@@ -2,6 +2,8 @@ import * as traffic from './traffic-postgres.js';
 import { createHash } from 'node:crypto';
 import * as agents from './agents-postgres.js';
 import {
+  allocateScanSchedule,
+  WEEKLY_SCHEDULE,
   isTerminal,
   projectProviders,
   snapshotProvider,
@@ -371,6 +373,21 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       return true;
     });
   }
+  async ensureProjectScanSchedule(id: string, options: { migrateCustom?: boolean } = {}): Promise<Project | null> {
+    return this.db.transaction(async tx => {
+      // Lock the fleet before the account row: concurrent onboardings cannot select the same slot.
+      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['citevia:scan-schedule-allocation:v1']);
+      const project = data<Project>((await tx.query('SELECT data FROM citevia_projects WHERE id=$1 FOR UPDATE', [id])).rows);
+      if (!project || project.scanSchedule || (!options.migrateCustom && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project;
+      const existing = await tx.query<{ schedule: Project['scanSchedule'] }>(
+        `SELECT data->'scanSchedule' AS schedule FROM citevia_projects WHERE data ? 'scanSchedule'`,
+      );
+      const next = { ...project, scanSchedule: allocateScanSchedule(existing.rows.map(row => row.schedule)),
+        scheduleStatus: 'pending' as const, version: project.version + 1, updatedAt: new Date().toISOString() };
+      await tx.query('UPDATE citevia_projects SET data=$2::jsonb,version=$3 WHERE id=$1', [id, JSON.stringify(next), next.version]);
+      return next;
+    });
+  }
   private async membership(tx: SqlSession, m: Membership) {
     const identity = await tx.query(
       `SELECT user_id FROM citevia_identities WHERE subject=$1 AND provider='descope'`,
@@ -494,7 +511,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       )
     ).rows.map((row) => row.data as OnboardingJob);
   }
-  async createRun(run: ScanRun, results: PromptResult[]) {
+  async createRun(run: ScanRun, results: PromptResult[], options?: { onlyIfScheduledAccountIdle?: boolean }) {
     return this.db.transaction(async (tx) => {
       if (
         results.length !== run.totalCount ||
@@ -503,6 +520,14 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         new Set(results.map((r) => r.promptId)).size !== results.length
       )
         throw new Error('Invalid run manifest');
+      if (options?.onlyIfScheduledAccountIdle) {
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`scheduled-scan:${run.projectId}`]);
+        const active = await tx.query(`SELECT id FROM citevia_runs
+          WHERE project_id=$1 AND status IN ('queued','running')
+            AND data->>'trigger'='scheduled' AND data->>'cancelledAt' IS NULL
+            AND coalesce(data->>'groupId',id)<>$2 LIMIT 1`, [run.projectId, run.groupId ?? run.id]);
+        if (active.rows.length) return false;
+      }
       await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
         `${run.projectId}:${run.id}`,
       ]);
@@ -755,7 +780,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         run.status = 'running';
         run.startedAt ||= new Date().toISOString();
         delete run.completedAt;
-        if (deadlineAt) run.deadlineAt = deadlineAt;
+        if (deadlineAt && Date.parse(deadlineAt) > Date.parse(run.deadlineAt)) run.deadlineAt = deadlineAt;
         await this.updateRun(tx, run, typed);
       }
     });

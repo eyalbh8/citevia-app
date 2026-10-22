@@ -20,6 +20,8 @@
     "bootstrap": "node --env-file-if-exists=.env --import tsx scripts/admin-bootstrap.ts",
     "admin:bootstrap": "node --env-file-if-exists=.env --import tsx scripts/admin-bootstrap.ts",
     "scan:spike": "node --env-file-if-exists=.env --import tsx scripts/spike.ts",
+    "scanner:providers": "node --env-file-if-exists=.env --import tsx scripts/scanner-provider-status.ts",
+    "schedules:configure": "node --env-file-if-exists=.env --import tsx scripts/configure-schedules.ts",
     "tracking:backfill": "node --env-file-if-exists=.env --import tsx scripts/backfill-tracking.ts",
     "analysis:eval": "node --env-file-if-exists=.env --import tsx scripts/evaluate-analysis.ts",
     "analysis:configure": "node --env-file-if-exists=.env --import tsx scripts/configure-analysis.ts",

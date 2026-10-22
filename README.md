@@ -1,6 +1,6 @@
 # Citevia app
 
-A small AI visibility reporting application: **50 prompts per customer/project, scanned weekly through the ChatGPT, Perplexity and Gemini APIs**, with separate scanner and API Lambda deployments. Accounts onboarding creates a researched brandbook and prompts under Understand, Prefer, Trust and Convert, then starts tracking automatically. The client includes Dashboard, Prompts, Mentions, Sources, Brandbook and Settings. PostgreSQL uses iGEO's checked-in data model.
+A small AI visibility reporting application: **50 prompts per customer/project, scanned twice weekly by default through the ChatGPT, Perplexity and Gemini APIs**, with separate scanner and API Lambda deployments. Accounts onboarding creates a researched brandbook and prompts under Understand, Prefer, Trust and Convert, then starts tracking automatically. The client includes Dashboard, Prompts, Mentions, Sources, Brandbook and Settings. PostgreSQL uses iGEO's checked-in data model.
 
 ## Run locally
 

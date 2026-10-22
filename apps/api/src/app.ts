@@ -15,7 +15,8 @@ import {
   brandSentimentScore,
   brandRank,
   reportingCompanies,
-  nextWeeklyScan,
+  nextProjectScan,
+  markScheduleSynced,
   promptCreateSchema,
   promptUpdateSchema,
   promptFingerprint,
@@ -367,7 +368,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
                 ),
               ],
         );
-      if (tail === 'settings' && method === 'GET') return response(project);
+      if (tail === 'settings' && method === 'GET') return response({ ...project, nextScanAt: nextProjectScan(project, now()) });
       if (tail === 'competitors/suggestions' && method === 'GET')
         return response(await competitorSuggestions(runtime, project, now()));
       if (tail === 'onboarding' && method === 'GET')
@@ -532,7 +533,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           throw new HttpError(
             409,
             'ONBOARDING_INCOMPLETE',
-            'Finish account setup before enabling weekly scans.',
+            'Finish account setup before enabling scheduled scans.',
           );
         if (input.version !== stored.version)
           throw new HttpError(
@@ -599,16 +600,12 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         await persistProject(next, stored.version);
         try {
           for (let attempt = 0; attempt < 3; attempt++) {
-            const latest = await repository.getProject(projectId);
+            const latest = await repository.ensureProjectScanSchedule(projectId);
             if (!latest) throw new Error('Project missing');
             await options.syncSchedule?.(latest);
-            const synced = {
-              ...latest,
-              scheduleStatus: 'synced' as const,
-              version: latest.version + 1,
-            };
+            const synced = markScheduleSynced(latest, now().toISOString());
             if (await repository.saveProject(synced, latest.version))
-              return response({ ...synced, role: member.role });
+              return response({ ...synced, role: member.role, nextScanAt: nextProjectScan(synced, now()) });
             // A newer settings write won the race. Apply that version to AWS before reporting success.
           }
           throw new Error('Concurrent schedule updates');
@@ -626,7 +623,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           throw new HttpError(
             503,
             'SCHEDULE_SYNC_FAILED',
-            'Settings saved, but the weekly schedule could not be updated. Save again to retry.',
+            'Settings saved, but the scan schedule could not be updated. Save again to retry.',
           );
         }
       }
@@ -1056,9 +1053,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           topSources: currentSummary?.domains.slice(0, 5) || [],
           groups: currentSummary?.groups || reportingGroups(null, []),
           comparison,
-          nextScanAt: project.enabled
-            ? nextWeeklyScan(project.timezone, now())
-            : null,
+          nextScanAt: nextProjectScan(project, now()),
           mode: options.mode,
         };
         return response(data);

@@ -1,10 +1,11 @@
 import { snapshotProvider, type ScanProvider } from '@citevia/core';
-import { PostgresCallLedger, productionDatabase, type AnswerProvider, type CallLedger, type Runtime } from '@citevia/storage';
+import { PostgresCallLedger, productionDatabase, SqlProviderAdmissionStore, type AnswerProvider, type CallLedger, type Runtime } from '@citevia/storage';
 import { GeminiCollector } from './gemini.js';
 import { PerplexityCollector } from './perplexity.js';
 import { createOpenAIProviderFromEnv } from './openai.js';
 import { providerApiKey } from './provider-http.js';
-import { optimizeScanProvider } from './analysis-costs.js';
+import { observeScanProviderCollections, optimizeScanProvider } from './analysis-costs.js';
+import { guardScanProvider } from './provider-admission.js';
 
 /** Collection uses each native API. A common OpenAI extractor validates exactly the saved answer. */
 export function createScanProviderFromEnv(runtime?: Pick<Runtime,'artifacts'>, suppliedLedger?: CallLedger): AnswerProvider {
@@ -44,5 +45,8 @@ export function createScanProviderFromEnv(runtime?: Pick<Runtime,'artifacts'>, s
     extract: async (answer, snapshot) =>
       (await extractor()).extract(answer, snapshot),
   };
-  return runtime ? optimizeScanProvider(provider,{artifacts:runtime.artifacts,ledger}) : provider;
+  const observed = observeScanProviderCollections(provider, { ledger });
+  const guarded = process.env.APP_MODE === 'aws'
+    ? guardScanProvider(observed, new SqlProviderAdmissionStore(productionDatabase())) : observed;
+  return runtime ? optimizeScanProvider(guarded, { artifacts: runtime.artifacts }) : guarded;
 }

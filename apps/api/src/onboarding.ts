@@ -105,6 +105,7 @@ export async function createAccounts(
       maxAccounts,
     );
     if (outcome === 'limit') return { items, limitReached: true };
+    await runtime.repository.ensureProjectScanSchedule(projectId);
     const saved = await runtime.repository.getOnboarding(projectId, jobId);
     if (!saved || saved.inputHash !== inputHash)
       throw Object.assign(

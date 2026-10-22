@@ -36,12 +36,7 @@ export async function cacheAnalysis(artifacts:ArtifactStore, answer:CapturedAnsw
 export function optimizeScanProvider(provider:AnswerProvider, options:{artifacts:ArtifactStore;ledger?:CallLedger;now?:()=>Date}):AnswerProvider {
   const pending = new Map<string,Promise<Analysis>>();
   return {
-    collect: (prompt,snapshot)=>snapshot.provider==='openai' || !snapshot.provider
-      ? provider.collect(prompt,snapshot)
-      : observeCall({ledger:options.ledger,provider:snapshot.provider,model:snapshot.generationModel,stage:'collection',context:{projectId:snapshot.projectId,...snapshot.execution},inputBytes:Buffer.byteLength(prompt)+1000,maxOutputTokens:8000,search:true,now:options.now},
-          ()=>provider.collect(prompt,snapshot),answer=>({usage:answer.usage,
-            usageComplete:hasCompleteTokenUsage(object(object(answer.raw)?.response) ?? {},snapshot.provider),
-            model:answer.model,requestId:answer.requestId})),
+    collect: observeScanProviderCollections(provider, options).collect,
     async extract(answer,snapshot) {
       const now=options.now?.() ?? new Date();
       const key=process.env.ANALYSIS_CACHE_ENABLED==='false'?null:analysisCacheKey(answer,snapshot);
@@ -62,5 +57,20 @@ export function optimizeScanProvider(provider:AnswerProvider, options:{artifacts
       if (key) pending.set(key,work);
       try { return await work; } finally { if(key) pending.delete(key); }
     },
+  };
+}
+
+/** Separate composition lets production admission happen before cost reservation. */
+export function observeScanProviderCollections(provider: AnswerProvider, options: { ledger?: CallLedger; now?: () => Date }): AnswerProvider {
+  return {
+    collect: (prompt, snapshot) => snapshot.provider === 'openai' || !snapshot.provider
+      ? provider.collect(prompt, snapshot)
+      : observeCall({ ledger: options.ledger, provider: snapshot.provider, model: snapshot.generationModel, stage: 'collection',
+        context: { projectId: snapshot.projectId, ...snapshot.execution }, inputBytes: Buffer.byteLength(prompt) + 1000,
+        maxOutputTokens: 8000, search: true, now: options.now },
+      () => provider.collect(prompt, snapshot), answer => ({ usage: answer.usage,
+        usageComplete: hasCompleteTokenUsage(object(object(answer.raw)?.response) ?? {}, snapshot.provider),
+        model: answer.model, requestId: answer.requestId })),
+    extract: (answer, snapshot) => provider.extract(answer, snapshot),
   };
 }

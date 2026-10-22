@@ -1,4 +1,5 @@
-import { object, ProviderError, type NativeResponse } from './provider.js';
+import { object, ProviderError, type NativeResponse, type ProviderErrorOptions } from './provider.js';
+import { classifyProviderHttpError } from './provider-errors.js';
 
 export interface NativeBatch {
   id: string;
@@ -30,12 +31,14 @@ function nativeBatch(value: unknown): NativeBatch {
 }
 /** Transport failures after create are ambiguous: callers must persist intent and reconcile, never retry POST. */
 export class BatchSubmissionError extends ProviderError {
-  constructor(public readonly uncertain: boolean, code: string, requestId: string | null = null) {
-    super(code, uncertain ? 'Batch submission could not be confirmed. It will be reconciled without resubmission.' : 'Batch submission was rejected.', false, requestId);
+  constructor(public readonly uncertain: boolean, code: string, requestId: string | null = null, options: ProviderErrorOptions = {}) {
+    super(code, uncertain ? 'Batch submission could not be confirmed. It will be reconciled without resubmission.' : 'Batch submission was rejected.',
+      !uncertain && options.safeToRetry === true, requestId,
+      uncertain ? { ...options, kind: 'uncertain', safeToRetry: false } : options);
   }
 }
 export class OpenAIBatchClient implements BatchClient {
-  constructor(private readonly options: { apiKey: string; fetch?: typeof fetch; timeoutMs?: number }) {
+  constructor(private readonly options: { apiKey: string; fetch?: typeof fetch; timeoutMs?: number; now?: () => Date }) {
     if (!options.apiKey) throw new Error('OpenAI API key is missing.');
   }
   private async request(path: string, init: RequestInit = {}, creating = false): Promise<Response> {
@@ -49,9 +52,10 @@ export class OpenAIBatchClient implements BatchClient {
       });
       if (!response.ok) {
         const requestId = response.headers.get('x-request-id');
+        const failure = await classifyProviderHttpError(response, { provider: 'openai', nowMs: this.options.now?.().getTime() });
         if (creating)
-          throw new BatchSubmissionError(response.status >= 500 || [408, 409].includes(response.status), `analysis_batch_http_${response.status}`, requestId);
-        throw new ProviderError(`analysis_batch_http_${response.status}`, 'Batch API request failed.', true, requestId);
+          throw new BatchSubmissionError(response.status >= 500 || [408, 409].includes(response.status), `analysis_batch_http_${response.status}`, requestId, failure);
+        throw new ProviderError(`analysis_batch_http_${response.status}`, 'Batch API request failed.', failure.retryable, requestId, failure);
       }
       // Keep the timeout active while consuming the body, including output-file downloads.
       const bytes = await response.arrayBuffer();
@@ -61,7 +65,8 @@ export class OpenAIBatchClient implements BatchClient {
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       if (creating) throw new BatchSubmissionError(true, 'analysis_batch_submission_uncertain');
-      throw new ProviderError('analysis_batch_network', 'Batch API could not be reached.', true);
+      // Retrying a read or file upload never purchases inference.
+      throw new ProviderError('analysis_batch_network', 'Batch API could not be reached.', true, null, { provider: 'openai', kind: 'transient', safeToRetry: true });
     } finally {
       clearTimeout(timer);
     }
@@ -71,8 +76,9 @@ export class OpenAIBatchClient implements BatchClient {
     form.set('purpose', 'batch');
     form.set('file', new Blob([jsonl], { type: 'application/jsonl' }), 'citevia-analysis.jsonl');
     const response = await this.request('/files', { method: 'POST', body: form });
-    const file = object(await response.json());
-    if (typeof file?.id !== 'string') throw new ProviderError('analysis_batch_invalid_file', 'Batch file upload returned no ID.', true);
+    let file: Record<string, unknown> | undefined;
+    try { file = object(await response.json()); } catch { /* Retry file upload only, never inference. */ }
+    if (typeof file?.id !== 'string') throw new ProviderError('analysis_batch_invalid_file', 'Batch file upload returned no ID.', true, null, { provider: 'openai', kind: 'transient', safeToRetry: true });
     return file.id;
   }
   async create(inputFileId: string, correlationId: string): Promise<NativeBatch> {
@@ -88,15 +94,17 @@ export class OpenAIBatchClient implements BatchClient {
   }
   async retrieve(batchId: string): Promise<NativeBatch> {
     const response = await this.request(`/batches/${encodeURIComponent(batchId)}`);
-    return nativeBatch(await response.json());
+    try { return nativeBatch(await response.json()); }
+    catch { throw new ProviderError('analysis_batch_invalid_response', 'Batch API returned an invalid batch.', true, null, { provider: 'openai', kind: 'transient', safeToRetry: true }); }
   }
   async find(correlationId: string, inputFileId: string): Promise<NativeBatch | null> {
     let after: string | undefined;
     // Bounded discovery. A missing match is never permission to create another paid batch.
     for (let page = 0; page < 10; page++) {
       const response = await this.request(`/batches?limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`);
-      const list = object(await response.json());
-      if (!list || !Array.isArray(list.data)) throw new ProviderError('analysis_batch_invalid_list', 'Batch API returned an invalid list.', true);
+      let list: Record<string, unknown> | undefined;
+      try { list = object(await response.json()); } catch { /* Bounded coordinator retries a read only. */ }
+      if (!list || !Array.isArray(list.data)) throw new ProviderError('analysis_batch_invalid_list', 'Batch API returned an invalid list.', true, null, { provider: 'openai', kind: 'transient', safeToRetry: true });
       const batches = list.data.map(nativeBatch);
       const found = batches.filter((batch) => batch.metadata?.citevia_batch === correlationId && batch.input_file_id === inputFileId);
       if (found.length > 1) throw new ProviderError('analysis_batch_duplicate_submission', 'Multiple matching batches require operator review.', false);

@@ -228,6 +228,9 @@ Globals:
         DATABASE_NAME: !If [UseAuroraDatabase, citevia, !Ref 'AWS::NoValue']
         MAX_ACCOUNTS_PER_OWNER: !Ref MaxAccountsPerOwner
         SCAN_RUN_DEADLINE_HOURS: '24'
+        SCAN_DISPATCH_MAX_OUTSTANDING: '12'
+        SCAN_DISPATCH_MAX_PER_ACCOUNT: '3'
+        SCAN_DISPATCH_MAX_PER_PROVIDER: '4'
         EVIDENCE_BUCKET: !Ref EvidenceBucket
         QUEUE_URL: !Ref ScanQueue
         QUEUE_ARN: !GetAtt ScanQueue.Arn

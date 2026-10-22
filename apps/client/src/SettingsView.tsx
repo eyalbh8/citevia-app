@@ -20,6 +20,12 @@ import { idempotentPost, request, useApi } from './api';
 import { Badge, Empty, ErrorNotice, formatDate } from './components';
 import CompetitorSettings from './CompetitorSettings';
 
+function scheduleLabel(project: Project) {
+  if (!project.scanSchedule) return `${project.scheduleExpression} (${project.timezone})`;
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  return project.scanSchedule.slotsUtcMinutes.map(slot => `${days[Math.floor(slot / 1440)]} ${String(Math.floor(slot / 60) % 24).padStart(2, '0')}:${String(slot % 60).padStart(2, '0')} UTC`).join(' · ');
+}
+
 export default function SettingsView({
   path,
   onSaved,
@@ -56,9 +62,9 @@ export default function SettingsView({
               <aside className="card">
                 <div className="card-header">
                   <div>
-                    <h2 className="card-title">Your weekly rhythm</h2>
+                    <h2 className="card-title">Your scan schedule</h2>
                     <p className="card-description">
-                      One clear snapshot. Every week.
+                      {project.scanSchedule ? 'Two snapshots each week, 3½ days apart.' : 'Automatic snapshots on your saved schedule.'}
                     </p>
                   </div>
                 </div>
@@ -66,13 +72,13 @@ export default function SettingsView({
                   <div className="setting-note">
                     <CalendarClock size={17} />
                     <span>
-                      Every Monday at <strong>06:00</strong>
-                      <br />
-                      {project.timezone}
+                      <strong>{scheduleLabel(project)}</strong>
                       <br />
                       {project.enabled
-                        ? `Next scan: ${formatDate(project.nextScanAt || nextScanAt, true)}`
-                        : 'Weekly schedule is paused.'}
+                        ? (project.nextScanAt || nextScanAt)
+                          ? `Next scan: ${new Date((project.nextScanAt || nextScanAt)!).toLocaleString('en', { timeZone: project.timezone, dateStyle: 'medium', timeStyle: 'short' })} (${project.timezone})`
+                          : 'Next scan time is unavailable.'
+                        : 'Scan schedule is paused.'}
                     </span>
                   </div>
                   <div className="scan-options">
@@ -362,7 +368,7 @@ function ProjectForm({
                 ))}
               </datalist>
               <small>
-                A valid IANA timezone, used for the Monday 06:00 schedule.
+                {project.scanSchedule ? 'Used to display scan times. Your two fixed UTC start times stay unchanged.' : 'A valid IANA timezone for your saved schedule.'}
               </small>
             </label>
             <label className="toggle-label">
@@ -371,13 +377,13 @@ function ProjectForm({
                 checked={enabled}
                 onChange={(event) => setEnabled(event.target.checked)}
               />
-              Weekly scanning enabled
+              Scheduled scanning enabled
             </label>
             <div className="form-stack">
               <strong>Scan providers</strong>
               <p className="card-description">
                 The same portfolio of up to 50 prompts runs on each selected
-                provider. All three means up to 150 answers weekly. API keys are
+                provider. All three means up to 150 answers per scan. API keys are
                 configured on the server.
               </p>
               {SCAN_PROVIDERS.map((provider) => {

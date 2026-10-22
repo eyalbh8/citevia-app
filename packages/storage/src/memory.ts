@@ -1,6 +1,8 @@
 import { aggregateTraffic, type TrafficEvent, type TrafficFilters, type TrafficInstallationReceipt, type TrafficSite } from '@citevia/core';
 import { MAX_ACTIVE_AGENT_POSTS, type AgentPostJob, type AgentImage } from '@citevia/core';
 import {
+  allocateScanSchedule,
+  WEEKLY_SCHEDULE,
   verifiedIdentitySchema,
   type VerifiedIdentity,
   type User,
@@ -675,6 +677,16 @@ export class MemoryRepository implements Repository {
       return true;
     }, true);
   }
+  ensureProjectScanSchedule(id: string, options: { migrateCustom?: boolean } = {}) {
+    return this.operation(() => {
+      const project = this.state.projects[id];
+      if (!project || project.scanSchedule || (!options.migrateCustom && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project || null;
+      const next = { ...project, scanSchedule: allocateScanSchedule(Object.values(this.state.projects).map(item => item.scanSchedule)),
+        scheduleStatus: 'pending' as const, version: project.version + 1, updatedAt: new Date().toISOString() };
+      this.state.projects[id] = copy(next);
+      return next;
+    }, true);
+  }
   getMembership(projectId: string, userId: string) {
     return this.operation(
       () => this.state.members[key(projectId, userId)] || null,
@@ -691,8 +703,11 @@ export class MemoryRepository implements Repository {
       this.state.members[key(member.projectId, member.userId)] = copy(member);
     }, true);
   }
-  createRun(run: ScanRun, results: PromptResult[]) {
+  createRun(run: ScanRun, results: PromptResult[], options?: { onlyIfScheduledAccountIdle?: boolean }) {
     return this.operation(() => {
+      if (options?.onlyIfScheduledAccountIdle && Object.values(this.state.runs).some(active =>
+        active.projectId === run.projectId && active.trigger === 'scheduled' && !active.cancelledAt &&
+        ['queued', 'running'].includes(active.status) && (active.groupId ?? active.id) !== (run.groupId ?? run.id))) return false;
       if (this.state.runs[key(run.projectId, run.id)]) return false;
       if (
         results.length !== run.totalCount ||
@@ -799,7 +814,7 @@ export class MemoryRepository implements Repository {
         run.status = 'running';
         run.startedAt ||= new Date().toISOString();
         delete run.completedAt;
-        if (deadlineAt) run.deadlineAt = deadlineAt;
+        if (deadlineAt && Date.parse(deadlineAt) > Date.parse(run.deadlineAt)) run.deadlineAt = deadlineAt;
       }
     }, true);
   }
@@ -886,7 +901,9 @@ export class FileArtifacts implements ArtifactStore {
 }
 export class MemoryQueue implements JobQueue {
   readonly messages: ScanMessage[] = [];
-  async send(messages: ScanMessage[]) {
+  readonly delays: number[] = [];
+  async send(messages: ScanMessage[], delaySeconds = 0) {
     this.messages.push(...copy(messages));
+    this.delays.push(...messages.map(() => delaySeconds));
   }
 }
