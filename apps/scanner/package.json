@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@citevia/core": "*",
-    "@citevia/storage": "*"
+    "@citevia/storage": "*",
+    "@resvg/resvg-wasm": "^2.6.2"
   }
 }

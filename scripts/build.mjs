@@ -23,6 +23,9 @@ await cp('node_modules/geoip-country', 'dist/api/node_modules/geoip-country', {
   recursive: true,
 });
 
+await cp('apps/scanner/assets', 'dist/scanner/agent-assets', { recursive: true });
+await cp('node_modules/@resvg/resvg-wasm/index_bg.wasm', 'dist/scanner/agent-assets/index_bg.wasm');
+
 // Bundle country lookup runtime dependencies, while retaining its data and notices.
 await build({
   entryPoints: ['node_modules/geoip-country/lib/geoip.js'],

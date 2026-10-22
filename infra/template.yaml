@@ -44,6 +44,11 @@ Parameters:
     Type: String
     Description: Existing Secrets Manager secret ARN containing OPENAI_API_KEY (JSON) or a raw API key. The secret must use the default aws/secretsmanager KMS key.
     AllowedPattern: 'arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  UnsplashSecretArn:
+    Type: String
+    Default: ''
+    Description: Server-only Unsplash access key, raw or JSON with UNSPLASH_ACCESS_KEY. Required for agent post images.
+    AllowedPattern: '^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
   PerplexitySecretArn:
     Type: String
     Default: ''
@@ -107,6 +112,7 @@ Conditions:
   HasApiDomain: !Not [!Equals [!Ref ApiDomainName, '']]
   HasPerplexitySecret: !Not [!Equals [!Ref PerplexitySecretArn, '']]
   HasGeminiSecret: !Not [!Equals [!Ref GeminiSecretArn, '']]
+  HasUnsplashSecret: !Not [!Equals [!Ref UnsplashSecretArn, '']]
 
 Globals:
   Function:
@@ -450,6 +456,7 @@ Resources:
           DESCOPE_PROJECT_ID: !Ref DescopeProjectId
           DESCOPE_SECRET_ARN: !Ref DescopeSecretArn
           DESCOPE_BASE_URL: !Ref DescopeBaseUrl
+          UNSPLASH_SECRET_ARN: !Ref UnsplashSecretArn
           OPENAI_SECRET_ARN: !Ref OpenAiSecretArn
           PERPLEXITY_SECRET_ARN: !Ref PerplexitySecretArn
           GEMINI_SECRET_ARN: !Ref GeminiSecretArn
@@ -515,6 +522,7 @@ Resources:
           OPENAI_GENERATION_MODEL: !Ref GenerationModel
           OPENAI_EXTRACTION_MODEL: !Ref ExtractionModel
           OPENAI_ONBOARDING_MODEL: !Ref OnboardingModel
+          UNSPLASH_SECRET_ARN: !Ref UnsplashSecretArn
           PERPLEXITY_SECRET_ARN: !Ref PerplexitySecretArn
           GEMINI_SECRET_ARN: !Ref GeminiSecretArn
           PERPLEXITY_PRESET: !Ref PerplexityPreset
@@ -529,6 +537,12 @@ Resources:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !GetAtt Database.MasterUserSecret.SecretArn
+            - !If
+              - HasUnsplashSecret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref UnsplashSecretArn
+              - !Ref 'AWS::NoValue'
             - Effect: Allow
               Action: [s3:GetObject, s3:PutObject]
               Resource: !Sub '${EvidenceBucket.Arn}/*'

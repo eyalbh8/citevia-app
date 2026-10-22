@@ -72,6 +72,7 @@ export interface ApiOptions {
   mode: 'live';
   providerConfigured?: boolean;
   providerAvailability?: Record<ScanProvider, boolean>;
+  agentImagesConfigured?: boolean;
   syncSchedule?: (project: Project) => Promise<void>;
   now?: () => Date;
 }
@@ -317,7 +318,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           'Project owner access is required',
         );
       const agent = await agentRoute(runtime, project, userId, tail, request, now(),
-        options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim()), body);
+        (options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim())) &&
+        (options.agentImagesConfigured ?? Boolean(process.env.UNSPLASH_ACCESS_KEY?.trim() || process.env.UNSPLASH_SECRET_ARN?.trim())), body);
       if (agent) return agent;
       const traffic = await trafficRoute(runtime, project, tail, request, now());
       if (traffic) return traffic;

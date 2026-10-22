@@ -103,6 +103,14 @@ describe('agent creation UI', () => {
       globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
     ).IS_REACT_ACT_ENVIRONMENT = true;
     vi.clearAllMocks();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    HTMLElement.prototype.scrollIntoView = vi.fn();
     post = newPost();
     report = {
       items: [],
@@ -128,23 +136,32 @@ describe('agent creation UI', () => {
     await act(async () => root.unmount());
     container.remove();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('creates a tracked-prompt draft through the real API contract and shows queued progress', async () => {
     await render();
     await click('Generate');
-    await fill('agent-channel', 'reddit');
-    await fill('agent-tracked-prompt', 'tracked-1');
+    await click('Target agent: Facebook');
+    const option = document.querySelector<HTMLElement>(
+      '[role="option"][aria-label="Reddit"]',
+    )!;
+    expect(option.querySelector('img')?.getAttribute('src')).toBe(
+      '/integrations/reddit.svg',
+    );
+    await act(async () => option.click());
     expect(
-      (document.getElementById('agent-topic') as HTMLInputElement).value,
-    ).toBe('Reporting');
+      button('Target agent: Reddit').querySelector('img')?.getAttribute('src'),
+    ).toBe('/integrations/reddit.svg');
+    await fill('agent-tracked-prompt', 'tracked-1');
+    expect(document.getElementById('agent-topic')).toBeNull();
+    expect(document.getElementById('agent-prompt')).toBeNull();
+    expect(document.querySelectorAll('select')).toHaveLength(1);
     await click('Generate content');
     expect(mocks.idempotentPost).toHaveBeenCalledWith(
       '/projects/account-A/agents/posts',
       {
         channel: 'reddit',
-        topic: 'Reporting',
-        prompt: 'Which metrics should I track?',
         promptId: 'tracked-1',
       },
     );
@@ -160,15 +177,54 @@ describe('agent creation UI', () => {
     );
     await render();
     await click('Generate');
-    await fill('agent-topic', 'Reporting');
-    await fill('agent-prompt', 'A custom question');
+    await fill('agent-tracked-prompt', 'tracked-1');
     await click('Generate content');
     expect(container.textContent).toContain('Queue unavailable. Please retry.');
     expect(
-      (document.getElementById('agent-prompt') as HTMLTextAreaElement).value,
-    ).toBe('A custom question');
+      (document.getElementById('agent-tracked-prompt') as HTMLSelectElement)
+        .value,
+    ).toBe('tracked-1');
     expect(container.textContent).not.toContain('Your post is queued');
     expect(button('Generate content').disabled).toBe(false);
+  });
+
+  it('requires a prompt and explains when no active questions are available', async () => {
+    await render();
+    await click('Generate');
+    expect(button('Generate content').disabled).toBe(true);
+    expect(mocks.idempotentPost).not.toHaveBeenCalled();
+    await click('Cancel');
+    await render({
+      ...project,
+      prompts: project.prompts.map((prompt) => ({ ...prompt, active: false })),
+    });
+    await click('Generate');
+    expect(container.textContent).toContain('No active prompts available');
+    expect(button('Generate content').disabled).toBe(true);
+    expect(
+      document.querySelectorAll('#agent-tracked-prompt option'),
+    ).toHaveLength(1);
+  });
+
+  it('supports keyboard agent selection with icons in every option', async () => {
+    await render();
+    await click('Generate');
+    await click('Target agent: Facebook');
+    const list = document.querySelector<HTMLElement>('[role="listbox"]')!;
+    expect(list.querySelectorAll('[role="option"] img')).toHaveLength(6);
+    await act(async () => {
+      list.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+      );
+    });
+    await act(async () => {
+      list.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    expect(button('Target agent: Instagram')).toBeDefined();
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
   });
 
   it('keeps viewers read-only while allowing them to open saved drafts', async () => {
@@ -229,7 +285,7 @@ describe('agent creation UI', () => {
   it('clears account-specific form and drawer state when switching accounts', async () => {
     await render();
     await click('Generate');
-    await fill('agent-topic', 'Account A private topic');
+    await fill('agent-tracked-prompt', 'tracked-1');
     await render({
       ...project,
       id: 'account-B',
@@ -238,7 +294,8 @@ describe('agent creation UI', () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     await click('Generate');
     expect(
-      (document.getElementById('agent-topic') as HTMLInputElement).value,
+      (document.getElementById('agent-tracked-prompt') as HTMLSelectElement)
+        .value,
     ).toBe('');
     expect(mocks.useApi).toHaveBeenCalledWith(
       '/projects/account-B/agents/posts?cursor=0&limit=10',

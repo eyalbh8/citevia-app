@@ -1,31 +1,59 @@
 # Agent post creation
 
-Owners and system administrators can create text drafts in **Agents → Generate** for Facebook, Instagram, X, Pinterest, Reddit, and Blog. Choose a tracked prompt or enter a custom topic and prompt. Social account connections are not required to create drafts. Viewers can read and copy drafts; mutations require owner access on the server.
+Owners and system administrators can create drafts with images in **Agents → Generate** for Facebook, Instagram, X, Pinterest, Reddit and Blog. Choose only the active prompt to answer and the target agent. The API resolves the saved question and its topic from that account's prompt ID. Social account connections are not required. Viewers can read, copy and export; mutations require owner access.
 
-Generation uses the account's configured `generationModel` and the existing OpenAI Responses provider. The queued job snapshots the brand, language, country, and brandbook. The prompt includes tone, audience, features, post guidelines, verified evidence, and enabled case studies. Structured output contains `title`, `body`, and `hashtags`; refusals, incomplete responses, malformed output, and channel length violations become visible failures. Blog bodies support Markdown. This flow generates text drafts, without image generation, live web research, scheduling, or social publishing.
+## Platform briefs
+
+`apps/scanner/src/agent-prompts.ts` contains six separate editorial prompts. Only the selected agent's brief is sent to OpenAI, along with the immutable account brandbook snapshot, language, country, website and selected question. Topic is background metadata. Generation uses the account's existing `generationModel`.
+
+- **X:** one punchy, conversational answer, at most 280 weighted characters including hashtags. Body target is at most 220 characters, with at most two short hashtags. CJK and emoji receive conservative platform weighting.
+- **Facebook:** creative-manager copy, 2–4 short sentences, body target below 500 characters. The worker appends the verified account website; model-supplied URLs are removed. A missing account website is a visible failure.
+- **Instagram:** concise creative-manager caption, a useful opening and takeaway, up to five hashtags. The worker adds “Link in bio.” and removes raw URLs.
+- **Pinterest:** actionable, searchable description with a title at most 100 characters and complete copy at most 500 characters.
+- **Reddit:** substantive community advice, brand affiliation disclosure, no invented personal experience or hashtag promotion.
+- **Blog:** the staged workflow below.
+
+No channel may invent evidence, source URLs, customer results, capabilities, offers or publication status. Invalid structured output, refusals and channel length violations become visible failures. Editing also enforces channel length limits.
+
+## Blog workflow
+
+Adapted from iGEO's `social-media-content-generation-service.ts` two-step writing/formatting workflow and its SEO and FAQ schema rules:
+
+1. Research the selected question with the existing Responses web-search provider, capturing current primary-source citations in a private checkpoint. Then write an 800–1200 word article answering the chosen question, using verified brandbook evidence and enabled case studies. Supply a focus keyphrase, SEO title, meta description, slug, image brief, 3–5 FAQs and two small example-data tables.
+2. A separate queued editorial stage formats/revises the article, preserving the question and factual meaning. It adds useful H2/H3 structure, direct opening, TL;DR, short paragraphs and practical guidance, and receives deterministic SEO check feedback. Unsupplied Markdown source links are removed.
+3. If checks still need attention, one additional queued revision is allowed. Remaining issues are shown explicitly in the SEO review; these are editorial checks aligned with Yoast, not a fabricated official Yoast score. Final title width and language analysis must be verified in the installed Yoast plugin.
+4. Render both example tables into actual 1200px-wide PNG screenshots with the portable resvg WebAssembly renderer and bundled Noto fonts. Insert at `[[example-1]]` and `[[example-2]]` positions inside the article. The images and captions explicitly identify illustrative data; they are not screenshots of measured account results or live external pages.
+5. Add an Unsplash hero photo, visible FAQs, and deterministic `BlogPosting` plus `FAQPage` JSON-LD built from the saved title, article and visible FAQ data. Include example data in `articleBody`. Draft schema deliberately omits an invented public post URL or publication date; the publisher supplies these.
+6. Preview the article, images, FAQs, SEO metadata and checks in the post drawer. **Download article** exports static HTML with the hero attribution, embedded PNGs, SEO title/description and JSON-LD. **Copy schema** exports the graph; **Copy content** includes Markdown, media, FAQs and schema.
+
+Body edits preserve saved images and SEO/FAQ metadata and rebuild the schema and SEO checks. FAQs and metadata are displayed for review; this version's edit form changes title, article body and hashtags. Existing text-only drafts remain readable/editable. No WordPress or social publication is performed. Blogs use cited live research; social drafts use the saved brandbook.
+
+## Unsplash
+
+Every newly completed post requires a real Unsplash API photo. Search uses a model-supplied English query, content filtering and channel orientation (square for Instagram, portrait for Pinterest, landscape otherwise). Save the API hotlink and photographer/photo attribution URLs. Trigger the returned download endpoint when selecting the photo, preserving its query parameters. The image and tracking receipt are checkpointed independently of paid text generation. A tracking request interrupted before its checkpoint may be repeated on recovery; the text is not regenerated.
+
+Set server-only `UNSPLASH_ACCESS_KEY` locally, or `UNSPLASH_SECRET_ARN` containing a raw key or JSON `{"UNSPLASH_ACCESS_KEY":"..."}`. The API enables new generation only when both OpenAI and Unsplash are configured. The browser receives no access key. API errors and empty image results fail visibly; the app never substitutes a fabricated image. Photographer attribution is shown beside every preview and in blog exports.
 
 ## API
 
-All paths below are relative to `/v1/projects/:projectId`. Authentication and project membership use the existing Descope API middleware.
+Paths are relative to `/v1/projects/:projectId`, behind existing Descope authentication and project membership checks.
 
-- `POST /agents/posts`: JSON `{ "channel": "facebook", "topic": "…", "prompt": "…", "promptId": "optional-tracked-prompt-id" }`. Requires an `Idempotency-Key` of 8–100 letters, digits, underscores, or hyphens. Returns `{ post }` and HTTP 202 while queued/generating. Replaying a completed reservation returns HTTP 200; reusing its key with different input returns 409.
-- `GET /agents/posts?cursor=0&limit=10`: returns `{ items, total, nextCursor, generationAvailable }`. Cursors are decimal offsets; limit is 1–50. Newest posts appear first.
-- `GET /agents/posts/:postId`: returns `{ post }`, scoped to this account.
-- `PATCH /agents/posts/:postId`: JSON `{ "title": "…", "body": "…", "hashtags": [], "version": 4 }`. Only finished drafts can be edited. Stale versions return 409.
-- `POST /agents/posts/:postId/retry`: explicitly starts another generation for a failed post. Requires a fresh `Idempotency-Key`; replaying that retry key reuses the same generation.
+- `POST /agents/posts`: `{ "channel": "facebook", "promptId": "selected-active-prompt-id" }`. Requires `Idempotency-Key` (8–100 letters, digits, underscores or hyphens). Returns `{ post }`, 202 while active and 200 for a replayed completed reservation. A reused key with different input returns 409.
+- `GET /agents/posts?cursor=0&limit=10`: `{ items, total, nextCursor, generationAvailable }`. Decimal offset cursor; limit 1–50; newest first. History items contain metadata with content set to null; fetch the detail endpoint for the complete draft.
+- `GET /agents/posts/:postId`: `{ post }`, scoped to the account.
+- `PATCH /agents/posts/:postId`: `{ "title": "…", "body": "…", "hashtags": [], "version": 4 }`. Finished drafts only; stale version returns 409. Media, SEO metadata and schema cannot be replaced through this input.
+- `POST /agents/posts/:postId/retry`: explicitly starts another generation of a failed post. Requires a fresh idempotency key; replaying the same retry key reuses that generation.
 
-Up to three queued/generating posts are admitted per account, serialized by a PostgreSQL project-row lock. Input validation, tracked-prompt ownership, and mutation permissions are enforced before admission. Public responses omit the brandbook snapshot, creator identity, request fingerprint, paid-call marker, and worker lease.
+Up to three active posts per account are admitted under a PostgreSQL project-row lock. Public responses omit brandbook snapshots, creator, fingerprints, paid-call markers, editorial stage and worker leases.
 
-## Storage and recovery
+## Storage, recovery and deployment
 
-Migration `009_agent_posts.sql` creates `citevia_agent_posts`, storing versioned job state and finished content. The normal migration runner applies it locally at startup. For AWS, deploy both Lambda bundles and apply migrations using the existing IAM-authorized `database:migrate` procedure in [DEPLOYMENT.md](DEPLOYMENT.md). No new cloud resource or credential is required.
+Migration `009_agent_posts.sql` stores versioned jobs and finished content. Additional media/blog fields use its existing JSON data; no new migration is needed. PNGs are embedded in private draft JSON, avoiding a new public asset bucket. resvg Wasm and font assets are copied into the scanner Lambda by `scripts/build.mjs`.
 
-The API reserves a durable post before sending `{ kind: "agent-post", projectId, postId }` to the existing queue. A failed queue send can be repaired by replaying the request or by periodic reconciliation. Local development and AWS use the same worker and four-minute lease; optimistic version checks prevent duplicate deliveries from overwriting state.
+Each queued message contains only `{ kind: "agent-post", projectId, postId }`. The worker uses a four-minute lease and optimistic version checks. Each editorial stage records a paid-call marker before OpenAI, then checkpoints the native response privately at `projects/:projectId/agent-posts/:postId/generation-:generation[-write|-format|-repair].json`. Recovery reuses saved responses. If a paid call lacks a saved receipt, automatic generation stops with `agent_call_uncertain`; an owner must explicitly retry. Infrastructure recovery is bounded to five attempts per stage. Stage transitions clear the lease and enqueue the next stage; reconciliation repairs a failed enqueue. Explicit retries preserve previous receipts and start a new generation number.
 
-The worker records a paid-call marker before contacting OpenAI, then checkpoints the native response at `projects/:projectId/agent-posts/:postId/generation-:generation.json` in the private artifact store. Recovery reuses an existing checkpoint. If a paid call has no saved response, automatic generation stops with `agent_call_uncertain`; an owner must explicitly retry before another paid call. Infrastructure recovery is bounded to five worker attempts. Provider failures are surfaced without exposing raw provider error bodies. Failed generations and their receipts remain preserved when an owner explicitly retries.
-
-The client polls active jobs every three seconds, stops on terminal status, preserves failed form input, and uses version checks when saving edits. Switching accounts remounts the view and clears its form and drawer state.
+Deploy both API and scanner bundles and the client together. Configure the SAM `UnsplashSecretArn` parameter; its conditional IAM permission grants only the scanner access to that secret. The API checks ARN presence without reading the secret. See [DEPLOYMENT.md](DEPLOYMENT.md) for the existing deployment and migration procedure. Never place this key in `VITE_*` variables.
 
 ## Validation
 
-`tests/agent-posts.test.ts` runs the creation flow against both memory and embedded PostgreSQL, using a test-only provider. It covers permissions, account isolation, concurrent admission, idempotency, queue repair, immutable context, edit conflicts, saved-receipt recovery, uncertain calls, and worker routing. `apps/client/src/agent-creation.test.ts` covers submission, read-only access, editing failures, polling, and account changes. No fixtures are loaded by application startup.
+`tests/agent-posts.test.ts` covers memory and embedded PostgreSQL: ownership, isolation, admission, prompt resolution, immutable snapshots, idempotency, edits, queue repair, uncertain paid calls and receipt recovery. `tests/agent-platforms.test.ts` covers separate prompts, copy/CTA limits, Unsplash auth/orientations/attribution/tracking, real PNG rendering, blog stages and matching schema. Client tests cover generation, read-only behavior, failed edits, polling and account switching. Test fixtures are never loaded by application startup.

@@ -193,7 +193,7 @@ describe('agents and integrations interactions', () => {
       'Content generation is not enabled',
     );
     expect(buttons('Generate content')[0].disabled).toBe(true);
-    await click('View channel setup');
-    expect(onIntegrations).toHaveBeenLastCalledWith('facebook');
+    await click('Cancel');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 });

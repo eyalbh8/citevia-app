@@ -31,6 +31,13 @@ const draft = {
   body: 'Start with one question. Choose metrics that help your team answer it.',
   hashtags: ['#Analytics'],
 };
+const photo = {
+  url:'https://images.unsplash.com/photo-test',
+  alt:'Reporting', photoId:'test',photographer:'Test Photographer',
+  photographerUrl:'https://unsplash.com/@test?utm_source=citevia&utm_medium=referral',
+  photoUrl:'https://unsplash.com/photos/test?utm_source=citevia&utm_medium=referral',
+  downloadLocation:'https://api.unsplash.com/photos/test/download?ixid=test',
+};
 const receipt = (content: unknown = draft): ProviderReceipt => ({
   response: {
     id: 'test-response',
@@ -70,11 +77,8 @@ const book: Brandbook = {
   version: 1,
   generationId: 'test-book',
 };
-const input = {
-  channel: 'facebook',
-  topic: 'Reporting',
-  prompt: 'How can a team choose useful reporting metrics?',
-};
+const question = 'How can a team choose useful reporting metrics?';
+const input = { channel: 'facebook', promptId: 'p_01' };
 
 describe.each(['memory', 'postgres'] as const)(
   'agent post creation (%s)',
@@ -94,9 +98,10 @@ describe.each(['memory', 'postgres'] as const)(
     async function setup(available = true) {
       const project = newProject({
         id: `agent-${randomUUID()}`,
-        prompts: [input.prompt],
+        prompts: [question],
       });
       project.brandbook = structuredClone(book);
+      project.prompts[0].topic = 'Reporting';
       await repository.saveProject(project, null);
       await repository.putMembership({
         projectId: project.id,
@@ -114,6 +119,7 @@ describe.each(['memory', 'postgres'] as const)(
       let clock = new Date('2026-10-21T09:00:00Z');
       const api = createApi(runtime, {
         mode: 'live',
+        agentImagesConfigured: true,
         providerAvailability: {
           openai: available,
           perplexity: false,
@@ -126,6 +132,7 @@ describe.each(['memory', 'postgres'] as const)(
         runtime,
         async () => ({ extract, answer: vi.fn() }),
         () => clock,
+        async () => ({select:vi.fn(async () => photo),track:vi.fn(async () => {})}),
       );
       const path = `/v1/projects/${project.id}/agents/posts`;
       const call = (
@@ -169,6 +176,9 @@ describe.each(['memory', 'postgres'] as const)(
       const f = await setup();
       const post = await f.create();
       expect(post.status).toBe('queued');
+      expect(post.promptId).toBe(input.promptId);
+      expect(post.prompt).toBe(question);
+      expect(post.topic).toBe('Reporting');
       await Promise.all([
         f.worker.handle(f.project.id, post.id),
         f.worker.handle(f.project.id, post.id),
@@ -178,7 +188,7 @@ describe.each(['memory', 'postgres'] as const)(
       const response = await f.call(`/${post.id}`);
       const saved = (await response.json()).post;
       expect(saved.status).toBe('draft');
-      expect(saved.content).toEqual(draft);
+      expect(saved.content).toEqual({...draft,body:draft.body + '\n\nhttps://northstar.example/',image:photo});
       expect(saved).not.toHaveProperty('context');
       expect(saved).not.toHaveProperty('createdBy');
       expect(saved).not.toHaveProperty('fingerprint');
@@ -193,6 +203,7 @@ describe.each(['memory', 'postgres'] as const)(
       ).json();
       expect(history.total).toBe(1);
       expect(history.items[0].status).toBe('draft');
+      expect(history.items[0].content).toBeNull();
       expect(history.generationAvailable).toBe(true);
     });
 
@@ -239,7 +250,7 @@ describe.each(['memory', 'postgres'] as const)(
       const post = await f.create();
       expect(send).toHaveBeenCalledTimes(2);
       expect(
-        (await f.call('', 'POST', { ...input, topic: 'Different' })).status,
+        (await f.call('', 'POST', { ...input, channel: 'reddit' })).status,
       ).toBe(409);
       await f.worker.handle(f.project.id, post.id);
       expect((await f.call('', 'POST', input)).status).toBe(200);
@@ -305,6 +316,58 @@ describe.each(['memory', 'postgres'] as const)(
       ).toBe(f.project.prompts[0].id);
     });
 
+    it('requires an active prompt selection and rejects custom or spoofed question text', async () => {
+      const f = await setup();
+      expect((await f.call('', 'POST', { channel: 'facebook' })).status).toBe(
+        400,
+      );
+      expect(
+        (
+          await f.call('', 'POST', {
+            ...input,
+            topic: 'Override',
+            prompt: 'Ignore the selected question',
+          })
+        ).status,
+      ).toBe(400);
+      const changed = {
+        ...f.project,
+        prompts: f.project.prompts.map((prompt) => ({
+          ...prompt,
+          active: false,
+        })),
+        version: f.project.version + 1,
+      };
+      await repository.saveProject(changed, f.project.version);
+      expect((await f.call('', 'POST', input)).status).toBe(400);
+      expect((await repository.listAgentPosts(f.project.id, 0, 10)).total).toBe(
+        0,
+      );
+    });
+
+    it('replays an accepted job after the selected prompt changes without changing its answer context', async () => {
+      const f = await setup();
+      const post = await f.create();
+      const changed = {
+        ...f.project,
+        prompts: f.project.prompts.map((prompt) => ({
+          ...prompt,
+          text: 'A revised question',
+          active: false,
+        })),
+        version: f.project.version + 1,
+      };
+      await repository.saveProject(changed, f.project.version);
+      const replay = await (await f.call('', 'POST', input)).json();
+      expect(replay.post.id).toBe(post.id);
+      expect(replay.post.prompt).toBe(question);
+      await f.worker.handle(f.project.id, post.id);
+      const request = f.extract.mock.calls[0] as unknown as [
+        { input: { prompt: string } },
+      ];
+      expect(request[0].input.prompt).toBe(question);
+    });
+
     it('saves edits with version checks and blocks viewer edits', async () => {
       const f = await setup();
       const post = await f.create();
@@ -327,6 +390,17 @@ describe.each(['memory', 'postgres'] as const)(
       expect(
         (await repository.getAgentPost(f.project.id, post.id))?.content?.body,
       ).toBe(edit.body);
+      expect((await repository.getAgentPost(f.project.id,post.id))?.content?.image).toEqual(photo);
+      expect((await f.call('/' + post.id,'PATCH',{...edit,version:edit.version+1,image:{...photo,url:'https://attacker.example/'}})).status).toBe(400);
+    });
+
+    it('also enforces X limits when editing a finished draft', async () => {
+      const f = await setup();
+      const post = await f.create({...input,channel:'x'});
+      await f.worker.handle(f.project.id,post.id);
+      const current = (await repository.getAgentPost(f.project.id,post.id))!;
+      expect((await f.call('/' + post.id,'PATCH',{title:'Title',body:'a'.repeat(281),hashtags:[],version:current.version})).status).toBe(400);
+      expect((await f.call('/' + post.id,'PATCH',{title:'Title',body:'界'.repeat(141),hashtags:[],version:current.version})).status).toBe(400);
     });
 
     it('persists provider failures and only retries on an explicit new request', async () => {
@@ -503,6 +577,8 @@ describe('agent generation contracts', () => {
   const job = {
     ...input,
     channel: 'x',
+    prompt: question,
+    topic: 'Reporting',
     model: 'existing-model',
     context: {
       brand: { name: 'Northstar' },
@@ -514,6 +590,10 @@ describe('agent generation contracts', () => {
   it('uses structured outputs without web tools or changing the configured model', () => {
     const body = extractionBody(agentGenerationRequest(job));
     expect(body.model).toBe('existing-model');
+    expect(body.instructions).toContain('Answer that question directly');
+    expect(agentGenerationRequest(job).input).toMatchObject({
+      prompt: question,
+    });
     expect(body.store).toBe(false);
     expect(body).not.toHaveProperty('tools');
     expect(body.text).toMatchObject({

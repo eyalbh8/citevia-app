@@ -4,6 +4,8 @@ import {
   agentInputSchema,
   identifier,
   publicAgentPost,
+  refreshAgentBlog,
+  agentCopyValid,
   type AgentPostJob,
   type Project,
 } from '@citevia/core';
@@ -82,7 +84,9 @@ export async function agentRoute(
     );
     return json({
       ...page,
-      items: page.items.map(publicAgentPost),
+      // History uses metadata only. Embedded screenshots stay in the detail
+      // endpoint so a page of blog drafts cannot exceed Lambda response limits.
+      items: page.items.map(post => ({...publicAgentPost(post),content:null})),
       nextCursor:
         Number(cursor) + limit < page.total
           ? String(Number(cursor) + limit)
@@ -109,22 +113,21 @@ export async function agentRoute(
       return fail(
         503,
         'GENERATION_UNAVAILABLE',
-        'Configure OpenAI before generating posts.',
+        'Configure OpenAI and Unsplash before generating posts.',
       );
-    if (
-      input.promptId &&
-      !project.prompts.some(
-        (prompt) =>
-          prompt.id === input.promptId && prompt.text === input.prompt,
-      )
-    )
+    const selectedPrompt = project.prompts.find(
+      (prompt) => prompt.id === input.promptId && prompt.active,
+    );
+    if (!selectedPrompt)
       return fail(
         400,
         'PROMPT_MISMATCH',
-        'Choose a prompt from this account or enter a custom prompt.',
+        'Choose an active prompt from this account.',
       );
     post = {
       ...input,
+      prompt: selectedPrompt.text,
+      topic: selectedPrompt.topic || 'General',
       id,
       projectId: project.id,
       createdBy: userId,
@@ -178,9 +181,11 @@ export async function agentRoute(
         'POST_NOT_DRAFT',
         'Wait for generation to finish before editing.',
       );
+    if (!agentCopyValid(post.channel,content))
+      return fail(400,'CHANNEL_LIMIT','The draft exceeds this channel’s length limit.');
     const next: AgentPostJob = {
       ...post,
-      content,
+      content: refreshAgentBlog({...post,updatedAt:now.toISOString()}, {...post.content!, ...content}),
       version: version + 1,
       updatedAt: now.toISOString(),
     };
@@ -204,7 +209,7 @@ export async function agentRoute(
       return fail(
         503,
         'GENERATION_UNAVAILABLE',
-        'Configure OpenAI before generating posts.',
+        'Configure OpenAI and Unsplash before generating posts.',
       );
     const next: AgentPostJob = {
       ...post,
@@ -215,6 +220,7 @@ export async function agentRoute(
       attempts: 0,
       retryRequestId: key,
       paidCall: undefined,
+      stage: undefined,
       leaseOwner: undefined,
       leaseExpiresAt: undefined,
       version: post.version + 1,

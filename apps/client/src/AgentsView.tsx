@@ -12,10 +12,12 @@ import {
   RefreshCw,
   Save,
   Sparkles,
+  Download,
 } from 'lucide-react';
 import {
   agentContentSchema,
   agentPostText,
+  agentJsonLd,
   type AgentContent,
   type AgentPost,
   type AgentPostPage,
@@ -26,7 +28,14 @@ import { Drawer, ErrorNotice, formatDate, Pagination } from './components';
 import { Skeleton } from './Loading';
 import { invalidateApiQueries } from './query-cache';
 import AnswerMarkdown from './AnswerMarkdown';
+import {
+  AgentPhoto,
+  AgentBlogBody,
+  AgentBlogSeo,
+  downloadBlogArticle,
+} from './AgentPostPreview';
 import IntegrationMark from './IntegrationMark';
+import FilterDropdown from './FilterDropdown';
 import { AGENTS } from './integration-catalog';
 import './agents-integrations.css';
 
@@ -53,8 +62,6 @@ export default function AgentsView({
   const owner = project.role === 'owner';
   const [generateOpen, setGenerateOpen] = useState(false);
   const [channel, setChannel] = useState(AGENTS[0].id);
-  const [topic, setTopic] = useState('');
-  const [prompt, setPrompt] = useState('');
   const [promptId, setPromptId] = useState('');
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string>();
@@ -69,9 +76,8 @@ export default function AgentsView({
   const posts = history.data?.items || [];
   const generating = posts.some(active) || active(detail.data?.post);
   const available = history.data?.generationAvailable === true;
-  const topics = [
-    ...new Set(project.prompts.map((item) => item.topic).filter(Boolean)),
-  ];
+  const prompts = project.prompts.filter((item) => item.active);
+  const selectedPrompt = prompts.find((item) => item.id === promptId);
   useEffect(() => {
     if (!generating) return;
     const timer = setInterval(() => void invalidateApiQueries(path), 3000);
@@ -82,19 +88,17 @@ export default function AgentsView({
   }, [history.data, page]);
   async function generate(event: FormEvent) {
     event.preventDefault();
-    if (!owner || !available || submitting) return;
+    if (!owner || !available || submitting || !selectedPrompt) return;
     setSubmitting(true);
     setError(undefined);
     try {
       const result = await idempotentPost<{ post: AgentPost }>(
         `${path}/posts`,
-        { channel, topic, prompt, ...(promptId ? { promptId } : {}) },
+        { channel, promptId },
       );
       setPage(0);
       setGenerateOpen(false);
       setSelectedId(result.post.id);
-      setTopic('');
-      setPrompt('');
       setPromptId('');
       void invalidateApiQueries(path);
     } catch (error) {
@@ -300,89 +304,63 @@ export default function AgentsView({
               <span className="agents-empty-icon">
                 <Sparkles size={24} />
               </span>
-              <h3>Create something worth discovering.</h3>
+              <h3>Answer a prompt. Reach your audience.</h3>
               <p>
-                Choose a channel, topic and prompt for {project.brand.name}.
-                Your brandbook guides the voice and content.
+                Choose the prompt to answer and the target agent for{' '}
+                {project.brand.name}. Your brandbook guides the voice and
+                content.
               </p>
             </div>
             <ErrorNotice error={error} />
             <fieldset className="agent-generation-fields" disabled={submitting}>
-              <label htmlFor="agent-channel">Agent</label>
+              <label htmlFor="agent-tracked-prompt">Prompt to answer</label>
               <select
-                id="agent-channel"
-                value={channel}
-                onChange={(event) => setChannel(event.target.value)}
+                id="agent-tracked-prompt"
+                required
+                value={promptId}
+                onChange={(event) => setPromptId(event.target.value)}
               >
-                {AGENTS.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
+                <option value="" disabled>
+                  Select a prompt
+                </option>
+                {prompts.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.text}
                   </option>
                 ))}
               </select>
-              <label htmlFor="agent-tracked-prompt">
-                Tracked prompt{' '}
-                <span className="agent-field-optional">Optional</span>
-              </label>
-              <select
-                id="agent-tracked-prompt"
-                value={promptId}
-                onChange={(event) => {
-                  const chosen = project.prompts.find(
-                    (item) => item.id === event.target.value,
-                  );
-                  setPromptId(chosen?.id || '');
-                  if (chosen) {
-                    setPrompt(chosen.text);
-                    setTopic(chosen.topic || 'Custom prompts');
-                  }
-                }}
-              >
-                <option value="">Write a custom prompt</option>
-                {project.prompts
-                  .filter((item) => item.active)
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.text}
-                    </option>
-                  ))}
-              </select>
-              <label htmlFor="agent-topic">Topic</label>
-              <input
-                id="agent-topic"
-                list="agent-topics"
-                required
-                maxLength={200}
-                value={topic}
-                onChange={(event) => setTopic(event.target.value)}
-                placeholder="Choose a topic or enter your own"
-              />
-              <datalist id="agent-topics">
-                {topics.map((value) => (
-                  <option key={value} value={value} />
-                ))}
-              </datalist>
-              <label htmlFor="agent-prompt">Prompt</label>
-              <textarea
-                id="agent-prompt"
-                rows={5}
-                required
-                maxLength={4000}
-                value={prompt}
-                onChange={(event) => {
-                  setPrompt(event.target.value);
-                  setPromptId('');
-                }}
-                placeholder="What would you like your agent to write about?"
+              <span className="agent-selector-label">Target agent</span>
+              <FilterDropdown
+                label="Target agent"
+                className="agent-target-select"
+                active={false}
+                value={channel}
+                onChange={setChannel}
+                disabled={submitting}
+                options={AGENTS.map((agent) => ({
+                  value: agent.id,
+                  label: agent.name,
+                  icon: <IntegrationMark integration={agent} size={22} />,
+                }))}
               />
             </fieldset>
+            {!prompts.length && (
+              <div className="setting-note" role="status">
+                <Info size={17} />
+                <span>
+                  No active prompts available.{' '}
+                  <a href="#prompts">Add or activate a prompt</a> before
+                  generating an answer.
+                </span>
+              </div>
+            )}
             {!available && (
               <div className="setting-note" role="status">
                 <Info size={17} />
                 <span>
                   {history.loading && !history.data
                     ? 'Checking generation availability…'
-                    : 'Content generation is not enabled. Ask your administrator to configure OpenAI for this workspace.'}
+                    : 'Content generation is not enabled. Ask your administrator to configure OpenAI and Unsplash for this workspace.'}
                 </span>
               </div>
             )}
@@ -391,17 +369,14 @@ export default function AgentsView({
                 type="button"
                 disabled={submitting}
                 className="button button-outline"
-                onClick={() => onIntegrations(channel)}
+                onClick={() => setGenerateOpen(false)}
               >
-                View channel setup
-                <ArrowRight size={14} />
+                Cancel
               </button>
               <button
                 type="submit"
                 className="button button-primary"
-                disabled={
-                  !available || submitting || !topic.trim() || !prompt.trim()
-                }
+                disabled={!available || submitting || !selectedPrompt}
               >
                 {submitting ? (
                   <LoaderCircle size={14} className="spinner" />
@@ -475,7 +450,12 @@ function PostDetail({
         );
       await request(`${path}/posts/${encodeURIComponent(post.id)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ ...parsed.data, version: editVersion }),
+        body: JSON.stringify({
+          title: parsed.data.title,
+          body: parsed.data.body,
+          hashtags: parsed.data.hashtags,
+          version: editVersion,
+        }),
       });
       setEditing(false);
       onUpdated();
@@ -631,8 +611,9 @@ function PostDetail({
           <>
             <div className="agent-post-content">
               <h2 dir="auto">{post.content.title}</h2>
+              {post.content.image && <AgentPhoto image={post.content.image} />}
               {post.channel === 'blog' ? (
-                <AnswerMarkdown text={post.content.body} />
+                <AgentBlogBody content={post.content} />
               ) : (
                 <p className="agent-post-body" dir="auto">
                   {post.content.body}
@@ -644,7 +625,40 @@ function PostDetail({
                 </p>
               )}
             </div>
+            <AgentBlogSeo content={post.content} />
             <div className="agent-generation-actions">
+              {post.content.blog && (
+                <>
+                  <button
+                    className="button button-outline"
+                    onClick={() => {
+                      void downloadBlogArticle(post.content!).catch(() =>
+                        setError(
+                          new Error(
+                            'The article could not be exported. Please try again.',
+                          ),
+                        ),
+                      );
+                    }}
+                  >
+                    <Download size={14} />
+                    Download article
+                  </button>
+                  <button
+                    className="button button-outline"
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(
+                          JSON.stringify(agentJsonLd(post.content!), null, 2),
+                        )
+                        .then(() => setCopied(true))
+                        .catch(() => setError(new Error('Copy unavailable.')));
+                    }}
+                  >
+                    Copy schema
+                  </button>
+                </>
+              )}
               <button
                 className="button button-outline"
                 onClick={() => void copy()}

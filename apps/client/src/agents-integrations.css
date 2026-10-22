@@ -29,6 +29,9 @@
 .agent-generation-fields { display: grid; gap: 9px; margin: 0 0 22px; border: 0; padding: 0; min-width: 0; }
 .agent-generation-fields label { display: flex; align-items: center; gap: 9px; font-weight: 500; font-size: 13px; }
 .agent-generation-fields label:not(:first-child) { margin-top: 12px; }
+.agent-selector-label { margin-top: 12px; font-size: 13px; font-weight: 500; }
+.agent-target-select.filter-dropdown-trigger { width: 100%; min-height: 44px; border-radius: 10px; justify-content: flex-start; padding: 10px 12px; }
+.agent-target-select .filter-dropdown-chevron { margin-left: auto; }
 .agent-field-optional { font-size: 11px; color: var(--subtle); font-weight: 400; }
 .agent-generation-fields input, .agent-generation-fields select, .agent-generation-fields textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--surface); font-weight: 400; font-size: 13px; }
 .agent-generation-fields textarea { resize: vertical; line-height: 1.7; }
@@ -155,3 +158,19 @@
 .agent-post-content h2 { font-size: 22px; line-height: 1.6; margin-bottom: 22px; }
 .agent-post-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.9; font-size: 14px; }
 .agent-post-hashtags { font-size: 13px; line-height: 1.8; color: var(--primary); margin-top: 24px; overflow-wrap: anywhere; }
+
+.agent-post-photo,.agent-example-screenshot{margin:20px 0}
+.agent-post-photo img,.agent-example-screenshot img{display:block;width:100%;height:auto;border-radius:12px}
+.agent-post-photo img{max-height:420px;object-fit:cover}
+.agent-post-photo figcaption,.agent-example-screenshot figcaption{font-size:12px;color:var(--text-muted,#6e7389);line-height:1.6;margin-top:8px}
+.agent-blog-faqs h3{font-size:16px;margin:20px 0 8px}
+.agent-blog-faqs p{line-height:1.7;white-space:pre-wrap}
+.agent-blog-seo{padding:18px;border:1px solid var(--border,#e5e5ef);border-radius:12px;font-size:13px}
+.agent-blog-seo summary{font-weight:600;cursor:pointer}
+.agent-blog-seo p{line-height:1.6;color:var(--text-muted,#6e7389)}
+.agent-blog-seo dl{display:grid;grid-template-columns:130px 1fr;gap:10px}
+.agent-blog-seo dd{margin:0;overflow-wrap:anywhere}
+.agent-blog-seo li{margin:8px 0}
+.agent-blog-seo .seo-pass{color:#237451}
+.agent-blog-seo .seo-review{color:#9b5c16}
+.agent-post-detail .agent-generation-actions{flex-wrap:wrap;gap:8px}
