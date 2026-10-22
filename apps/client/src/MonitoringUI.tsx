@@ -39,9 +39,9 @@ import {
   regionOptions,
 } from './filter-options';
 export const providerColors: Record<ScanProvider, string> = {
-  openai: '#3930cf',
-  perplexity: '#078f9d',
-  gemini: '#8091dc',
+  openai: '#000000',
+  perplexity: '#22b8cd',
+  gemini: '#3186ff',
 };
 export type MonitorSelection = {
   days: string;
@@ -370,16 +370,7 @@ export function MentionsChart({
               )
             }
           >
-            <svg
-              className="mentions-legend-point"
-              viewBox="-9 -9 18 18"
-              aria-hidden="true"
-              fill="var(--surface)"
-              stroke={providerColors[p.provider]}
-              strokeWidth="2"
-            >
-              <MentionPoint provider={p.provider} />
-            </svg>
+            <ProviderMark provider={p.provider} />
             {PROVIDER_LABELS[p.provider]}
           </button>
         ))}
