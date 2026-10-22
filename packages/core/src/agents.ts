@@ -3,6 +3,9 @@ import { blogBodyText } from './agent-editorial.js';
 import { z } from 'zod';
 import type { Brand, Brandbook } from './types.js';
 
+/** Content creation is independent of each account's visibility-scan model. */
+export const DEFAULT_AGENT_CONTENT_MODEL = 'gpt-6-astra';
+
 export const AGENT_CHANNELS = [
   'facebook',
   'instagram',
@@ -228,7 +231,9 @@ export type AgentPostJob = AgentPost & {
   leaseOwner?: string;
   leaseExpiresAt?: string;
   paidCall?: { startedAt: string };
-  stage?: 'write' | 'format' | 'repair';
+  stage?: 'links' | 'write' | 'format' | 'repair' | 'social-repair';
+  /** Version 2 requires a checkpointed domain-restricted internal-link search. */
+  researchVersion?: 2;
 };
 export type AgentPostPage = {
   items: AgentPost[];

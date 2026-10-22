@@ -327,7 +327,7 @@ describe('blog recovery', () => {
       'Queue temporarily unavailable',
     );
     expect((await repository.getAgentPost(project.id, job.id))?.stage).toBe(
-      'write',
+      'links',
     );
     await worker.reconcile();
     expect(queue.messages).toContainEqual({
@@ -336,7 +336,10 @@ describe('blog recovery', () => {
       postId: job.id,
     });
     await worker.handle(project.id, job.id);
-    expect(answer).toHaveBeenCalledTimes(1);
+    expect(answer).toHaveBeenCalledTimes(2);
+    expect(extract).not.toHaveBeenCalled();
+    await worker.handle(project.id, job.id);
+    expect(answer).toHaveBeenCalledTimes(2);
     expect(extract).toHaveBeenCalledTimes(1);
   });
   it('recovers a reserved photo even if saving the image checkpoint was interrupted', async () => {
@@ -493,9 +496,15 @@ describe('blog article pipeline', () => {
     );
     await worker.handle(project.id, job.id);
     expect((await repository.getAgentPost(project.id, job.id))?.stage).toBe(
-      'write',
+      'links',
     );
     expect(answer).toHaveBeenCalledTimes(1);
+    expect(extract).not.toHaveBeenCalled();
+    await worker.handle(project.id, job.id);
+    expect((await repository.getAgentPost(project.id, job.id))?.stage).toBe(
+      'write',
+    );
+    expect(answer).toHaveBeenCalledTimes(2);
     expect(extract).not.toHaveBeenCalled();
     await worker.handle(project.id, job.id);
     expect((await repository.getAgentPost(project.id, job.id))?.stage).toBe(
@@ -515,7 +524,16 @@ describe('blog article pipeline', () => {
     expect(track).toHaveBeenCalledTimes(1);
     expect(saved.content?.image).toEqual(image);
     expect(saved.content?.blog?.sources).toEqual([
-      { url: 'https://example.org/primary', title: 'Primary source' },
+      {
+        url: 'https://example.org/primary',
+        title: 'Primary source',
+        kind: 'external',
+      },
+      {
+        url: 'https://northstar.example/',
+        title: 'Northstar',
+        kind: 'internal',
+      },
     ]);
     const result = saved.content!.blog!;
     expect(result).not.toHaveProperty('screenshots');

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_AGENT_CONTENT_MODEL } from '@citevia/core';
 import type { AgentPost, AgentPostJob, Brandbook } from '@citevia/core';
 import {
   MemoryRepository,
@@ -205,6 +206,40 @@ describe.each(['memory', 'postgres'] as const)(
       expect(history.items[0].status).toBe('draft');
       expect(history.items[0].content).toBeNull();
       expect(history.generationAvailable).toBe(true);
+    });
+
+    it('uses the stronger content default while preserving the account scan model and queued model snapshot', async () => {
+      vi.stubEnv('OPENAI_CONTENT_MODEL','');
+      try {
+        const f=await setup();
+        const scanModel=f.project.generationModel;
+        const post=await f.create();
+        expect(post.model).toBe(DEFAULT_AGENT_CONTENT_MODEL);
+        vi.stubEnv('OPENAI_CONTENT_MODEL','gpt-5.5');
+        await f.worker.handle(f.project.id,post.id);
+        expect(f.extract).toHaveBeenCalledWith(expect.objectContaining({model:DEFAULT_AGENT_CONTENT_MODEL,reasoningEffort:'low'}));
+        expect((await repository.getProject(f.project.id))!.generationModel).toBe(scanModel);
+        expect((await repository.getAgentPost(f.project.id,post.id))!.model).toBe(DEFAULT_AGENT_CONTENT_MODEL);
+      } finally {vi.unstubAllEnvs();}
+    });
+
+    it('honors the content model override for new posts and explicit retries, with idempotent retries keeping their model',async()=>{
+      vi.stubEnv('OPENAI_CONTENT_MODEL',' gpt-5.5 ');
+      try {
+        const f=await setup();
+        const post=await f.create();
+        expect(post.model).toBe('gpt-5.5');
+        f.extract.mockRejectedValueOnce(new ProviderError('openai_http_429','OpenAI request failed (429).',true));
+        await f.worker.handle(f.project.id,post.id);
+        vi.stubEnv('OPENAI_CONTENT_MODEL',DEFAULT_AGENT_CONTENT_MODEL);
+        const response=await f.call('/'+post.id+'/retry','POST',undefined,'upgrade-retry-key');
+        const retried=(await response.json()).post;
+        expect(retried.model).toBe(DEFAULT_AGENT_CONTENT_MODEL);
+        vi.stubEnv('OPENAI_CONTENT_MODEL','gpt-5.5');
+        const replay=(await (await f.call('/'+post.id+'/retry','POST',undefined,'upgrade-retry-key')).json()).post;
+        expect(replay.model).toBe(DEFAULT_AGENT_CONTENT_MODEL);
+        expect((await repository.getAgentPost(f.project.id,post.id))!.generation).toBe(2);
+      } finally {vi.unstubAllEnvs();}
     });
 
     it('enforces owner permissions, input validation, configuration, and account isolation', async () => {

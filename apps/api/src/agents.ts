@@ -6,10 +6,13 @@ import {
   publicAgentPost,
   refreshAgentBlog,
   agentCopyValid,
+  DEFAULT_AGENT_CONTENT_MODEL,
   type AgentPostJob,
   type Project,
 } from '@citevia/core';
 import { AccessError, type Runtime } from '@citevia/storage';
+const contentModel = () =>
+  process.env.OPENAI_CONTENT_MODEL?.trim() || DEFAULT_AGENT_CONTENT_MODEL;
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), {
     status,
@@ -85,7 +88,10 @@ export async function agentRoute(
     return json({
       ...page,
       // History uses metadata only; fetch full blog content through the detail endpoint.
-      items: page.items.map(post => ({...publicAgentPost(post),content:null})),
+      items: page.items.map((post) => ({
+        ...publicAgentPost(post),
+        content: null,
+      })),
       nextCursor:
         Number(cursor) + limit < page.total
           ? String(Number(cursor) + limit)
@@ -137,7 +143,7 @@ export async function agentRoute(
       version: 1,
       generation: 1,
       attempts: 0,
-      model: project.generationModel,
+      model: contentModel(),
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
       context: {
@@ -180,11 +186,18 @@ export async function agentRoute(
         'POST_NOT_DRAFT',
         'Wait for generation to finish before editing.',
       );
-    if (!agentCopyValid(post.channel,content))
-      return fail(400,'CHANNEL_LIMIT','The draft exceeds this channel’s length limit.');
+    if (!agentCopyValid(post.channel, content))
+      return fail(
+        400,
+        'CHANNEL_LIMIT',
+        'The draft exceeds this channel’s length limit.',
+      );
     const next: AgentPostJob = {
       ...post,
-      content: refreshAgentBlog({...post,updatedAt:now.toISOString()}, {...post.content!, ...content}),
+      content: refreshAgentBlog(
+        { ...post, updatedAt: now.toISOString() },
+        { ...post.content!, ...content },
+      ),
       version: version + 1,
       updatedAt: now.toISOString(),
     };
@@ -216,10 +229,12 @@ export async function agentRoute(
       error: null,
       content: null,
       generation: post.generation + 1,
+      model: contentModel(),
       attempts: 0,
       retryRequestId: key,
       paidCall: undefined,
       stage: undefined,
+      researchVersion: undefined,
       leaseOwner: undefined,
       leaseExpiresAt: undefined,
       version: post.version + 1,

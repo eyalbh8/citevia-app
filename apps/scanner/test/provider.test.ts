@@ -4,6 +4,29 @@ import { answerBody, extractionBody, OpenAIProvider, ProviderError, responseFail
 const answer = { prompt: 'Which analytics products should I compare?', model: 'answer-snapshot', language: 'en', country: 'US', timezone: 'America/New_York' };
 
 describe('OpenAI REST contract', () => {
+  it('restricts domain-specific blog searches without narrowing ordinary scan searches', () => {
+    const restricted = answerBody({...answer,allowedDomains:['northstar.example','northstar.co.uk']});
+    expect(restricted.tools).toEqual([expect.objectContaining({type:'web_search',filters:{allowed_domains:['northstar.example','northstar.co.uk']}})]);
+    expect(restricted.tool_choice).toBe('required');
+    expect(answerBody(answer).tools).toEqual([expect.not.objectContaining({filters:expect.anything()})]);
+  });
+  it('serializes Astra reasoning for search and structured content without altering neutral requests',()=>{
+    const input={model:'gpt-6-astra',instructions:'Write a useful caption.',input:{question:'A question'},schema:{type:'object'},reasoningEffort:'low' as const};
+    expect(answerBody({...answer,model:'gpt-6-astra',reasoningEffort:'low'}).reasoning).toEqual({effort:'low'});
+    expect(extractionBody(input).reasoning).toEqual({effort:'low'});
+    expect(answerBody(answer)).not.toHaveProperty('reasoning');
+    const {reasoningEffort,...legacy}=input;
+    expect(extractionBody({...legacy,model:'gpt-4.1-2025-04-14'})).not.toHaveProperty('reasoning');
+  });
+  it('keeps the content timeout local and within the worker lease', async () => {
+    const fetcher=vi.fn(async()=>Response.json({status:'completed',output:[]}));
+    const provider=new OpenAIProvider({apiKey:'test-only',fetch:fetcher});
+    const request={model:'gpt-6-astra',instructions:'Write.',input:{},schema:{type:'object'},requestTimeoutMs:180000};
+    await provider.extract(request);
+    const options=(fetcher.mock.calls[0] as unknown as [string,RequestInit])[1];
+    expect(JSON.parse(options.body as string)).not.toHaveProperty('requestTimeoutMs');
+    expect(()=>provider.extract({...request,requestTimeoutMs:180001})).toThrow('at most 180 seconds');
+  });
   it('makes one fresh search answer request with no extraction hints', () => {
     const body = answerBody(answer);
     expect(body.input).toBe(answer.prompt);

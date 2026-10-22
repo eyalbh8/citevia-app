@@ -1,4 +1,5 @@
 import {
+  DEFAULT_AGENT_CONTENT_MODEL,
   agentContentSchema,
   agentCopyValid,
   blogDraftSchema,
@@ -16,6 +17,7 @@ import {
   agentContext,
   accountWebsite,
 } from './agent-prompts.js';
+import { agentReasoning } from './agent-model.js';
 import {
   ProviderError,
   responseFailure,
@@ -57,6 +59,10 @@ export function agentGenerationRequest(
   const blog = post.channel === 'blog';
   return {
     model: post.model,
+    ...agentReasoning(post.model),
+    ...(post.model === DEFAULT_AGENT_CONTENT_MODEL
+      ? { requestTimeoutMs: 180_000 }
+      : {}),
     schemaName: 'citevia_agent_post',
     maxOutputTokens: blog ? 9000 : 2500,
     instructions:
@@ -214,6 +220,48 @@ export function verifiedBlogLinks(
     (_match, index) => kept[Number(index)],
   );
 }
+export function assertUnbrandedSocial(
+  post: AgentPostJob,
+  content: AgentContent,
+) {
+  if (!['facebook', 'instagram', 'x'].includes(post.channel)) return;
+  const website = post.channel === 'facebook' ? accountWebsite(post) : null;
+  const body = website ? content.body.replaceAll(website, '') : content.body;
+  const text = (content.title + '\n' + body).normalize('NFKC');
+  const tags = [
+    ...content.hashtags,
+    ...(text.match(/#[\p{L}\p{N}_]+/gu) || []),
+  ];
+  for (const name of [
+    post.context.brand.name,
+    ...(post.context.brand.aliases || []),
+  ]) {
+    const tokens = name.normalize('NFKC').match(/[\p{L}\p{N}]+/gu) || [];
+    if (!tokens.length) continue;
+    const escaped = tokens
+      .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('[^\\p{L}\\p{N}]*');
+    const pattern = new RegExp(
+      '(^|[^\\p{L}\\p{N}])' + escaped + '(?=$|[^\\p{L}\\p{N}])',
+      'iu',
+    );
+    const compact = tokens.join('').toLocaleLowerCase();
+    const brandedTag = tags.some((tag) => {
+      const value = tag
+        .normalize('NFKC')
+        .replace(/[^\p{L}\p{N}]/gu, '')
+        .toLocaleLowerCase();
+      return compact.length < 3 ? value === compact : value.includes(compact);
+    });
+    if (pattern.test(text) || brandedTag)
+      throw new ProviderError(
+        'agent_brand_mention',
+        'The caption included the account brand name. Retry generation for an answer without brand mentions.',
+        false,
+      );
+  }
+}
+
 export function finalizeSocialCopy(
   post: AgentPostJob,
   content: AgentContent,
@@ -284,6 +332,8 @@ export function finalizeSocialCopy(
       );
     body = body.replace(/https?:\/\/[^\s]+/g, '').trim() + '\n\n' + website;
   }
+  if (post.channel === 'x')
+    body = body.replace(/https?:\/\/[^\s]+/g, '').trim();
   if (post.channel === 'instagram') {
     body = body.replace(/https?:\/\/[^\s]+/g, '').trim();
     if (!/link in bio/i.test(body)) body += '\n\nLink in bio.';
@@ -294,6 +344,7 @@ export function finalizeSocialCopy(
     body,
     hashtags,
   };
+  assertUnbrandedSocial(post, result);
   if (!agentCopyValid(post.channel, result))
     throw new ProviderError(
       'agent_content_too_long',

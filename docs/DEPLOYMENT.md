@@ -78,6 +78,7 @@ The build writes `dist/api/index.mjs` and `dist/scanner/index.mjs`. The template
 - `PerplexityPreset`: defaults to `fast@2026-10-16.0`, a pinned Agent API preset. Validate this version with your account before deployment.
 - `GeminiGenerationModel`: defaults to `gemini-3.8-flash`. Validate Google Search grounding, billing and model access with your Gemini API project.
 - `GenerationModel` and `ExtractionModel`: defaults are `gpt-4.1-2025-04-14` and `gpt-4.1-mini-2025-04-14`. Check availability with your OpenAI project before accepting them.
+- `ContentGenerationModel`: defaults to `gpt-6-astra` for agent content creation and blog web research only. Exposed server-side as `OPENAI_CONTENT_MODEL`; set the matching GitHub environment variable to override. Existing visibility-scan and onboarding models remain independent. Validate model access, structured outputs and web search before deployment.
 - `AlertEmail`: an optional operations email. After deployment, confirm the SNS subscription email; alarms exist without an email, but notifications do not.
 - `EnableDevOrigin`: keep `false` in production. A development stack can use `true` with `DevOrigin=http://localhost:5173` to permit localhost OAuth callbacks and CORS.
 - `QueueConcurrency`: defaults to 10 concurrent SQS workers. Set it within the rate limits of all three providers; scanner concurrency is shared.

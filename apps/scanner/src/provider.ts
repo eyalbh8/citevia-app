@@ -23,11 +23,17 @@ export interface AnswerRequest {
   language: string;
   country: string;
   timezone: string;
+  reasoningEffort?: 'low' | 'medium' | 'high';
   maxOutputTokens?: number;
+  /** Restrict research to these account domains; ordinary scan requests stay unrestricted. */
+  allowedDomains?: string[];
 }
 
 export interface ExtractionRequest {
+  /** Content-only transport override; never sent to the model API. */
+  requestTimeoutMs?: number;
   schemaName?: string;
+  reasoningEffort?: 'low' | 'medium' | 'high';
   maxOutputTokens?: number;
   model: string;
   instructions: string;
@@ -55,6 +61,7 @@ export class ProviderError extends Error {
 export function answerBody(input: AnswerRequest): Record<string, unknown> {
   return {
     model: input.model,
+    ...(input.reasoningEffort ? {reasoning:{effort:input.reasoningEffort}} : {}),
     store: false,
     // Scan observations use the neutral default. Company research has its own developer instructions.
     instructions: input.instructions ?? `Answer the user's question in ${input.language}.`,
@@ -62,6 +69,7 @@ export function answerBody(input: AnswerRequest): Record<string, unknown> {
     tools: [{
       type: 'web_search',
       search_context_size: 'medium',
+      ...(input.allowedDomains?.length ? { filters: { allowed_domains: input.allowedDomains } } : {}),
       user_location: { type: 'approximate', country: input.country, timezone: input.timezone },
     }],
     tool_choice: 'required',
@@ -73,6 +81,7 @@ export function answerBody(input: AnswerRequest): Record<string, unknown> {
 export function extractionBody(input: ExtractionRequest): Record<string, unknown> {
   return {
     model: input.model,
+    ...(input.reasoningEffort ? {reasoning:{effort:input.reasoningEffort}} : {}),
     store: false,
     instructions: input.instructions,
     input: JSON.stringify(input.input),
@@ -98,7 +107,11 @@ export class OpenAIProvider implements ResponseProvider {
   }
 
   answer(input: AnswerRequest): Promise<ProviderReceipt> { return this.request(answerBody(input), this.options.timeoutMs ?? this.options.answerTimeoutMs ?? 180_000); }
-  extract(input: ExtractionRequest): Promise<ProviderReceipt> { return this.request(extractionBody(input), this.options.timeoutMs ?? this.options.extractionTimeoutMs ?? 60_000); }
+  extract(input: ExtractionRequest): Promise<ProviderReceipt> {
+    if (input.requestTimeoutMs !== undefined && (!Number.isFinite(input.requestTimeoutMs) || input.requestTimeoutMs <= 0 || input.requestTimeoutMs > 180_000))
+      throw new Error('Content request timeout must be positive and at most 180 seconds.');
+    return this.request(extractionBody(input), this.options.timeoutMs ?? input.requestTimeoutMs ?? this.options.extractionTimeoutMs ?? 60_000);
+  }
 
   private async request(body: Record<string, unknown>, timeoutMs: number): Promise<ProviderReceipt> {
     // One request only. SQS owns retries so they are visible, bounded and checkpoint aware.
