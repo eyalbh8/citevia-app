@@ -85,6 +85,12 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: citevia-deploy-${{ github.run_id }}
+      - name: Prevent legacy deployment after PostgreSQL cutover
+        shell: bash
+        run: |
+          set -euo pipefail
+          database_parameters="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Parameters[?ParameterKey==`DatabaseMode` || ParameterKey==`RetireLegacyDatabase`]' --output json)"
+          node -e 'const p=JSON.parse(process.argv[1]);const get=k=>p.find(x=>x.ParameterKey===k)?.ParameterValue;if(get("DatabaseMode")==="external"||get("RetireLegacyDatabase")==="true"){console.error("Production moved to external PostgreSQL. Use the updated migration-aware deployment workflow; this legacy workflow cannot deploy or migrate the moved database.");process.exit(1)}' "$database_parameters"
       - name: Resolve shared content photo configuration
         shell: bash
         run: |
