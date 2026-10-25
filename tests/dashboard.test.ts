@@ -212,16 +212,73 @@ describe('dashboard overview measurement semantics', () => {
         promptCount: 2,
         measuredPromptCount: 2,
         visibility: 50,
+        visibilityChange: 0,
       },
-      { key: 'trust', promptCount: 1, measuredPromptCount: 0, visibility: 0 },
+      { key: 'trust', promptCount: 1, measuredPromptCount: 0, visibility: 0, visibilityChange: null },
       {
         key: 'unassigned',
         promptCount: 1,
         measuredPromptCount: 0,
         visibility: 0,
+        visibilityChange: null,
       },
     ]);
     expect(result.analyzed).toBe(5);
+  });
+
+  it('compares stage visibility rates on its own observed days, weighting active prompts equally', () => {
+    const value = project();
+    const items = [
+      ...Array.from({ length: 10 }, (_, index) => observation(value, `first-${index}`, '2026-10-15', { mentioned: index < 2 })),
+      ...Array.from({ length: 5 }, (_, index) => observation(value, `last-${index}`, '2026-10-18', { mentioned: index < 2 })),
+      observation(value, 'another-stage-first', '2026-10-14', { prompt: 2 }),
+      observation(value, 'another-stage-last', '2026-10-20', { prompt: 2 }),
+    ];
+    const data = aggregateDashboardOverview(value, period, filters, items);
+    // The measured prompt goes from 20% to 40%, while the other active prompt
+    // counts as zero on both days: stage visibility rises 10% to 20% (+100%).
+    // Mention counts themselves are unchanged, so they cannot supply this delta.
+    expect(data.stages.find(row => row.key === 'understand')).toEqual({
+      key: 'understand', promptCount: 2, measuredPromptCount: 1, visibility: 14, visibilityChange: 100,
+    });
+    expect(data.stages.find(row => row.key === 'trust')?.visibilityChange).toBe(0);
+  });
+
+  it.each([
+    { first: 4, last: 2, expected: -50 },
+    { first: 2, last: 2, expected: 0 },
+    { first: 0, last: 2, expected: 100 },
+    { first: 0, last: 0, expected: 0 },
+  ])('calculates stage rate change from $first to $last mentions, including observed zeroes', ({ first, last, expected }) => {
+    const value = project();
+    const items = [
+      ...Array.from({ length: 10 }, (_, index) => observation(value, `first-${index}`, '2026-10-15', { mentioned: index < first })),
+      ...Array.from({ length: 10 }, (_, index) => observation(value, `last-${index}`, '2026-10-18', { mentioned: index < last })),
+    ];
+    const data = aggregateDashboardOverview(value, period, filters, items);
+    expect(data.stages.find(row => row.key === 'understand')?.visibilityChange).toBe(expected);
+    expect(data.stages.find(row => row.key === 'trust')?.visibilityChange).toBeNull();
+  });
+
+  it('keeps fractional daily visibility precise until the final percentage change', () => {
+    const value = project();
+    const items = [
+      ...Array.from({ length: 3 }, (_, index) => observation(value, `first-${index}`, '2026-10-15', { mentioned: index < 1 })),
+      ...Array.from({ length: 3 }, (_, index) => observation(value, `last-${index}`, '2026-10-18', { mentioned: index < 2 })),
+    ];
+    expect(aggregateDashboardOverview(value, period, filters, items).stages.find(row => row.key === 'understand'))
+      .toMatchObject({ visibility: 25, visibilityChange: 100 });
+  });
+
+  it('uses only matching current prompt versions for stage changes and keeps single-day comparisons neutral', () => {
+    const value = project();
+    const edited = observation(value, 'old-question', '2026-10-18');
+    edited.result.prompt = { ...edited.result.prompt, version: 0 };
+    const otherProvider = observation(value, 'excluded-provider', '2026-10-18', { provider: 'gemini' });
+    const first = observation(value, 'first', '2026-10-15', { mentioned: false });
+    const data = aggregateDashboardOverview(value, period, { ...filters, providers: ['openai'] }, [first, edited, otherProvider]);
+    expect(data.stages.find(row => row.key === 'understand')).toMatchObject({ visibility: 0, visibilityChange: 0 });
+    expect(aggregateDashboardOverview(value, period, filters, [edited]).stages.every(row => row.visibilityChange === null)).toBe(true);
   });
 
   it('deduplicates prompt text within a provider scan, but counts new scans and providers', () => {
@@ -360,7 +417,7 @@ describe('dashboard overview measurement semantics', () => {
     expect(data.analyzed).toBe(1);
     expect(data.ranking[0].mentions).toBe(1);
     expect(data.stages.find((row) => row.key === 'understand'))
-      .toMatchObject({ promptCount: 2, measuredPromptCount: 0, visibility: 0 });
+      .toMatchObject({ promptCount: 2, measuredPromptCount: 0, visibility: 0, visibilityChange: null });
   });
 
   it.each(['provider', 'region', 'tag', 'topic', 'intent', 'branded', 'search', 'stage', 'date'])(

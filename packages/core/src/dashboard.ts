@@ -26,6 +26,8 @@ export interface DashboardOverview {
     promptCount: number;
     measuredPromptCount: number;
     visibility: number;
+    /** Relative percentage change from the first to last observed stage day. */
+    visibilityChange: number | null;
   }[];
   ranking: {
     brandId: string;
@@ -138,6 +140,7 @@ export function aggregateDashboardOverview(
     string,
     { analyzed: number; mentioned: number }
   >();
+  const dailyPromptResults = new Map<string, Map<string, { analyzed: number; mentioned: number }>>();
   const sourceRows = new Map<
     string,
     { pages: Set<string>; citationCount: number }
@@ -163,6 +166,12 @@ export function aggregateDashboardOverview(
       prompt.analyzed++;
       if (result.target?.mentioned) prompt.mentioned++;
       promptResults.set(result.promptId, prompt);
+      const dates = dailyPromptResults.get(result.promptId) || new Map();
+      const daily = dates.get(day) || { analyzed: 0, mentioned: 0 };
+      daily.analyzed++;
+      if (result.target?.mentioned) daily.mentioned++;
+      dates.set(day, daily);
+      dailyPromptResults.set(result.promptId, dates);
     }
     const measured = new Map<string, BrandAnalysis>(
       (result.brands || []).map((brand) => [brand.brandId, brand]),
@@ -275,6 +284,7 @@ export function aggregateDashboardOverview(
     string,
     { promptCount: number; measuredPromptCount: number; visibility: number }
   >();
+  const stageDays = new Map<string, Map<string, number>>();
   for (const prompt of project.prompts) {
     if (
       !prompt.active ||
@@ -301,6 +311,11 @@ export function aggregateDashboardOverview(
         (100 * measured.mentioned) / measured.analyzed,
       );
     }
+    const dates = stageDays.get(key) || new Map<string, number>();
+    for (const [date, measured] of dailyPromptResults.get(prompt.id) || []) {
+      dates.set(date, (dates.get(date) || 0) + 100 * measured.mentioned / measured.analyzed);
+    }
+    stageDays.set(key, dates);
     stages.set(key, stage);
   }
   return {
@@ -325,6 +340,9 @@ export function aggregateDashboardOverview(
         ...row,
         key,
         visibility: Math.round(row.visibility / row.promptCount),
+        // The active prompt denominator is the same on both observed days,
+        // including unmeasured prompts as zero, so it cancels in the ratio.
+        visibilityChange: dailyChange(stageDays.get(key)!, stageDays.get(key)!.keys()),
       }))
       .sort(
         (a, b) => b.visibility - a.visibility || a.key.localeCompare(b.key),

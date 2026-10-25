@@ -112,6 +112,7 @@ function exportOverview(data: DashboardOverview, name: string) {
   }
   for (const s of data.stages) {
     add('Stages', labelize(s.key), 'Visibility (%)', s.visibility);
+    add('Stages', labelize(s.key), 'Visibility change (%)', s.visibilityChange ?? null);
     add('Stages', labelize(s.key), 'Active prompts', s.promptCount);
     add('Stages', labelize(s.key), 'Measured prompts', s.measuredPromptCount);
   }
@@ -283,7 +284,13 @@ export function DashboardView({
                             {s.promptCount === 1 ? 'prompt' : 'prompts'}
                           </span>
                         </span>
-                        <strong>{formatNumber(s.visibility)}%</strong>
+                        <div className="overview-stage-metrics">
+                          <strong>{formatNumber(s.visibility)}%</strong>
+                          <Change
+                            value={s.visibilityChange ?? null}
+                            label={`${s.key === 'unassigned' ? 'No stage' : labelize(s.key)} visibility change from first to last observed day (relative percentage)`}
+                          />
+                        </div>
                       </div>
                       <div
                         className="overview-stage-track"

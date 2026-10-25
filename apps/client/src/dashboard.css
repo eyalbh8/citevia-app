@@ -150,6 +150,7 @@
 }
 .overview-stage-heading {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
@@ -157,7 +158,14 @@
   font-size: 12px;
   line-height: 1.5;
 }
-.overview-stage-heading > strong {
+.overview-stage-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.overview-stage-metrics > strong {
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
