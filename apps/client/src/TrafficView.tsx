@@ -683,7 +683,7 @@ export default function TrafficView({
   notify: (message: string) => void;
 }) {
   const [tab, setTab] = useState<'traffic' | 'settings'>('traffic');
-  const [range, setRange] = useState<DateRangeSelection>(() => project.demo ? { days: '30', start: '', end: '' } : initialDateRange());
+  const [range, setRange] = useState<DateRangeSelection>(() => initialDateRange());
   const [providers, setProviders] = useState<TrafficProvider[]>([]),
     [countries, setCountries] = useState<string[]>([]);
   const filters = query({

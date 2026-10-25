@@ -52,12 +52,8 @@ const fullDate = (value: string) =>
     timeZone: 'UTC',
   });
 
-export function initialDateRange(demo?: Project['demo']): DateRangeSelection {
+export function initialDateRange(): DateRangeSelection {
   const today = isoDay(new Date());
-  if (demo) {
-    const end = today < demo.endDate ? today : demo.endDate;
-    return { days: 'custom', start: demo.startDate, end: end < demo.startDate ? demo.startDate : end };
-  }
   return { days: '7', start: moveDay(today, -6), end: today };
 }
 

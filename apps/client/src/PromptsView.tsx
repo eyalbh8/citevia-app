@@ -145,7 +145,7 @@ export default function PromptsView({
   notify,
   demo,
 }: Props) {
-  const [dateRange, setDateRange] = useState<DateRangeSelection>(() => initialDateRange(demo)),
+  const [dateRange, setDateRange] = useState<DateRangeSelection>(() => initialDateRange()),
     [provider, setProvider] = useState<ScanProvider | ''>('');
   const [search, setSearch] = useState(''),
     [region, setRegion] = useState('');

@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '@citevia/core';
 import DateRangeFilter, { initialDateRange, type DateRangeSelection } from './DateRangeFilter';
+import { initialSelection, selectionQuery } from './MonitoringUI';
 
 const demo: NonNullable<Project['demo']> = {
   version: 1,
@@ -47,11 +48,28 @@ afterEach(async () => {
 });
 
 describe('Account date ranges', () => {
-  it('opens configured reports on their history and caps it at the available end date', () => {
-    expect(initialDateRange(demo)).toEqual({ days: 'custom', start: demo.startDate, end: '2026-10-23' });
+  it('opens reports on the last seven days relative to today', () => {
     expect(initialDateRange()).toEqual({ days: '7', start: '2026-10-17', end: '2026-10-23' });
     vi.setSystemTime(new Date('2027-06-01T12:00:00Z'));
-    expect(initialDateRange(demo)).toEqual({ days: 'custom', start: demo.startDate, end: demo.endDate });
+    expect(initialDateRange()).toEqual({ days: '7', start: '2027-05-26', end: '2027-06-01' });
+  });
+
+  it.each(['igeo-nayax', 'igeo-dr-roof', 'website-demo'] as const)(
+    'starts %s reports on seven days without changing regular account defaults',
+    (source) => {
+      const config = { ...demo, source };
+      expect(initialSelection('7', config)).toEqual(initialSelection());
+      const trackingSelection = initialSelection('30', config);
+      expect(trackingSelection.days).toBe('7');
+      expect(selectionQuery(trackingSelection)).toContain('days=7');
+      expect(selectionQuery(trackingSelection)).not.toMatch(/start=|end=/);
+      expect(initialSelection('30').days).toBe('30');
+    },
+  );
+
+  it('labels a freshly opened demo report Last 7 days', async () => {
+    await act(async () => root.render(<DateRangeFilter value={initialDateRange()} onChange={onChange} demo={demo} />));
+    expect(container.querySelector('button')?.getAttribute('aria-label')).toBe('Date range: Last 7 days');
   });
 
   it('keeps future dates unavailable for normal projects', async () => {

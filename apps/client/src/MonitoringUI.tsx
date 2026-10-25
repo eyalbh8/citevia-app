@@ -53,8 +53,8 @@ export type MonitorSelection = {
   stage: JourneyStage | '';
 };
 export const initialSelection = (days = '7', demo?: Project['demo']): MonitorSelection => ({
-  ...initialDateRange(demo),
-  days: demo ? 'custom' : days,
+  ...initialDateRange(),
+  days: demo ? '7' : days,
   providers: [],
   region: '',
   branded: '',

@@ -132,7 +132,7 @@ async function render(selectedProject = project) {
 }
 
 describe('AI Traffic screen interactions', () => {
-  it('defaults configured traffic to the last month and keeps live tracker setup disabled with ordinary account copy', async () => {
+  it('defaults configured traffic to the last seven days and keeps live tracker setup disabled with ordinary account copy', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-23T12:00:00Z'));
     await render({
@@ -147,10 +147,10 @@ describe('AI Traffic screen interactions', () => {
         sourceCopiedAt: '2026-10-23T00:00:00Z',
       },
     });
-    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('days=30');
+    expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('days=7');
     expect(mocks.useApi.mock.calls.at(-1)?.[0]).not.toContain('start=');
     expect(mocks.useApi.mock.calls.at(-1)?.[0]).not.toContain('end=');
-    expect(container.querySelector('.date-range-trigger')?.textContent).toContain('Last 30 days');
+    expect(container.querySelector('.date-range-trigger')?.textContent).toContain('Last 7 days');
     expect(buttons('Settings')[0].disabled).toBe(true);
     expect(buttons('Settings')[0].title).toBe('Owner access is required to change website tracking.');
     expect(container.textContent).not.toMatch(/\bdemo\b|synthetic|projections/i);
