@@ -24,6 +24,10 @@ type Props = {
   icon?: ReactNode;
   placeholder?: string;
   displayValue?: string;
+  triggerCaption?: string;
+  menuClassName?: string;
+  menuWidth?: number;
+  menuMaxHeight?: number;
   className?: string;
   active?: boolean;
   disabled?: boolean;
@@ -40,6 +44,10 @@ export default function FilterDropdown(props: Props) {
     icon,
     placeholder,
     displayValue,
+    triggerCaption,
+    menuClassName,
+    menuWidth = 260,
+    menuMaxHeight = 360,
     className = '',
     disabled = false,
   } = props;
@@ -124,13 +132,13 @@ export default function FilterDropdown(props: Props) {
       const viewportWidth = document.documentElement.clientWidth;
       const viewportHeight = window.innerHeight;
       const width = Math.min(
-        Math.max(260, rect.width),
-        320,
+        Math.max(menuWidth, rect.width),
+        Math.max(320, menuWidth),
         viewportWidth - 24,
       );
       const height = Math.min(
-        panel.current?.scrollHeight || 360,
-        360,
+        panel.current?.scrollHeight || menuMaxHeight,
+        menuMaxHeight,
         viewportHeight - 24,
       );
       const top =
@@ -144,7 +152,7 @@ export default function FilterDropdown(props: Props) {
         width,
         top,
         left: Math.max(12, Math.min(rect.left, viewportWidth - width - 12)),
-        maxHeight: Math.min(360, viewportHeight - top - 12),
+        maxHeight: Math.min(menuMaxHeight, viewportHeight - top - 12),
       });
     };
     place();
@@ -157,7 +165,7 @@ export default function FilterDropdown(props: Props) {
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
     };
-  }, [open]);
+  }, [open, menuWidth, menuMaxHeight]);
 
   useEffect(() => {
     if (!open) return;
@@ -271,7 +279,12 @@ export default function FilterDropdown(props: Props) {
             {triggerIcon}
           </span>
         )}
-        <span className="filter-dropdown-value">{caption}</span>
+        {triggerCaption ? (
+          <span className="filter-dropdown-value filter-dropdown-value-captioned">
+            <small className="filter-dropdown-caption">{triggerCaption}</small>
+            <span className="filter-dropdown-selected-label">{caption}</span>
+          </span>
+        ) : <span className="filter-dropdown-value">{caption}</span>}
         <ChevronDown
           className="filter-dropdown-chevron"
           size={14}
@@ -280,7 +293,7 @@ export default function FilterDropdown(props: Props) {
       </button>
       {open &&
         createPortal(
-          <div ref={panel} className="filter-dropdown-panel" style={position}>
+          <div ref={panel} className={`filter-dropdown-panel${menuClassName ? ` ${menuClassName}` : ''}`} style={position}>
             <div className="filter-dropdown-heading" id={`${id}-heading`}>
               {label}
             </div>

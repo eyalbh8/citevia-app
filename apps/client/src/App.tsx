@@ -70,6 +70,7 @@ import ResponseDrawer from './ResponseDrawer';
 import AccountsView from './AccountsView';
 import BrandbookView from './BrandbookView';
 import FilterDropdown from './FilterDropdown';
+import AccountSwitcher from './AccountSwitcher';
 import McpView from './McpView';
 import McpConsent from './McpConsent';
 import AgentsView from './AgentsView';
@@ -513,35 +514,11 @@ function Workspace() {
       <aside ref={navigationRef} id="workspace-navigation" className={`sidebar ${mobileOpen ? 'open' : ''}`} role={mobileOpen ? 'dialog' : undefined} aria-modal={mobileOpen || undefined} aria-label="Workspace navigation">
         <button className="icon-button sidebar-mobile-close" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><X size={18} /></button>
         <Logo />
-        <div className="workspace-select">
-          <span className="workspace-avatar">
-            {project?.brand.name.slice(0, 1).toUpperCase() || 'C'}
-          </span>
-          <div>
-            <div className="workspace-label">Your workspace</div>
-            <select
-              aria-label="Select project"
-              value={currentProject?.id || ''}
-              onChange={(event) => changeProject(event.target.value)}
-            >
-              {currentProject &&
-              !projects.data?.items.some(
-                (item) => item.id === currentProject.id,
-              ) ? (
-                <option value={currentProject.id}>{currentProject.name}</option>
-              ) : null}
-              {projects.data?.items.length ? (
-                projects.data.items.map((item) => (
-                  <option value={item.id} key={item.id}>
-                    {item.name}
-                  </option>
-                ))
-              ) : (
-                <option value="">No project assigned</option>
-              )}
-            </select>
-          </div>
-        </div>
+        <AccountSwitcher
+          project={currentProject}
+          projects={projects.data?.items || []}
+          onChange={changeProject}
+        />
         <div className="nav-caption">WORKSPACE</div>
         <nav aria-label="Main navigation" className="nav-list">
           {(
