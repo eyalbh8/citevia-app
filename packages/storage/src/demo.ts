@@ -216,6 +216,15 @@ const measurementPlans = new WeakMap<Project, Map<ScanProvider, {
   scans: Map<number, { phase: number; mentionCount: number; positiveCount: number }>;
 }>>();
 
+/** Service scenarios retain annual growth while each pair of weekly scans moves. */
+function weeklyMovement(project: Project, at: number) {
+  if (!['igeo-dr-roof', 'website-demo'].includes(configFor(project)!.source)) return 0;
+  const date = new Date(at);
+  const minute = ((date.getUTCDay() + 6) % 7) * 1440 + date.getUTCHours() * 60 + date.getUTCMinutes();
+  const first = Math.min(...(project.scanSchedule?.slotsUtcMinutes || [600, 5640]));
+  return minute === first ? -1 : 1;
+}
+
 function measurementPlan(project: Project, provider: ScanProvider) {
   let providers = measurementPlans.get(project);
   if (!providers) { providers = new Map(); measurementPlans.set(project, providers); }
@@ -236,14 +245,18 @@ function measurementPlan(project: Project, provider: ScanProvider) {
   const visibilityAdjustment = demoNumericProfile(configFor(project)!).visibilityAdjustment;
   for (const at of scanTimes(project)) {
     const phase = progress(project, at);
-    const mentionCount = Math.max(0, Math.min(prompts.length,
-      Math.floor(prompts.length * (profile.baseline + visibilityAdjustment + profile.growth * phase ** profile.curve))));
-    // Preserve the previous positive share when a new prompt starts mentioning
-    // the brand; otherwise rounding could create small misleading downward ticks.
-    const positiveCount = Math.min(mentionCount, Math.max(
-      Math.ceil(mentionCount * (0.3 + 0.66 * phase)),
-      previousCount ? Math.ceil(mentionCount * previousPositive / previousCount - 1e-10) : 0,
-    ));
+    const movement = weeklyMovement(project, at);
+    const variation = movement * (1 + hash(`${project.id}:${provider}:weekly-mentions`) % 2);
+    const mentionCount = Math.max(movement ? Math.min(1, prompts.length) : 0, Math.min(prompts.length - (movement ? 1 : 0),
+      Math.floor(prompts.length * (profile.baseline + visibilityAdjustment + profile.growth * phase ** profile.curve)) + variation));
+    // Legacy Nayax retains its original monotonic share. Service demos allow
+    // modest weekly movement around the same improving annual sentiment curve.
+    const positiveCount = movement
+      ? Math.max(0, Math.min(mentionCount - 1, Math.floor(mentionCount * (0.3 + 0.66 * phase + movement * .04))))
+      : Math.min(mentionCount, Math.max(
+          Math.ceil(mentionCount * (0.3 + 0.66 * phase)),
+          previousCount ? Math.ceil(mentionCount * previousPositive / previousCount - 1e-10) : 0,
+        ));
     plan.scans.set(at, { phase, mentionCount, positiveCount });
     previousCount = mentionCount;
     previousPositive = positiveCount;
@@ -270,17 +283,18 @@ function sourceCompanies(project: Project) {
   return pool;
 }
 
-/** A stable threshold preserves each prompt's gains as the scenario advances. */
+/** Stable prompt thresholds share the same scan movement across every report. */
 function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): BrandAnalysis[] {
   const plan = measurementPlan(project, run.snapshot.provider!);
   const { phase, mentionCount, positiveCount } = plan.scans.get(Date.parse(run.scheduledAt))!;
   const index = plan.promptOrder.get(prompt.id)!;
   const mentioned = index < mentionCount;
-  // Every mentioned answer improves from neutral to positive. The positive share
-  // increases as well; the target remains imperfect at the end of the scenario.
+  const movement = weeklyMovement(project, Date.parse(run.scheduledAt));
   const visibleCompetitors = project.competitors.filter((brand, competitorIndex) => {
     const threshold = (hash(`${prompt.id}:${brand.id}:${run.snapshot.provider}`) % 1000) / 1000;
-    return threshold < 0.50 - 0.18 * phase - competitorIndex * 0.025;
+    const seed = hash(`${project.id}:${brand.id}:${run.snapshot.provider}:weekly-mentions`);
+    const variation = movement * (seed % 2 ? 1 : -1) * (.03 + (seed % 4) * .01);
+    return threshold < 0.50 - 0.18 * phase - competitorIndex * 0.025 + variation;
   });
   // All earlier ordinal positions must have a company in the simulated answer.
   // Sparse fixtures without source alternatives use the highest supportable rank.
@@ -299,7 +313,7 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
   };
   let nextPosition = 1;
   return [target, ...project.competitors.map((brand): BrandAnalysis => {
-    // Competitors remain credible references while Nayax overtakes their share.
+    // Competitors remain credible references as the target's annual share grows.
     const visible = visibleCompetitors.includes(brand);
     if (mentioned && nextPosition === rank) nextPosition++;
     const position = nextPosition;
@@ -310,7 +324,11 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
       explicitRank: visible ? position : null,
       appearanceRank: visible ? position : null,
       mentionOrder: visible ? position : null,
-      sentiment: visible ? 'neutral' : 'not_applicable',
+      sentiment: visible
+        ? movement && (hash(`${prompt.id}:${brand.id}:${run.snapshot.provider}:sentiment`) % 1000) / 1000 <
+          .24 + movement * (hash(`${project.id}:${brand.id}:sentiment`) % 2 ? .07 : -.07)
+          ? 'positive' : 'neutral'
+        : 'not_applicable',
       evidence: [], rankEvidence: null, sentimentEvidence: null,
     };
   })];

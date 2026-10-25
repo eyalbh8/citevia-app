@@ -83,30 +83,27 @@ describe('compact Dr. Roof scenario runtime', () => {
     expect(aggregateScenarioTraffic(unchanged, trafficMonth(2026, 9)).providers[0].visits).toBe(2000);
   });
 
-  it('varies Dr. Roof modestly and keeps every provider visibility, sentiment and rank monotonic', async () => {
-    const drRoof = project(), nayax = project('igeo-nayax');
-    delete nayax.demo!.profile;
-    const roof = await runtimeFor(drRoof), original = await runtimeFor(nayax);
+  it('allows weekly movement while monthly provider visibility, sentiment and rank improve', async () => {
+    const drRoof = project();
+    const roof = await runtimeFor(drRoof);
     const history = await roof.runtime.repository.listPromptHistory(drRoof.id,
       '2026-04-23T00:00:00.000Z', '2027-04-23T23:59:59.999Z');
-    const baseline = await original.runtime.repository.listPromptHistory(nayax.id,
-      '2026-04-23T00:00:00.000Z', '2026-04-30T23:59:59.999Z');
     const groups = new Map<string, PromptResult[]>();
     for (const result of history.results) groups.set(result.runId, [...(groups.get(result.runId) || []), result]);
     const previous = new Map<ScanProvider, ReturnType<typeof metrics>>();
-    for (const run of history.runs) {
-      const current = metrics(groups.get(run.id)!);
-      const prior = previous.get(run.snapshot.provider!);
-      if (prior) {
-        expect(current.visibility).toBeGreaterThanOrEqual(prior.visibility);
-        expect(current.sentiment + 1e-9).toBeGreaterThanOrEqual(prior.sentiment);
-        expect(current.rank).toBeLessThanOrEqual(prior.rank);
-      } else {
-        const reference = metrics(baseline.results.filter(result => result.runId === run.id));
-        expect(reference.visibility - current.visibility).toBeGreaterThan(0);
-        expect(reference.visibility - current.visibility).toBeLessThanOrEqual(.06);
+    for (let month = 4; month <= 15; month++) {
+      const label = new Date(Date.UTC(2026, month, 1)).toISOString().slice(0, 7);
+      for (const { provider } of drRoof.scanProviders!) {
+        const results = history.runs.filter(run => run.snapshot.provider === provider && run.scheduledAt.startsWith(label))
+          .flatMap(run => groups.get(run.id)!);
+        const current = metrics(results), prior = previous.get(provider);
+        if (prior) {
+          expect(current.visibility).toBeGreaterThanOrEqual(prior.visibility);
+          expect(current.sentiment + 1e-9).toBeGreaterThanOrEqual(prior.sentiment);
+          expect(current.rank).toBeLessThanOrEqual(prior.rank);
+        }
+        previous.set(provider, current);
       }
-      previous.set(run.snapshot.provider!, current);
     }
     expect(previous.size).toBe(3);
     expect([...previous.values()].every(value => value.visibility > .75 && value.visibility < 1)).toBe(true);
