@@ -74,6 +74,7 @@ import McpView from './McpView';
 import McpConsent from './McpConsent';
 import AgentsView from './AgentsView';
 import IntegrationsView from './IntegrationsView';
+import DemoContentView, { readDemoContentPath } from './DemoContentView';
 import './onboarding.css';
 
 type View =
@@ -176,6 +177,7 @@ export default function App() {
 function SessionGate() {
   const { isAuthenticated, isSessionLoading, claims } = useSession();
   const authorizationRequest = new URLSearchParams(window.location.search).get('mcp_authorize');
+  const demoContent = readDemoContentPath(window.location.pathname);
   if (isSessionLoading)
     return (
       <div className="workspace-loading">
@@ -187,6 +189,8 @@ function SessionGate() {
     <ApiSessionProvider key={String(claims?.sub || 'session')} sessionId={String(claims?.sub || 'session')}>
       {authorizationRequest ? (
         <McpConsent key={authorizationRequest} requestId={authorizationRequest} />
+      ) : demoContent ? (
+        <DemoContentView {...demoContent} />
       ) : (
         <Workspace />
       )}

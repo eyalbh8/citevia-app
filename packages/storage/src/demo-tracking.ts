@@ -103,7 +103,7 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
   const listTrackingMatches = (trackedUrlId?: string): TrackingMatch[] => {
     const selected = trackedUrlId ? urlList.find((url) => url.id === trackedUrlId) : undefined;
     if (trackedUrlId && !selected) return [];
-    if (!matches && selected && project.demo?.source === 'igeo-dr-roof') {
+    if (!matches && selected && project.demo && ['igeo-dr-roof', 'website-demo'].includes(project.demo.source)) {
       let measured = scopedMatches.get(selected.id);
       if (!measured) {
         // A URL drawer needs only its own captures. Skip unrelated answer prose

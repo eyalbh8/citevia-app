@@ -25,18 +25,80 @@ const PREFIX = 'demo/v1/';
 const emptyUsage = () => ({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
 const iso = (at: number) => new Date(at).toISOString();
 const day = (value: string) => Date.parse(`${value}T00:00:00.000Z`);
+const checkedMetadata = new WeakMap<DemoConfig, string>();
+
+function validateMetadata(config: DemoConfig, projectId: string) {
+  if (checkedMetadata.get(config) === projectId) return;
+  const validText = (value: unknown, limit: number) => typeof value === 'string' && value.trim().length > 0 && value.length <= limit;
+  if (config.industry && (!validText(config.industry.label, 120) || !validText(config.industry.audience, 160) ||
+    [config.industry.services, config.industry.criteria].some(items => !Array.isArray(items) || !items.length ||
+      items.length > 10 || items.some(item => !validText(item, 160)))))
+    throw new Error('Invalid demo industry context');
+  if (config.copy && (!validText(config.copy.introduction, 1500) || !validText(config.copy.fallback, 1500) ||
+    !validText(config.copy.positiveCompany, 800) || !/^\s/.test(config.copy.positiveCompany) ||
+    config.copy.neutralCompany !== undefined && (!validText(config.copy.neutralCompany, 800) || !/^\s/.test(config.copy.neutralCompany))))
+    throw new Error('Invalid demo answer copy');
+  if (config.source === 'website-demo' && !config.industry && !config.copy)
+    throw new Error('A website demo requires industry context or answer copy');
+  for (const item of config.trackedUrls || []) {
+    if (!item.demoPost) continue;
+    let validUrl = false;
+    try {
+      const url = new URL(item.url), prefix = `/demo-content/${encodeURIComponent(projectId)}/`;
+      validUrl = url.origin === 'https://app.citevia.io' && !url.username && !url.password && !url.search && !url.hash &&
+        url.pathname.startsWith(prefix) && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(url.pathname.slice(prefix.length));
+    } catch { /* invalid draft URL */ }
+    const references = item.provenance?.sourceUrls;
+    if (!validUrl || !validText(item.body, 1200) || item.provenance?.kind !== 'demo-draft' ||
+      !Array.isArray(references) || !references.length || references.length > 10 || references.some(value => {
+        try { const url = new URL(value); return !['http:', 'https:'].includes(url.protocol) || !!url.username || !!url.password; }
+        catch { return true; }
+      })) throw new Error('Invalid demo draft metadata');
+  }
+  checkedMetadata.set(config, projectId);
+}
 
 /** The persisted fixture is small; a year of measurements is derived, never inserted. */
 function configFor(project: Project): DemoConfig | null {
   const config = project.demo;
   if (!config) return null;
-  if (config.version !== 1 || !['igeo-nayax', 'igeo-dr-roof'].includes(config.source) ||
+  if (config.version !== 1 || !['igeo-nayax', 'igeo-dr-roof', 'website-demo'].includes(config.source) ||
       !Number.isFinite(day(config.startDate)) || !Number.isFinite(day(config.endDate)) ||
       day(config.endDate) < day(config.startDate) ||
       day(config.endDate) - day(config.startDate) > 366 * DAY)
     throw new Error('Invalid demo scenario configuration');
   demoNumericProfile(config);
+  validateMetadata(config, project.id);
   return config;
+}
+
+const answerCopyCache = new WeakMap<Project, Required<NonNullable<DemoConfig['copy']>>>();
+function answerCopy(project: Project): Required<NonNullable<DemoConfig['copy']>> {
+  const cached = answerCopyCache.get(project);
+  if (cached) return cached;
+  const config = configFor(project)!;
+  const join = (values: string[]) => values.length < 3 ? values.join(' and ')
+    : `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
+  const industry = config.industry;
+  const defaults = industry ? {
+    introduction: `For ${industry.audience}, compare ${industry.label} providers by ${join(industry.criteria)}.`,
+    positiveCompany: ` is a strong option for ${industry.audience} seeking ${join(industry.services)}.`,
+    neutralCompany: ` is an established ${industry.label} provider to evaluate for ${join(industry.criteria)}.`,
+    fallback: `Compare ${industry.label} providers by ${join(industry.criteria)}.`,
+  } : config.source === 'igeo-dr-roof' ? {
+    introduction: 'When comparing local roofing contractors, consider inspection quality, repair and replacement options, materials, warranty coverage, and local service.',
+    positiveCompany: ' is a strong choice for homeowners seeking roof inspections, reliable repairs, and clear warranty coverage.',
+    neutralCompany: ' is an established option to evaluate for this use case.',
+    fallback: 'Compare roofing contractors by inspection quality, repair options, materials, warranty coverage, and local service.',
+  } : {
+    introduction: 'For unattended retail, compare payment acceptance, integration coverage, remote management, and support when selecting a platform.',
+    positiveCompany: ' is a strong choice with growing adoption and a comprehensive payment platform.',
+    neutralCompany: ' is an established option to evaluate for this use case.',
+    fallback: 'Compare payment platforms by integration coverage, support, and total cost.',
+  };
+  const copy = { ...defaults, ...config.copy, neutralCompany: config.copy?.neutralCompany ?? defaults.neutralCompany };
+  answerCopyCache.set(project, copy);
+  return copy;
 }
 
 function hash(value: string) {
@@ -266,12 +328,12 @@ const trackedCitationCache = new WeakMap<Project, {
   keys: Set<string | null>;
   eligible: Map<string, NonNullable<DemoConfig['trackedUrls']>>;
 }>();
-const roofingPickupCache = new WeakMap<Project, Map<string, { url: string; title: string }[]>>();
+const contentPickupCache = new WeakMap<Project, Map<string, { url: string; title: string }[]>>();
 
-/** Enroll each roofing post in one real scenario capture at its first subsequent scan. */
-function roofingPickups(project: Project, run: ScanRun, prompt: Prompt) {
-  if (configFor(project)!.source !== 'igeo-dr-roof') return [];
-  let pickups = roofingPickupCache.get(project);
+/** Enroll each service post in one scenario capture at its first subsequent scan. */
+function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
+  if (!['igeo-dr-roof', 'website-demo'].includes(configFor(project)!.source)) return [];
+  let pickups = contentPickupCache.get(project);
   if (!pickups) {
     pickups = new Map();
     const providers = projectProviders(project), times = scanTimes(project);
@@ -292,7 +354,7 @@ function roofingPickups(project: Project, run: ScanRun, prompt: Prompt) {
       citations.push({ url: item.url, title: item.title });
       pickups.set(key, citations);
     }
-    roofingPickupCache.set(project, pickups);
+    contentPickupCache.set(project, pickups);
   }
   return pickups.get(`${run.scheduledAt}:${run.snapshot.provider}:${prompt.id}`) || [];
 }
@@ -328,7 +390,7 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     trackedIndex.eligible.set(at, eligible);
   }
   const base = unique.slice(0, size);
-  base.push(...roofingPickups(project, run, prompt));
+  base.push(...contentPickups(project, run, prompt));
   // Gradual pickup of enrolled content; the same citations drive every tracking view.
   if (eligible.length && hash(`${run.snapshot.provider}:${prompt.id}`) % 5 < 2) {
     const item = eligible[hash(`${run.id}:${prompt.id}:content`) % eligible.length];
@@ -371,7 +433,7 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
     brandId: brand.brandId,
   }));
   const available = sourceCompanies(project);
-  const roofing = configFor(project)!.source === 'igeo-dr-roof';
+  const copy = answerCopy(project);
   const lastRank = Math.max(0, ...companies.map((company) => company.rank), Math.min(3, companies.length + available.length));
   let fillerIndex = 0;
   for (let rank = 1; rank <= lastRank; rank++)
@@ -379,21 +441,14 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
       companies.push({ name: available[fillerIndex++], rank, sentiment: 'neutral', brandId: '' });
   companies.sort((a, b) => a.rank - b.rank);
   const sentences = companies.map((company) =>
-    `${company.rank}. ${company.name}${company.sentiment === 'positive'
-      ? roofing ? ' is a strong choice for homeowners seeking roof inspections, reliable repairs, and clear warranty coverage.'
-        : ' is a strong choice with growing adoption and a comprehensive payment platform.'
-      : ' is an established option to evaluate for this use case.'}`,
+    `${company.rank}. ${company.name}${company.sentiment === 'positive' ? copy.positiveCompany : copy.neutralCompany}`,
   );
   const selection = sentences.join('\n');
   // The source excerpt is a reusable illustration, not a second provider call.
   const excerpt = result.target?.mentioned ? sample?.answerText?.trim().slice(0, 1800) : undefined;
   const text = [
-    roofing
-      ? 'When comparing local roofing contractors, consider inspection quality, repair and replacement options, materials, warranty coverage, and local service.'
-      : 'For unattended retail, compare payment acceptance, integration coverage, remote management, and support when selecting a platform.',
-    selection || (roofing
-      ? 'Compare roofing contractors by inspection quality, repair options, materials, warranty coverage, and local service.'
-      : 'Compare payment platforms by integration coverage, support, and total cost.'),
+    copy.introduction,
+    selection || copy.fallback,
     excerpt || '',
   ].filter(Boolean).join('\n\n');
   const companySpans = companies.map((company, index) => ({

@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MentionsSummary, ScanProvider } from '@citevia/core';
-import { MentionsChart } from './MonitoringUI';
+import { MentionsChart, ProviderDonut } from './MonitoringUI';
 
 const summary = (): MentionsSummary => ({
   period: {
@@ -91,8 +91,8 @@ describe('Mentions chart', () => {
     await render(value);
     expect(lines('openai')).toHaveLength(2);
     expect(lines('openai').every((line) => !line.hasAttribute('stroke-dasharray'))).toBe(true);
-    expect(lines('openai')[0].getAttribute('y2')).toBe('275');
-    expect(lines('openai')[1].getAttribute('y1')).toBe('275');
+    expect(lines('openai')[0].getAttribute('y2')).toBe('216');
+    expect(lines('openai')[1].getAttribute('y1')).toBe('216');
     expect(lines('gemini')[0].getAttribute('stroke-dasharray')).toBe('6 5');
     const tooltip = await focusDate('Oct 21, 2026 UTC');
     expect([...tooltip.querySelectorAll('b')].map((item) => item.textContent)).toEqual(['0', 'No scan']);
@@ -192,12 +192,12 @@ describe('Mentions chart', () => {
     expect(canvas.classList.contains('mentions-chart-canvas-dense')).toBe(true);
     expect(width).toBeGreaterThan(880);
     expect(canvas.style.minWidth).toBe(`${width}px`);
-    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe(`0 0 ${width} 345`);
+    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe(`0 0 ${width} 260`);
     const markers = [...container.querySelectorAll<HTMLElement>('.chart-publication-marker')];
     expect(markers).toHaveLength(78);
     const centers = markers.map(marker => Number.parseFloat(marker.style.left) * width / 100);
     for (let index = 1; index < centers.length; index++) expect(centers[index] - centers[index - 1]).toBeGreaterThanOrEqual(40 - 0.001);
-    const labels = container.querySelectorAll('svg text[y="330"]');
+    const labels = container.querySelectorAll('svg text[y="248"]');
     expect(labels.length).toBeGreaterThan(8);
     expect(labels.length).toBeLessThan(60);
     const selected = container.querySelector<HTMLButtonElement>('[aria-label="1 tracked URLs on Oct 21, 2026 UTC"]')!;
@@ -224,9 +224,74 @@ describe('Mentions chart', () => {
     const canvas = container.querySelector<HTMLElement>('.mentions-chart-canvas')!;
     expect(canvas.classList.contains('mentions-chart-canvas-dense')).toBe(false);
     expect(canvas.style.width).toBe('');
-    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 880 345');
+    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 880 260');
     expect(container.querySelectorAll('.chart-publication-badge')).toHaveLength(days === 7 ? 3 : 12);
     expect(container.querySelector('.mentions-chart-note')?.textContent).not.toContain('Scroll horizontally');
+    const strip = container.querySelector<HTMLElement>('.chart-publications')!;
+    expect(strip.getAttribute('aria-label')).toBe('Tracked publications');
+    expect(strip.querySelectorAll('.chart-publication-badge')).toHaveLength(days === 7 ? 3 : 12);
+    expect(strip.querySelector('.chart-publications-caption')?.textContent).toContain('Published content');
+    expect(canvas.querySelector('svg')!.contains(strip)).toBe(false);
+    expect(canvas.querySelector('svg')!.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('resizes the plot to the available card width while retaining fixed chart height and publication alignment', async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private callback: () => void) {}
+      observe(element: HTMLElement) {
+        Object.defineProperty(element, 'clientWidth', { configurable: true, value: 1200 });
+        this.callback();
+      }
+      disconnect() {}
+    });
+    const value = summary();
+    value.markers = [{ date: '2026-10-20', items: [{ id: 'post', title: 'Published post', url: 'https://example.com/blog', appearances: 4 }] }];
+    await render(value);
+    const canvas = container.querySelector<HTMLElement>('.mentions-chart-canvas')!;
+    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 1200 260');
+    const marker = canvas.querySelector<HTMLElement>('.chart-publication-marker')!;
+    const center = Number.parseFloat(marker.style.left) * 1200 / 100;
+    const target = canvas.querySelector<SVGRectElement>('rect[aria-label^="Oct 20, 2026 UTC"]')!;
+    expect(center).toBeCloseTo(Number(target.getAttribute('x')) + Number(target.getAttribute('width')) / 2);
+  });
+
+  it('shows provider names, mention counts and shares beside the balanced donut summary', async () => {
+    await act(async () => root.render(<ProviderDonut summary={summary()} />));
+    const providers = container.querySelectorAll<HTMLButtonElement>('.donut-provider-list button');
+    expect(providers).toHaveLength(3);
+    expect(providers[0].textContent).toBe('ChatGPT3135.2%');
+    expect(providers[1].textContent).toBe('Gemini3034.1%');
+    expect(providers[2].textContent).toBe('Perplexity2730.7%');
+    await act(async () => providers[0].dispatchEvent(new FocusEvent('focusin', { bubbles: true })));
+    expect(container.querySelector('.donut-tooltip')?.textContent).toContain('ChatGPT');
+    expect(container.querySelector('.donut-tooltip')?.textContent).toContain('Total mentions 31');
+  });
+
+  it('fits a sparse seven-day chart into a narrow card with readable date ticks', async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(private callback: () => void) {}
+      observe(element: HTMLElement) {
+        Object.defineProperty(element, 'clientWidth', { configurable: true, value: 320 });
+        this.callback();
+      }
+      disconnect() {}
+    });
+    const value = summary();
+    value.period.start = '2026-10-19T00:00:00.000Z';
+    value.period.end = '2026-10-25T23:59:59.999Z';
+    value.markers = ['2026-10-19', '2026-10-21', '2026-10-23'].map(date => ({
+      date, items: [{ id: date, title: `Post ${date}`, url: `https://example.com/blog/${date}`, appearances: 2 }],
+    }));
+    await render(value);
+    const canvas = container.querySelector<HTMLElement>('.mentions-chart-canvas')!;
+    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 320 260');
+    expect(canvas.classList.contains('mentions-chart-canvas-dense')).toBe(false);
+    expect(canvas.style.width).toBe('');
+    expect(canvas.querySelectorAll('.chart-publication-badge')).toHaveLength(3);
+    const labels = [...canvas.querySelectorAll('svg text[y="248"]')];
+    expect(labels).toHaveLength(3);
+    const positions = labels.map(label => Number(label.getAttribute('x')));
+    for (let index = 1; index < positions.length; index++) expect(positions[index] - positions[index - 1]).toBeGreaterThan(70);
   });
 
   it('groups published URLs by day into a scrolling popup with accurate counts and opens tracking details', async () => {

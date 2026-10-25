@@ -79,7 +79,7 @@ export interface Project {
 }
 export interface DemoConfig {
   version: 1;
-  source: 'igeo-nayax' | 'igeo-dr-roof';
+  source: 'igeo-nayax' | 'igeo-dr-roof' | 'website-demo';
   anchorDate: string;
   startDate: string;
   endDate: string;
@@ -91,6 +91,15 @@ export interface DemoConfig {
     growthCurve?: number;
     trafficScale?: number;
     monthlyGrowth?: number;
+  };
+  /** Public-website scenarios use this context instead of payment/roofing defaults. */
+  industry?: { label: string; audience: string; services: string[]; criteria: string[] };
+  copy?: {
+    introduction: string;
+    /** Sentence suffix after the company name; include its initial space. */
+    positiveCompany: string;
+    neutralCompany?: string;
+    fallback: string;
   };
   samples?: {
     promptId?: string;
@@ -110,6 +119,10 @@ export interface DemoConfig {
     sourcePublishedAt?: string;
     sourceTrackedAt?: string;
     trackingPeriods?: { start: string; end: string | null }[];
+    /** Drafts are hosted by Citevia and never imply publication on the brand website. */
+    demoPost?: true;
+    body?: string;
+    provenance?: { kind: 'demo-draft'; sourceUrls: string[] };
   }[];
 }
 export interface Membership {

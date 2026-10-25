@@ -200,7 +200,7 @@ export function ProviderDonut({ summary }: { summary: MentionsSummary }) {
             {summary.total.toLocaleString()}
           </text>
         </svg>
-        <div className="donut-provider-icons">
+        <div className="donut-provider-list" aria-label="Mentions by provider">
           {summary.providers.map((p) => (
             <button
               key={p.provider}
@@ -211,6 +211,9 @@ export function ProviderDonut({ summary }: { summary: MentionsSummary }) {
               onBlur={() => setHover(undefined)}
             >
               <ProviderMark provider={p.provider} />
+              <span>{PROVIDER_LABELS[p.provider]}</span>
+              <strong>{p.count.toLocaleString()}</strong>
+              <small>{p.share.toLocaleString('en-US', { maximumFractionDigits: 1 })}%</small>
             </button>
           ))}
         </div>
@@ -483,7 +486,26 @@ export function MentionsChart({
   const [expanded, setExpanded] = useState(false),
     [hover, setHover] = useState<number>(),
     [hidden, setHidden] = useState<ScanProvider[]>([]),
-    [openMarker, setOpenMarker] = useState<string>();
+    [openMarker, setOpenMarker] = useState<string>(),
+    [viewportWidth, setViewportWidth] = useState(880);
+  const chartBody = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = chartBody.current;
+    if (!element) return;
+    const measure = () => {
+      const style = window.getComputedStyle(element);
+      const width = element.clientWidth - Number.parseFloat(style.paddingLeft || '0') - Number.parseFloat(style.paddingRight || '0');
+      if (width > 0) setViewportWidth(Math.max(280, Math.round(width)));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [expanded]);
   const dates = buckets(summary.period),
     visible = summary.providers.filter((p) => !hidden.includes(p.provider));
   const markerGroups = new Map<string, Map<string, PublicationMarker['items'][number]>>();
@@ -502,16 +524,16 @@ export function MentionsChart({
     const index = dates.indexOf(date);
     return index >= 0 && items.size ? [{ date, items, index }] : [];
   }).sort((a, b) => a.index - b.index);
-  let plotWidth = 790;
+  let plotWidth = viewportWidth - 90;
   const badgeWidth = (count: number) => 28 + String(count).length * 8;
   for (let index = 1; index < publications.length; index++) {
     const previous = publications[index - 1], current = publications[index];
     const spacing = Math.max(40, (badgeWidth(previous.items.size) + badgeWidth(current.items.size)) / 2 + 4);
     plotWidth = Math.max(plotWidth, spacing * (dates.length - 1) / (current.index - previous.index));
   }
-  const denseTimeline = plotWidth > 790, chartWidth = denseTimeline ? Math.ceil(plotWidth + 90) : 880;
+  const denseTimeline = plotWidth > viewportWidth - 90, chartWidth = denseTimeline ? Math.ceil(plotWidth + 90) : viewportWidth;
   plotWidth = chartWidth - 90;
-  const labelStep = Math.max(1, Math.ceil(dates.length / (denseTimeline ? Math.max(1, Math.floor(plotWidth / 100)) : 7)));
+  const labelStep = Math.max(1, Math.ceil(dates.length / Math.max(1, Math.floor(plotWidth / 100))));
   const series = visible.map((p) => {
     const counts = new Map(p.points.map((point) => [point.date, point.count]));
     return {
@@ -528,7 +550,7 @@ export function MentionsChart({
     top = Math.ceil(max / 4) * 4;
   const x = (i: number) =>
       52 + (dates.length === 1 ? 0.5 : i / (dates.length - 1)) * plotWidth,
-    y = (n: number) => 275 - (n / top) * 235,
+    y = (n: number) => 216 - (n / top) * 192,
     bucketWidth = dates.length > 1 ? plotWidth / (dates.length - 1) : 40;
   const format = (date: string) =>
     summary.period.granularity === 'hourly'
@@ -576,6 +598,7 @@ export function MentionsChart({
         ))}
       </div>
       <div
+        ref={chartBody}
         className="mentions-chart-body"
         role="region"
         aria-label="Mentions chart; scroll horizontally to see the full timeline"
@@ -586,7 +609,7 @@ export function MentionsChart({
           style={denseTimeline ? { width: chartWidth, minWidth: chartWidth } : undefined}
         >
           <svg
-            viewBox={`0 0 ${chartWidth} 345`}
+            viewBox={`0 0 ${chartWidth} 260`}
             role="img"
             aria-label="Brand mentions by provider over time"
           >
@@ -612,7 +635,7 @@ export function MentionsChart({
             ))}
             <text
               x={chartWidth / 2 + 10}
-              y="172"
+              y="140"
               className="chart-watermark"
               textAnchor="middle"
             >
@@ -666,15 +689,15 @@ export function MentionsChart({
               <g key={date}>
                 {(i % labelStep === 0 ||
                   i === dates.length - 1) && (
-                  <text x={x(i)} y="330" textAnchor="middle">
+                  <text x={x(i)} y="248" textAnchor="middle">
                     {format(date)}
                   </text>
                 )}
                 <rect
                   x={x(i) - bucketWidth / 2}
-                  y="25"
+                  y="14"
                   width={bucketWidth}
-                  height="260"
+                  height="212"
                   fill="transparent"
                   tabIndex={0}
                   aria-label={`${fullDate(date)}: ${visible.map((p) => `${PROVIDER_LABELS[p.provider]} ${p.points.find((v) => v.date === date)?.count ?? 'No scan'}`).join(', ')}`}
@@ -689,8 +712,8 @@ export function MentionsChart({
               <line
                 x1={x(hover)}
                 x2={x(hover)}
-                y1="30"
-                y2="275"
+                y1="24"
+                y2="216"
                 stroke="var(--muted)"
                 strokeDasharray="4"
                 pointerEvents="none"
@@ -716,7 +739,9 @@ export function MentionsChart({
               ))}
             </div>
           )}
-          <div className="chart-markers">
+          {publications.length > 0 && <div className="chart-publications" role="group" aria-label="Tracked publications">
+            <div className="chart-publications-caption"><Link2 size={13} aria-hidden="true" />Published content<span>{publications.reduce((count, publication) => count + publication.items.size, 0)} tracked URLs</span></div>
+            <div className="chart-markers">
             {publications.map(({ date, items, index }) => {
               return (
                 <TrackedPublicationMarker
@@ -731,7 +756,8 @@ export function MentionsChart({
                 />
               );
             })}
-          </div>
+            </div>
+          </div>}
         </div>
       </div>
       <p className="mentions-chart-note">

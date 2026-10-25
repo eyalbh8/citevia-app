@@ -138,6 +138,12 @@ describe('compact Dr. Roof scenario runtime', () => {
     const next = aggregateScenarioTraffic(saved, trafficMonth(2026, 10));
     expect(next.providers[0].visits).toBe(2015);
     expect(next.previous).toBe(anchor.current);
+    const throughApril = weeklyRoofingPosts();
+    const march = aggregateScenarioTraffic(throughApril, trafficMonth(2027, 2));
+    const april = aggregateScenarioTraffic(throughApril, trafficMonth(2027, 3));
+    expect(april.current / 25).toBeGreaterThan(march.current / 31);
+    expect(april.series.filter(point => point.date >= '2027-04-26').every(point =>
+      Object.values(point.values).every(visits => visits === 0))).toBe(true);
   });
 
   it('serves roofing evidence and virtual reports while persisting only the saved configuration', async () => {

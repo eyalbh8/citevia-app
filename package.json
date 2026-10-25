@@ -13,6 +13,7 @@
   "scripts": {
     "demo:nayax": "node --env-file-if-exists=.env --import tsx scripts/create-nayax-demo.ts",
     "demo:dr-roof": "node --env-file-if-exists=.env --import tsx scripts/create-dr-roof-demo.ts",
+    "demo:service": "node --env-file-if-exists=.env --import tsx scripts/create-service-demo.ts",
     "dev": "node --env-file-if-exists=.env --import tsx scripts/dev.ts",
     "dev:live": "node --env-file-if-exists=.env --import tsx scripts/dev.ts",
     "typecheck": "tsc --noEmit && npm run typecheck --workspace @citevia/client",
