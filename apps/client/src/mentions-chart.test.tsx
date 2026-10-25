@@ -176,6 +176,59 @@ describe('Mentions chart', () => {
       .toBeCloseTo(Number(targets[1].getAttribute('x')));
   });
 
+  it('keeps all seventy-eight publication dates individually clickable on a fixed-height scrolling timeline', async () => {
+    const value = summary();
+    value.period.start = '2026-04-25T00:00:00.000Z';
+    value.period.end = '2026-10-25T23:59:59.999Z';
+    value.markers = [];
+    for (let time = Date.parse(value.period.start); time <= Date.parse(value.period.end); time += 86400000) {
+      if (![1, 3, 5].includes(new Date(time).getUTCDay())) continue;
+      const date = new Date(time).toISOString().slice(0, 10);
+      value.markers.push({ date, items: [{ id: date, title: `Post ${date}`, url: `https://example.com/blog/${date}`, appearances: 3 }] });
+    }
+    await render(value);
+    const canvas = container.querySelector<HTMLElement>('.mentions-chart-canvas')!;
+    const width = Number.parseFloat(canvas.style.width);
+    expect(canvas.classList.contains('mentions-chart-canvas-dense')).toBe(true);
+    expect(width).toBeGreaterThan(880);
+    expect(canvas.style.minWidth).toBe(`${width}px`);
+    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe(`0 0 ${width} 345`);
+    const markers = [...container.querySelectorAll<HTMLElement>('.chart-publication-marker')];
+    expect(markers).toHaveLength(78);
+    const centers = markers.map(marker => Number.parseFloat(marker.style.left) * width / 100);
+    for (let index = 1; index < centers.length; index++) expect(centers[index] - centers[index - 1]).toBeGreaterThanOrEqual(40 - 0.001);
+    const labels = container.querySelectorAll('svg text[y="330"]');
+    expect(labels.length).toBeGreaterThan(8);
+    expect(labels.length).toBeLessThan(60);
+    const selected = container.querySelector<HTMLButtonElement>('[aria-label="1 tracked URLs on Oct 21, 2026 UTC"]')!;
+    await act(async () => selected.click());
+    const popup = container.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(popup.getAttribute('aria-label')).toBe('Tracked URLs on Oct 21, 2026 UTC');
+    expect(popup.textContent).toContain('Post 2026-10-21');
+    expect(popup.textContent).not.toContain('Post 2026-10-23');
+    await act(async () => popup.querySelector<HTMLButtonElement>('[aria-label="Open tracking details for Post 2026-10-21"]')!.click());
+    expect(tracked).toHaveBeenCalledWith('2026-10-21');
+  });
+
+  it.each([7, 30])('preserves the responsive timeline and exact publication dates for a sparse %i-day view', async days => {
+    const value = summary();
+    value.period.end = '2026-10-25T23:59:59.999Z';
+    value.period.start = new Date(Date.UTC(2026, 9, 26 - days)).toISOString();
+    value.markers = [];
+    for (let time = Date.parse(value.period.start); time <= Date.parse(value.period.end); time += 86400000) {
+      if (![1, 3, 5].includes(new Date(time).getUTCDay())) continue;
+      const date = new Date(time).toISOString().slice(0, 10);
+      value.markers.push({ date, items: [{ id: date, title: `Post ${date}`, url: `https://example.com/blog/${date}`, appearances: 2 }] });
+    }
+    await render(value);
+    const canvas = container.querySelector<HTMLElement>('.mentions-chart-canvas')!;
+    expect(canvas.classList.contains('mentions-chart-canvas-dense')).toBe(false);
+    expect(canvas.style.width).toBe('');
+    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 880 345');
+    expect(container.querySelectorAll('.chart-publication-badge')).toHaveLength(days === 7 ? 3 : 12);
+    expect(container.querySelector('.mentions-chart-note')?.textContent).not.toContain('Scroll horizontally');
+  });
+
   it('groups published URLs by day into a scrolling popup with accurate counts and opens tracking details', async () => {
     const value = summary();
     const items = Array.from({ length: 8 }, (_, index) => ({

@@ -1,6 +1,7 @@
 import {
   TRAFFIC_PROVIDERS,
   trafficBuckets,
+  type DemoConfig,
   type Project,
   type TrafficAggregate,
   type TrafficFilters,
@@ -14,6 +15,28 @@ const DAY = 24 * HOUR;
 const ANCHOR_VISITS: Record<TrafficProvider, number> = {
   openai: 2_000, claude: 36, perplexity: 54, gemini: 42, copilot: 24, deepseek: 18,
 };
+const DEFAULT_PROFILE = {
+  visibilityAdjustment: 0, growthCurve: 1, trafficScale: 1, monthlyGrowth: .1,
+};
+
+/** Bound variations so saved numeric settings cannot create invalid or unbounded scenarios. */
+export function demoNumericProfile(config: DemoConfig): Required<NonNullable<DemoConfig['profile']>> {
+  const profile = config.profile;
+  if (profile !== undefined && (!profile || typeof profile !== 'object' || Array.isArray(profile)))
+    throw new Error('Invalid demo numeric profile');
+  const bounds = {
+    visibilityAdjustment: [-.2, .2], growthCurve: [.5, 2], trafficScale: [.25, 2], monthlyGrowth: [0, .25],
+  } as const;
+  const result = { ...DEFAULT_PROFILE };
+  for (const key of Object.keys(bounds) as (keyof typeof bounds)[]) {
+    const value = profile?.[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < bounds[key][0] || value > bounds[key][1])
+      throw new Error(`Invalid demo numeric profile: ${key}`);
+    result[key] = value;
+  }
+  return result;
+}
 const HOSTS: Record<TrafficProvider, string> = {
   openai: 'chatgpt.com', claude: 'claude.ai', perplexity: 'perplexity.ai',
   gemini: 'gemini.google.com', copilot: 'copilot.microsoft.com', deepseek: 'deepseek.com',
@@ -60,7 +83,7 @@ function rows(counts: Map<string, number>): TrafficRow[] {
 
 /**
  * Derive a modest, consistent referral scenario without storing analytics rows.
- * Each full UTC month has round(anchor visits * 1.1^months from anchorDate).
+ * Each full UTC month follows the saved profile's anchor volume and growth.
  * Weighted quantiles spread those visits over the month, including providers
  * with only a few dozen referrals. Stable timestamps and dimensions mean any
  * subdivision of a date range reconciles with the same range's total.
@@ -68,6 +91,7 @@ function rows(counts: Map<string, number>): TrafficRow[] {
 export function aggregateScenarioTraffic(project: Project, filters: TrafficFilters): TrafficAggregate {
   const config = project.demo;
   if (!config) throw new Error('Scenario traffic requires a scenario project');
+  const profile = demoNumericProfile(config);
   const dimensions = config.traffic;
   const countries = clean(dimensions?.countries?.map((country) => country.toUpperCase())
     .filter((country) => /^[A-Z]{2}$/.test(country)), ['US', 'GB', 'DE', 'IL']);
@@ -103,7 +127,7 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
       cumulative.push(weight);
     }
     for (const provider of providers) {
-      const count = Math.round(ANCHOR_VISITS[provider] * 1.1 ** (monthNumber - anchorMonth));
+      const count = Math.round(ANCHOR_VISITS[provider] * profile.trafficScale * (1 + profile.monthlyGrowth) ** (monthNumber - anchorMonth));
       const key = `${project.id}/${monthNumber}/${provider}`;
       const phase = .15 + hash(`${key}/time`) * .7;
       const countrySeed = hash(`${key}/country`), pageSeed = hash(`${key}/page`);

@@ -79,12 +79,19 @@ export interface Project {
 }
 export interface DemoConfig {
   version: 1;
-  source: 'igeo-nayax';
+  source: 'igeo-nayax' | 'igeo-dr-roof';
   anchorDate: string;
   startDate: string;
   endDate: string;
   sourceAccountId: string;
   sourceCopiedAt: string;
+  /** Optional, bounded variations on the original Nayax scenario. */
+  profile?: {
+    visibilityAdjustment?: number;
+    growthCurve?: number;
+    trafficScale?: number;
+    monthlyGrowth?: number;
+  };
   samples?: {
     promptId?: string;
     promptText?: string;

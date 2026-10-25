@@ -130,6 +130,49 @@ describe('virtual tracked URL evidence', () => {
     expect(citations).toHaveBeenCalledTimes(2);
     expect(createScenarioTracking(project, { history, evidence }).listTrackingMatches()).toEqual(prefixed);
   });
+
+  it('builds and caches only requested Dr. Roof URL evidence until the whole catalog is needed', () => {
+    const { project, history, evidence, samples } = fixture();
+    project.demo!.source = 'igeo-dr-roof';
+    const otherUrl = 'https://other.example/blog/';
+    project.demo!.trackedUrls!.push({ url: otherUrl, title: 'Another enrolled source',
+      publishedAt: '2026-05-01T00:00:00.000Z', createdAt: '2026-05-04T00:00:00.000Z' });
+    samples[1].answer.citations = samples[1].answer.citations.filter(citation => citation.url === otherUrl);
+    samples[2].answer.citations = samples[2].answer.citations.filter(citation => citation.url !== otherUrl);
+    const citations = vi.fn((run: ScanRun) => samples.find(item => item.run.id === run.id)!.answer.citations);
+    const adapter = createScenarioTracking(project, { history, evidence, citations });
+    const [first, other] = adapter.listTrackedUrls();
+    const firstMatches = adapter.listTrackingMatches(first.id);
+    expect(firstMatches.map(match => match.capture.runId)).toEqual(['gemini']);
+    expect(evidence).toHaveBeenCalledTimes(1);
+    expect(evidence.mock.calls[0][0].id).toBe('gemini');
+    expect(history).toHaveBeenCalledWith('2026-05-04T00:00:00.000Z', '2027-04-23T23:59:59.999Z');
+    expect(adapter.listTrackingMatches(first.id)).toEqual(firstMatches);
+    expect(evidence).toHaveBeenCalledTimes(1);
+    const otherMatches = adapter.listTrackingMatches(other.id);
+    expect(otherMatches.map(match => match.capture.runId)).toEqual(['after']);
+    expect(evidence).toHaveBeenCalledTimes(2);
+    const all = adapter.listTrackingMatches();
+    expect(all.filter(match => match.trackedUrlId === first.id)).toEqual(firstMatches);
+    expect(all.filter(match => match.trackedUrlId === other.id)).toEqual(otherMatches);
+    expect(adapter.listTrackingMatches(first.id)).toEqual(firstMatches);
+    expect(evidence).toHaveBeenCalledTimes(4);
+    expect(history).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps Nayax full-catalog behavior and ordinary projects unchanged', () => {
+    const { project, history, evidence } = fixture();
+    const adapter = createScenarioTracking(project, { history, evidence });
+    const selected = adapter.listTrackingMatches(adapter.listTrackedUrls()[0].id);
+    expect(selected).toHaveLength(2);
+    expect(evidence).toHaveBeenCalledTimes(2);
+    expect(history).toHaveBeenCalledWith('2026-04-23T00:00:00.000Z', '2027-04-23T23:59:59.999Z');
+    expect(adapter.listTrackingMatches()).toEqual(selected);
+    expect(history).toHaveBeenCalledTimes(1);
+    delete project.demo;
+    expect(createScenarioTracking(project, { history, evidence }).listTrackingMatches()).toEqual([]);
+    expect(history).toHaveBeenCalledTimes(1);
+  });
 });
 
 const blogs = [

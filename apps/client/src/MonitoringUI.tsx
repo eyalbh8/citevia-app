@@ -498,6 +498,20 @@ export function MentionsChart({
     }
     markerGroups.set(date, items);
   }
+  const publications = [...markerGroups].flatMap(([date, items]) => {
+    const index = dates.indexOf(date);
+    return index >= 0 && items.size ? [{ date, items, index }] : [];
+  }).sort((a, b) => a.index - b.index);
+  let plotWidth = 790;
+  const badgeWidth = (count: number) => 28 + String(count).length * 8;
+  for (let index = 1; index < publications.length; index++) {
+    const previous = publications[index - 1], current = publications[index];
+    const spacing = Math.max(40, (badgeWidth(previous.items.size) + badgeWidth(current.items.size)) / 2 + 4);
+    plotWidth = Math.max(plotWidth, spacing * (dates.length - 1) / (current.index - previous.index));
+  }
+  const denseTimeline = plotWidth > 790, chartWidth = denseTimeline ? Math.ceil(plotWidth + 90) : 880;
+  plotWidth = chartWidth - 90;
+  const labelStep = Math.max(1, Math.ceil(dates.length / (denseTimeline ? Math.max(1, Math.floor(plotWidth / 100)) : 7)));
   const series = visible.map((p) => {
     const counts = new Map(p.points.map((point) => [point.date, point.count]));
     return {
@@ -513,9 +527,9 @@ export function MentionsChart({
     ),
     top = Math.ceil(max / 4) * 4;
   const x = (i: number) =>
-      52 + (dates.length === 1 ? 0.5 : i / (dates.length - 1)) * 790,
+      52 + (dates.length === 1 ? 0.5 : i / (dates.length - 1)) * plotWidth,
     y = (n: number) => 275 - (n / top) * 235,
-    bucketWidth = dates.length > 1 ? 790 / (dates.length - 1) : 40;
+    bucketWidth = dates.length > 1 ? plotWidth / (dates.length - 1) : 40;
   const format = (date: string) =>
     summary.period.granularity === 'hourly'
       ? `${date.slice(11, 16)}`
@@ -567,9 +581,12 @@ export function MentionsChart({
         aria-label="Mentions chart; scroll horizontally to see the full timeline"
         tabIndex={0}
       >
-        <div className="mentions-chart-canvas">
+        <div
+          className={`mentions-chart-canvas${denseTimeline ? ' mentions-chart-canvas-dense' : ''}`}
+          style={denseTimeline ? { width: chartWidth, minWidth: chartWidth } : undefined}
+        >
           <svg
-            viewBox="0 0 880 345"
+            viewBox={`0 0 ${chartWidth} 345`}
             role="img"
             aria-label="Brand mentions by provider over time"
           >
@@ -582,7 +599,7 @@ export function MentionsChart({
               <g key={i}>
                 <line
                   x1="52"
-                  x2="842"
+                  x2={chartWidth - 38}
                   y1={y((i * top) / 4)}
                   y2={y((i * top) / 4)}
                   stroke="var(--line)"
@@ -594,7 +611,7 @@ export function MentionsChart({
               </g>
             ))}
             <text
-              x="450"
+              x={chartWidth / 2 + 10}
               y="172"
               className="chart-watermark"
               textAnchor="middle"
@@ -647,7 +664,7 @@ export function MentionsChart({
             )}
             {dates.map((date, i) => (
               <g key={date}>
-                {(i % Math.max(1, Math.ceil(dates.length / 7)) === 0 ||
+                {(i % labelStep === 0 ||
                   i === dates.length - 1) && (
                   <text x={x(i)} y="330" textAnchor="middle">
                     {format(date)}
@@ -684,7 +701,7 @@ export function MentionsChart({
             <div
               className="monitor-tooltip chart-tooltip"
               style={{
-                left: `clamp(16px, calc(${(x(hover) / 880) * 100}% - 110px), calc(100% - 236px))`,
+                left: `clamp(16px, calc(${(x(hover) / chartWidth) * 100}% - 110px), calc(100% - 236px))`,
               }}
             >
               <strong>{fullDate(hoverDate)}</strong>
@@ -700,14 +717,12 @@ export function MentionsChart({
             </div>
           )}
           <div className="chart-markers">
-            {[...markerGroups].map(([date, items]) => {
-              const index = dates.indexOf(date);
-              if (index < 0 || !items.size) return null;
+            {publications.map(({ date, items, index }) => {
               return (
                 <TrackedPublicationMarker
                   key={date}
                   marker={{ date, items: [...items.values()] }}
-                  left={(x(index) / 880) * 100}
+                  left={(x(index) / chartWidth) * 100}
                   label={fullDate(date)}
                   open={openMarker === date}
                   onToggle={() => setOpenMarker(openMarker === date ? undefined : date)}
@@ -722,6 +737,7 @@ export function MentionsChart({
       <p className="mentions-chart-note">
         Points show measured mentions. Dashed lines connect scans across gaps;
         dates without a scan have no measured value. All times UTC.
+        {denseTimeline && ' Scroll horizontally to inspect each tracked publication.'}
       </p>
     </section>
   );

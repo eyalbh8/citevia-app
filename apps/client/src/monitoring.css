@@ -288,6 +288,10 @@
   min-width: 640px;
   aspect-ratio: 880 / 345;
 }
+.mentions-chart-canvas-dense {
+  height: 345px;
+  aspect-ratio: auto;
+}
 .mentions-chart-canvas > svg {
   display: block;
   width: 100%;

@@ -15,7 +15,7 @@ import {
   type ScanRun,
 } from '@citevia/core';
 import type { Repository, Runtime, SavedAnalysisRef } from './contracts.js';
-import { aggregateScenarioTraffic } from './demo-traffic.js';
+import { aggregateScenarioTraffic, demoNumericProfile } from './demo-traffic.js';
 import { createScenarioTracking } from './demo-tracking.js';
 
 const DAY = 86_400_000;
@@ -30,11 +30,12 @@ const day = (value: string) => Date.parse(`${value}T00:00:00.000Z`);
 function configFor(project: Project): DemoConfig | null {
   const config = project.demo;
   if (!config) return null;
-  if (config.version !== 1 || config.source !== 'igeo-nayax' ||
+  if (config.version !== 1 || !['igeo-nayax', 'igeo-dr-roof'].includes(config.source) ||
       !Number.isFinite(day(config.startDate)) || !Number.isFinite(day(config.endDate)) ||
       day(config.endDate) < day(config.startDate) ||
       day(config.endDate) - day(config.startDate) > 366 * DAY)
     throw new Error('Invalid demo scenario configuration');
+  demoNumericProfile(config);
   return config;
 }
 
@@ -78,9 +79,11 @@ function scanTimes(project: Project): number[] {
 
 function progress(project: Project, at: number) {
   const config = configFor(project)!;
-  return Math.max(0, Math.min(1,
+  const phase = Math.max(0, Math.min(1,
     (at - day(config.startDate)) / Math.max(DAY, day(config.endDate) - day(config.startDate)),
   ));
+  const curve = demoNumericProfile(config).growthCurve;
+  return curve === 1 ? phase : phase ** curve;
 }
 
 function runId(at: number, provider: ScanProvider) {
@@ -168,9 +171,11 @@ function measurementPlan(project: Project, provider: ScanProvider) {
     perplexity: { baseline: 0.34, growth: 0.56, curve: 1.08 },
     gemini: { baseline: 0.28, growth: 0.58, curve: 1.18 },
   }[provider];
+  const visibilityAdjustment = demoNumericProfile(configFor(project)!).visibilityAdjustment;
   for (const at of scanTimes(project)) {
     const phase = progress(project, at);
-    const mentionCount = Math.min(prompts.length, Math.floor(prompts.length * (profile.baseline + profile.growth * phase ** profile.curve)));
+    const mentionCount = Math.max(0, Math.min(prompts.length,
+      Math.floor(prompts.length * (profile.baseline + visibilityAdjustment + profile.growth * phase ** profile.curve))));
     // Preserve the previous positive share when a new prompt starts mentioning
     // the brand; otherwise rounding could create small misleading downward ticks.
     const positiveCount = Math.min(mentionCount, Math.max(
@@ -261,6 +266,37 @@ const trackedCitationCache = new WeakMap<Project, {
   keys: Set<string | null>;
   eligible: Map<string, NonNullable<DemoConfig['trackedUrls']>>;
 }>();
+const roofingPickupCache = new WeakMap<Project, Map<string, { url: string; title: string }[]>>();
+
+/** Enroll each roofing post in one real scenario capture at its first subsequent scan. */
+function roofingPickups(project: Project, run: ScanRun, prompt: Prompt) {
+  if (configFor(project)!.source !== 'igeo-dr-roof') return [];
+  let pickups = roofingPickupCache.get(project);
+  if (!pickups) {
+    pickups = new Map();
+    const providers = projectProviders(project), times = scanTimes(project);
+    const tracked = [...(configFor(project)!.trackedUrls || [])]
+      .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt) || a.url.localeCompare(b.url));
+    for (const [index, item] of tracked.entries()) {
+      const enrolledAt = Math.max(Date.parse(item.createdAt || item.publishedAt), Date.parse(item.publishedAt));
+      const at = times.find(at => at >= enrolledAt && (!item.trackingPeriods || item.trackingPeriods.some(period =>
+        at >= Date.parse(period.start) && (!period.end || at < Date.parse(period.end)))));
+      if (at === undefined || !providers.length) continue;
+      const provider = providers[index % providers.length].provider;
+      const plan = measurementPlan(project, provider), mentionCount = plan.scans.get(at)!.mentionCount;
+      const order = index % Math.max(1, mentionCount);
+      const promptId = [...plan.promptOrder].find(([, value]) => value === order)?.[0];
+      if (!promptId) continue;
+      const key = `${iso(at)}:${provider}:${promptId}`;
+      const citations = pickups.get(key) || [];
+      citations.push({ url: item.url, title: item.title });
+      pickups.set(key, citations);
+    }
+    roofingPickupCache.set(project, pickups);
+  }
+  return pickups.get(`${run.scheduledAt}:${run.snapshot.provider}:${prompt.id}`) || [];
+}
+
 function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[] {
   const tracked = configFor(project)!.trackedUrls || [];
   let trackedIndex = trackedCitationCache.get(project);
@@ -292,6 +328,7 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     trackedIndex.eligible.set(at, eligible);
   }
   const base = unique.slice(0, size);
+  base.push(...roofingPickups(project, run, prompt));
   // Gradual pickup of enrolled content; the same citations drive every tracking view.
   if (eligible.length && hash(`${run.snapshot.provider}:${prompt.id}`) % 5 < 2) {
     const item = eligible[hash(`${run.id}:${prompt.id}:content`) % eligible.length];
@@ -334,6 +371,7 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
     brandId: brand.brandId,
   }));
   const available = sourceCompanies(project);
+  const roofing = configFor(project)!.source === 'igeo-dr-roof';
   const lastRank = Math.max(0, ...companies.map((company) => company.rank), Math.min(3, companies.length + available.length));
   let fillerIndex = 0;
   for (let rank = 1; rank <= lastRank; rank++)
@@ -341,14 +379,21 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
       companies.push({ name: available[fillerIndex++], rank, sentiment: 'neutral', brandId: '' });
   companies.sort((a, b) => a.rank - b.rank);
   const sentences = companies.map((company) =>
-    `${company.rank}. ${company.name}${company.sentiment === 'positive' ? ' is a strong choice with growing adoption and a comprehensive payment platform.' : ' is an established option to evaluate for this use case.'}`,
+    `${company.rank}. ${company.name}${company.sentiment === 'positive'
+      ? roofing ? ' is a strong choice for homeowners seeking roof inspections, reliable repairs, and clear warranty coverage.'
+        : ' is a strong choice with growing adoption and a comprehensive payment platform.'
+      : ' is an established option to evaluate for this use case.'}`,
   );
   const selection = sentences.join('\n');
   // The source excerpt is a reusable illustration, not a second provider call.
   const excerpt = result.target?.mentioned ? sample?.answerText?.trim().slice(0, 1800) : undefined;
   const text = [
-    'For unattended retail, compare payment acceptance, integration coverage, remote management, and support when selecting a platform.',
-    selection || 'Compare payment platforms by integration coverage, support, and total cost.',
+    roofing
+      ? 'When comparing local roofing contractors, consider inspection quality, repair and replacement options, materials, warranty coverage, and local service.'
+      : 'For unattended retail, compare payment acceptance, integration coverage, remote management, and support when selecting a platform.',
+    selection || (roofing
+      ? 'Compare roofing contractors by inspection quality, repair options, materials, warranty coverage, and local service.'
+      : 'Compare payment platforms by integration coverage, support, and total cost.'),
     excerpt || '',
   ].filter(Boolean).join('\n\n');
   const companySpans = companies.map((company, index) => ({
