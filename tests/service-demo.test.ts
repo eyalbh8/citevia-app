@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, withDemoRuntime } from '@citevia/storage';
+import type { CapturedAnswer, RunSummary } from '@citevia/core';
 import {
   buildServiceDemo, createServiceDemo, SERVICE_DEMO_CONTENT_ORIGIN, SERVICE_DEMO_DATES, serviceDemoProfile,
 } from '../scripts/create-service-demo.js';
@@ -42,7 +43,7 @@ describe('compact public website service demos', () => {
     expect(project.demo).toMatchObject({ source: 'website-demo', sourceAccountId: 'website:fixture-gutters.com', ...SERVICE_DEMO_DATES,
       industry: { label: original.industry, audience: 'Homeowners', services: original.services, criteria: original.criteria }, traffic: original.traffic });
     expect(project.demo?.samples?.[0].citations?.slice(0, 3).map(citation => citation.url))
-      .toEqual([original.blogs[0].url, original.website, original.sources[1].url]);
+      .toEqual([original.blogs[0].url, original.competitors[0].website, original.sources[1].url]);
     expect(project.enabled).toBe(false);
     expect(project.scanSchedule?.slotsUtcMinutes).toEqual([600, 5640]);
     expect(project.scanProviders?.map(provider => provider.provider)).toEqual(['openai', 'perplexity', 'gemini']);
@@ -172,6 +173,29 @@ describe('compact public website service demos', () => {
     const current = urls.filter(url => url.publishedAt <= copiedAt);
     expect(current).toHaveLength(78);
     expect(current.filter(url => url.publishedAt >= '2026-10-19')).toHaveLength(3);
+    expect(await base.listRuns(project.id)).toEqual([]);
+  });
+
+  it('fills latest-scan Sources from varied real competitor references and the same saved native citations', async () => {
+    const value = source(), project = buildServiceDemo(value, copiedAt), base = new MemoryRepository();
+    await createServiceDemo(base, project, true);
+    const runtime = withDemoRuntime({ repository: base, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() }, () => new Date(copiedAt));
+    const run = (await runtime.repository.listRuns(project.id, 1))[0];
+    const summary = await runtime.artifacts.get<RunSummary>(run.summaryKey!);
+    const domains = new Set(summary!.domains.map(row => row.domain));
+    for (const competitor of value.competitors) expect(domains.has(new URL(competitor.website).hostname)).toBe(true);
+    expect(domains.has('fixture-gutters.com')).toBe(true);
+    expect(domains.has('thisoldhouse.com')).toBe(true);
+    expect(domains.has('citevia.io')).toBe(true);
+    expect(domains.size).toBe(8);
+    const allowedUrls = new Set([value.website, ...value.blogs.map(blog => blog.url), ...value.sources.map(reference => reference.url),
+      ...value.competitors.map(competitor => competitor.website), ...project.demo!.trackedUrls!.map(article => article.url)]);
+    expect(summary!.urls.every(row => allowedUrls.has(row.url!))).toBe(true);
+    const results = await runtime.repository.listResults(project.id, run.id);
+    const answers = await Promise.all(results.map(result => runtime.artifacts.get<CapturedAnswer>(result.captureKey!)));
+    const nativeCitations = answers.reduce((sum, answer) => sum + answer!.citations.length, 0);
+    expect(summary!.metrics.citations).toBe(nativeCitations);
+    expect(summary!.urls.reduce((sum, row) => sum + row.citationCount, 0)).toBe(nativeCitations);
     expect(await base.listRuns(project.id)).toEqual([]);
   });
 });

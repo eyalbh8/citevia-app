@@ -194,7 +194,11 @@ export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOStri
       industry: { label: source.industry, audience: source.audience.join('; '), services: source.services, criteria }, copy: source.copy,
       samples: source.services.slice(0, 5).map((service, index) => ({ promptText: prompts[index * 10].text,
         answerText: `${source.name} lists ${service.toLowerCase()} among its services in ${source.serviceArea}. ${source.description}`.slice(0, 2500),
-        citations: citationPool.slice(0, 8).map(url => ({ url, title: source.sources.find(item => item.url === url)?.title })),
+        citations: unique([source.blogs[index % source.blogs.length].url, source.competitors[index].website,
+          independentReferences[index % independentReferences.length].url, source.website,
+          ...officialReferences.map(item => item.url), ...independentReferences.map(item => item.url)]).slice(0, 8)
+          .map(url => ({ url, title: source.sources.find(item => item.url === url)?.title ||
+            source.blogs.find(item => item.url === url)?.title || source.competitors.find(item => item.website === url)?.name })),
         companies: index === 0 ? [source.name, ...source.competitors.map(item => item.name)] : undefined })),
       traffic: { pages: source.traffic?.pages || unique(['/', ...source.blogs.slice(0, 5).map(item => new URL(item.url).pathname)]),
         countries: source.traffic?.countries || [source.country.toUpperCase(), 'GB', 'CA', 'AU'],
