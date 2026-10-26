@@ -29,6 +29,8 @@ const checkedMetadata = new WeakMap<DemoConfig, string>();
 
 function validateMetadata(config: DemoConfig, projectId: string) {
   if (checkedMetadata.get(config) === projectId) return;
+  if (config.companyDiscovery !== undefined && config.companyDiscovery !== true)
+    throw new Error('Invalid company discovery scenario');
   const validText = (value: unknown, limit: number) => typeof value === 'string' && value.trim().length > 0 && value.length <= limit;
   if (config.industry && (!validText(config.industry.label, 120) || !validText(config.industry.audience, 160) ||
     [config.industry.services, config.industry.criteria].some(items => !Array.isArray(items) || !items.length ||
@@ -296,6 +298,8 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
     const variation = movement * (seed % 2 ? 1 : -1) * (.03 + (seed % 4) * .01);
     return threshold < 0.50 - 0.18 * phase - competitorIndex * 0.025 + variation;
   });
+  if (configFor(project)!.companyDiscovery && !mentioned && !visibleCompetitors.length && project.competitors.length)
+    visibleCompetitors.push(project.competitors[hash(`${project.id}:${run.snapshot.provider}:${prompt.id}:discovery`) % project.competitors.length]);
   // All earlier ordinal positions must have a company in the simulated answer.
   // Sparse fixtures without source alternatives use the highest supportable rank.
   const rank = Math.min(1 + visibleCompetitors.length + sourceCompanies(project).length,
@@ -408,6 +412,11 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     trackedIndex.eligible.set(at, eligible);
   }
   const base = unique.slice(0, size);
+  if (configFor(project)!.companyDiscovery) {
+    const mentioned = brandMeasurements(project, run, prompt).find(brand => brand.mentioned);
+    const brand = [project.brand, ...project.competitors].find(brand => brand.id === mentioned?.brandId);
+    if (brand?.domains[0]) base.push({ url: `https://${brand.domains[0]}/`, title: brand.name });
+  }
   base.push(...contentPickups(project, run, prompt));
   // Gradual pickup of enrolled content; the same citations drive every tracking view.
   if (eligible.length && hash(`${run.snapshot.provider}:${prompt.id}`) % 5 < 2) {

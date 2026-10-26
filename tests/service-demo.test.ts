@@ -25,6 +25,30 @@ const source = () => ({
 });
 
 describe('compact public website service demos', () => {
+  it('always names and cites a researched company in discovery scenarios while preserving target visibility', async () => {
+    const legacy = buildServiceDemo(source(), copiedAt);
+    const discovery = buildServiceDemo({ ...source(), companyDiscovery: true }, copiedAt);
+    const setup = async (project: typeof legacy) => {
+      const repository = new MemoryRepository();
+      await repository.saveProject(project, null);
+      return withDemoRuntime({ repository, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() });
+    };
+    const before = await setup(legacy), after = await setup(discovery);
+    const range = ['2026-04-25T00:00:00.000Z', '2027-04-25T23:59:59.999Z'] as const;
+    const original = await before.repository.listPromptHistory(legacy.id, ...range);
+    const current = await after.repository.listPromptHistory(discovery.id, ...range);
+    expect(original.results.some(result => !result.brands?.some(brand => brand.mentioned))).toBe(true);
+    expect(current.results.every(result => result.brands?.some(brand => brand.mentioned))).toBe(true);
+    expect(current.results.map(result => result.target?.mentioned)).toEqual(original.results.map(result => result.target?.mentioned));
+    const empty = original.results.find(result => !result.brands?.some(brand => brand.mentioned))!;
+    const filled = current.results.find(result => result.runId === empty.runId && result.promptId === empty.promptId)!;
+    const brand = discovery.competitors.find(brand => filled.brands?.some(measured => measured.brandId === brand.id && measured.mentioned))!;
+    const answer = (await after.artifacts.get<CapturedAnswer>(filled.captureKey!))!;
+    expect(answer.text).toContain(brand.name);
+    expect(answer.citations.some(citation => new URL(citation.url).hostname === brand.domains[0])).toBe(true);
+    expect(filled.target?.mentioned).toBe(false);
+  });
+
   it('anchors new accounts to six calendar months each way while retaining legacy scenario dates', async () => {
     const project = buildServiceDemo({ ...source(), anchorDate: '2026-10-26' }, copiedAt);
     expect(project.demo).toMatchObject({ anchorDate: '2026-10-26', startDate: '2026-04-26', endDate: '2027-04-26' });

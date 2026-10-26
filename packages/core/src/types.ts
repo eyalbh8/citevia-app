@@ -80,6 +80,8 @@ export interface Project {
 export interface DemoConfig {
   version: 1;
   source: 'igeo-nayax' | 'igeo-dr-roof' | 'website-demo';
+  /** Company-discovery scenarios always name and cite at least one researched provider. */
+  companyDiscovery?: true;
   anchorDate: string;
   startDate: string;
   endDate: string;

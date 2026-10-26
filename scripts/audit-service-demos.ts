@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { type CapturedAnswer, type Project, type TrafficFilters } from '@citevia/core';
+import { type CapturedAnswer, type TrafficFilters } from '@citevia/core';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, PostgresRepository, withDemoRuntime } from '@citevia/storage';
 import { buildServiceDemo } from './create-service-demo.js';
 import { openConfigurationDatabase } from './configure-analysis.js';

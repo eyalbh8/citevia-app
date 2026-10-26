@@ -701,10 +701,10 @@
       "fallback": "Request individualized proposals from several Istanbul clinics and compare medical assessment, realistic graft planning, inclusions and aftercare before booking."
     },
     "profile": {
-      "visibilityAdjustment": -0.02,
-      "growthCurve": 1.12,
-      "trafficScale": 0.9,
-      "monthlyGrowth": 0.1
+      "visibilityAdjustment": -0.035,
+      "growthCurve": 0.83,
+      "trafficScale": 0.26,
+      "monthlyGrowth": 0.105
     },
     "traffic": {
       "pages": [
@@ -737,7 +737,8 @@
         "Firefox"
       ]
     },
-    "anchorDate": "2026-10-26"
+    "anchorDate": "2026-10-26",
+    "companyDiscovery": true
   },
   {
     "id": "account_tend_nyc_demo_v1",
@@ -1414,10 +1415,10 @@
       "fallback": "Contact several New York City practices to compare the proposed treatment, appointment access, clinician responsibilities and your expected payment before choosing."
     },
     "profile": {
-      "visibilityAdjustment": 0.06,
+      "visibilityAdjustment": 0.025,
       "growthCurve": 1.03,
-      "trafficScale": 1.35,
-      "monthlyGrowth": 0.08
+      "trafficScale": 0.19,
+      "monthlyGrowth": 0.075
     },
     "traffic": {
       "pages": [
@@ -1447,7 +1448,8 @@
         "Firefox"
       ]
     },
-    "anchorDate": "2026-10-26"
+    "anchorDate": "2026-10-26",
+    "companyDiscovery": true
   },
   {
     "id": "account_pfcla_la_demo_v1",
@@ -2142,10 +2144,10 @@
       "fallback": "Arrange consultations with several Los Angeles fertility providers and compare the individual clinical plan, itemized costs, laboratory approach and any agency coordination needed."
     },
     "profile": {
-      "visibilityAdjustment": 0.02,
-      "growthCurve": 1.18,
-      "trafficScale": 0.75,
-      "monthlyGrowth": 0.11
+      "visibilityAdjustment": -0.045,
+      "growthCurve": 1.17,
+      "trafficScale": 0.115,
+      "monthlyGrowth": 0.085
     },
     "traffic": {
       "pages": [
@@ -2178,6 +2180,7 @@
         "Firefox"
       ]
     },
-    "anchorDate": "2026-10-26"
+    "anchorDate": "2026-10-26",
+    "companyDiscovery": true
   }
 ]

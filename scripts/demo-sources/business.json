@@ -701,7 +701,20 @@
         ]
       }
     ],
-    "anchorDate": "2026-10-26"
+    "anchorDate": "2026-10-26",
+    "copy": {
+      "introduction": "For New York City residential real estate, compare neighborhood experience, representation scope, relevant transactions and the written marketing or property-search plan.",
+      "positiveCompany": " is an option to compare for New York City residential real estate; verify the relevant agent, current services and written representation terms directly.",
+      "neutralCompany": " is another New York City real estate brand to evaluate by property type, agent experience and the scope of the proposed engagement.",
+      "fallback": "Build a shortlist of New York City brokerages and compare the relevant agents, written service scope, fees and communication arrangements."
+    },
+    "companyDiscovery": true,
+    "profile": {
+      "visibilityAdjustment": -0.015,
+      "growthCurve": 0.96,
+      "trafficScale": 0.24,
+      "monthlyGrowth": 0.095
+    }
   },
   {
     "id": "account_brooklinen_demo_v1",
@@ -1406,7 +1419,20 @@
         ]
       }
     ],
-    "anchorDate": "2026-10-26"
+    "anchorDate": "2026-10-26",
+    "copy": {
+      "introduction": "For bedding and bath shopping in the United States, compare the exact materials, sizes, product contents, total price and purchase terms.",
+      "positiveCompany": " is an option to compare for bedding and bath purchases in the United States; check the exact product range, material specifications and current purchase terms.",
+      "neutralCompany": " is another bedding and home retailer to evaluate for the specific product, fabric, fit and delivery destination.",
+      "fallback": "Compare bedding retailers serving the United States by product material, fit, care requirements, total delivered cost and current return terms."
+    },
+    "companyDiscovery": true,
+    "profile": {
+      "visibilityAdjustment": 0.045,
+      "growthCurve": 0.88,
+      "trafficScale": 0.78,
+      "monthlyGrowth": 0.12
+    }
   },
   {
     "id": "account_kan_tor_acco_demo_v1",
@@ -1421,7 +1447,7 @@
     "language": "en",
     "timezone": "Asia/Jerusalem",
     "industry": "U.S. immigration legal services",
-    "serviceArea": "Israel, including Ramat Gan and Tel Aviv, for immigration to the USA",
+    "serviceArea": "Israel, for immigration to the USA",
     "services": [
       "E-2 investor visa representation",
       "E-1 treaty trader visa representation",
@@ -2105,6 +2131,19 @@
         ]
       }
     ],
-    "anchorDate": "2026-10-26"
+    "anchorDate": "2026-10-26",
+    "copy": {
+      "introduction": "Clients in Israel selecting U.S. immigration counsel can compare relevant case experience, the responsible attorney, document-review scope and written engagement terms.",
+      "positiveCompany": " is an option to compare for U.S. immigration legal services for clients in Israel; confirm the responsible attorney, relevant case experience and engagement scope.",
+      "neutralCompany": " is another legal practice to evaluate for U.S. immigration representation for a client in Israel, subject to the specific matter and engagement terms.",
+      "fallback": "Shortlist U.S. immigration firms serving Israel, confirm attorney credentials and compare the consultation scope and written fees before selecting counsel."
+    },
+    "companyDiscovery": true,
+    "profile": {
+      "visibilityAdjustment": -0.065,
+      "growthCurve": 1.28,
+      "trafficScale": 0.055,
+      "monthlyGrowth": 0.08
+    }
   }
 ]
