@@ -28,12 +28,30 @@ afterAll(async () => {
 });
 describe('iGEO-compatible PostgreSQL persistence', () => {
   it('searches and pages lightweight summaries within the authenticated membership', async () => {
+    const demo = {
+      version: 1 as const,
+      source: 'website-demo' as const,
+      anchorDate: '2026-10-26',
+      startDate: '2026-04-26',
+      endDate: '2027-04-26',
+      sourceAccountId: 'website:acme.com',
+      sourceCopiedAt: '2026-10-26T09:00:00.000Z',
+      profile: { visibilityAdjustment: 0.02, monthlyGrowth: 0.08 },
+      trackedUrls: [{
+        url: 'https://acme.com/resources/guide',
+        title: 'Resource guide',
+        publishedAt: '2026-04-27T08:00:00.000Z',
+        body: 'Detailed article content. '.repeat(40),
+      }],
+      samples: [{ answerText: 'Detailed sampled answer. '.repeat(80) }],
+    };
     for (const name of ['Paging Alpha', 'Paging Beta', 'Paging Gamma']) {
       const project = newProject({
         id: name.replaceAll(' ', '-'),
         name,
         prompts: ['Which tool is useful?'],
       });
+      project.demo = demo;
       await repository.saveProject(project, null);
       await repository.putMembership({
         projectId: project.id,
@@ -55,6 +73,17 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
     expect(first.items[0].prompts).toEqual([]);
     expect(first.items[0].brandbook).toBeUndefined();
     expect(first.items[0].activePromptCount).toBe(1);
+    expect(first.items[0].demo).toEqual({
+      version: demo.version,
+      source: demo.source,
+      anchorDate: demo.anchorDate,
+      startDate: demo.startDate,
+      endDate: demo.endDate,
+      sourceAccountId: demo.sourceAccountId,
+      sourceCopiedAt: demo.sourceCopiedAt,
+      profile: demo.profile,
+    });
+    expect((await repository.getProject(first.items[0].id))?.demo).toEqual(demo);
     expect(
       (
         await repository.listProjectSummaries('paging-owner', {

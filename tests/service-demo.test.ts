@@ -25,7 +25,7 @@ const source = () => ({
 });
 
 describe('compact public website service demos', () => {
-  it('always names and cites a researched company in discovery scenarios while preserving target visibility', async () => {
+  it('names and cites a researched company while keeping a separate, steadily growing target plan', async () => {
     const legacy = buildServiceDemo(source(), copiedAt);
     const discovery = buildServiceDemo({ ...source(), companyDiscovery: true }, copiedAt);
     const setup = async (project: typeof legacy) => {
@@ -39,8 +39,17 @@ describe('compact public website service demos', () => {
     const current = await after.repository.listPromptHistory(discovery.id, ...range);
     expect(original.results.some(result => !result.brands?.some(brand => brand.mentioned))).toBe(true);
     expect(current.results.every(result => result.brands?.some(brand => brand.mentioned))).toBe(true);
-    expect(current.results.map(result => result.target?.mentioned)).toEqual(original.results.map(result => result.target?.mentioned));
-    const empty = original.results.find(result => !result.brands?.some(brand => brand.mentioned))!;
+    for (const provider of ['openai', 'perplexity', 'gemini']) {
+      const runs = current.runs.filter(run => run.snapshot.provider === provider).sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
+      let previous = 0;
+      for (const run of runs) {
+        const mentions = current.results.filter(result => result.runId === run.id && result.target?.mentioned).length;
+        expect(mentions).toBeGreaterThanOrEqual(previous);
+        previous = mentions;
+      }
+    }
+    const empty = original.results.find(result => !result.brands?.some(brand => brand.mentioned) &&
+      current.results.some(item => item.runId === result.runId && item.promptId === result.promptId && !item.target?.mentioned))!;
     const filled = current.results.find(result => result.runId === empty.runId && result.promptId === empty.promptId)!;
     const brand = discovery.competitors.find(brand => filled.brands?.some(measured => measured.brandId === brand.id && measured.mentioned))!;
     const answer = (await after.artifacts.get<CapturedAnswer>(filled.captureKey!))!;

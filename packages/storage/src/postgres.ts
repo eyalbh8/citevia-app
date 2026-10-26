@@ -200,7 +200,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     // Select a small metadata page before reading the larger JSON workflow documents.
     const { rows } = await this.db.query(
       `WITH selected AS (SELECT p.id,CASE WHEN ${admin} THEN ARRAY['OWNER'] ELSE ua.roles END AS roles ${from} ORDER BY a.created_at DESC,p.id LIMIT $3 OFFSET $4)
-      SELECT p.data-'prompts'-'brandbook' AS data,s.roles,
+      SELECT (p.data-'prompts'-'brandbook') #- '{demo,trackedUrls}' #- '{demo,samples}' AS data,s.roles,
         (SELECT count(*)::int FROM prompts WHERE account_id=p.account_id AND is_active=true) AS prompt_count,
         CASE WHEN j.id IS NOT NULL THEN jsonb_build_object('status',j.status,'step',j.data->>'step','error',j.data->'error','firstRunId',j.data->'firstRunId') ELSE NULL END AS job
       FROM selected s JOIN citevia_projects p ON p.id=s.id LEFT JOIN citevia_onboarding_jobs j ON j.project_id=p.id AND j.id=p.data->>'onboardingJobId'

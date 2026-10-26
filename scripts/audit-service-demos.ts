@@ -39,7 +39,7 @@ try {
     assert.equal(project.brand.domains[0], planned.brand.domains[0]);
     assert.equal(project.enabled, false);
     assert.deepEqual(project.demo?.profile, planned.demo?.profile);
-    assert.deepEqual(project.demo?.trackedUrls, planned.demo?.trackedUrls);
+    assert.deepEqual(JSON.parse(JSON.stringify(project.demo?.trackedUrls)), JSON.parse(JSON.stringify(planned.demo?.trackedUrls)));
     assert.deepEqual(project.prompts.map(item => item.text), planned.prompts.map(item => item.text));
     assert.equal(project.prompts.length, 50);
     assert.equal(project.language, 'en');
@@ -83,6 +83,13 @@ try {
       return share(range.period.start, range.period.end);
     });
     assert(visibility[0] < visibility[1] && visibility[1] < visibility[2], 'Visibility must increase.');
+    const weekStart = new Date(start.getTime() - 6 * 86400000).toISOString();
+    const weekEnd = `${config.anchorDate}T23:59:59.999Z`;
+    const weekDates = [...new Set(history.results.filter(item => item.capturedAt! >= weekStart && item.capturedAt! <= weekEnd)
+      .map(item => item.capturedAt!.slice(0, 10)))].sort();
+    const firstDay = share(`${weekDates[0]}T00:00:00.000Z`, `${weekDates[0]}T23:59:59.999Z`);
+    const lastDay = share(`${weekDates.at(-1)}T00:00:00.000Z`, `${weekDates.at(-1)}T23:59:59.999Z`);
+    assert(lastDay > firstDay, 'The anchor week default dashboard should show an increase.');
     const monthlyTraffic = [];
     for (let offset = -5; offset <= 5; offset++) {
       const range = month(year, anchorMonth + offset);
@@ -111,6 +118,7 @@ try {
       officialArticles: publications.filter(item => !item.demoPost).length,
       demoArticles: publications.filter(item => item.demoPost).length,
       visibility: { firstFullMonth: visibility[0], anchorMonth: visibility[1], lastFullMonth: visibility[2] },
+      anchorWeek: { firstDay, lastDay, percentagePointIncrease: Number((lastDay - firstDay).toFixed(2)) },
       aiTraffic: monthlyTraffic, profile: config.profile, configurationBytes: Buffer.byteLength(JSON.stringify(project)) });
     console.error(`Verified ${project.name}: 50 prompts, ${history.results.length} answers, ${publications.length} cited publications.`);
   }

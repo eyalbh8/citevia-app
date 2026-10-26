@@ -221,6 +221,7 @@ const measurementPlans = new WeakMap<Project, Map<ScanProvider, {
 /** Service scenarios retain annual growth while each pair of weekly scans moves. */
 function weeklyMovement(project: Project, at: number) {
   if (!['igeo-dr-roof', 'website-demo'].includes(configFor(project)!.source)) return 0;
+  if (configFor(project)!.companyDiscovery) return 0;
   const date = new Date(at);
   const minute = ((date.getUTCDay() + 6) % 7) * 1440 + date.getUTCHours() * 60 + date.getUTCMinutes();
   const first = Math.min(...(project.scanSchedule?.slotsUtcMinutes || [600, 5640]));

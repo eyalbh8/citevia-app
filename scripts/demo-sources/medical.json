@@ -2144,7 +2144,7 @@
       "fallback": "Arrange consultations with several Los Angeles fertility providers and compare the individual clinical plan, itemized costs, laboratory approach and any agency coordination needed."
     },
     "profile": {
-      "visibilityAdjustment": -0.045,
+      "visibilityAdjustment": -0.044,
       "growthCurve": 1.17,
       "trafficScale": 0.115,
       "monthlyGrowth": 0.085

@@ -710,7 +710,7 @@
     },
     "companyDiscovery": true,
     "profile": {
-      "visibilityAdjustment": -0.015,
+      "visibilityAdjustment": -0.025,
       "growthCurve": 0.96,
       "trafficScale": 0.24,
       "monthlyGrowth": 0.095
@@ -1428,7 +1428,7 @@
     },
     "companyDiscovery": true,
     "profile": {
-      "visibilityAdjustment": 0.045,
+      "visibilityAdjustment": 0.046,
       "growthCurve": 0.88,
       "trafficScale": 0.78,
       "monthlyGrowth": 0.12
