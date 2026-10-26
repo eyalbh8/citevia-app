@@ -94,6 +94,9 @@ export class Scanner {
 
   async handle(message: ScanMessage): Promise<void> {
     switch (message.kind) {
+      case 'website-health':
+        if (!this.dependencies.websiteHealth) throw new Error('Website health worker is not configured');
+        return this.dependencies.websiteHealth.handle(message.projectId, message.auditId);
       case 'agent-post':
         if (!this.dependencies.agents) throw new Error('Agent post worker is not configured');
         return this.dependencies.agents.handle(message.projectId, message.postId);
@@ -129,6 +132,8 @@ export class Scanner {
         catch { console.error(JSON.stringify({ event: 'scanner_maintenance_failed' })); }
         try { await this.dependencies.agents?.reconcile(); }
         catch { console.error(JSON.stringify({ event: 'agent_reconcile_failed' })); }
+        try { await this.dependencies.websiteHealth?.reconcile(); }
+        catch { console.error(JSON.stringify({ event: 'website_health_reconcile_failed' })); }
         try { await this.dependencies.onboarding?.reconcile(); }
         catch { console.error(JSON.stringify({ event: 'onboarding_reconcile_failed' })); }
         return;
@@ -894,6 +899,11 @@ export class Scanner {
   }
 
   async handleDeadLetter(message: ScanMessage): Promise<void> {
+    if (message.kind === 'website-health') {
+      if (!this.dependencies.websiteHealth) throw new Error('Website health worker is not configured');
+      await this.dependencies.websiteHealth.deadLetter(message.projectId, message.auditId);
+      return;
+    }
     if (message.kind === 'agent-post') {
       if (!this.dependencies.agents) throw new Error('Agent post worker is not configured');
       await this.dependencies.agents.deadLetter(message.projectId, message.postId);

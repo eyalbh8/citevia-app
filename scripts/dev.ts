@@ -12,6 +12,7 @@ import { createAuthenticatedApi } from '../apps/api/src/handler.js';
 import { createDescopeIdentityProvider } from '../apps/api/src/descope.js';
 import { Scanner } from '../apps/scanner/src/engine.js';
 import { AgentPostEngine } from '../apps/scanner/src/agent-posts.js';
+import { WebsiteHealthEngine } from '../apps/scanner/src/website-health.js';
 import { createResponseProviderFromEnv } from '../apps/scanner/src/openai.js';
 import { createScanProviderFromEnv } from '../apps/scanner/src/providers.js';
 import { providerAvailability } from '../apps/scanner/src/provider-http.js';
@@ -82,6 +83,7 @@ const db = await localPostgres(resolve(base, 'postgres')),
   queue = new MemoryQueue();
 await assertRealLocalData(db);
 const runtime = { repository, artifacts, queue };
+const websiteHealth = new WebsiteHealthEngine(runtime);
 let scanner: Scanner | undefined;
 if (configured) {
   const provider = createScanProviderFromEnv(runtime);
@@ -90,7 +92,7 @@ if (configured) {
     new OpenAIOnboardingProvider(await createResponseProviderFromEnv()),
     async () => {},
   );
-  scanner = new Scanner({ ...runtime, dispatch: new SqlScanDispatchStore(db), provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv) });
+  scanner = new Scanner({ ...runtime, dispatch: new SqlScanDispatchStore(db), provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv), websiteHealth });
 }
 api = createAuthenticatedApi(runtime, createDescopeIdentityProvider(), {
   mode: 'live',
@@ -100,26 +102,23 @@ api = createAuthenticatedApi(runtime, createDescopeIdentityProvider(), {
 // Start empty. Never seed sample accounts or automatically import legacy stores.
 let processing = false;
 const worker = setInterval(async () => {
-  if (processing || !scanner || !queue.messages.length) return;
+  if (processing || !queue.messages.length) return;
   processing = true;
   const message = queue.messages.shift()!;
   try {
-    await scanner.handle(message);
+    // Website diagnostics have independent Google credentials and work without an AI provider.
+    if (message.kind === 'website-health') await websiteHealth.handle(message.projectId, message.auditId);
+    else if (scanner) await scanner.handle(message);
   } catch (error) {
     console.error('Scan job will be recovered:', (error as Error).message);
   } finally {
     processing = false;
   }
 }, 100);
-const recovery = setInterval(
-  () =>
-    scanner
-      ?.handle({ kind: 'reconcile' })
-      .catch((error) =>
-        console.error('Recovery failed:', (error as Error).message),
-      ),
-  60_000,
-);
+const recovery = setInterval(() => {
+  const recover = scanner ? scanner.handle({ kind: 'reconcile' }) : websiteHealth.reconcile();
+  recover.catch((error) => console.error('Recovery failed:', (error as Error).message));
+}, 60_000);
 const vite = spawn(
   process.execPath,
   [

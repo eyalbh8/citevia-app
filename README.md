@@ -48,6 +48,16 @@ Descope verifies login. Real verified names, emails and stable provider identiti
 
 The first administrator is established explicitly after their first Descope sign-in with `npm run admin:bootstrap`. Subsequent administrators and assignments are managed in the UI. See [configuration, bootstrap and permissions](docs/AUTHENTICATION.md).
 
+## Website Health
+
+Open **Website Health** to audit a public page on the account’s website. **Run audit** tests mobile and desktop independently in the background and saves dated reports with performance, accessibility, best-practices and SEO scores, lab measurements, prioritized fixes, affected resources and Google’s estimated savings where available. Owners can run and recheck audits; viewers can read and copy a developer checklist. Each account can run one audit at a time, with at least one minute between new audits. Results remain separate from AI visibility measurements.
+
+Configure the server-only `GOOGLE_PAGESPEED_API_KEY` for PageSpeed Insights and `GOOGLE_CRUX_API_KEY` for real-user measurements. Enable the corresponding **PageSpeed Insights API** and **Chrome UX Report API** in Google Cloud. A single Google key restricted to both APIs can be supplied in both variables. AWS uses `GooglePageSpeedSecretArn` and `GoogleCruxSecretArn`, accepting raw secrets or JSON with the matching environment variable name. Only the scanner can read these secret values. The API reports configuration presence, not verified key access or quota.
+
+CrUX data is queried separately from PageSpeed, by page and device, with origin-level fallback only when Google has no page data. Reports identify that scope and the returned 28-day collection period. Insufficient traffic, unavailable configuration and request failures are shown explicitly; missing metrics and scores remain unmeasured. Saved audits are on demand, not automatically scheduled. Scores can vary between tests, and savings estimates can overlap.
+
+Apply `016_website_health.sql` through the normal migration operation before publishing the updated API/client. Local development applies the migration automatically and can process website audits independently of AI-provider credentials. No Google requests are made by installation, tests or builds.
+
 ## MCP connections
 
 Open **MCP connections** to connect an assistant through OAuth or a named API key. Creating a key also shows a copyable URL-only connection and Claude/ChatGPT setup buttons. System administrators use one connection for all accounts; other users connect one assigned account at a time. Viewer connections are read-only and owner connections retain the account's existing permissions. Credentials support expiry and immediate revocation. See [connection setup, tools and deployment](docs/MCP.md). Apply migration `006_mcp.sql` before publishing this update.

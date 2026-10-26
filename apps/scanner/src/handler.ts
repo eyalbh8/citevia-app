@@ -13,6 +13,7 @@ import {
 import type { Project, ScanMessage } from '@citevia/core';
 import { Scanner } from './engine.js';
 import { AgentPostEngine } from './agent-posts.js';
+import { WebsiteHealthEngine } from './website-health.js';
 import { createResponseProviderFromEnv } from './openai.js';
 import { createScanProviderFromEnv } from './providers.js';
 import { OpenAIOnboardingProvider } from './onboarding-provider.js';
@@ -31,6 +32,7 @@ const id = z
   .max(200)
   .regex(/^[a-zA-Z0-9_-]+$/);
 const messageSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('website-health'), projectId: id, auditId: id }).strict(),
   z.object({ kind: z.literal('agent-post'), projectId: id, postId: id }).strict(),
   z.object({ kind: z.literal('onboard'), projectId: id, jobId: id }).strict(),
   z
@@ -112,6 +114,7 @@ function awsScanner(): Scanner {
     ...runtime,
     dispatch: new SqlScanDispatchStore(productionDatabase()),
     agents: new AgentPostEngine(runtime, createResponseProviderFromEnv),
+    websiteHealth: new WebsiteHealthEngine(runtime),
     onboarding,
     provider: createScanProviderFromEnv(runtime),
     // Keep the port available for already-frozen Batch runs even if new batch admission is disabled.

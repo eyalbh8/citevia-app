@@ -19,6 +19,8 @@ After configuring Descope, signing in and establishing your first administrator,
 
 Local authentication uses Descope, exactly as the deployed API does. Configure `DESCOPE_PROJECT_ID`, `DESCOPE_FLOW_ID`, `DESCOPE_BASE_URL` and the server-only `DESCOPE_MANAGEMENT_KEY` (or `DESCOPE_SECRET_ARN`) in root `.env`. The dev script passes only public Descope values to Vite. Register `http://127.0.0.1:5173` as an allowed origin/redirect in your Descope project, publish the chosen flow, then restart and sign in. Without Descope configuration, the client displays setup instructions and the API denies access; no development token is accepted.
 
+Website Health has independent Google credentials: set `GOOGLE_PAGESPEED_API_KEY` and optionally `GOOGLE_CRUX_API_KEY` in root `.env` after enabling PageSpeed Insights API and Chrome UX Report API in Google Cloud. The same API-restricted key can be used for both variables. `GOOGLE_PAGESPEED_SECRET_ARN` and `GOOGLE_CRUX_SECRET_ARN` are the Secrets Manager alternatives (raw values or JSON with the corresponding `*_API_KEY` field). Restart the local server after configuration changes. No `VITE_*` key is needed. Website audits can run without AI-provider keys; authentication still applies.
+
 On first sign-in the real user is saved with no accounts and no admin role. Copy the database user ID shown in the workspace, stop the local server, then establish your first administrator:
 
 ```sh

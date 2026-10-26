@@ -49,6 +49,16 @@ Parameters:
     Default: ''
     Description: Server-only Unsplash access key, raw or JSON with UNSPLASH_ACCESS_KEY. Required for agent post images.
     AllowedPattern: '^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  GooglePageSpeedSecretArn:
+    Type: String
+    Default: ''
+    Description: Server-only Google PageSpeed API key, raw or JSON with GOOGLE_PAGESPEED_API_KEY. Enables Website Health audits.
+    AllowedPattern: '^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  GoogleCruxSecretArn:
+    Type: String
+    Default: ''
+    Description: Server-only Chrome UX Report API key, raw or JSON with GOOGLE_CRUX_API_KEY. Adds real-user Website Health metrics.
+    AllowedPattern: '^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
   PerplexitySecretArn:
     Type: String
     Default: ''
@@ -182,6 +192,8 @@ Conditions:
   HasPerplexitySecret: !Not [!Equals [!Ref PerplexitySecretArn, '']]
   HasGeminiSecret: !Not [!Equals [!Ref GeminiSecretArn, '']]
   HasUnsplashSecret: !Not [!Equals [!Ref UnsplashSecretArn, '']]
+  HasGooglePageSpeedSecret: !Not [!Equals [!Ref GooglePageSpeedSecretArn, '']]
+  HasGoogleCruxSecret: !Not [!Equals [!Ref GoogleCruxSecretArn, '']]
   AuroraAutoPauseEnabled: !Equals [!Ref AuroraMinCapacity, 0]
   KeepLegacyDatabase: !Not [!Equals [!Ref RetireLegacyDatabase, 'true']]
   UseAuroraDatabase: !And
@@ -587,6 +599,8 @@ Resources:
           DESCOPE_SECRET_ARN: !Ref DescopeSecretArn
           DESCOPE_BASE_URL: !Ref DescopeBaseUrl
           UNSPLASH_SECRET_ARN: !Ref UnsplashSecretArn
+          GOOGLE_PAGESPEED_SECRET_ARN: !Ref GooglePageSpeedSecretArn
+          GOOGLE_CRUX_SECRET_ARN: !Ref GoogleCruxSecretArn
           OPENAI_SECRET_ARN: !Ref OpenAiSecretArn
           PERPLEXITY_SECRET_ARN: !Ref PerplexitySecretArn
           GEMINI_SECRET_ARN: !Ref GeminiSecretArn
@@ -662,6 +676,8 @@ Resources:
           OPENAI_EXTRACTION_MODEL: !Ref ExtractionModel
           OPENAI_ONBOARDING_MODEL: !Ref OnboardingModel
           UNSPLASH_SECRET_ARN: !Ref UnsplashSecretArn
+          GOOGLE_PAGESPEED_SECRET_ARN: !Ref GooglePageSpeedSecretArn
+          GOOGLE_CRUX_SECRET_ARN: !Ref GoogleCruxSecretArn
           PERPLEXITY_SECRET_ARN: !Ref PerplexitySecretArn
           GEMINI_SECRET_ARN: !Ref GeminiSecretArn
           PERPLEXITY_PRESET: !Ref PerplexityPreset
@@ -688,6 +704,18 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref UnsplashSecretArn
+              - !Ref 'AWS::NoValue'
+            - !If
+              - HasGooglePageSpeedSecret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref GooglePageSpeedSecretArn
+              - !Ref 'AWS::NoValue'
+            - !If
+              - HasGoogleCruxSecret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref GoogleCruxSecretArn
               - !Ref 'AWS::NoValue'
             - Effect: Allow
               Action: [s3:GetObject, s3:PutObject]

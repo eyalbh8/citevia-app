@@ -1,6 +1,7 @@
 import * as traffic from './traffic-postgres.js';
 import { createHash } from 'node:crypto';
 import * as agents from './agents-postgres.js';
+import * as websiteHealth from './website-health-postgres.js';
 import {
   allocateScanSchedule,
   WEEKLY_SCHEDULE,
@@ -74,6 +75,11 @@ export interface PostgresRepositoryOptions {
 }
 
 export class PostgresRepository extends PostgresUsers implements Repository {
+  getWebsiteHealthAudit(projectId: string, auditId: string) { return websiteHealth.getWebsiteHealthAudit(this.db, projectId, auditId); }
+  listWebsiteHealthAudits(projectId: string, offset: number, limit: number) { return websiteHealth.listWebsiteHealthAudits(this.db, projectId, offset, limit); }
+  listActiveWebsiteHealthAudits() { return websiteHealth.listActiveWebsiteHealthAudits(this.db); }
+  reserveWebsiteHealthAudit(job: import('@citevia/core').WebsiteHealthJob, expectedVersion: null) { return websiteHealth.reserveWebsiteHealthAudit(this.db, job, expectedVersion); }
+  saveWebsiteHealthAudit(job: import('@citevia/core').WebsiteHealthJob, expectedVersion: number) { return websiteHealth.saveWebsiteHealthAudit(this.db, job, expectedVersion); }
   reserveAgentImage(post: import('@citevia/core').AgentPostJob, image?: import('@citevia/core').AgentImage) { return agents.reserveAgentImage(this.db, post, image); }
   getAgentPost(projectId: string, postId: string) { return agents.getAgentPost(this.db, projectId, postId); }
   listAgentPosts(projectId: string, offset: number, limit: number) { return agents.listAgentPosts(this.db, projectId, offset, limit); }

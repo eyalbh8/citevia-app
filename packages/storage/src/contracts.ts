@@ -19,6 +19,7 @@ import type {
   TrafficInstallationReceipt,
   AgentPostJob,
   AgentImage,
+  WebsiteHealthJob,
   ScanProvider,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
@@ -48,6 +49,12 @@ export interface PromptAnswerPage {
   total: number;
 }
 export interface Repository extends UserRepository, McpRepository {
+  getWebsiteHealthAudit(projectId: string, auditId: string): Promise<WebsiteHealthJob | null>;
+  listWebsiteHealthAudits(projectId: string, offset: number, limit: number): Promise<{ items: WebsiteHealthJob[]; total: number }>;
+  listActiveWebsiteHealthAudits(): Promise<WebsiteHealthJob[]>;
+  /** One active audit per account; new audits are separated by at least 60 seconds. */
+  reserveWebsiteHealthAudit(job: WebsiteHealthJob, expectedVersion: null): Promise<'saved' | 'conflict' | 'limit'>;
+  saveWebsiteHealthAudit(job: WebsiteHealthJob, expectedVersion: number): Promise<boolean>;
   /** Atomically claim a photo forever within this account/channel; recover this generation’s claim. */
   reserveAgentImage(post: AgentPostJob, image?: AgentImage): Promise<AgentImage | null>;
   getAgentPost(projectId: string, postId: string): Promise<AgentPostJob | null>;
@@ -181,6 +188,11 @@ export interface AnalysisBatchPort {
   complete(batchId: string): Promise<void>;
 }
 export interface ScannerDependencies extends Runtime {
+  websiteHealth?: {
+    handle(projectId: string, auditId: string): Promise<void>;
+    reconcile(): Promise<void>;
+    deadLetter(projectId: string, auditId: string): Promise<void>;
+  };
   dispatch?: ScanDispatchStore;
   analysisBatch?: AnalysisBatchPort;
   maintenance?: { reconcile(): Promise<void> };

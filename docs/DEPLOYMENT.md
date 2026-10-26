@@ -75,6 +75,7 @@ The build writes `dist/api/index.mjs` and `dist/scanner/index.mjs`. The template
 - `DescopeBaseUrl`: the project API/custom domain URL, default `https://api.descope.com`. Use the matching value in the browser.
 - `OpenAiSecretArn`, `PerplexitySecretArn` and `GeminiSecretArn`: the existing provider secret ARNs, never their values. Only the scanner can read provider secret values. The API receives their ARNs to report configuration availability.
 - `UnsplashSecretArn`: the server-only photo service secret, raw or JSON with `UNSPLASH_ACCESS_KEY`. Set this shared parameter to enable content creation for every account. No per-account provider key or social connection is needed. Both API and scanner receive the ARN; only the scanner may read its value. An empty parameter disables new content generation globally. Existing account membership and owner permissions still apply.
+- `GooglePageSpeedSecretArn` and `GoogleCruxSecretArn`: optional Website Health secrets, raw values or JSON with `GOOGLE_PAGESPEED_API_KEY` and `GOOGLE_CRUX_API_KEY` respectively. Enable PageSpeed Insights API and Chrome UX Report API in Google Cloud, restrict the key to the enabled APIs, and check that project’s current quotas. The same raw-key secret can be referenced by both parameters. The scanner receives scoped permission to read the secrets; the API receives only their ARNs to report availability. Empty parameters leave auditing or real-user data disabled.
 - `PerplexityPreset`: defaults to `fast@2026-10-16.0`, a pinned Agent API preset. Validate this version with your account before deployment.
 - `GeminiGenerationModel`: defaults to `gemini-3.8-flash`. Validate Google Search grounding, billing and model access with your Gemini API project.
 - `GenerationModel` and `ExtractionModel`: defaults are `gpt-4.1-2025-04-14` and `gpt-6-luna`. Check availability and evaluate extraction quality with your OpenAI project before accepting them. Existing account analysis settings remain pinned until an explicit configuration rollout.
@@ -159,6 +160,8 @@ The Mentions/Tracking update additionally requires `005_url_tracking.sql`. Deplo
 
 The MCP connection update requires `006_mcp.sql` before the new API/client is published. It adds hashed credentials, OAuth records and shared rate limits. SAM configures `MCP_PUBLIC_URL` from the public API hostname and uses `FrontendOrigin` for OAuth consent. See [MCP setup, scope and protocol details](MCP.md).
 
+Website Health requires `016_website_health.sql` before publishing its API/client. Deploy the updated scanner bundle and invoke the migration operation below first. Its table stores account-scoped jobs, device results and report history; raw Google reports use the private evidence bucket. Audits run on demand, one per account, with bounded retries and recovery through the existing queue and reconciliation schedule.
+
 Run the bundled migration through the **existing scanner Lambda**. This keeps the private database inaccessible from the public internet and does not add a migration Lambda. Using the `ScannerFunctionName` stack output:
 
 ```sh
@@ -196,6 +199,7 @@ Refresh the workspace. As a system administrator, use **Accounts → New account
 - `CLOUDFORMATION_ROLE_ARN`: the separate CloudFormation execution role.
 - `ARTIFACT_BUCKET`: an existing private S3 bucket for deployment bundles in the target region.
 - `FRONTEND_ORIGIN`, `DESCOPE_PROJECT_ID`, `DESCOPE_SECRET_ARN`, `OPENAI_SECRET_ARN`, `UNSPLASH_SECRET_ARN`, `PERPLEXITY_SECRET_ARN` and `GEMINI_SECRET_ARN`: the backend parameter values above. The deployment workflow requires these settings before publishing. For an existing stack, an unset GitHub variable `UNSPLASH_SECRET_ARN` inherits the already configured stack parameter; a new deployment must provide it explicitly.
+- Optional `GOOGLE_PAGESPEED_SECRET_ARN` and `GOOGLE_CRUX_SECRET_ARN` provide Website Health secret ARNs. An unset value inherits the existing stack parameter, or remains disabled for a new stack. To disable a previously enabled integration, explicitly clear its parameter in a reviewed SAM deployment.
 - Optional `DESCOPE_BASE_URL`, `OPENAI_GENERATION_MODEL`, `OPENAI_EXTRACTION_MODEL`, `OPENAI_ONBOARDING_MODEL`, `PERPLEXITY_PRESET`, `GEMINI_GENERATION_MODEL` and `ALERT_EMAIL`.
 
 Adapt `infra/github-oidc-trust.example.json` for your account, repository, and exact GitHub environment. Bind the role trust to that exact repository/environment and `sts.amazonaws.com` audience. Do not store long-lived AWS keys in GitHub.

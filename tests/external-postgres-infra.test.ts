@@ -49,7 +49,7 @@ function resolveWorkflow(parameters: { ParameterKey: string; ParameterValue: str
   const envFile = join(directory, 'github-env');
   writeFileSync(envFile, '');
   const script = workflow.jobs.deploy.steps.find((step: CfnObject) => step.name === 'Resolve database deployment configuration').run;
-  execFileSync('bash', ['-c', script], { env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNNER_TEMP: directory, STACK_NAME: 'test-stack', AWS_REGION: 'eu-west-1', GITHUB_ENV: envFile, FAKE_PARAMETERS: JSON.stringify(parameters), DATABASE_MODE: '', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: '', MAINTENANCE_MODE: '', COMPACT_RUN_STATE: '', RETIRE_LEGACY_DATABASE: '', ANALYSIS_BATCH_ENABLED: '', ...variables }, stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync('bash', ['-c', script], { env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNNER_TEMP: directory, STACK_NAME: 'test-stack', AWS_REGION: 'eu-west-1', GITHUB_ENV: envFile, FAKE_PARAMETERS: JSON.stringify(parameters), DATABASE_MODE: '', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: '', MAINTENANCE_MODE: '', COMPACT_RUN_STATE: '', RETIRE_LEGACY_DATABASE: '', ANALYSIS_BATCH_ENABLED: '', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '', ...variables }, stdio: ['ignore', 'pipe', 'pipe'] });
   return Object.fromEntries(readFileSync(envFile, 'utf8').trim().split('\n').map((line) => { const separator = line.indexOf('='); return [line.slice(0, separator), line.slice(separator + 1)]; }));
 }
 
@@ -141,8 +141,20 @@ describe('external PostgreSQL infrastructure stages', () => {
 
 describe('database deployment workflow safeguards', () => {
   it('keeps old stacks on Aurora and inherits an already completed external cutover', () => {
-    expect(resolveWorkflow([])).toEqual({ DATABASE_MODE: 'aurora', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: 'false', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false' });
-    expect(resolveWorkflow([{ ParameterKey: 'DatabaseMode', ParameterValue: 'external' }, { ParameterKey: 'ExternalDatabaseSecretArn', ParameterValue: secret }, { ParameterKey: 'RemoveLegacyNetwork', ParameterValue: 'true' }])).toEqual({ DATABASE_MODE: 'external', EXTERNAL_DATABASE_SECRET_ARN: secret, REMOVE_LEGACY_NETWORK: 'true', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false' });
+    expect(resolveWorkflow([])).toEqual({ DATABASE_MODE: 'aurora', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: 'false', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '' });
+    expect(resolveWorkflow([{ ParameterKey: 'DatabaseMode', ParameterValue: 'external' }, { ParameterKey: 'ExternalDatabaseSecretArn', ParameterValue: secret }, { ParameterKey: 'RemoveLegacyNetwork', ParameterValue: 'true' }])).toEqual({ DATABASE_MODE: 'external', EXTERNAL_DATABASE_SECRET_ARN: secret, REMOVE_LEGACY_NETWORK: 'true', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '' });
+  });
+  it('keeps Website Health secrets optional, preserves enabled values and validates overrides', () => {
+    const configured = [{ ParameterKey: 'GooglePageSpeedSecretArn', ParameterValue: secret }, { ParameterKey: 'GoogleCruxSecretArn', ParameterValue: secret }];
+    expect(resolveWorkflow(configured)).toMatchObject({ GOOGLE_PAGESPEED_SECRET_ARN: secret, GOOGLE_CRUX_SECRET_ARN: secret });
+    const replacement = secret + '-replacement';
+    expect(resolveWorkflow(configured, { GOOGLE_PAGESPEED_SECRET_ARN: replacement }).GOOGLE_PAGESPEED_SECRET_ARN).toBe(replacement);
+    expect(() => resolveWorkflow([], { GOOGLE_PAGESPEED_SECRET_ARN: 'unsafe-inline-key' })).toThrow();
+    expect(() => resolveWorkflow([], { GOOGLE_CRUX_SECRET_ARN: secret.replace('eu-west-1', 'us-east-1') })).toThrow();
+    for (const name of ['ApiFunction', 'ScannerFunction']) expect(template.Resources[name].Properties.Environment.Variables).toMatchObject({ GOOGLE_PAGESPEED_SECRET_ARN: { Ref: 'GooglePageSpeedSecretArn' }, GOOGLE_CRUX_SECRET_ARN: { Ref: 'GoogleCruxSecretArn' } });
+    const resources = render({ GooglePageSpeedSecretArn: secret, GoogleCruxSecretArn: replacement }).resources;
+    expect(JSON.stringify(resources.ScannerFunction.Properties.Policies)).toContain(replacement);
+    expect(JSON.stringify(resources.ApiFunction.Properties.Policies)).not.toContain(replacement);
   });
   it('preserves deployed Batch admission unless explicitly overridden', () => {
     expect(workflow.jobs.deploy.env.ANALYSIS_BATCH_ENABLED).toBe('${{ vars.ANALYSIS_BATCH_ENABLED }}');

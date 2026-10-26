@@ -450,6 +450,7 @@ export interface Page<T> {
   total: number;
 }
 export type ScanMessage =
+  | { kind: 'website-health'; projectId: string; auditId: string }
   | { kind: 'agent-post'; projectId: string; postId: string }
   | {
       kind: 'kickoff';

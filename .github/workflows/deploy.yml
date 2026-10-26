@@ -42,6 +42,8 @@ jobs:
       UNSPLASH_SECRET_ARN: ${{ vars.UNSPLASH_SECRET_ARN }}
       PERPLEXITY_SECRET_ARN: ${{ vars.PERPLEXITY_SECRET_ARN }}
       GEMINI_SECRET_ARN: ${{ vars.GEMINI_SECRET_ARN }}
+      GOOGLE_PAGESPEED_SECRET_ARN: ${{ vars.GOOGLE_PAGESPEED_SECRET_ARN }}
+      GOOGLE_CRUX_SECRET_ARN: ${{ vars.GOOGLE_CRUX_SECRET_ARN }}
       PERPLEXITY_PRESET: ${{ vars.PERPLEXITY_PRESET || 'fast@2026-10-16.0' }}
       GEMINI_GENERATION_MODEL: ${{ vars.GEMINI_GENERATION_MODEL || 'gemini-3.8-flash' }}
       GENERATION_MODEL: ${{ vars.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14' }}
@@ -150,7 +152,16 @@ jobs:
             echo 'Retained Aurora cannot be reattached by clearing the retirement flag. Use a reviewed restore/import procedure.' >&2
             exit 1
           fi
-          printf '%s\n' "DATABASE_MODE=$selected_mode" "EXTERNAL_DATABASE_SECRET_ARN=$selected_secret" "REMOVE_LEGACY_NETWORK=$selected_cleanup" "MAINTENANCE_MODE=$selected_maintenance" "COMPACT_RUN_STATE=$selected_compact_state" "RETIRE_LEGACY_DATABASE=$selected_retirement" "ANALYSIS_BATCH_ENABLED=$selected_batch" >> "$GITHUB_ENV"
+          # Preserve optional Website Health credentials when a later deploy leaves its variables unset.
+          selected_pagespeed="${GOOGLE_PAGESPEED_SECRET_ARN:-$(read_parameter GooglePageSpeedSecretArn)}"
+          selected_crux="${GOOGLE_CRUX_SECRET_ARN:-$(read_parameter GoogleCruxSecretArn)}"
+          for health_secret in "$selected_pagespeed" "$selected_crux"; do
+            if [[ -n "$health_secret" && ! "$health_secret" =~ ^arn:aws[a-z-]*:secretsmanager:${AWS_REGION}:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$ ]]; then
+              echo 'Website Health credentials must be same-region Secrets Manager ARNs.' >&2
+              exit 1
+            fi
+          done
+          printf '%s\n' "DATABASE_MODE=$selected_mode" "EXTERNAL_DATABASE_SECRET_ARN=$selected_secret" "REMOVE_LEGACY_NETWORK=$selected_cleanup" "MAINTENANCE_MODE=$selected_maintenance" "COMPACT_RUN_STATE=$selected_compact_state" "RETIRE_LEGACY_DATABASE=$selected_retirement" "ANALYSIS_BATCH_ENABLED=$selected_batch" "GOOGLE_PAGESPEED_SECRET_ARN=$selected_pagespeed" "GOOGLE_CRUX_SECRET_ARN=$selected_crux" >> "$GITHUB_ENV"
       - name: Resolve shared content photo configuration
         shell: bash
         run: |
@@ -187,6 +198,8 @@ jobs:
               "UnsplashSecretArn=$UNSPLASH_SECRET_ARN" \
               "PerplexitySecretArn=$PERPLEXITY_SECRET_ARN" \
               "GeminiSecretArn=$GEMINI_SECRET_ARN" \
+              "GooglePageSpeedSecretArn=$GOOGLE_PAGESPEED_SECRET_ARN" \
+              "GoogleCruxSecretArn=$GOOGLE_CRUX_SECRET_ARN" \
               "PerplexityPreset=$PERPLEXITY_PRESET" \
               "GeminiGenerationModel=$GEMINI_GENERATION_MODEL" \
               "GenerationModel=$GENERATION_MODEL" \

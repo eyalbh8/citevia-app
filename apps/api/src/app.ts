@@ -1,5 +1,6 @@
 import { trafficRoute } from './traffic.js';
 import { agentRoute } from './agents.js';
+import { websiteHealthRoute } from './website-health.js';
 import { monitoringPeriod, monitoringRoute } from './monitoring.js';
 import { dashboardOverviewRoute } from './dashboard.js';
 import { competitorSuggestions } from './competitors.js';
@@ -74,6 +75,8 @@ export interface ApiOptions {
   providerConfigured?: boolean;
   providerAvailability?: Record<ScanProvider, boolean>;
   agentImagesConfigured?: boolean;
+  websiteHealthConfigured?: boolean;
+  cruxConfigured?: boolean;
   syncSchedule?: (project: Project) => Promise<void>;
   now?: () => Date;
 }
@@ -325,6 +328,11 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         (options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim())) &&
         (options.agentImagesConfigured ?? Boolean(process.env.UNSPLASH_ACCESS_KEY?.trim() || process.env.UNSPLASH_SECRET_ARN?.trim())), body);
       if (agent) return agent;
+      const websiteHealth = await websiteHealthRoute(runtime, project, userId, tail, request, now(), {
+        auditingAvailable: options.websiteHealthConfigured ?? Boolean(process.env.GOOGLE_PAGESPEED_API_KEY?.trim() || process.env.GOOGLE_PAGESPEED_SECRET_ARN?.trim()),
+        cruxAvailable: options.cruxConfigured ?? Boolean(process.env.GOOGLE_CRUX_API_KEY?.trim() || process.env.GOOGLE_CRUX_SECRET_ARN?.trim()),
+      }, body);
+      if (websiteHealth) return websiteHealth;
       const traffic = await trafficRoute(runtime, project, tail, request, now());
       if (traffic) return traffic;
       const monitoring = await monitoringRoute(

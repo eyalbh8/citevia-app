@@ -27,6 +27,7 @@ import {
   type PromptResult,
   type ScanMessage,
   type ScanRun,
+  type WebsiteHealthJob,
 } from '@citevia/core';
 import type {
   ArtifactStore, JobQueue, Repository, SavedAnalysisRef, SavedAnalysis,
@@ -35,6 +36,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State {
+  websiteHealthAudits?: Record<string, WebsiteHealthJob>;
   agentImages?: Record<string, {postId: string; generation: number; image: AgentImage}>;
   agentPosts?: Record<string, AgentPostJob>;
   trafficEvents?: Record<string, TrafficEvent>;
@@ -74,6 +76,39 @@ const copy = <T>(value: T): T => structuredClone(value);
 
 export class MemoryRepository implements Repository {
   protected state: State = blank();
+  getWebsiteHealthAudit(projectId: string, auditId: string) {
+    return this.operation(() => copy(this.state.websiteHealthAudits?.[key(projectId, auditId)] || null));
+  }
+  listWebsiteHealthAudits(projectId: string, offset: number, limit: number) {
+    return this.operation(() => {
+      const items = Object.values(this.state.websiteHealthAudits || {}).filter(job => job.projectId === projectId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      return { items: copy(items.slice(offset, offset + limit)), total: items.length };
+    });
+  }
+  listActiveWebsiteHealthAudits() {
+    return this.operation(() => copy(Object.values(this.state.websiteHealthAudits || {}).filter(job => ['queued', 'running'].includes(job.status))));
+  }
+  reserveWebsiteHealthAudit(job: WebsiteHealthJob, _expectedVersion: null) {
+    return this.operation((): 'saved' | 'conflict' | 'limit' => {
+      if (job.version !== 1) throw new Error('Invalid website health reservation version');
+      if (this.state.websiteHealthAudits?.[key(job.projectId, job.id)]) return 'conflict';
+      const recent = Object.values(this.state.websiteHealthAudits || {}).some(item => item.projectId === job.projectId &&
+        (['queued', 'running'].includes(item.status) || Date.parse(job.createdAt) - Date.parse(item.createdAt) < 60000));
+      if (recent) return 'limit';
+      this.state.websiteHealthAudits ||= {};
+      this.state.websiteHealthAudits[key(job.projectId, job.id)] = copy(job);
+      return 'saved';
+    }, true);
+  }
+  saveWebsiteHealthAudit(job: WebsiteHealthJob, expectedVersion: number) {
+    return this.operation(() => {
+      if (job.version !== expectedVersion + 1) throw new Error('Invalid website health audit version');
+      if (this.state.websiteHealthAudits?.[key(job.projectId, job.id)]?.version !== expectedVersion) return false;
+      this.state.websiteHealthAudits[key(job.projectId, job.id)] = copy(job);
+      return true;
+    }, true);
+  }
   reserveAgentImage(post: AgentPostJob, image?: AgentImage): Promise<AgentImage | null> {
     return this.operation(() => {
       const claims = this.state.agentImages ||= {};

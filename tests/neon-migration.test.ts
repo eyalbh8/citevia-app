@@ -36,14 +36,14 @@ describe('Neon PostgreSQL migration safety', () => {
       const callerPath = (await db.query('SHOW search_path')).rows[0].search_path;
       await migrateDatabase(db);
       expect((await db.query('SHOW search_path')).rows[0].search_path).toBe(callerPath);
-      const names = ['accounts', 'citevia_analysis_batches', 'citevia_cost_events', 'citevia_migrations', 'citevia_runs'];
+      const names = ['accounts', 'citevia_analysis_batches', 'citevia_cost_events', 'citevia_migrations', 'citevia_runs', 'citevia_website_health_audits'];
       expect((await db.query(`SELECT n.nspname AS schema,c.relname AS name FROM pg_class c
         JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relname=ANY($1::text[]) ORDER BY c.relname`, [names])).rows)
         .toEqual(names.map(name => ({ schema: 'public', name })));
-      expect((await db.query('SELECT name FROM public.citevia_migrations')).rows).toHaveLength(15);
+      expect((await db.query('SELECT name FROM public.citevia_migrations')).rows).toHaveLength(16);
       // Re-entry uses the same public ledger even when the caller has no visible schema.
       await migrateDatabase(db);
-      expect((await db.query('SELECT name FROM public.citevia_migrations')).rows).toHaveLength(15);
+      expect((await db.query('SELECT name FROM public.citevia_migrations')).rows).toHaveLength(16);
       expect((await db.query('SHOW search_path')).rows[0].search_path).toBe(callerPath);
     } finally { await db.close(); }
   }, 30000);
