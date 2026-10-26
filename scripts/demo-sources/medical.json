@@ -1,0 +1,2183 @@
+[
+  {
+    "id": "account_estepera_demo_v1",
+    "name": "Estepera Hair Transplant Clinic",
+    "website": "https://www.estepera.com/",
+    "aliases": [
+      "Estepera",
+      "EstePera",
+      "Estepera Hair Clinic"
+    ],
+    "country": "TR",
+    "language": "en",
+    "timezone": "Europe/Istanbul",
+    "industry": "Hair transplantation and restoration",
+    "serviceArea": "Istanbul, Turkey",
+    "services": [
+      "Hair transplant consultations",
+      "FUE hair transplantation",
+      "DHI hair transplantation",
+      "Unshaven hair transplantation",
+      "Female hair transplantation",
+      "Sapphire FUE hair transplantation",
+      "Afro-textured hair transplantation",
+      "Beard transplantation"
+    ],
+    "audience": [
+      "International hair restoration patients",
+      "Men and women comparing transplant options",
+      "Patients with curly or Afro-textured hair"
+    ],
+    "description": "Estepera is a hair transplant clinic in the Sisli district of Istanbul, Turkey. Its website lists FUE, DHI, Sapphire FUE, unshaven, female, Afro-textured and beard transplantation. It serves international patients with online consultations and packages that include accommodation, local transfers and interpreter support. Clinical suitability and the final treatment plan require an individual medical assessment.",
+    "criteria": [
+      "Clinician involvement and facility identity",
+      "Donor-area assessment and realistic graft planning",
+      "Experience with the patient's hair type",
+      "Written package inclusions and exclusions",
+      "Follow-up support after returning home",
+      "Individual risks and candidacy review"
+    ],
+    "competitors": [
+      {
+        "name": "Dr. Serkan Aygin Clinic",
+        "website": "https://www.drserkanaygin.com/",
+        "aliases": [
+          "Dr Serkan Aygin",
+          "Serkan Aygin"
+        ],
+        "sourceUrls": [
+          "https://www.drserkanaygin.com/"
+        ]
+      },
+      {
+        "name": "Dr. Cinik",
+        "website": "https://emrahcinik.com/",
+        "aliases": [
+          "Dr. Emrah Cinik",
+          "Cinik Hair Hospital"
+        ],
+        "sourceUrls": [
+          "https://emrahcinik.com/"
+        ]
+      },
+      {
+        "name": "Smile Hair Clinic",
+        "website": "https://www.smilehairclinic.com/en/",
+        "aliases": [
+          "Smile Hair"
+        ],
+        "sourceUrls": [
+          "https://www.smilehairclinic.com/en/"
+        ]
+      },
+      {
+        "name": "Vera Clinic",
+        "website": "https://www.veraclinic.net/",
+        "aliases": [
+          "Vera Hair Clinic"
+        ],
+        "sourceUrls": [
+          "https://www.veraclinic.net/"
+        ]
+      },
+      {
+        "name": "Cosmedica Clinic",
+        "website": "https://cosmedica.com/",
+        "aliases": [
+          "Cosmedica",
+          "Dr. Levent Acar"
+        ],
+        "sourceUrls": [
+          "https://cosmedica.com/"
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.estepera.com/",
+        "title": "Estepera Hair Transplant Clinic in Istanbul",
+        "kind": "official",
+        "claims": [
+          "Hair restoration services",
+          "International patient packages and online consultation"
+        ]
+      },
+      {
+        "url": "https://www.estepera.com/contact/",
+        "title": "Contact - Estepera Clinic",
+        "kind": "official",
+        "claims": [
+          "Clinic address in Sisli, Istanbul"
+        ]
+      },
+      {
+        "url": "https://www.estepera.com/sapphire-fue-hair-transplantation/",
+        "title": "Sapphire FUE Hair Transplantation",
+        "kind": "official",
+        "claims": [
+          "Sapphire FUE service",
+          "Medical consultation before treatment"
+        ]
+      },
+      {
+        "url": "https://www.estepera.com/direct-hair-implantation-dhi/",
+        "title": "DHI Hair Transplant Procedure",
+        "kind": "official",
+        "claims": [
+          "DHI service"
+        ]
+      },
+      {
+        "url": "https://www.estepera.com/unshaven-hair-transplant/",
+        "title": "Unshaven Hair Transplant",
+        "kind": "official",
+        "claims": [
+          "Unshaven transplantation service"
+        ]
+      },
+      {
+        "url": "https://www.estepera.com/female-hair-transplant/",
+        "title": "Female Hair Transplant",
+        "kind": "official",
+        "claims": [
+          "Female transplantation service"
+        ]
+      },
+      {
+        "url": "https://www.estepera.com/afro-hair-transplant-turkey/",
+        "title": "Afro Hair Transplant Turkey",
+        "kind": "official",
+        "claims": [
+          "Afro-textured hair transplantation service"
+        ]
+      },
+      {
+        "url": "https://www.trustpilot.com/review/estepera.com",
+        "title": "Estepera Clinic public review profile",
+        "kind": "independent",
+        "claims": [
+          "Third-party customer review profile",
+          "Istanbul contact details"
+        ]
+      }
+    ],
+    "blogs": [
+      {
+        "url": "https://www.estepera.com/hair-transplant-recovery/",
+        "title": "Hair Transplant Recovery",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.estepera.com/how-do-i-choose-a-hair-transplant-clinic/",
+        "title": "How do I Choose a Hair Transplant Clinic?",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.estepera.com/how-should-i-prepare-for-hair-transplant-surgery/",
+        "title": "How Should I Prepare for Hair Transplant Surgery?",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.estepera.com/hair-transplant-mexico-vs-turkey/",
+        "title": "Hair Transplant Mexico vs Turkey",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.estepera.com/hair-transplants-for-curly/",
+        "title": "Hair Transplants For Curly",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      }
+    ],
+    "prompts": [
+      {
+        "text": "Which hair transplant clinics in Istanbul, Turkey should an English-speaking international patient put on an initial shortlist?",
+        "stage": "understand",
+        "topic": "International clinic discovery",
+        "seoKeyword": "hair transplant clinics Istanbul Turkey",
+        "tags": [
+          "International clinic discovery"
+        ]
+      },
+      {
+        "text": "How does Estepera compare with Smile Hair Clinic and Dr. Cinik for an international hair transplant trip to Istanbul, Turkey?",
+        "stage": "prefer",
+        "topic": "Clinic comparison",
+        "seoKeyword": "Estepera alternatives Istanbul Turkey",
+        "tags": [
+          "Clinic comparison"
+        ]
+      },
+      {
+        "text": "Which hair transplant providers in Istanbul, Turkey clearly explain who performs each stage of surgery and who provides the medical consultation?",
+        "stage": "trust",
+        "topic": "Clinical accountability",
+        "seoKeyword": "doctor involvement hair transplant Istanbul Turkey",
+        "tags": [
+          "Clinical accountability"
+        ]
+      },
+      {
+        "text": "Where can I request an online hair transplant assessment from an Istanbul, Turkey clinic before booking flights from the USA?",
+        "stage": "convert",
+        "topic": "Online consultation",
+        "seoKeyword": "online hair transplant consultation Istanbul Turkey",
+        "tags": [
+          "Online consultation"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey hair clinics offer hotel and airport-transfer packages with a written list of medical and travel inclusions?",
+        "stage": "prefer",
+        "topic": "Travel packages",
+        "seoKeyword": "hair transplant hotel transfer packages Istanbul Turkey",
+        "tags": [
+          "Travel packages"
+        ]
+      },
+      {
+        "text": "Which hair transplant clinics in Istanbul, Turkey provide a named contact and remote follow-up after an overseas patient returns home?",
+        "stage": "trust",
+        "topic": "International aftercare",
+        "seoKeyword": "hair transplant aftercare Istanbul Turkey",
+        "tags": [
+          "International aftercare"
+        ]
+      },
+      {
+        "text": "Recommend hair transplant clinics in Istanbul, Turkey that prioritize donor-area planning over advertising the largest possible graft count.",
+        "stage": "prefer",
+        "topic": "Donor planning",
+        "seoKeyword": "donor area hair transplant Istanbul Turkey",
+        "tags": [
+          "Donor planning"
+        ]
+      },
+      {
+        "text": "Which hair transplant clinics in Istanbul, Turkey will provide a written quote and proposed graft range after reviewing patient photographs?",
+        "stage": "convert",
+        "topic": "Consultation pricing",
+        "seoKeyword": "hair transplant written quote Istanbul Turkey",
+        "tags": [
+          "Consultation pricing"
+        ]
+      },
+      {
+        "text": "Which clinics in Istanbul, Turkey publish detailed hair transplant patient journeys with consistent before-and-after photos and follow-up timelines?",
+        "stage": "trust",
+        "topic": "Patient evidence",
+        "seoKeyword": "hair transplant patient results Istanbul Turkey",
+        "tags": [
+          "Patient evidence"
+        ]
+      },
+      {
+        "text": "For hair restoration in Istanbul, Turkey, which providers should I compare if I care about medical oversight, clear pricing and support in English?",
+        "stage": "prefer",
+        "topic": "Value comparison",
+        "seoKeyword": "hair restoration providers Istanbul Turkey",
+        "tags": [
+          "Value comparison"
+        ]
+      },
+      {
+        "text": "Which clinics in Istanbul, Turkey offer FUE hair transplantation for a receding hairline and include a physician assessment before treatment?",
+        "stage": "understand",
+        "topic": "FUE provider discovery",
+        "seoKeyword": "FUE hair transplant clinics Istanbul Turkey",
+        "tags": [
+          "FUE provider discovery"
+        ]
+      },
+      {
+        "text": "Who are the hair transplant providers to compare in Istanbul, Turkey for conservative hairline restoration using FUE?",
+        "stage": "prefer",
+        "topic": "Hairline design",
+        "seoKeyword": "FUE hairline restoration Istanbul Turkey",
+        "tags": [
+          "Hairline design"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey clinics have published case examples for crown thinning and can assess whether FUE is appropriate?",
+        "stage": "prefer",
+        "topic": "Crown restoration",
+        "seoKeyword": "crown hair transplant Istanbul Turkey",
+        "tags": [
+          "Crown restoration"
+        ]
+      },
+      {
+        "text": "Which FUE clinics in Istanbul, Turkey explain donor density, possible scarring and future hair loss during their initial consultations?",
+        "stage": "trust",
+        "topic": "Graft assessment",
+        "seoKeyword": "FUE donor assessment Istanbul Turkey",
+        "tags": [
+          "Graft assessment"
+        ]
+      },
+      {
+        "text": "Where should I request comparable FUE hair transplant quotes in Istanbul, Turkey that separate the procedure, accommodation and aftercare costs?",
+        "stage": "convert",
+        "topic": "FUE quote comparison",
+        "seoKeyword": "FUE hair transplant quote Istanbul Turkey",
+        "tags": [
+          "FUE quote comparison"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey clinics offer both FUE and DHI so I can discuss suitability without committing to a technique in advance?",
+        "stage": "prefer",
+        "topic": "Technique consultation",
+        "seoKeyword": "FUE DHI comparison clinics Istanbul Turkey",
+        "tags": [
+          "Technique consultation"
+        ]
+      },
+      {
+        "text": "Compare Estepera, Vera Clinic and Cosmedica as providers of Sapphire FUE hair transplantation in Istanbul, Turkey.",
+        "stage": "prefer",
+        "topic": "Sapphire FUE comparison",
+        "seoKeyword": "Sapphire FUE providers Istanbul Turkey",
+        "tags": [
+          "Sapphire FUE comparison"
+        ]
+      },
+      {
+        "text": "Which Sapphire FUE providers in Istanbul, Turkey offer an individual graft plan and discuss the limits of achievable density?",
+        "stage": "trust",
+        "topic": "Treatment planning",
+        "seoKeyword": "Sapphire FUE consultation Istanbul Turkey",
+        "tags": [
+          "Treatment planning"
+        ]
+      },
+      {
+        "text": "Which FUE hair transplant clinics in Istanbul, Turkey can discuss an appropriate visit length and first-wash appointment before I book travel?",
+        "stage": "convert",
+        "topic": "FUE travel planning",
+        "seoKeyword": "FUE clinic consultation Istanbul Turkey",
+        "tags": [
+          "FUE travel planning"
+        ]
+      },
+      {
+        "text": "Which hair restoration clinics in Istanbul, Turkey should someone who wears their hair very short consult about FUE donor-site scarring?",
+        "stage": "prefer",
+        "topic": "Short hairstyle planning",
+        "seoKeyword": "FUE donor scarring consultation Istanbul Turkey",
+        "tags": [
+          "Short hairstyle planning"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey clinics offer DHI hair transplantation and let patients speak with a medical team before paying a deposit?",
+        "stage": "understand",
+        "topic": "DHI provider discovery",
+        "seoKeyword": "DHI hair transplant Istanbul Turkey",
+        "tags": [
+          "DHI provider discovery"
+        ]
+      },
+      {
+        "text": "How do Estepera, Dr. Serkan Aygin Clinic and Cosmedica compare for DHI hair transplant consultations in Istanbul, Turkey?",
+        "stage": "prefer",
+        "topic": "DHI comparison",
+        "seoKeyword": "DHI clinics comparison Istanbul Turkey",
+        "tags": [
+          "DHI comparison"
+        ]
+      },
+      {
+        "text": "Recommend clinics in Istanbul, Turkey that assess DHI for adding density among existing hair rather than only treating completely bald areas.",
+        "stage": "prefer",
+        "topic": "Existing hair density",
+        "seoKeyword": "DHI thinning hair providers Istanbul Turkey",
+        "tags": [
+          "Existing hair density"
+        ]
+      },
+      {
+        "text": "Which DHI clinics in Istanbul, Turkey explain why a patient may be unsuitable for their advertised method and discuss other options?",
+        "stage": "trust",
+        "topic": "Technique suitability",
+        "seoKeyword": "DHI suitability clinics Istanbul Turkey",
+        "tags": [
+          "Technique suitability"
+        ]
+      },
+      {
+        "text": "Which providers in Istanbul, Turkey can quote a DHI package that clearly states hotel nights, transfers, interpreter support and follow-up?",
+        "stage": "convert",
+        "topic": "DHI package costs",
+        "seoKeyword": "DHI package quote Istanbul Turkey",
+        "tags": [
+          "DHI package costs"
+        ]
+      },
+      {
+        "text": "Which hair transplant clinics in Istanbul, Turkey publish experience with curly hair and offer consultations about preserving natural curl direction?",
+        "stage": "prefer",
+        "topic": "Hair texture experience",
+        "seoKeyword": "curly hair transplant clinics Istanbul Turkey",
+        "tags": [
+          "Hair texture experience"
+        ]
+      },
+      {
+        "text": "Which clinics in Istanbul, Turkey offer a dedicated assessment for patients with Afro-textured hair seeking a transplant?",
+        "stage": "understand",
+        "topic": "Afro-textured hair discovery",
+        "seoKeyword": "Afro hair transplant Istanbul Turkey",
+        "tags": [
+          "Afro-textured hair discovery"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey hair transplant providers can show relevant Afro-textured hair cases and discuss how they assess curved follicles?",
+        "stage": "trust",
+        "topic": "Hair-type evidence",
+        "seoKeyword": "Afro FUE patient cases Istanbul Turkey",
+        "tags": [
+          "Hair-type evidence"
+        ]
+      },
+      {
+        "text": "Which clinics in Istanbul, Turkey should I compare for a beard transplant with an individual plan for growth direction and donor supply?",
+        "stage": "prefer",
+        "topic": "Beard restoration",
+        "seoKeyword": "beard transplant providers Istanbul Turkey",
+        "tags": [
+          "Beard restoration"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey providers can assess scalp hair and beard restoration goals together and explain whether treatment should be staged?",
+        "stage": "convert",
+        "topic": "Combined goals consultation",
+        "seoKeyword": "hair beard restoration consultation Istanbul Turkey",
+        "tags": [
+          "Combined goals consultation"
+        ]
+      },
+      {
+        "text": "Which clinics in Istanbul, Turkey offer unshaven hair transplantation for patients who prefer to keep their existing hairstyle?",
+        "stage": "understand",
+        "topic": "Unshaven provider discovery",
+        "seoKeyword": "unshaven hair transplant Istanbul Turkey",
+        "tags": [
+          "Unshaven provider discovery"
+        ]
+      },
+      {
+        "text": "Compare Istanbul, Turkey clinics offering unshaven FUE or DHI, including Estepera and Dr. Serkan Aygin Clinic.",
+        "stage": "prefer",
+        "topic": "Unshaven comparison",
+        "seoKeyword": "unshaven FUE DHI clinics Istanbul Turkey",
+        "tags": [
+          "Unshaven comparison"
+        ]
+      },
+      {
+        "text": "Where can I book a consultation in Istanbul, Turkey to discuss an unshaven hair transplant and the likely visible recovery period?",
+        "stage": "convert",
+        "topic": "Discreet treatment planning",
+        "seoKeyword": "unshaven consultation Istanbul Turkey",
+        "tags": [
+          "Discreet treatment planning"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey clinics explain the graft-count and donor-area limitations of an unshaven hair transplant before taking a booking?",
+        "stage": "trust",
+        "topic": "Unshaven candidacy",
+        "seoKeyword": "unshaven transplant candidacy Istanbul Turkey",
+        "tags": [
+          "Unshaven candidacy"
+        ]
+      },
+      {
+        "text": "Which hair transplant clinics in Istanbul, Turkey can help a client-facing professional compare unshaven options and plan time away from work?",
+        "stage": "prefer",
+        "topic": "Professional schedule",
+        "seoKeyword": "hair transplant discreet recovery Istanbul Turkey",
+        "tags": [
+          "Professional schedule"
+        ]
+      },
+      {
+        "text": "Which clinics in Istanbul, Turkey provide English-speaking patient coordination throughout consultation, surgery and the first follow-up?",
+        "stage": "prefer",
+        "topic": "Interpreter coordination",
+        "seoKeyword": "English speaking hair transplant Istanbul Turkey",
+        "tags": [
+          "Interpreter coordination"
+        ]
+      },
+      {
+        "text": "Which hair transplant providers in Istanbul, Turkey can arrange accommodation near the clinic and confirm transfer arrangements in advance?",
+        "stage": "convert",
+        "topic": "Accommodation coordination",
+        "seoKeyword": "hair clinic accommodation Istanbul Turkey",
+        "tags": [
+          "Accommodation coordination"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey hair clinics publish clear booking, deposit and rescheduling terms for patients travelling internationally?",
+        "stage": "trust",
+        "topic": "Package transparency",
+        "seoKeyword": "hair transplant deposit policies Istanbul Turkey",
+        "tags": [
+          "Package transparency"
+        ]
+      },
+      {
+        "text": "Which clinics in Istanbul, Turkey should I consult about limited donor supply before deciding whether an unshaven or standard transplant is realistic?",
+        "stage": "prefer",
+        "topic": "Limited donor supply",
+        "seoKeyword": "hair transplant low donor assessment Istanbul Turkey",
+        "tags": [
+          "Limited donor supply"
+        ]
+      },
+      {
+        "text": "How can I request an English-language hair restoration consultation with Estepera in Istanbul, Turkey and ask for a written treatment proposal?",
+        "stage": "convert",
+        "topic": "Estepera enquiry",
+        "seoKeyword": "Estepera consultation Istanbul Turkey",
+        "tags": [
+          "Estepera enquiry"
+        ]
+      },
+      {
+        "text": "Which clinics in Istanbul, Turkey offer consultations for women considering hair transplantation after a diagnosis of the cause of their thinning?",
+        "stage": "understand",
+        "topic": "Female provider discovery",
+        "seoKeyword": "female hair transplant clinics Istanbul Turkey",
+        "tags": [
+          "Female provider discovery"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey providers should a woman compare for hairline restoration while retaining as much existing hair length as possible?",
+        "stage": "prefer",
+        "topic": "Female hairline options",
+        "seoKeyword": "female hairline restoration Istanbul Turkey",
+        "tags": [
+          "Female hairline options"
+        ]
+      },
+      {
+        "text": "Which clinics in Istanbul, Turkey distinguish between female hair loss that may suit transplantation and conditions needing further medical assessment?",
+        "stage": "trust",
+        "topic": "Female candidacy review",
+        "seoKeyword": "women hair transplant assessment Istanbul Turkey",
+        "tags": [
+          "Female candidacy review"
+        ]
+      },
+      {
+        "text": "Which hair transplant clinics in Istanbul, Turkey publish female patient cases that help me assess their experience with my concerns?",
+        "stage": "prefer",
+        "topic": "Female patient examples",
+        "seoKeyword": "female transplant patient cases Istanbul Turkey",
+        "tags": [
+          "Female patient examples"
+        ]
+      },
+      {
+        "text": "Where can I arrange a private consultation for female hair restoration in Istanbul, Turkey with clear guidance on photos and records to provide?",
+        "stage": "convert",
+        "topic": "Women's consultation",
+        "seoKeyword": "female hair transplant consultation Istanbul Turkey",
+        "tags": [
+          "Women's consultation"
+        ]
+      },
+      {
+        "text": "Which hair restoration providers in Istanbul, Turkey offer medical assessment of hairline thinning associated with traction before recommending surgery?",
+        "stage": "prefer",
+        "topic": "Traction-related thinning",
+        "seoKeyword": "traction hair loss clinic Istanbul Turkey",
+        "tags": [
+          "Traction-related thinning"
+        ]
+      },
+      {
+        "text": "Which Istanbul, Turkey hair clinics would be suitable for a second opinion if another provider has promised very high density without discussing donor limits?",
+        "stage": "trust",
+        "topic": "Balanced clinical advice",
+        "seoKeyword": "hair transplant second opinion Istanbul Turkey",
+        "tags": [
+          "Balanced clinical advice"
+        ]
+      },
+      {
+        "text": "Recommend Istanbul, Turkey clinics with support for international female hair transplant patients, including privacy, translation and follow-up planning.",
+        "stage": "prefer",
+        "topic": "Patient support",
+        "seoKeyword": "female international hair transplant Istanbul Turkey",
+        "tags": [
+          "Patient support"
+        ]
+      },
+      {
+        "text": "Which providers in Istanbul, Turkey can supply an individualized female hair restoration quote after reviewing the diagnosis and donor area?",
+        "stage": "convert",
+        "topic": "Female treatment quote",
+        "seoKeyword": "female hair restoration quotes Istanbul Turkey",
+        "tags": [
+          "Female treatment quote"
+        ]
+      },
+      {
+        "text": "For an English-speaking visitor considering Estepera in Istanbul, Turkey, which alternative clinics are worth comparing for a personalized restoration plan?",
+        "stage": "prefer",
+        "topic": "Final shortlist",
+        "seoKeyword": "Estepera hair transplant alternatives Istanbul Turkey",
+        "tags": [
+          "Final shortlist"
+        ]
+      }
+    ],
+    "brandbook": {
+      "keyFeatures": [
+        "Istanbul-based hair restoration clinic",
+        "FUE, DHI and Sapphire FUE options",
+        "Unshaven, female and Afro-textured hair services",
+        "Online consultation for international patients",
+        "Accommodation, transfer and interpreter support in advertised packages"
+      ],
+      "toneOfVoice": [
+        "Clear",
+        "Reassuring",
+        "Practical",
+        "Respectful of individual concerns"
+      ],
+      "values": [
+        "Individual assessment",
+        "Transparent treatment planning",
+        "Continuity of patient support"
+      ],
+      "personality": [
+        "Approachable",
+        "Internationally oriented",
+        "Detail conscious"
+      ],
+      "targetAudience": [
+        "International adults researching Istanbul hair transplant clinics",
+        "Patients comparing techniques and travel packages"
+      ],
+      "industryCategory": "Healthcare",
+      "subIndustryCategory": "Hair transplantation and medical tourism",
+      "caseStudiesSourceUrl": "https://www.estepera.com/",
+      "postGuidelines": {
+        "dos": [
+          "Use verified service information and identify the location as Istanbul, Turkey.",
+          "Separate consultation questions from individual medical advice.",
+          "Encourage realistic donor planning and written package comparisons.",
+          "Identify all demo measurements and drafted articles as illustrative."
+        ],
+        "donts": [
+          "Promise hair growth, pain-free treatment, zero scarring or a guaranteed result.",
+          "Repeat clinic success percentages as independently verified clinical evidence.",
+          "Invent clinician credentials, published prices or patient stories."
+        ]
+      },
+      "unknowns": [
+        "Individual treatment prices and suitability require consultation.",
+        "Clinician participation and package terms should be confirmed directly for a proposed procedure."
+      ]
+    },
+    "copy": {
+      "introduction": "For hair restoration in Istanbul, compare clinics using donor assessment, clinician involvement, relevant patient cases and the support offered after travelling home.",
+      "positiveCompany": " is an option to compare for hair restoration in Istanbul, Turkey; confirm clinician involvement, the proposed treatment plan and follow-up directly.",
+      "neutralCompany": " can be considered when comparing hair restoration providers in Istanbul, Turkey; verify the relevant service, medical team and written terms.",
+      "fallback": "Request individualized proposals from several Istanbul clinics and compare medical assessment, realistic graft planning, inclusions and aftercare before booking."
+    },
+    "profile": {
+      "visibilityAdjustment": -0.02,
+      "growthCurve": 1.12,
+      "trafficScale": 0.9,
+      "monthlyGrowth": 0.1
+    },
+    "traffic": {
+      "pages": [
+        "/",
+        "/direct-hair-implantation-dhi/",
+        "/sapphire-fue-hair-transplantation/",
+        "/unshaven-hair-transplant/",
+        "/female-hair-transplant/",
+        "/afro-hair-transplant-turkey/",
+        "/hair-transplant-recovery/",
+        "/contact/"
+      ],
+      "countries": [
+        "GB",
+        "US",
+        "DE",
+        "FR",
+        "IT",
+        "TR"
+      ],
+      "devices": [
+        "mobile",
+        "desktop",
+        "tablet"
+      ],
+      "browsers": [
+        "Chrome",
+        "Safari",
+        "Edge",
+        "Firefox"
+      ]
+    },
+    "anchorDate": "2026-10-26"
+  },
+  {
+    "id": "account_tend_nyc_demo_v1",
+    "name": "Tend Dental",
+    "website": "https://www.hellotend.com/",
+    "aliases": [
+      "Tend",
+      "Tend NYC",
+      "Tend Dental Studios"
+    ],
+    "country": "US",
+    "language": "en",
+    "timezone": "America/New_York",
+    "industry": "Dental clinics and oral healthcare",
+    "serviceArea": "New York City, USA",
+    "services": [
+      "Dental exams and cleanings",
+      "Invisalign and SimplyClear orthodontics",
+      "Porcelain veneers",
+      "Dental implant treatment",
+      "Emergency dental care",
+      "Professional teeth whitening",
+      "Root canal treatment",
+      "Wisdom tooth extraction",
+      "Dental IV sedation",
+      "Gum disease treatment"
+    ],
+    "audience": [
+      "NYC adults and families",
+      "Busy professionals",
+      "Patients seeking cosmetic or restorative care",
+      "People with dental anxiety"
+    ],
+    "description": "Tend Dental operates dental studios across New York City and other US markets. Its NYC offering includes exams, cleanings, emergency care, clear aligners, veneers, implants and specialty treatments. The brand emphasizes a judgment-free experience, online booking, convenient neighborhood locations and help navigating PPO insurance and financing. The demo is focused on New York City rather than the entire national network.",
+    "criteria": [
+      "Location and appointment availability",
+      "Clinician qualifications and relevant treatment experience",
+      "Clear treatment choices and written estimates",
+      "Insurance participation confirmed for the individual plan",
+      "Patient comfort and anxiety support",
+      "Coordination between general and specialist care"
+    ],
+    "competitors": [
+      {
+        "name": "Dntl Bar",
+        "website": "https://www.dntlbar.com/",
+        "aliases": [
+          "dntl bar"
+        ],
+        "sourceUrls": [
+          "https://www.dntlbar.com/locations/"
+        ]
+      },
+      {
+        "name": "The Smilist Dental",
+        "website": "https://thesmilist.com/",
+        "aliases": [
+          "The Smilist"
+        ],
+        "sourceUrls": [
+          "https://thesmilist.com/dentist-locations/nyc/"
+        ]
+      },
+      {
+        "name": "Lumia Dental",
+        "website": "https://www.lumiadental.com/",
+        "aliases": [],
+        "sourceUrls": [
+          "https://www.lumiadental.com/"
+        ]
+      },
+      {
+        "name": "209 NYC Dental",
+        "website": "https://www.209nycdental.com/",
+        "aliases": [],
+        "sourceUrls": [
+          "https://www.209nycdental.com/"
+        ]
+      },
+      {
+        "name": "Tribeca Dental Studio",
+        "website": "https://www.tribecadentalstudio.com/",
+        "aliases": [],
+        "sourceUrls": [
+          "https://www.tribecadentalstudio.com/services/"
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.hellotend.com/site/home",
+        "title": "Modern, Judgment-Free Dental Care | Tend Dental",
+        "kind": "official",
+        "claims": [
+          "General, cosmetic and specialty service menu",
+          "Patient booking and payment information"
+        ]
+      },
+      {
+        "url": "https://www.hellotend.com/site/dentist-studios/new-york-city",
+        "title": "Find a Trusted Dentist in New York City",
+        "kind": "official",
+        "claims": [
+          "New York City studios",
+          "NYC services and insurance information"
+        ]
+      },
+      {
+        "url": "https://www.hellotend.com/site/about",
+        "title": "About Our Tend Studios",
+        "kind": "official",
+        "claims": [
+          "Patient experience, technology and clear aligner offering"
+        ]
+      },
+      {
+        "url": "https://www.hellotend.com/site/sitemap",
+        "title": "Tend Sitemap",
+        "kind": "official",
+        "claims": [
+          "Verified service and location page inventory"
+        ]
+      },
+      {
+        "url": "https://qns.com/2024/10/tech-dental-studio-tend-lic-location/",
+        "title": "Tech-driven dental studio Tend opens in Long Island City",
+        "kind": "independent",
+        "claims": [
+          "Independent coverage of Tend's Long Island City studio opening",
+          "General and specialty dental care offering"
+        ]
+      }
+    ],
+    "blogs": [
+      {
+        "url": "https://www.hellotend.com/site/blog/2026/04/06/braces-for-teens-options-guide",
+        "title": "Braces for Teens: Comparing Traditional Braces, Ceramic & Clear Aligners",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.hellotend.com/site/blog/2026/03/30/wisdom-teeth-removal-teens",
+        "title": "Wisdom Teeth Extractions in Teens: What Parents Should Know",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.hellotend.com/site/blog/2026/03/30/treatment-information-invisalign-clear-aligners",
+        "title": "Treatment Information: Invisalign Clear Aligners",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.hellotend.com/site/blog/2026/05/15/why-are-my-gums-bleeding",
+        "title": "Why Are My Gums Bleeding?",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.hellotend.com/site/blog/2026/04/30/how-often-should-you-floss",
+        "title": "How Often Should You Floss? A Dentist’s Guide",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      }
+    ],
+    "prompts": [
+      {
+        "text": "Which dental clinics in New York City, USA should a new resident compare for regular exams, cleanings and ongoing care?",
+        "stage": "understand",
+        "topic": "Local dentist discovery",
+        "seoKeyword": "dental clinics New York City USA",
+        "tags": [
+          "Local dentist discovery"
+        ]
+      },
+      {
+        "text": "Recommend dental practices in New York City, USA with early morning, evening or Saturday appointments for someone working full time.",
+        "stage": "prefer",
+        "topic": "Convenient appointments",
+        "seoKeyword": "evening Saturday dentist New York City USA",
+        "tags": [
+          "Convenient appointments"
+        ]
+      },
+      {
+        "text": "Which dentists in New York City, USA have a documented approach to helping patients who feel anxious and have avoided dental visits for years?",
+        "stage": "trust",
+        "topic": "Dental anxiety",
+        "seoKeyword": "judgment free dentist New York City USA",
+        "tags": [
+          "Dental anxiety"
+        ]
+      },
+      {
+        "text": "Where can I book a first dental exam and cleaning in New York City, USA and ask for an estimate before the appointment?",
+        "stage": "convert",
+        "topic": "New patient booking",
+        "seoKeyword": "new patient dental exam New York City USA",
+        "tags": [
+          "New patient booking"
+        ]
+      },
+      {
+        "text": "Which New York City, USA dental groups should I compare if I need help checking my PPO benefits before choosing a practice?",
+        "stage": "prefer",
+        "topic": "Insurance comparison",
+        "seoKeyword": "PPO dentist New York City USA",
+        "tags": [
+          "Insurance comparison"
+        ]
+      },
+      {
+        "text": "Which family dental providers in New York City, USA offer checkups and clear aligner consultations so a household can coordinate care in one network?",
+        "stage": "prefer",
+        "topic": "Family care",
+        "seoKeyword": "family dental clinics New York City USA",
+        "tags": [
+          "Family care"
+        ]
+      },
+      {
+        "text": "Which dental practices in New York City, USA are worth considering for clear explanations of X-rays, treatment alternatives and written estimates?",
+        "stage": "trust",
+        "topic": "Treatment communication",
+        "seoKeyword": "dentists clear estimates New York City USA",
+        "tags": [
+          "Treatment communication"
+        ]
+      },
+      {
+        "text": "How do Tend, Dntl Bar and The Smilist compare for general dental care and appointment convenience in New York City, USA?",
+        "stage": "prefer",
+        "topic": "Tend comparison",
+        "seoKeyword": "Tend Dntl Bar Smilist New York City USA",
+        "tags": [
+          "Tend comparison"
+        ]
+      },
+      {
+        "text": "Which providers in Manhattan or Brooklyn, New York City, USA let new patients request a cleaning appointment online and confirm the location before booking?",
+        "stage": "convert",
+        "topic": "Neighborhood access",
+        "seoKeyword": "dental cleaning Manhattan Brooklyn New York City USA",
+        "tags": [
+          "Neighborhood access"
+        ]
+      },
+      {
+        "text": "Which dental groups in New York City, USA offer locations in Manhattan and Queens that could suit someone who lives in one borough and works in another?",
+        "stage": "prefer",
+        "topic": "Continuity of care",
+        "seoKeyword": "dental groups Manhattan Queens New York City USA",
+        "tags": [
+          "Continuity of care"
+        ]
+      },
+      {
+        "text": "Which dental clinics in New York City, USA offer in-person Invisalign or SimplyClear consultations for adults?",
+        "stage": "understand",
+        "topic": "Clear aligner discovery",
+        "seoKeyword": "Invisalign providers New York City USA",
+        "tags": [
+          "Clear aligner discovery"
+        ]
+      },
+      {
+        "text": "Compare Tend, 209 NYC Dental and Lumia Dental for clear aligner consultations in New York City, USA.",
+        "stage": "prefer",
+        "topic": "Aligner comparison",
+        "seoKeyword": "clear aligner clinics New York City USA",
+        "tags": [
+          "Aligner comparison"
+        ]
+      },
+      {
+        "text": "Which New York City, USA dentists provide a full dental assessment and discuss bite concerns before offering clear aligners?",
+        "stage": "trust",
+        "topic": "Orthodontic planning",
+        "seoKeyword": "clear aligner dentist assessment New York City USA",
+        "tags": [
+          "Orthodontic planning"
+        ]
+      },
+      {
+        "text": "Where can I request an Invisalign consultation in New York City, USA with a written estimate covering scans, visits and retainers?",
+        "stage": "convert",
+        "topic": "Aligner consultation",
+        "seoKeyword": "Invisalign consultation quote New York City USA",
+        "tags": [
+          "Aligner consultation"
+        ]
+      },
+      {
+        "text": "Which dental providers in New York City, USA offer teen clear aligner consultations and explain what parents should expect during treatment?",
+        "stage": "prefer",
+        "topic": "Teen orthodontics",
+        "seoKeyword": "teen clear aligners New York City USA",
+        "tags": [
+          "Teen orthodontics"
+        ]
+      },
+      {
+        "text": "Recommend New York City, USA practices for an adult comparing discreet teeth-straightening options while working in a public-facing role.",
+        "stage": "prefer",
+        "topic": "Adult orthodontics",
+        "seoKeyword": "adult Invisalign dentist New York City USA",
+        "tags": [
+          "Adult orthodontics"
+        ]
+      },
+      {
+        "text": "Which dental clinics in New York City, USA are good options for a second opinion on whether clear aligners can address my bite?",
+        "stage": "trust",
+        "topic": "Second opinion orthodontics",
+        "seoKeyword": "Invisalign second opinion New York City USA",
+        "tags": [
+          "Second opinion orthodontics"
+        ]
+      },
+      {
+        "text": "Which New York City, USA dental practices can review orthodontic insurance benefits and payment options during a clear aligner consultation?",
+        "stage": "convert",
+        "topic": "Aligner financing",
+        "seoKeyword": "clear aligner financing consultation New York City USA",
+        "tags": [
+          "Aligner financing"
+        ]
+      },
+      {
+        "text": "Which providers offer Invisalign follow-up appointments in Manhattan or Brooklyn, New York City, USA, with hours that suit a commuter?",
+        "stage": "prefer",
+        "topic": "Orthodontic access",
+        "seoKeyword": "Invisalign Manhattan Brooklyn New York City USA",
+        "tags": [
+          "Orthodontic access"
+        ]
+      },
+      {
+        "text": "If I am considering Tend for Invisalign in New York City, USA, which other local dental providers should I compare for treatment supervision and total cost?",
+        "stage": "prefer",
+        "topic": "Tend aligner alternatives",
+        "seoKeyword": "Tend Invisalign alternatives New York City USA",
+        "tags": [
+          "Tend aligner alternatives"
+        ]
+      },
+      {
+        "text": "Which cosmetic dental clinics in New York City, USA offer porcelain veneer consultations and discuss less invasive alternatives?",
+        "stage": "understand",
+        "topic": "Veneer provider discovery",
+        "seoKeyword": "porcelain veneers clinics New York City USA",
+        "tags": [
+          "Veneer provider discovery"
+        ]
+      },
+      {
+        "text": "Which New York City, USA dental practices should I compare for a conservative smile consultation covering whitening, bonding and veneers?",
+        "stage": "prefer",
+        "topic": "Conservative cosmetic care",
+        "seoKeyword": "cosmetic dentist veneers bonding New York City USA",
+        "tags": [
+          "Conservative cosmetic care"
+        ]
+      },
+      {
+        "text": "Which dentists in New York City, USA publish relevant veneer case examples and explain how treatment is planned for an individual smile?",
+        "stage": "trust",
+        "topic": "Cosmetic case evidence",
+        "seoKeyword": "veneer patient cases New York City USA",
+        "tags": [
+          "Cosmetic case evidence"
+        ]
+      },
+      {
+        "text": "Where can I get a porcelain veneer consultation in New York City, USA with an itemized proposal and an explanation of follow-up care?",
+        "stage": "convert",
+        "topic": "Veneer quote",
+        "seoKeyword": "porcelain veneer consultation quote New York City USA",
+        "tags": [
+          "Veneer quote"
+        ]
+      },
+      {
+        "text": "Which dental clinics in New York City, USA offer professional teeth whitening with a dentist assessment rather than only selling a whitening product?",
+        "stage": "prefer",
+        "topic": "Whitening providers",
+        "seoKeyword": "professional teeth whitening New York City USA",
+        "tags": [
+          "Whitening providers"
+        ]
+      },
+      {
+        "text": "How do Tend and Tribeca Dental Studio compare as options for a cosmetic dental consultation in New York City, USA?",
+        "stage": "prefer",
+        "topic": "Cosmetic comparison",
+        "seoKeyword": "Tend Tribeca Dental Studio cosmetic New York City USA",
+        "tags": [
+          "Cosmetic comparison"
+        ]
+      },
+      {
+        "text": "Which New York City, USA dentists assess tooth sensitivity and existing restorations before recommending a whitening treatment?",
+        "stage": "trust",
+        "topic": "Sensitivity assessment",
+        "seoKeyword": "teeth whitening sensitive teeth New York City USA",
+        "tags": [
+          "Sensitivity assessment"
+        ]
+      },
+      {
+        "text": "Which providers in New York City, USA can assess professional whitening options before a wedding and explain an appropriate appointment timeline?",
+        "stage": "convert",
+        "topic": "Event planning",
+        "seoKeyword": "teeth whitening appointment New York City USA",
+        "tags": [
+          "Event planning"
+        ]
+      },
+      {
+        "text": "Recommend dental practices in New York City, USA that can compare clear aligners and veneers for someone concerned about both spacing and appearance.",
+        "stage": "prefer",
+        "topic": "Combined cosmetic goals",
+        "seoKeyword": "aligners veneers consultation New York City USA",
+        "tags": [
+          "Combined cosmetic goals"
+        ]
+      },
+      {
+        "text": "Which dentists in New York City, USA offer a second opinion on a proposed smile makeover with a discussion of preserving healthy tooth structure?",
+        "stage": "trust",
+        "topic": "Restorative second opinion",
+        "seoKeyword": "cosmetic dental second opinion New York City USA",
+        "tags": [
+          "Restorative second opinion"
+        ]
+      },
+      {
+        "text": "Which clinics in New York City, USA provide dental implant consultations for someone replacing a single missing tooth?",
+        "stage": "understand",
+        "topic": "Implant provider discovery",
+        "seoKeyword": "dental implant clinics New York City USA",
+        "tags": [
+          "Implant provider discovery"
+        ]
+      },
+      {
+        "text": "Compare Tend, 209 NYC Dental and Tribeca Dental Studio for dental implant assessment and coordination of restorative care in New York City, USA.",
+        "stage": "prefer",
+        "topic": "Implant comparison",
+        "seoKeyword": "dental implants Tend 209 NYC New York City USA",
+        "tags": [
+          "Implant comparison"
+        ]
+      },
+      {
+        "text": "Which New York City, USA dental providers explain imaging, gum health and bone assessment before proposing implant treatment?",
+        "stage": "trust",
+        "topic": "Implant planning",
+        "seoKeyword": "dental implant imaging consultation New York City USA",
+        "tags": [
+          "Implant planning"
+        ]
+      },
+      {
+        "text": "Where can I request a dental implant estimate in New York City, USA that clearly separates the implant, abutment, crown and any additional procedures?",
+        "stage": "convert",
+        "topic": "Implant estimate",
+        "seoKeyword": "dental implant itemized quote New York City USA",
+        "tags": [
+          "Implant estimate"
+        ]
+      },
+      {
+        "text": "Which dental practices in New York City, USA can compare an implant and a bridge for a missing tooth during an in-person consultation?",
+        "stage": "prefer",
+        "topic": "Restorative alternatives",
+        "seoKeyword": "implant bridge consultation New York City USA",
+        "tags": [
+          "Restorative alternatives"
+        ]
+      },
+      {
+        "text": "Which New York City, USA dental clinics coordinate implant surgery and the final restoration with named clinicians and a clear follow-up plan?",
+        "stage": "trust",
+        "topic": "Specialist coordination",
+        "seoKeyword": "dental implant specialist care New York City USA",
+        "tags": [
+          "Specialist coordination"
+        ]
+      },
+      {
+        "text": "Recommend New York City, USA clinics where a patient can discuss dental anxiety and sedation options when considering implant treatment.",
+        "stage": "prefer",
+        "topic": "Patient comfort",
+        "seoKeyword": "sedation implant dentist New York City USA",
+        "tags": [
+          "Patient comfort"
+        ]
+      },
+      {
+        "text": "Which dental providers in New York City, USA offer a consultation with both clinical planning and a review of implant payment options?",
+        "stage": "convert",
+        "topic": "Implant payment planning",
+        "seoKeyword": "dental implant financing New York City USA",
+        "tags": [
+          "Implant payment planning"
+        ]
+      },
+      {
+        "text": "Which multi-specialty dental practices in New York City, USA can assess whether a damaged tooth may be saved before recommending an implant?",
+        "stage": "prefer",
+        "topic": "Root canal assessment",
+        "seoKeyword": "root canal or implant dentist New York City USA",
+        "tags": [
+          "Root canal assessment"
+        ]
+      },
+      {
+        "text": "Which clinics in New York City, USA are suitable for a second opinion on a dental implant plan that includes extractions or bone grafting?",
+        "stage": "trust",
+        "topic": "Implant second opinion",
+        "seoKeyword": "dental implant second opinion New York City USA",
+        "tags": [
+          "Implant second opinion"
+        ]
+      },
+      {
+        "text": "Which dental clinics in New York City, USA accept requests for urgent appointments for a broken tooth or lost crown?",
+        "stage": "understand",
+        "topic": "Urgent care discovery",
+        "seoKeyword": "emergency dental clinics New York City USA",
+        "tags": [
+          "Urgent care discovery"
+        ]
+      },
+      {
+        "text": "Which providers in New York City, USA can I contact for a same-day dental assessment and an upfront explanation of emergency visit charges?",
+        "stage": "convert",
+        "topic": "Urgent appointment",
+        "seoKeyword": "same day emergency dentist New York City USA",
+        "tags": [
+          "Urgent appointment"
+        ]
+      },
+      {
+        "text": "How do Tend, Dntl Bar and 209 NYC Dental compare for access to emergency dental appointments in New York City, USA?",
+        "stage": "prefer",
+        "topic": "Emergency network comparison",
+        "seoKeyword": "Tend Dntl Bar emergency dentist New York City USA",
+        "tags": [
+          "Emergency network comparison"
+        ]
+      },
+      {
+        "text": "Which dental practices in New York City, USA offer root canal assessment and can explain whether treatment is provided on site or referred to a specialist?",
+        "stage": "trust",
+        "topic": "Root canal access",
+        "seoKeyword": "root canal providers New York City USA",
+        "tags": [
+          "Root canal access"
+        ]
+      },
+      {
+        "text": "Which clinics in New York City, USA provide wisdom tooth consultations with imaging review and a discussion of sedation choices?",
+        "stage": "prefer",
+        "topic": "Wisdom tooth consultation",
+        "seoKeyword": "wisdom tooth removal clinics New York City USA",
+        "tags": [
+          "Wisdom tooth consultation"
+        ]
+      },
+      {
+        "text": "Where can I request a wisdom tooth removal consultation in New York City, USA and confirm the consultation fee and insurance requirements?",
+        "stage": "convert",
+        "topic": "Oral surgery booking",
+        "seoKeyword": "wisdom tooth consultation booking New York City USA",
+        "tags": [
+          "Oral surgery booking"
+        ]
+      },
+      {
+        "text": "Which New York City, USA dental practices offer periodontal assessment and clearly distinguish routine cleanings from proposed gum disease treatment?",
+        "stage": "trust",
+        "topic": "Gum treatment comparison",
+        "seoKeyword": "gum disease treatment dentist New York City USA",
+        "tags": [
+          "Gum treatment comparison"
+        ]
+      },
+      {
+        "text": "Which dental providers in New York City, USA offer IV sedation consultations and explain the clinical team and preparation requirements?",
+        "stage": "prefer",
+        "topic": "Sedation discovery",
+        "seoKeyword": "IV sedation dentistry New York City USA",
+        "tags": [
+          "Sedation discovery"
+        ]
+      },
+      {
+        "text": "How can a new patient contact Tend in New York City, USA to confirm a studio location, insurance participation and availability for an initial exam?",
+        "stage": "convert",
+        "topic": "Tend new patient enquiry",
+        "seoKeyword": "Tend dental appointment New York City USA",
+        "tags": [
+          "Tend new patient enquiry"
+        ]
+      },
+      {
+        "text": "Which full-service dental groups in New York City, USA should I compare if I want routine care, urgent access and specialist treatment coordinated over time?",
+        "stage": "prefer",
+        "topic": "Long-term dental choice",
+        "seoKeyword": "full service dentists New York City USA",
+        "tags": [
+          "Long-term dental choice"
+        ]
+      }
+    ],
+    "brandbook": {
+      "keyFeatures": [
+        "Dental studios across NYC neighborhoods",
+        "General, cosmetic and specialty dentistry",
+        "Invisalign and SimplyClear clear aligner options",
+        "Online appointment requests",
+        "Insurance and payment guidance",
+        "Comfort-focused patient experience"
+      ],
+      "toneOfVoice": [
+        "Friendly",
+        "Plain spoken",
+        "Judgment free",
+        "Informative"
+      ],
+      "values": [
+        "Patient comfort",
+        "Preventive care",
+        "Convenient access",
+        "Clear communication"
+      ],
+      "personality": [
+        "Modern",
+        "Welcoming",
+        "Practical"
+      ],
+      "targetAudience": [
+        "NYC residents and working professionals",
+        "Families comparing dental care options",
+        "Patients returning to dental care after a long gap"
+      ],
+      "industryCategory": "Healthcare",
+      "subIndustryCategory": "Multi-location general and specialty dentistry",
+      "sitemapUrl": "https://www.hellotend.com/site/sitemap",
+      "postGuidelines": {
+        "dos": [
+          "Keep geographic recommendations focused on New York City.",
+          "State that appointment availability and insurance benefits require confirmation.",
+          "Explain clinical alternatives and estimates without recommending treatment for an individual.",
+          "Use a supportive tone for anxious patients."
+        ],
+        "donts": [
+          "Promise pain-free treatment, a particular cosmetic result or insurance coverage.",
+          "Imply every specialty is available in every NYC studio.",
+          "Invent discounts, fees, reviews or clinician qualifications."
+        ]
+      },
+      "unknowns": [
+        "Exact appointment availability and participating clinicians vary by studio.",
+        "Insurance coverage and treatment prices depend on the patient's plan and clinical assessment."
+      ]
+    },
+    "copy": {
+      "introduction": "For dental care in New York City, compare access, communication, treatment experience and costs alongside the location of the practice.",
+      "positiveCompany": " is an option to compare for dental care in New York City, USA; confirm the relevant clinician, appointment access, treatment estimate and insurance terms.",
+      "neutralCompany": " can be considered when comparing dental providers in New York City, USA; verify the location, relevant services, clinician and expected payment directly.",
+      "fallback": "Contact several New York City practices to compare the proposed treatment, appointment access, clinician responsibilities and your expected payment before choosing."
+    },
+    "profile": {
+      "visibilityAdjustment": 0.06,
+      "growthCurve": 1.03,
+      "trafficScale": 1.35,
+      "monthlyGrowth": 0.08
+    },
+    "traffic": {
+      "pages": [
+        "/site/home",
+        "/site/dentist-studios/new-york-city",
+        "/site/about",
+        "/site/blog/2026/04/06/braces-for-teens-options-guide",
+        "/site/blog/2026/03/30/wisdom-teeth-removal-teens",
+        "/site/blog/2026/03/30/treatment-information-invisalign-clear-aligners",
+        "/site/blog/2026/05/15/why-are-my-gums-bleeding"
+      ],
+      "countries": [
+        "US",
+        "CA",
+        "GB",
+        "AU"
+      ],
+      "devices": [
+        "mobile",
+        "desktop",
+        "tablet"
+      ],
+      "browsers": [
+        "Safari",
+        "Chrome",
+        "Edge",
+        "Firefox"
+      ]
+    },
+    "anchorDate": "2026-10-26"
+  },
+  {
+    "id": "account_pfcla_la_demo_v1",
+    "name": "Pacific Fertility Center Los Angeles",
+    "website": "https://www.pfcla.com/",
+    "aliases": [
+      "PFCLA",
+      "Pacific Fertility Center of Los Angeles"
+    ],
+    "country": "US",
+    "language": "en",
+    "timezone": "America/Los_Angeles",
+    "industry": "IVF, fertility care and gestational surrogacy",
+    "serviceArea": "Los Angeles, California, USA",
+    "services": [
+      "In vitro fertilization (IVF)",
+      "Gestational surrogacy with partner agency coordination",
+      "Donor egg IVF",
+      "Egg freezing",
+      "LGBTQ+ family building",
+      "Frozen embryo transfer",
+      "Embryo freezing",
+      "Intracytoplasmic sperm injection (ICSI)",
+      "Preimplantation genetic testing",
+      "Intrauterine insemination (IUI)"
+    ],
+    "audience": [
+      "Local and international intended parents",
+      "LGBTQ+ individuals and couples",
+      "People considering IVF, surrogacy or egg freezing"
+    ],
+    "description": "Pacific Fertility Center Los Angeles (PFCLA) is a fertility practice with locations in Westwood, Los Angeles and Glendale, California. Its published services include IVF, egg freezing, donor egg treatment, frozen embryo transfer and third-party reproduction. PFCLA coordinates gestational surrogacy care with agencies and identifies Hatch Fertility as its preferred surrogacy partner. It supports local and international patients, including LGBTQ+ intended parents. Surrogate matching and agency services are distinct from the clinic's medical IVF care.",
+    "criteria": [
+      "Individual diagnosis and treatment suitability",
+      "Relevant experience with donor and gestational carrier cycles",
+      "Clear separation of clinic, agency and legal responsibilities",
+      "Transparent package inclusions and additional costs",
+      "Laboratory and embryo-handling processes",
+      "Care coordination for local and international patients"
+    ],
+    "competitors": [
+      {
+        "name": "Southern California Reproductive Center",
+        "website": "https://www.scrcivf.com/",
+        "aliases": [
+          "SCRC"
+        ],
+        "sourceUrls": [
+          "https://www.scrcivf.com/treatment-options/donor-surrogacy/"
+        ]
+      },
+      {
+        "name": "HRC Fertility",
+        "website": "https://havingbabies.com/",
+        "aliases": [
+          "HRC"
+        ],
+        "sourceUrls": [
+          "https://havingbabies.com/"
+        ]
+      },
+      {
+        "name": "Pinnacle Fertility Los Angeles",
+        "website": "https://www.pinnaclefertility.com/location/los-angeles-ca/",
+        "aliases": [
+          "California Fertility Partners",
+          "CFP"
+        ],
+        "sourceUrls": [
+          "https://www.pinnaclefertility.com/location/los-angeles-ca/"
+        ]
+      },
+      {
+        "name": "The Center for Fertility and Gynecology",
+        "website": "https://www.center4fertility.com/",
+        "aliases": [
+          "Center for Fertility and Gynecology"
+        ],
+        "sourceUrls": [
+          "https://www.center4fertility.com/services/surrogacy/"
+        ]
+      },
+      {
+        "name": "Los Angeles Reproductive Center",
+        "website": "https://www.losangelesreproductivecenter.com/",
+        "aliases": [
+          "LARC"
+        ],
+        "sourceUrls": [
+          "https://www.losangelesreproductivecenter.com/"
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.pfcla.com/",
+        "title": "Pacific Fertility Center Los Angeles",
+        "kind": "official",
+        "claims": [
+          "Westwood and Glendale locations",
+          "Local and international patient services"
+        ]
+      },
+      {
+        "url": "https://www.pfcla.com/fertility-services/in-vitro-fertilization-ivf",
+        "title": "In Vitro Fertilization (IVF)",
+        "kind": "official",
+        "claims": [
+          "IVF treatment offering"
+        ]
+      },
+      {
+        "url": "https://www.pfcla.com/fertility-services/surrogacy",
+        "title": "Surrogacy | Pacific Fertility Center Los Angeles",
+        "kind": "official",
+        "claims": [
+          "Gestational surrogacy medical care",
+          "Hatch identified as preferred surrogacy partner"
+        ]
+      },
+      {
+        "url": "https://www.pfcla.com/fertility-services/lgbtq",
+        "title": "LGBTQ+ IVF | Pacific Fertility Center Los Angeles",
+        "kind": "official",
+        "claims": [
+          "Third-party and reciprocal IVF",
+          "Agency-supported egg donor and surrogate matching"
+        ]
+      },
+      {
+        "url": "https://www.pfcla.com/fertility-services/egg-freezing",
+        "title": "Egg Freezing | Pacific Fertility Center Los Angeles",
+        "kind": "official",
+        "claims": [
+          "Egg freezing service"
+        ]
+      },
+      {
+        "url": "https://www.pfcla.com/pricing",
+        "title": "Fertility Pricing & Insurance",
+        "kind": "official",
+        "claims": [
+          "Donor egg IVF, ICSI, IUI and frozen embryo services",
+          "Financial coordination and treatment package descriptions"
+        ]
+      },
+      {
+        "url": "https://www.surrogacyadvisor.org/providers/78",
+        "title": "Pacific Fertility Center of Los Angeles | Surrogacy Advisor",
+        "kind": "independent",
+        "claims": [
+          "Independent provider directory listing",
+          "Medical IVF and gestational carrier service categories"
+        ]
+      }
+    ],
+    "blogs": [
+      {
+        "url": "https://www.pfcla.com/blog/ivf-costs-california",
+        "title": "IVF Cost in California | Pacific Fertility Center of LA Blog",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.pfcla.com/blog/how-many-eggs-should-you-freeze-for-ivf",
+        "title": "How Many Eggs Do You Need to Freeze for IVF",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.pfcla.com/blog/embryo-genetic-testing",
+        "title": "Step-By-Step Explanation of Embryo Genetic Testing",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      },
+      {
+        "url": "https://www.pfcla.com/blog/types-of-pgt-testing",
+        "title": "What Are the 3 Main Types of PGT Testing for Embryos",
+        "contentType": "BLOG",
+        "sourceTrackedAt": "2026-10-26T09:00:00Z"
+      }
+    ],
+    "prompts": [
+      {
+        "text": "Which IVF clinics in Los Angeles, California, USA should a couple compare for an initial fertility evaluation and personalized treatment plan?",
+        "stage": "understand",
+        "topic": "IVF clinic discovery",
+        "seoKeyword": "IVF fertility clinics Los Angeles California USA",
+        "tags": [
+          "IVF clinic discovery"
+        ]
+      },
+      {
+        "text": "How do PFCLA, HRC Fertility and Southern California Reproductive Center compare as IVF providers in Los Angeles, California, USA?",
+        "stage": "prefer",
+        "topic": "IVF clinic comparison",
+        "seoKeyword": "PFCLA HRC SCRC Los Angeles California USA",
+        "tags": [
+          "IVF clinic comparison"
+        ]
+      },
+      {
+        "text": "Which fertility clinics in Los Angeles, California, USA offer a second opinion on an IVF plan and explain the rationale for additional tests or procedures?",
+        "stage": "trust",
+        "topic": "Clinical decision making",
+        "seoKeyword": "IVF second opinion Los Angeles California USA",
+        "tags": [
+          "Clinical decision making"
+        ]
+      },
+      {
+        "text": "Where can I request a first IVF consultation in Los Angeles, California, USA and confirm which medical records to send beforehand?",
+        "stage": "convert",
+        "topic": "IVF consultation booking",
+        "seoKeyword": "IVF consultation Los Angeles California USA",
+        "tags": [
+          "IVF consultation booking"
+        ]
+      },
+      {
+        "text": "Which Los Angeles, California, USA fertility practices can assess both IUI and IVF so I can compare suitable treatment pathways with a clinician?",
+        "stage": "prefer",
+        "topic": "Treatment alternatives",
+        "seoKeyword": "IUI IVF providers Los Angeles California USA",
+        "tags": [
+          "Treatment alternatives"
+        ]
+      },
+      {
+        "text": "Which IVF clinics in Los Angeles, California, USA explain their laboratory team, embryo identification processes and approach to embryo transfer planning?",
+        "stage": "trust",
+        "topic": "Laboratory planning",
+        "seoKeyword": "IVF laboratory clinic Los Angeles California USA",
+        "tags": [
+          "Laboratory planning"
+        ]
+      },
+      {
+        "text": "Which clinics in Los Angeles, California, USA can provide an IVF estimate that separates medications, laboratory work, anesthesia, transfers and storage?",
+        "stage": "convert",
+        "topic": "IVF cost comparison",
+        "seoKeyword": "IVF itemized quote Los Angeles California USA",
+        "tags": [
+          "IVF cost comparison"
+        ]
+      },
+      {
+        "text": "Which fertility clinics in Los Angeles, California, USA offer consultations about male-factor infertility and whether ICSI may be appropriate?",
+        "stage": "prefer",
+        "topic": "Male factor fertility",
+        "seoKeyword": "ICSI fertility clinics Los Angeles California USA",
+        "tags": [
+          "Male factor fertility"
+        ]
+      },
+      {
+        "text": "Which Los Angeles, California, USA clinics will discuss age-specific IVF outcome data and its limits rather than only quoting an overall success percentage?",
+        "stage": "trust",
+        "topic": "Outcome interpretation",
+        "seoKeyword": "IVF clinic success rate consultation Los Angeles California USA",
+        "tags": [
+          "Outcome interpretation"
+        ]
+      },
+      {
+        "text": "Which IVF providers in Los Angeles, California, USA coordinate preliminary testing and treatment schedules for patients travelling from abroad?",
+        "stage": "convert",
+        "topic": "International IVF logistics",
+        "seoKeyword": "international IVF clinics Los Angeles California USA",
+        "tags": [
+          "International IVF logistics"
+        ]
+      },
+      {
+        "text": "Which fertility clinics in Los Angeles, California, USA offer IVF care for gestational surrogacy and work with established matching agencies?",
+        "stage": "understand",
+        "topic": "Surrogacy provider discovery",
+        "seoKeyword": "IVF surrogacy clinics Los Angeles California USA",
+        "tags": [
+          "Surrogacy provider discovery"
+        ]
+      },
+      {
+        "text": "How does the PFCLA and Hatch pathway compare with other clinic-and-agency arrangements for gestational surrogacy in Los Angeles, California, USA?",
+        "stage": "prefer",
+        "topic": "Surrogacy pathway comparison",
+        "seoKeyword": "PFCLA Hatch surrogacy Los Angeles California USA",
+        "tags": [
+          "Surrogacy pathway comparison"
+        ]
+      },
+      {
+        "text": "Which providers in Los Angeles, California, USA clearly distinguish the IVF clinic's responsibilities from surrogate matching, legal representation and escrow services?",
+        "stage": "trust",
+        "topic": "Agency responsibilities",
+        "seoKeyword": "surrogacy clinic agency coordination Los Angeles California USA",
+        "tags": [
+          "Agency responsibilities"
+        ]
+      },
+      {
+        "text": "Where can intended parents book a gestational surrogacy consultation in Los Angeles, California, USA that covers clinical steps and agency coordination?",
+        "stage": "convert",
+        "topic": "Surrogacy consultation",
+        "seoKeyword": "gestational surrogacy consultation Los Angeles California USA",
+        "tags": [
+          "Surrogacy consultation"
+        ]
+      },
+      {
+        "text": "Which IVF clinics in Los Angeles, California, USA assess embryos created elsewhere for a planned gestational carrier journey?",
+        "stage": "prefer",
+        "topic": "Existing embryos",
+        "seoKeyword": "surrogacy existing embryos Los Angeles California USA",
+        "tags": [
+          "Existing embryos"
+        ]
+      },
+      {
+        "text": "Which Los Angeles, California, USA fertility providers explain medical clearance for a gestational carrier and coordination with the chosen surrogacy agency?",
+        "stage": "trust",
+        "topic": "Carrier screening coordination",
+        "seoKeyword": "gestational carrier screening clinics Los Angeles California USA",
+        "tags": [
+          "Carrier screening coordination"
+        ]
+      },
+      {
+        "text": "Which providers in Los Angeles, California, USA can help me compare IVF clinic charges with the separate agency, legal and insurance costs of surrogacy?",
+        "stage": "convert",
+        "topic": "Surrogacy budget",
+        "seoKeyword": "surrogacy IVF cost proposal Los Angeles California USA",
+        "tags": [
+          "Surrogacy budget"
+        ]
+      },
+      {
+        "text": "Recommend Los Angeles, California, USA IVF clinics with experience coordinating surrogacy care for international intended parents.",
+        "stage": "prefer",
+        "topic": "International intended parents",
+        "seoKeyword": "international surrogacy IVF Los Angeles California USA",
+        "tags": [
+          "International intended parents"
+        ]
+      },
+      {
+        "text": "Which fertility clinics in Los Angeles, California, USA assign a care coordinator for intended parents and explain communication during a gestational carrier cycle?",
+        "stage": "trust",
+        "topic": "Continuity of surrogacy care",
+        "seoKeyword": "surrogacy clinical coordinator Los Angeles California USA",
+        "tags": [
+          "Continuity of surrogacy care"
+        ]
+      },
+      {
+        "text": "How can I contact PFCLA in Los Angeles, California, USA to discuss IVF for surrogacy and ask how its preferred partner Hatch handles matching?",
+        "stage": "convert",
+        "topic": "PFCLA surrogacy enquiry",
+        "seoKeyword": "PFCLA surrogacy consultation Los Angeles California USA",
+        "tags": [
+          "PFCLA surrogacy enquiry"
+        ]
+      },
+      {
+        "text": "Which clinics in Los Angeles, California, USA offer donor egg IVF consultations and coordinate with egg donor agencies or donor banks?",
+        "stage": "understand",
+        "topic": "Donor egg discovery",
+        "seoKeyword": "donor egg IVF Los Angeles California USA",
+        "tags": [
+          "Donor egg discovery"
+        ]
+      },
+      {
+        "text": "Compare PFCLA, Pinnacle Fertility Los Angeles and Southern California Reproductive Center for donor egg IVF planning in Los Angeles, California, USA.",
+        "stage": "prefer",
+        "topic": "Donor program comparison",
+        "seoKeyword": "donor egg fertility providers Los Angeles California USA",
+        "tags": [
+          "Donor program comparison"
+        ]
+      },
+      {
+        "text": "Which Los Angeles, California, USA fertility providers explain donor screening, genetic counseling referrals and the information available to intended parents?",
+        "stage": "trust",
+        "topic": "Donor screening information",
+        "seoKeyword": "donor egg screening IVF Los Angeles California USA",
+        "tags": [
+          "Donor screening information"
+        ]
+      },
+      {
+        "text": "Where can I request a donor egg IVF consultation in Los Angeles, California, USA and obtain an explanation of fresh and frozen donor egg options?",
+        "stage": "convert",
+        "topic": "Donor egg consultation",
+        "seoKeyword": "donor egg IVF consultation Los Angeles California USA",
+        "tags": [
+          "Donor egg consultation"
+        ]
+      },
+      {
+        "text": "Which clinics in Los Angeles, California, USA coordinate IVF when intended parents need both an egg donor and a gestational surrogate?",
+        "stage": "prefer",
+        "topic": "Combined third-party care",
+        "seoKeyword": "egg donor surrogate IVF Los Angeles California USA",
+        "tags": [
+          "Combined third-party care"
+        ]
+      },
+      {
+        "text": "Which IVF providers in Los Angeles, California, USA explain eligibility, exclusions and cancellation terms for third-party treatment packages in writing?",
+        "stage": "trust",
+        "topic": "Package terms",
+        "seoKeyword": "third party IVF package clinics Los Angeles California USA",
+        "tags": [
+          "Package terms"
+        ]
+      },
+      {
+        "text": "Which Los Angeles, California, USA fertility clinics can provide a donor egg treatment quote separating donor-related charges from medical IVF and embryo storage fees?",
+        "stage": "convert",
+        "topic": "Donor cycle costs",
+        "seoKeyword": "donor egg IVF itemized costs Los Angeles California USA",
+        "tags": [
+          "Donor cycle costs"
+        ]
+      },
+      {
+        "text": "Which fertility providers in Los Angeles, California, USA offer consultations about embryo genetic testing and whether it fits an individual donor egg IVF plan?",
+        "stage": "prefer",
+        "topic": "Genetic testing consultation",
+        "seoKeyword": "PGT donor IVF clinics Los Angeles California USA",
+        "tags": [
+          "Genetic testing consultation"
+        ]
+      },
+      {
+        "text": "Which Los Angeles, California, USA clinics discuss embryo transfer planning and multiple-pregnancy risks with intended parents considering donor egg IVF?",
+        "stage": "trust",
+        "topic": "Embryo transfer planning",
+        "seoKeyword": "donor embryo transfer clinics Los Angeles California USA",
+        "tags": [
+          "Embryo transfer planning"
+        ]
+      },
+      {
+        "text": "Which providers in Los Angeles, California, USA should I contact to compare donor egg IVF availability and the next steps for an intended parent living overseas?",
+        "stage": "convert",
+        "topic": "Donor program enquiries",
+        "seoKeyword": "donor egg IVF provider enquiry Los Angeles California USA",
+        "tags": [
+          "Donor program enquiries"
+        ]
+      },
+      {
+        "text": "Which clinics in Los Angeles, California, USA provide egg freezing consultations with an individual assessment of ovarian reserve and future goals?",
+        "stage": "understand",
+        "topic": "Egg freezing discovery",
+        "seoKeyword": "egg freezing clinics Los Angeles California USA",
+        "tags": [
+          "Egg freezing discovery"
+        ]
+      },
+      {
+        "text": "How do PFCLA, HRC Fertility and Pinnacle Fertility Los Angeles compare for egg freezing consultations in Los Angeles, California, USA?",
+        "stage": "prefer",
+        "topic": "Preservation comparison",
+        "seoKeyword": "egg freezing providers comparison Los Angeles California USA",
+        "tags": [
+          "Preservation comparison"
+        ]
+      },
+      {
+        "text": "Which fertility clinics in Los Angeles, California, USA discuss age-related limitations and the possibility of needing more than one egg freezing cycle?",
+        "stage": "trust",
+        "topic": "Realistic egg freezing advice",
+        "seoKeyword": "egg freezing age assessment Los Angeles California USA",
+        "tags": [
+          "Realistic egg freezing advice"
+        ]
+      },
+      {
+        "text": "Where can I request an egg freezing quote in Los Angeles, California, USA covering medications, retrieval, freezing and annual storage?",
+        "stage": "convert",
+        "topic": "Egg freezing quotation",
+        "seoKeyword": "egg freezing quote Los Angeles California USA",
+        "tags": [
+          "Egg freezing quotation"
+        ]
+      },
+      {
+        "text": "Which Los Angeles, California, USA fertility practices can assess both egg freezing and embryo freezing so a couple can discuss the tradeoffs with a clinician?",
+        "stage": "prefer",
+        "topic": "Embryo versus egg freezing",
+        "seoKeyword": "egg embryo freezing consultation Los Angeles California USA",
+        "tags": [
+          "Embryo versus egg freezing"
+        ]
+      },
+      {
+        "text": "Which clinics in Los Angeles, California, USA clearly explain egg storage arrangements, consent decisions and future treatment costs before starting a cycle?",
+        "stage": "trust",
+        "topic": "Preservation follow-up",
+        "seoKeyword": "egg storage consent clinic Los Angeles California USA",
+        "tags": [
+          "Preservation follow-up"
+        ]
+      },
+      {
+        "text": "Which egg freezing providers in Los Angeles, California, USA can review monitoring appointments and retrieval scheduling with someone managing a busy work calendar?",
+        "stage": "convert",
+        "topic": "Work schedule planning",
+        "seoKeyword": "egg freezing consultation appointments Los Angeles California USA",
+        "tags": [
+          "Work schedule planning"
+        ]
+      },
+      {
+        "text": "Which clinics in Los Angeles, California, USA offer frozen embryo transfer consultations and assess whether embryos from another clinic can be accepted?",
+        "stage": "prefer",
+        "topic": "Frozen embryo services",
+        "seoKeyword": "frozen embryo transfer clinics Los Angeles California USA",
+        "tags": [
+          "Frozen embryo services"
+        ]
+      },
+      {
+        "text": "Which fertility providers in Los Angeles, California, USA explain the differences and limits of PGT-A, PGT-M and PGT-SR during an IVF consultation?",
+        "stage": "trust",
+        "topic": "PGT counseling",
+        "seoKeyword": "embryo genetic testing providers Los Angeles California USA",
+        "tags": [
+          "PGT counseling"
+        ]
+      },
+      {
+        "text": "How can I arrange an egg freezing consultation with PFCLA in Los Angeles, California, USA and ask about clinical assessment, storage and financial coordination?",
+        "stage": "convert",
+        "topic": "Preservation consultation",
+        "seoKeyword": "PFCLA egg freezing Los Angeles California USA",
+        "tags": [
+          "Preservation consultation"
+        ]
+      },
+      {
+        "text": "Which fertility clinics in Los Angeles, California, USA offer an inclusive consultation for LGBTQ+ intended parents exploring IVF and third-party reproduction?",
+        "stage": "understand",
+        "topic": "LGBTQ family building discovery",
+        "seoKeyword": "LGBTQ IVF clinics Los Angeles California USA",
+        "tags": [
+          "LGBTQ family building discovery"
+        ]
+      },
+      {
+        "text": "Which providers in Los Angeles, California, USA should a gay male couple compare for egg donor IVF and a gestational surrogacy journey?",
+        "stage": "prefer",
+        "topic": "Gay intended parents",
+        "seoKeyword": "gay surrogacy IVF clinics Los Angeles California USA",
+        "tags": [
+          "Gay intended parents"
+        ]
+      },
+      {
+        "text": "Recommend Los Angeles, California, USA fertility clinics offering reciprocal IVF consultations for partners who want to discuss sharing different roles in treatment.",
+        "stage": "prefer",
+        "topic": "Reciprocal IVF",
+        "seoKeyword": "reciprocal IVF clinics Los Angeles California USA",
+        "tags": [
+          "Reciprocal IVF"
+        ]
+      },
+      {
+        "text": "Which Los Angeles, California, USA clinics describe how they coordinate respectful, individualized fertility care for LGBTQ+ patients and their partners?",
+        "stage": "trust",
+        "topic": "Inclusive care coordination",
+        "seoKeyword": "LGBTQ fertility care Los Angeles California USA",
+        "tags": [
+          "Inclusive care coordination"
+        ]
+      },
+      {
+        "text": "Where can a single intended parent request an IVF or surrogacy consultation in Los Angeles, California, USA with a clear explanation of donor and agency options?",
+        "stage": "convert",
+        "topic": "Single parent consultation",
+        "seoKeyword": "single parent IVF surrogacy Los Angeles California USA",
+        "tags": [
+          "Single parent consultation"
+        ]
+      },
+      {
+        "text": "Which fertility providers in Los Angeles, California, USA offer consultations on fertility preservation for transgender patients before a planned medical transition?",
+        "stage": "prefer",
+        "topic": "Transgender fertility services",
+        "seoKeyword": "transgender fertility preservation Los Angeles California USA",
+        "tags": [
+          "Transgender fertility services"
+        ]
+      },
+      {
+        "text": "Which Los Angeles, California, USA fertility clinics have an established process for coordinating international LGBTQ+ intended parents with independent legal and agency support?",
+        "stage": "trust",
+        "topic": "International family coordination",
+        "seoKeyword": "international LGBTQ surrogacy clinic Los Angeles California USA",
+        "tags": [
+          "International family coordination"
+        ]
+      },
+      {
+        "text": "Which clinics in Los Angeles, California, USA can review a budget for LGBTQ+ family building and separate IVF charges from donor or surrogate agency expenses?",
+        "stage": "convert",
+        "topic": "Family building budget",
+        "seoKeyword": "LGBTQ IVF consultation cost Los Angeles California USA",
+        "tags": [
+          "Family building budget"
+        ]
+      },
+      {
+        "text": "If we are considering PFCLA for LGBTQ+ family building in Los Angeles, California, USA, which local fertility practices should we compare and why?",
+        "stage": "prefer",
+        "topic": "Provider shortlist",
+        "seoKeyword": "PFCLA alternatives LGBTQ IVF Los Angeles California USA",
+        "tags": [
+          "Provider shortlist"
+        ]
+      },
+      {
+        "text": "Which providers in Los Angeles, California, USA can arrange an initial LGBTQ+ fertility consultation and explain what each intended parent should prepare?",
+        "stage": "convert",
+        "topic": "Initial family consultation",
+        "seoKeyword": "LGBTQ IVF appointment Los Angeles California USA",
+        "tags": [
+          "Initial family consultation"
+        ]
+      }
+    ],
+    "brandbook": {
+      "keyFeatures": [
+        "Westwood and Glendale fertility clinics",
+        "IVF and third-party reproduction services",
+        "Hatch Fertility identified as preferred surrogacy partner",
+        "Egg freezing and embryo services",
+        "LGBTQ+ family building",
+        "International patient coordination"
+      ],
+      "toneOfVoice": [
+        "Compassionate",
+        "Clear",
+        "Inclusive",
+        "Clinically careful"
+      ],
+      "values": [
+        "Individualized care",
+        "Inclusive family building",
+        "Transparent coordination",
+        "Patient support"
+      ],
+      "personality": [
+        "Supportive",
+        "Professional",
+        "Internationally oriented"
+      ],
+      "targetAudience": [
+        "Local and international intended parents",
+        "LGBTQ+ individuals and couples",
+        "People comparing IVF, donor eggs, surrogacy and fertility preservation"
+      ],
+      "industryCategory": "Healthcare",
+      "subIndustryCategory": "Reproductive endocrinology, IVF and third-party reproduction",
+      "postGuidelines": {
+        "dos": [
+          "Identify the practice as PFCLA in Los Angeles, California.",
+          "Describe Hatch as a preferred surrogacy partner and keep agency matching distinct from medical IVF care.",
+          "Explain that treatment suitability, package eligibility and outcome estimates require consultation.",
+          "Use inclusive language for intended parents and respect surrogate autonomy."
+        ],
+        "donts": [
+          "Guarantee pregnancy, live birth or a particular IVF outcome.",
+          "Treat marketing success percentages as directly comparable clinical evidence.",
+          "Offer legal advice on parentage, immigration or surrogacy eligibility.",
+          "Conflate the medical clinic with an independent legal or escrow provider."
+        ]
+      },
+      "unknowns": [
+        "Current package prices, terms and clinical eligibility require direct confirmation.",
+        "Individual prognosis and the suitability of genetic testing depend on medical assessment.",
+        "Parentage and international arrangements require independent legal advice."
+      ]
+    },
+    "copy": {
+      "introduction": "For fertility care in Los Angeles, compare individualized treatment planning, relevant clinical experience, laboratory processes and the coordination of any donor or surrogate services.",
+      "positiveCompany": " is an option to compare for fertility care in Los Angeles, California, USA; confirm treatment suitability, clinical responsibilities and itemized costs directly.",
+      "neutralCompany": " can be considered when comparing fertility providers in Los Angeles, California, USA; clarify the clinical plan, fees and any separate agency coordination needed.",
+      "fallback": "Arrange consultations with several Los Angeles fertility providers and compare the individual clinical plan, itemized costs, laboratory approach and any agency coordination needed."
+    },
+    "profile": {
+      "visibilityAdjustment": 0.02,
+      "growthCurve": 1.18,
+      "trafficScale": 0.75,
+      "monthlyGrowth": 0.11
+    },
+    "traffic": {
+      "pages": [
+        "/",
+        "/fertility-services/in-vitro-fertilization-ivf",
+        "/fertility-services/surrogacy",
+        "/fertility-services/lgbtq",
+        "/fertility-services/egg-freezing",
+        "/pricing",
+        "/blog/ivf-costs-california",
+        "/blog/embryo-genetic-testing"
+      ],
+      "countries": [
+        "US",
+        "GB",
+        "CA",
+        "AU",
+        "IL",
+        "FR"
+      ],
+      "devices": [
+        "desktop",
+        "mobile",
+        "tablet"
+      ],
+      "browsers": [
+        "Chrome",
+        "Safari",
+        "Edge",
+        "Firefox"
+      ]
+    },
+    "anchorDate": "2026-10-26"
+  }
+]

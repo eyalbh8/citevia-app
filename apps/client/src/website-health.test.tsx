@@ -68,6 +68,39 @@ function button(label: string) {
 function score(label: string) { return container.querySelector(`[aria-label="${label} score"]`)!; }
 
 describe('Website Health reports', () => {
+  it('renders initial history loading before any report has been selected', async () => {
+    mocks.useApi.mockImplementation((requested: string | null) => ({
+      data: undefined,
+      loading: Boolean(requested?.includes('?cursor=')),
+    }));
+    await render();
+    expect(container.textContent).toContain('Website Health');
+    expect(container.textContent).toContain('Loading saved website audits');
+    expect(container.querySelector('.health-report')).toBeNull();
+  });
+
+  it('shows the first-audit empty state when the account has no saved reports', async () => {
+    page.items = [];
+    page.total = 0;
+    await render();
+    expect(container.textContent).toContain('Your next improvement starts here');
+    expect(button('Run audit').disabled).toBe(false);
+    expect(container.querySelector('.health-report')).toBeNull();
+  });
+
+  it('keeps a failed initial history request visible and retryable without a selected report', async () => {
+    mocks.useApi.mockImplementation((requested: string | null) => ({
+      data: undefined,
+      loading: false,
+      error: requested?.includes('?cursor=') ? new Error('Website audit history is temporarily unavailable') : undefined,
+    }));
+    await render();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Website audit history is temporarily unavailable');
+    await act(async () => button('Try again').click());
+    expect(mocks.invalidateApiQueries).toHaveBeenCalledWith(`${path}/website-health`);
+    expect(container.querySelector('.health-report')).toBeNull();
+  });
+
   it('shows missing values honestly and switches the selected device', async () => {
     await render();
     expect(score('Performance').querySelector('.health-score-number')?.textContent).toContain('62');

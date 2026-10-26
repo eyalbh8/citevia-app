@@ -1,0 +1,2110 @@
+[
+  {
+    "id": "account_serhant_demo_v1",
+    "name": "SERHANT.",
+    "website": "https://serhant.com/",
+    "aliases": [
+      "SERHANT",
+      "Serhant Real Estate"
+    ],
+    "country": "US",
+    "language": "en",
+    "timezone": "America/New_York",
+    "industry": "Residential real estate brokerage",
+    "serviceArea": "New York City, New York, USA",
+    "services": [
+      "Luxury home buying representation",
+      "Residential property sales",
+      "Apartment rentals",
+      "New development sales and marketing",
+      "Townhouse sales",
+      "Condo and co-op brokerage",
+      "Property listing content and marketing"
+    ],
+    "audience": [
+      "New York City home buyers",
+      "Residential sellers in New York City",
+      "NYC renters",
+      "New York City residential developers"
+    ],
+    "description": "SERHANT. is a real estate brokerage founded by Ryan Serhant and headquartered in New York City. Its New York business connects buyers, sellers and renters with agents and residential properties, including condominiums, co-ops and townhouses. The company also markets new developments and supports property listings with content production and branding through SERHANT. Studios and ID Lab. This demonstration focuses on New York City service discovery and brokerage selection; the company also operates in other U.S. markets.",
+    "criteria": [
+      "Agent experience in the relevant New York City neighborhood",
+      "Relevant property type and price range",
+      "Recent comparable transaction evidence",
+      "Scope of buyer or seller representation",
+      "Marketing plan and listing presentation",
+      "Written fees and representation agreement",
+      "Communication and tour availability"
+    ],
+    "competitors": [
+      {
+        "name": "Compass",
+        "website": "https://www.compass.com/",
+        "aliases": [],
+        "sourceUrls": [
+          "https://www.compass.com/"
+        ]
+      },
+      {
+        "name": "The Corcoran Group",
+        "website": "https://www.corcoran.com/",
+        "aliases": [
+          "Corcoran"
+        ],
+        "sourceUrls": [
+          "https://discover.corcoran.com/contact-us/"
+        ]
+      },
+      {
+        "name": "Douglas Elliman",
+        "website": "https://www.elliman.com/",
+        "aliases": [],
+        "sourceUrls": [
+          "https://www.elliman.com/sales/new-york-ny"
+        ]
+      },
+      {
+        "name": "Brown Harris Stevens",
+        "website": "https://www.bhsusa.com/",
+        "aliases": [
+          "BHS"
+        ],
+        "sourceUrls": [
+          "https://www.bhsusa.com/about-brown-harris-stevens"
+        ]
+      },
+      {
+        "name": "Nest Seekers International",
+        "website": "https://www.nestseekers.com/",
+        "aliases": [
+          "Nest Seekers"
+        ],
+        "sourceUrls": [
+          "https://www.nestseekers.com/"
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://serhant.com/about-us",
+        "title": "About SERHANT. | Luxury Real Estate, Redefined",
+        "kind": "official",
+        "claims": [
+          "Brokerage identity and founder",
+          "Content production and branding divisions"
+        ]
+      },
+      {
+        "url": "https://serhant.com/knowledge-sheet.html",
+        "title": "SERHANT. - Knowledge Sheet",
+        "kind": "official",
+        "claims": [
+          "New York City address",
+          "Residential sales, rentals, townhouses and new developments"
+        ]
+      },
+      {
+        "url": "https://serhant.com/sell",
+        "title": "Sell Your Home with SERHANT. | Maximum Market Exposure",
+        "kind": "official",
+        "claims": [
+          "Seller representation and property marketing"
+        ]
+      },
+      {
+        "url": "https://serhant.com/new-development",
+        "title": "New Development Real Estate Sales | SERHANT.",
+        "kind": "official",
+        "claims": [
+          "New development sales and marketing"
+        ]
+      },
+      {
+        "url": "https://serhant.com/new-york-city?leaseProperty=true",
+        "title": "NYC Luxury Homes for Sale | SERHANT. Real Estate",
+        "kind": "official",
+        "claims": [
+          "New York City property coverage"
+        ]
+      },
+      {
+        "url": "https://www.inman.com/2026/04/14/ryan-serhants-brokerage-arrives-in-california-with-five-markets/",
+        "title": "Ryan Serhant's brokerage arrives in California with 5 markets",
+        "kind": "independent",
+        "claims": [
+          "New York origins and expansion into other U.S. markets"
+        ]
+      },
+      {
+        "url": "https://www.cityrealty.com/nyc/brokerages/serhant/1462",
+        "title": "SERHANT. - NYC Real Estate Brokerage | CityRealty",
+        "kind": "independent",
+        "claims": [
+          "New York City brokerage presence and office address"
+        ]
+      }
+    ],
+    "blogs": [
+      {
+        "url": "https://serhant.com/buyers-guide",
+        "title": "Your Buyer’s Guide to the Home Buying Process",
+        "contentType": "WEBSITE"
+      },
+      {
+        "url": "https://serhant.com/sellers-guide",
+        "title": "Seller’s Guide",
+        "contentType": "WEBSITE"
+      },
+      {
+        "url": "https://serhant.com/condo-coop-guide",
+        "title": "Condominiums and Cooperatives",
+        "contentType": "WEBSITE"
+      },
+      {
+        "url": "https://serhant.com/new/blog/the-year-brooklyn-heights-finally-got-its-answers",
+        "title": "The Year Brooklyn Heights Finally Got Its Answers",
+        "contentType": "BLOG",
+        "sourcePublishedAt": "2026-09-24T12:00:00Z"
+      },
+      {
+        "url": "https://serhant.com/blog/serhant-expands-across-california",
+        "title": "SERHANT. Expands Across California",
+        "contentType": "BLOG",
+        "sourcePublishedAt": "2026-05-14T12:00:00Z"
+      }
+    ],
+    "brandbook": {
+      "keyFeatures": [
+        "New York City residential brokerage",
+        "Buyer, seller and rental representation",
+        "New development marketing",
+        "In-house property content production",
+        "Condo, co-op and townhouse coverage"
+      ],
+      "values": [
+        "Client service",
+        "Creativity in property marketing",
+        "Use of technology in real estate"
+      ],
+      "toneOfVoice": [
+        "Professional",
+        "Confident",
+        "Clear about property and market details"
+      ],
+      "personality": [
+        "Media conscious",
+        "Ambitious",
+        "Service oriented"
+      ],
+      "industryCategory": "Real estate",
+      "subIndustryCategory": "New York City residential brokerage",
+      "postGuidelines": {
+        "dos": [
+          "Use verified New York City property and service information.",
+          "Distinguish brokerage marketing claims from independent evidence.",
+          "Identify the neighborhood and property type when comparing agents.",
+          "Keep all demographic and neighborhood descriptions consistent with fair housing principles."
+        ],
+        "donts": [
+          "Invent listing availability, closed sales, commissions or agent credentials.",
+          "Guarantee prices, investment performance or a closing date.",
+          "Present synthetic visibility or traffic as measured company performance.",
+          "Give individualized legal, mortgage or tax advice."
+        ]
+      },
+      "unknowns": [
+        "Current listings and prices change frequently.",
+        "Representation fees and agent availability must be confirmed directly.",
+        "The editorial guides have no verified publication date.",
+        "Brand voice descriptors are editorial interpretations of public positioning."
+      ]
+    },
+    "traffic": {
+      "pages": [
+        "/",
+        "/sell",
+        "/new-development",
+        "/buyers-guide",
+        "/sellers-guide",
+        "/condo-coop-guide",
+        "/market-knowledge",
+        "/new-york-city"
+      ],
+      "countries": [
+        "US",
+        "GB",
+        "CA",
+        "IL"
+      ],
+      "devices": [
+        "desktop",
+        "mobile",
+        "tablet"
+      ],
+      "browsers": [
+        "Chrome",
+        "Safari",
+        "Edge",
+        "Firefox"
+      ]
+    },
+    "prompts": [
+      {
+        "text": "Which real estate brokerages should I shortlist to buy a luxury condominium in Manhattan, New York City?",
+        "stage": "prefer",
+        "topic": "Luxury home buying",
+        "seoKeyword": "luxury condo buyer brokerage Manhattan",
+        "tags": [
+          "Luxury home buying"
+        ]
+      },
+      {
+        "text": "Recommend New York City buyer agents who regularly handle Upper East Side co-op purchases and board packages.",
+        "stage": "prefer",
+        "topic": "Co-op buying",
+        "seoKeyword": "co-op buyer agent Upper East Side NYC",
+        "tags": [
+          "Co-op buying"
+        ]
+      },
+      {
+        "text": "Who are the strongest brokerage options for buying a brownstone in Park Slope, Brooklyn, New York City?",
+        "stage": "prefer",
+        "topic": "Townhouse buying",
+        "seoKeyword": "brownstone buyer broker Park Slope NYC",
+        "tags": [
+          "Townhouse buying"
+        ]
+      },
+      {
+        "text": "Which firms can help an international buyer purchase a penthouse in Tribeca, New York City?",
+        "stage": "understand",
+        "topic": "International buyers",
+        "seoKeyword": "international buyer brokerage Tribeca NYC",
+        "tags": [
+          "International buyers"
+        ]
+      },
+      {
+        "text": "I want to tour waterfront condos in Long Island City, New York City; which brokerages should I contact?",
+        "stage": "convert",
+        "topic": "Condo buying",
+        "seoKeyword": "waterfront condo tours Long Island City NYC",
+        "tags": [
+          "Condo buying"
+        ]
+      },
+      {
+        "text": "Which New York City real estate companies offer a coordinated home search for someone relocating from another U.S. state?",
+        "stage": "understand",
+        "topic": "Relocation buying",
+        "seoKeyword": "relocation buyer brokerage New York City",
+        "tags": [
+          "Relocation buying"
+        ]
+      },
+      {
+        "text": "Compare SERHANT. and Compass for a first condominium purchase in Manhattan, New York City.",
+        "stage": "prefer",
+        "topic": "Brokerage comparison",
+        "seoKeyword": "SERHANT Compass Manhattan condo buyers",
+        "tags": [
+          "Brokerage comparison"
+        ]
+      },
+      {
+        "text": "Which New York City brokerages are worth interviewing for a Brooklyn Heights townhouse purchase?",
+        "stage": "prefer",
+        "topic": "Townhouse buying",
+        "seoKeyword": "Brooklyn Heights townhouse buyer brokerage",
+        "tags": [
+          "Townhouse buying"
+        ]
+      },
+      {
+        "text": "For a buyer choosing between a Manhattan co-op and condo in New York City, which firms provide useful hands-on representation?",
+        "stage": "understand",
+        "topic": "Condo and co-op brokerage",
+        "seoKeyword": "condo co-op buyer representation NYC",
+        "tags": [
+          "Condo and co-op brokerage"
+        ]
+      },
+      {
+        "text": "Which agencies should I contact for an appointment to view luxury apartments for sale in downtown Manhattan, New York City?",
+        "stage": "convert",
+        "topic": "Buying appointments",
+        "seoKeyword": "luxury apartment buying appointment Manhattan",
+        "tags": [
+          "Buying appointments"
+        ]
+      },
+      {
+        "text": "Which brokerage would you recommend to sell a renovated SoHo loft in New York City?",
+        "stage": "prefer",
+        "topic": "Residential property sales",
+        "seoKeyword": "sell SoHo loft brokerage NYC",
+        "tags": [
+          "Residential property sales"
+        ]
+      },
+      {
+        "text": "Compare SERHANT., Douglas Elliman and Corcoran for listing a luxury condo in Manhattan, New York City.",
+        "stage": "prefer",
+        "topic": "Seller brokerage comparison",
+        "seoKeyword": "Manhattan luxury condo listing firms",
+        "tags": [
+          "Seller brokerage comparison"
+        ]
+      },
+      {
+        "text": "Who offers strong video and digital marketing for a townhouse sale in Brooklyn, New York City?",
+        "stage": "understand",
+        "topic": "Property marketing",
+        "seoKeyword": "townhouse video marketing Brooklyn NYC",
+        "tags": [
+          "Property marketing"
+        ]
+      },
+      {
+        "text": "Which New York City brokers should I ask for a listing presentation before selling an Upper West Side co-op?",
+        "stage": "convert",
+        "topic": "Co-op selling",
+        "seoKeyword": "Upper West Side co-op listing presentation",
+        "tags": [
+          "Co-op selling"
+        ]
+      },
+      {
+        "text": "I need to sell a family home in Brooklyn, New York City; recommend firms with relevant neighborhood transaction experience.",
+        "stage": "prefer",
+        "topic": "Home selling",
+        "seoKeyword": "Brooklyn home selling real estate firms",
+        "tags": [
+          "Home selling"
+        ]
+      },
+      {
+        "text": "Which companies can provide a market appraisal and seller consultation for a condominium in Tribeca, New York City?",
+        "stage": "convert",
+        "topic": "Seller consultations",
+        "seoKeyword": "Tribeca condo seller consultation NYC",
+        "tags": [
+          "Seller consultations"
+        ]
+      },
+      {
+        "text": "What are good alternatives to SERHANT. for marketing a high-end residential property in New York City?",
+        "stage": "prefer",
+        "topic": "Brokerage alternatives",
+        "seoKeyword": "alternatives SERHANT luxury property NYC",
+        "tags": [
+          "Brokerage alternatives"
+        ]
+      },
+      {
+        "text": "Which Manhattan, New York City brokerages should I compare for a discreet luxury apartment sale?",
+        "stage": "prefer",
+        "topic": "Luxury property sales",
+        "seoKeyword": "discreet luxury apartment broker Manhattan",
+        "tags": [
+          "Luxury property sales"
+        ]
+      },
+      {
+        "text": "Recommend New York City listing firms that combine professional photography, video tours and an organized seller communication plan.",
+        "stage": "prefer",
+        "topic": "Listing marketing",
+        "seoKeyword": "New York City property listing marketing",
+        "tags": [
+          "Listing marketing"
+        ]
+      },
+      {
+        "text": "Which agencies should I invite to quote for selling a Williamsburg condominium in Brooklyn, New York City?",
+        "stage": "convert",
+        "topic": "Seller quotes",
+        "seoKeyword": "sell Williamsburg condominium brokerage NYC",
+        "tags": [
+          "Seller quotes"
+        ]
+      },
+      {
+        "text": "Which New York City brokerages can help me rent a luxury apartment in Manhattan with in-person showings?",
+        "stage": "understand",
+        "topic": "Apartment rentals",
+        "seoKeyword": "Manhattan luxury rental brokerage NYC",
+        "tags": [
+          "Apartment rentals"
+        ]
+      },
+      {
+        "text": "Recommend rental agents for a move to Brooklyn Heights, New York City, with a shortlist of two-bedroom apartments.",
+        "stage": "prefer",
+        "topic": "Rental search",
+        "seoKeyword": "Brooklyn Heights two bedroom rental agents",
+        "tags": [
+          "Rental search"
+        ]
+      },
+      {
+        "text": "Compare SERHANT. and Nest Seekers for finding an apartment to rent in downtown Manhattan, New York City.",
+        "stage": "prefer",
+        "topic": "Rental brokerage comparison",
+        "seoKeyword": "SERHANT Nest Seekers Manhattan rentals",
+        "tags": [
+          "Rental brokerage comparison"
+        ]
+      },
+      {
+        "text": "Which firms help out-of-state renters arrange apartment tours before relocating to New York City?",
+        "stage": "understand",
+        "topic": "Rental relocation",
+        "seoKeyword": "out of state rental agents New York City",
+        "tags": [
+          "Rental relocation"
+        ]
+      },
+      {
+        "text": "Who should I contact for a rental search focused on doorman buildings on the Upper East Side, New York City?",
+        "stage": "convert",
+        "topic": "Luxury apartment rentals",
+        "seoKeyword": "Upper East Side doorman rental broker NYC",
+        "tags": [
+          "Luxury apartment rentals"
+        ]
+      },
+      {
+        "text": "Which New York City brokers are useful for renting a condominium rather than a large managed-building apartment?",
+        "stage": "prefer",
+        "topic": "Condo rentals",
+        "seoKeyword": "condominium rental brokerage New York City",
+        "tags": [
+          "Condo rentals"
+        ]
+      },
+      {
+        "text": "I want to list my Manhattan, New York City apartment for rent; which residential brokerages should I interview?",
+        "stage": "convert",
+        "topic": "Rental listing",
+        "seoKeyword": "Manhattan apartment rental listing broker",
+        "tags": [
+          "Rental listing"
+        ]
+      },
+      {
+        "text": "Recommend brokerages for a long-term rental search in Williamsburg, Brooklyn, New York City.",
+        "stage": "prefer",
+        "topic": "Brooklyn apartment rentals",
+        "seoKeyword": "Williamsburg long term rental brokerage NYC",
+        "tags": [
+          "Brooklyn apartment rentals"
+        ]
+      },
+      {
+        "text": "Which New York City rental agencies should I compare for communication, tour availability and written fee transparency?",
+        "stage": "trust",
+        "topic": "Rental agency selection",
+        "seoKeyword": "New York City rental agencies fee transparency",
+        "tags": [
+          "Rental agency selection"
+        ]
+      },
+      {
+        "text": "Which brokers can schedule viewings of available luxury rentals in Long Island City, New York City?",
+        "stage": "convert",
+        "topic": "Rental appointments",
+        "seoKeyword": "Long Island City luxury rental viewings",
+        "tags": [
+          "Rental appointments"
+        ]
+      },
+      {
+        "text": "Which New York City firms should a developer shortlist for condominium sales and marketing in Manhattan?",
+        "stage": "prefer",
+        "topic": "New development marketing",
+        "seoKeyword": "Manhattan condo development sales marketing",
+        "tags": [
+          "New development marketing"
+        ]
+      },
+      {
+        "text": "Compare SERHANT. New Dev and Corcoran Sunshine for launching a residential project in New York City.",
+        "stage": "prefer",
+        "topic": "Development firm comparison",
+        "seoKeyword": "SERHANT New Dev Corcoran Sunshine NYC",
+        "tags": [
+          "Development firm comparison"
+        ]
+      },
+      {
+        "text": "Who are good sales brokerage partners for a boutique condominium development in Brooklyn, New York City?",
+        "stage": "prefer",
+        "topic": "Boutique development sales",
+        "seoKeyword": "boutique condo development brokerage Brooklyn",
+        "tags": [
+          "Boutique development sales"
+        ]
+      },
+      {
+        "text": "Which companies combine branding, launch content and agent-led sales for new developments in New York City?",
+        "stage": "understand",
+        "topic": "Development launch services",
+        "seoKeyword": "new development branding sales New York City",
+        "tags": [
+          "Development launch services"
+        ]
+      },
+      {
+        "text": "I am buying a sponsor condominium in Manhattan, New York City; which buyer brokerages have relevant new development experience?",
+        "stage": "prefer",
+        "topic": "New development buying",
+        "seoKeyword": "Manhattan sponsor condo buyer brokerage",
+        "tags": [
+          "New development buying"
+        ]
+      },
+      {
+        "text": "Which firms should I approach for a sales and marketing proposal for a new condo building in Long Island City, New York City?",
+        "stage": "convert",
+        "topic": "Development proposals",
+        "seoKeyword": "Long Island City condo sales marketing proposal",
+        "tags": [
+          "Development proposals"
+        ]
+      },
+      {
+        "text": "Recommend New York City agencies that market both completed residences and apartments in newly launched developments.",
+        "stage": "prefer",
+        "topic": "New development brokerage",
+        "seoKeyword": "New York City new development residential agencies",
+        "tags": [
+          "New development brokerage"
+        ]
+      },
+      {
+        "text": "Which Brooklyn, New York City development sales teams should I interview for a waterfront condominium project?",
+        "stage": "convert",
+        "topic": "Waterfront development marketing",
+        "seoKeyword": "Brooklyn waterfront development sales teams",
+        "tags": [
+          "Waterfront development marketing"
+        ]
+      },
+      {
+        "text": "What are credible alternatives to SERHANT. for residential new development marketing in New York City?",
+        "stage": "prefer",
+        "topic": "Development marketing alternatives",
+        "seoKeyword": "SERHANT new development alternatives NYC",
+        "tags": [
+          "Development marketing alternatives"
+        ]
+      },
+      {
+        "text": "Which New York City firms can present relevant examples of condominium development launches before I select a sales partner?",
+        "stage": "trust",
+        "topic": "Development track record",
+        "seoKeyword": "New York City condo launch sales partners",
+        "tags": [
+          "Development track record"
+        ]
+      },
+      {
+        "text": "Which New York City real estate brokerages have a public record of handling luxury townhouses that I can review before choosing one?",
+        "stage": "trust",
+        "topic": "Brokerage track record",
+        "seoKeyword": "luxury townhouse brokerage track record NYC",
+        "tags": [
+          "Brokerage track record"
+        ]
+      },
+      {
+        "text": "For a Manhattan, New York City home sale, compare Brown Harris Stevens and SERHANT. on the services I should request in their proposals.",
+        "stage": "prefer",
+        "topic": "Listing proposal comparison",
+        "seoKeyword": "Brown Harris Stevens SERHANT Manhattan sale",
+        "tags": [
+          "Listing proposal comparison"
+        ]
+      },
+      {
+        "text": "Recommend New York City brokerages whose agents can show recent comparable condo transactions during an initial consultation.",
+        "stage": "trust",
+        "topic": "Agent selection",
+        "seoKeyword": "New York City condo broker comparable transactions",
+        "tags": [
+          "Agent selection"
+        ]
+      },
+      {
+        "text": "Which firms should I contact to arrange a buyer consultation about Upper West Side apartments in New York City?",
+        "stage": "convert",
+        "topic": "Buyer consultations",
+        "seoKeyword": "Upper West Side buyer consultation NYC",
+        "tags": [
+          "Buyer consultations"
+        ]
+      },
+      {
+        "text": "I am downsizing from a Brooklyn townhouse to a Manhattan condo in New York City; which brokerage can coordinate the sale and purchase?",
+        "stage": "prefer",
+        "topic": "Coordinated buying and selling",
+        "seoKeyword": "Brooklyn Manhattan sell buy brokerage NYC",
+        "tags": [
+          "Coordinated buying and selling"
+        ]
+      },
+      {
+        "text": "Which New York City agencies are a good fit for a buyer seeking a second home and responsive remote communication?",
+        "stage": "prefer",
+        "topic": "Second home buyers",
+        "seoKeyword": "New York City second home buyer brokerage",
+        "tags": [
+          "Second home buyers"
+        ]
+      },
+      {
+        "text": "Compare Compass, Douglas Elliman and SERHANT. for a high-end buyer search across Manhattan and Brooklyn, New York City.",
+        "stage": "prefer",
+        "topic": "Luxury buyer comparisons",
+        "seoKeyword": "luxury buyer brokerage Manhattan Brooklyn NYC",
+        "tags": [
+          "Luxury buyer comparisons"
+        ]
+      },
+      {
+        "text": "Which New York City brokerage should I book a consultation with to discuss selling a condominium that is currently tenant occupied?",
+        "stage": "convert",
+        "topic": "Seller appointments",
+        "seoKeyword": "tenant occupied condo seller broker NYC",
+        "tags": [
+          "Seller appointments"
+        ]
+      },
+      {
+        "text": "Recommend Manhattan, New York City agents who can explain their representation agreement and fee scope before I start touring properties.",
+        "stage": "trust",
+        "topic": "Representation selection",
+        "seoKeyword": "Manhattan buyer agent representation fees",
+        "tags": [
+          "Representation selection"
+        ]
+      },
+      {
+        "text": "I want a shortlist of three brokerages to interview this month for selling and buying residential property in New York City; who belongs on it?",
+        "stage": "convert",
+        "topic": "Brokerage shortlist",
+        "seoKeyword": "New York City brokerage interview shortlist",
+        "tags": [
+          "Brokerage shortlist"
+        ]
+      }
+    ],
+    "anchorDate": "2026-10-26"
+  },
+  {
+    "id": "account_brooklinen_demo_v1",
+    "name": "Brooklinen",
+    "website": "https://www.brooklinen.com/",
+    "aliases": [
+      "Brooklinen Inc."
+    ],
+    "country": "US",
+    "language": "en",
+    "timezone": "America/New_York",
+    "industry": "Ecommerce bedding and bath retailer",
+    "serviceArea": "United States",
+    "services": [
+      "Classic Percale cotton sheets",
+      "Luxe Sateen cotton sheets",
+      "Washed European Linen sheets",
+      "Duvet inserts",
+      "Pillows",
+      "Bath towels",
+      "Bathrobes",
+      "Bedding bundles"
+    ],
+    "audience": [
+      "U.S. bedding and bath shoppers",
+      "Households furnishing bedrooms",
+      "Bedding and bath gift buyers"
+    ],
+    "description": "Brooklinen is a Brooklyn, New York bedding and home essentials brand founded in 2014. It sells directly to consumers online and also operates U.S. stores. Its assortment includes cotton percale and sateen sheets, European linen sheets, duvet inserts, pillows, towels, robes and bedding bundles. The company publishes product specifications, fabric comparisons and shopping guides. This demonstration covers U.S. consumer discovery, brand comparison and purchase decisions in bedding and bath.",
+    "criteria": [
+      "Fabric composition and weave",
+      "Preferred softness and temperature feel",
+      "Bed size and fitted sheet pocket depth",
+      "Duvet warmth and pillow support options",
+      "Total bundle contents and price",
+      "Product care requirements",
+      "Current U.S. shipping and return terms"
+    ],
+    "competitors": [
+      {
+        "name": "Parachute",
+        "website": "https://parachutehome.com/",
+        "aliases": [
+          "Parachute Home"
+        ],
+        "sourceUrls": [
+          "https://parachutehome.com/"
+        ]
+      },
+      {
+        "name": "Boll & Branch",
+        "website": "https://www.bollandbranch.com/",
+        "aliases": [
+          "Boll and Branch"
+        ],
+        "sourceUrls": [
+          "https://www.bollandbranch.com/"
+        ]
+      },
+      {
+        "name": "Quince",
+        "website": "https://www.quince.com/",
+        "aliases": [],
+        "sourceUrls": [
+          "https://www.quince.com/shop/home/luxe-sheets-&-bedding"
+        ]
+      },
+      {
+        "name": "The Company Store",
+        "website": "https://www.thecompanystore.com/",
+        "aliases": [],
+        "sourceUrls": [
+          "https://www.thecompanystore.com/bedding"
+        ]
+      },
+      {
+        "name": "Coyuchi",
+        "website": "https://www.coyuchi.com/",
+        "aliases": [],
+        "sourceUrls": [
+          "https://www.coyuchi.com/"
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.brooklinen.com/pages/about",
+        "title": "Brooklinen | About Us",
+        "kind": "official",
+        "claims": [
+          "Founded in Brooklyn in 2014",
+          "Bedding, bath and home accessories sold directly to consumers"
+        ]
+      },
+      {
+        "url": "https://www.brooklinen.com/pages/privacy",
+        "title": "Privacy – Brooklinen",
+        "kind": "official",
+        "claims": [
+          "Brooklyn, New York business mailing address"
+        ]
+      },
+      {
+        "url": "https://www.brooklinen.com/pages/about-sheets",
+        "title": "Thread Count: Our Sheets | Brooklinen",
+        "kind": "official",
+        "claims": [
+          "Cotton percale, cotton sateen and European linen sheet ranges",
+          "Published fabric and weave specifications"
+        ]
+      },
+      {
+        "url": "https://www.brooklinen.com/collections/duvet-inserts-pillows",
+        "title": "Duvet Inserts & Pillows | Complete Your Bed | Brooklinen",
+        "kind": "official",
+        "claims": [
+          "Duvet inserts and pillows"
+        ]
+      },
+      {
+        "url": "https://www.brooklinen.com/pages/all-bath",
+        "title": "Bath Towels, Robes & More | Award-Winning | Brooklinen",
+        "kind": "official",
+        "claims": [
+          "Towels, robes and bath products"
+        ]
+      },
+      {
+        "url": "https://www.brooklinen.com/collections/sheet-bundles",
+        "title": "Sheet & Bedding Bundles | Save Big With Bundles | Brooklinen",
+        "kind": "official",
+        "claims": [
+          "Sheet sets and bedding bundles"
+        ]
+      },
+      {
+        "url": "https://www.apartmenttherapy.com/best-brooklinen-towels-and-sheets-37693803",
+        "title": "The Best Bed Sheets and Towels at Brooklinen (2026) | Apartment Therapy",
+        "kind": "independent",
+        "claims": [
+          "Independent editorial examination of Brooklinen bedding and bath products"
+        ]
+      },
+      {
+        "url": "https://www.tomsguide.com/mattresses/pillows-bedding/brooklinen-luxe-sateen-core-sheet-set",
+        "title": "We tested this sateen sheet set — and it will immediately give your bedroom luxury hotel vibes",
+        "kind": "independent",
+        "claims": [
+          "Independent review of the Luxe Sateen Core Sheet Set"
+        ]
+      }
+    ],
+    "blogs": [
+      {
+        "url": "https://www.brooklinen.com/blogs/education-center/the-sheet-buying-guide-everything-you-need-to-know-before-you-buy",
+        "title": "The Sheet Buying Guide: Everything You Need to Know Before You Buy",
+        "contentType": "BLOG",
+        "sourcePublishedAt": "2026-10-14T12:00:00Z"
+      },
+      {
+        "url": "https://www.brooklinen.com/blogs/education-center/duvet-vs-comforter-whats-the-difference-and-which-one-do-you-actually-need",
+        "title": "Duvet vs. Comforter: What's the Difference and Which One Do You Actually Need?",
+        "contentType": "BLOG",
+        "sourcePublishedAt": "2026-10-02T12:00:00Z"
+      },
+      {
+        "url": "https://www.brooklinen.com/blogs/education-center/the-brooklinen-holiday-gift-guide-luxury-bedding-for-every-budget",
+        "title": "The Brooklinen Holiday Gift Guide: Luxury Bedding for Every Budget",
+        "contentType": "BLOG",
+        "sourcePublishedAt": "2026-10-06T12:00:00Z"
+      },
+      {
+        "url": "https://www.brooklinen.com/blogs/education-center/the-brooklinen-black-friday-guide-how-to-shop-the-best-bedding-sales",
+        "title": "The Brooklinen Black Friday Guide: How to Shop The Best Bedding Sales",
+        "contentType": "BLOG",
+        "sourcePublishedAt": "2026-10-06T12:00:00Z"
+      }
+    ],
+    "brandbook": {
+      "keyFeatures": [
+        "Direct online shopping for bedding and bath",
+        "Cotton percale, sateen and European linen sheet options",
+        "Duvet inserts and pillows",
+        "Bath towels and robes",
+        "Bedding bundles and published product specifications"
+      ],
+      "values": [
+        "Comfort",
+        "Product choice by material and feel",
+        "Accessible home upgrades"
+      ],
+      "personality": [
+        "Friendly",
+        "Playful",
+        "Comfort focused"
+      ],
+      "toneOfVoice": [
+        "Conversational",
+        "Practical",
+        "Product specific"
+      ],
+      "industryCategory": "Ecommerce",
+      "subIndustryCategory": "Bedding, bath and home essentials",
+      "postGuidelines": {
+        "dos": [
+          "Use the current product page for fabric, dimensions and care details.",
+          "Separate independent reviews from the brand’s own product positioning.",
+          "Compare products by material, fit, warmth and the full purchase cost."
+        ],
+        "donts": [
+          "Invent live prices, promotions, stock, warranties or shipping dates.",
+          "Treat U.S. brand location as a claim that all products are manufactured in the USA.",
+          "Promise medical or sleep outcomes.",
+          "Present synthetic visibility or shopping traffic as measured sales or company performance."
+        ]
+      },
+      "unknowns": [
+        "Live inventory, prices, promotions and delivery dates require a current product check.",
+        "Return and shipping exclusions vary by item and destination.",
+        "Products are sourced internationally; U.S. brand headquarters does not imply U.S. manufacture.",
+        "Brand voice descriptors are editorial interpretations of public copy."
+      ]
+    },
+    "traffic": {
+      "pages": [
+        "/",
+        "/collections/all-sheets",
+        "/collections/sheet-bundles",
+        "/collections/duvet-inserts-pillows",
+        "/pages/all-bath",
+        "/pages/about-sheets",
+        "/blogs/education-center",
+        "/pages/our-stores"
+      ],
+      "countries": [
+        "US",
+        "CA",
+        "GB",
+        "AU"
+      ],
+      "devices": [
+        "mobile",
+        "desktop",
+        "tablet"
+      ],
+      "browsers": [
+        "Safari",
+        "Chrome",
+        "Edge",
+        "Firefox"
+      ]
+    },
+    "prompts": [
+      {
+        "text": "Which online bedding brands in the United States should I compare for crisp cotton percale sheets?",
+        "stage": "prefer",
+        "topic": "Percale sheets",
+        "seoKeyword": "best percale sheet brands USA",
+        "tags": [
+          "Percale sheets"
+        ]
+      },
+      {
+        "text": "Recommend U.S. retailers for smooth cotton sateen sheet sets with clearly published fabric specifications.",
+        "stage": "prefer",
+        "topic": "Sateen sheets",
+        "seoKeyword": "cotton sateen sheet retailers USA",
+        "tags": [
+          "Sateen sheets"
+        ]
+      },
+      {
+        "text": "Where should I shop online in the USA for washed European linen sheets in neutral colors?",
+        "stage": "convert",
+        "topic": "Linen sheets",
+        "seoKeyword": "buy washed linen sheets USA",
+        "tags": [
+          "Linen sheets"
+        ]
+      },
+      {
+        "text": "Compare Brooklinen and Parachute for a queen-size percale sheet purchase in the United States.",
+        "stage": "prefer",
+        "topic": "Sheet brand comparison",
+        "seoKeyword": "Brooklinen Parachute percale sheets USA",
+        "tags": [
+          "Sheet brand comparison"
+        ]
+      },
+      {
+        "text": "Which U.S. bedding companies sell complete king-size sheet sets and separate replacement pillowcases?",
+        "stage": "understand",
+        "topic": "Sheet sets",
+        "seoKeyword": "king sheet sets replacement pillowcases USA",
+        "tags": [
+          "Sheet sets"
+        ]
+      },
+      {
+        "text": "I sleep warm and want cotton sheets delivered in the USA; which brands belong on my shortlist?",
+        "stage": "prefer",
+        "topic": "Hot sleeper sheet selection",
+        "seoKeyword": "hot sleeper cotton sheet brands USA",
+        "tags": [
+          "Hot sleeper sheet selection"
+        ]
+      },
+      {
+        "text": "Which American bedding retailers offer linen sheet sets worth comparing with Brooklinen?",
+        "stage": "prefer",
+        "topic": "Linen brand alternatives",
+        "seoKeyword": "Brooklinen linen sheet alternatives USA",
+        "tags": [
+          "Linen brand alternatives"
+        ]
+      },
+      {
+        "text": "Recommend U.S. online stores for hotel-style white cotton sheets for a guest bedroom.",
+        "stage": "prefer",
+        "topic": "Guest room sheets",
+        "seoKeyword": "hotel style white cotton sheets USA",
+        "tags": [
+          "Guest room sheets"
+        ]
+      },
+      {
+        "text": "Which bedding brands serving the United States offer a choice between percale and sateen rather than just one cotton weave?",
+        "stage": "understand",
+        "topic": "Fabric range selection",
+        "seoKeyword": "percale sateen bedding brands United States",
+        "tags": [
+          "Fabric range selection"
+        ]
+      },
+      {
+        "text": "I want to buy new queen sheets in the USA this week; compare Brooklinen, Boll & Branch and The Company Store.",
+        "stage": "convert",
+        "topic": "Sheet purchase shortlist",
+        "seoKeyword": "queen sheets Brooklinen Boll Branch USA",
+        "tags": [
+          "Sheet purchase shortlist"
+        ]
+      },
+      {
+        "text": "Which brands selling in the United States are good options for airy linen bedding for a summer bedroom?",
+        "stage": "prefer",
+        "topic": "Summer linen bedding",
+        "seoKeyword": "summer linen bedding brands USA",
+        "tags": [
+          "Summer linen bedding"
+        ]
+      },
+      {
+        "text": "Compare Brooklinen and Quince for European linen sheets available to U.S. shoppers.",
+        "stage": "prefer",
+        "topic": "Linen purchase comparison",
+        "seoKeyword": "Brooklinen Quince linen sheets USA",
+        "tags": [
+          "Linen purchase comparison"
+        ]
+      },
+      {
+        "text": "Which U.S. online retailers should I compare for cotton sheets with a soft, already-washed feel?",
+        "stage": "prefer",
+        "topic": "Washed cotton sheets",
+        "seoKeyword": "washed cotton sheet retailers USA",
+        "tags": [
+          "Washed cotton sheets"
+        ]
+      },
+      {
+        "text": "Recommend bedding stores in the USA that publish fitted sheet dimensions so I can check a thick mattress before buying.",
+        "stage": "trust",
+        "topic": "Sheet fit selection",
+        "seoKeyword": "deep mattress fitted sheets retailers USA",
+        "tags": [
+          "Sheet fit selection"
+        ]
+      },
+      {
+        "text": "Which U.S. bedding companies offer patterned percale sheets alongside plain colors?",
+        "stage": "understand",
+        "topic": "Patterned sheets",
+        "seoKeyword": "patterned percale sheet brands USA",
+        "tags": [
+          "Patterned sheets"
+        ]
+      },
+      {
+        "text": "I want a coordinated linen duvet cover and sheets shipped within the United States; which brands should I consider?",
+        "stage": "convert",
+        "topic": "Coordinated linen bedding",
+        "seoKeyword": "linen duvet cover sheet sets USA",
+        "tags": [
+          "Coordinated linen bedding"
+        ]
+      },
+      {
+        "text": "Compare Brooklinen Classic Percale with Coyuchi cotton percale for a bedding purchase in the USA.",
+        "stage": "prefer",
+        "topic": "Percale product comparison",
+        "seoKeyword": "Brooklinen Coyuchi cotton percale USA",
+        "tags": [
+          "Percale product comparison"
+        ]
+      },
+      {
+        "text": "Which U.S. bedding brands should I shortlist if I prefer a silky cotton feel and do not want microfiber sheets?",
+        "stage": "prefer",
+        "topic": "Cotton sateen purchase",
+        "seoKeyword": "silky cotton sheet brands USA",
+        "tags": [
+          "Cotton sateen purchase"
+        ]
+      },
+      {
+        "text": "Where can U.S. shoppers buy a bedding bundle containing sheets, a duvet cover and extra pillowcases?",
+        "stage": "convert",
+        "topic": "Bedding bundles",
+        "seoKeyword": "sheet duvet pillowcase bundle USA",
+        "tags": [
+          "Bedding bundles"
+        ]
+      },
+      {
+        "text": "Which online bedding retailers in the United States let me compare linen and cotton bundles with the contents clearly listed?",
+        "stage": "trust",
+        "topic": "Bundle comparison",
+        "seoKeyword": "linen cotton bedding bundles USA",
+        "tags": [
+          "Bundle comparison"
+        ]
+      },
+      {
+        "text": "Recommend U.S. brands for buying a lightweight duvet insert for a warm bedroom.",
+        "stage": "prefer",
+        "topic": "Duvet inserts",
+        "seoKeyword": "lightweight duvet insert brands USA",
+        "tags": [
+          "Duvet inserts"
+        ]
+      },
+      {
+        "text": "Which bedding retailers serving the USA offer both down and down-alternative duvet inserts?",
+        "stage": "understand",
+        "topic": "Duvet fill options",
+        "seoKeyword": "down down alternative duvet retailers USA",
+        "tags": [
+          "Duvet fill options"
+        ]
+      },
+      {
+        "text": "Compare Brooklinen and The Company Store for an all-season duvet insert delivered in the United States.",
+        "stage": "prefer",
+        "topic": "Duvet purchase comparison",
+        "seoKeyword": "Brooklinen Company Store duvet USA",
+        "tags": [
+          "Duvet purchase comparison"
+        ]
+      },
+      {
+        "text": "Where should I buy a duvet insert and matching-size cover together in the USA?",
+        "stage": "convert",
+        "topic": "Duvet purchase",
+        "seoKeyword": "buy duvet insert cover USA",
+        "tags": [
+          "Duvet purchase"
+        ]
+      },
+      {
+        "text": "Which U.S. pillow brands and bedding retailers should I consider for a firmer bed pillow?",
+        "stage": "prefer",
+        "topic": "Pillow shopping",
+        "seoKeyword": "firm bed pillow retailers USA",
+        "tags": [
+          "Pillow shopping"
+        ]
+      },
+      {
+        "text": "Recommend U.S. online shops that sell both bed pillows and duvet inserts for furnishing a new apartment.",
+        "stage": "prefer",
+        "topic": "Bedroom furnishing",
+        "seoKeyword": "pillows duvet inserts apartment USA",
+        "tags": [
+          "Bedroom furnishing"
+        ]
+      },
+      {
+        "text": "Compare Brooklinen and Parachute for down-alternative pillow options sold in the United States.",
+        "stage": "prefer",
+        "topic": "Pillow comparison",
+        "seoKeyword": "Brooklinen Parachute down alternative pillow USA",
+        "tags": [
+          "Pillow comparison"
+        ]
+      },
+      {
+        "text": "Which U.S. bedding retailers provide clear pillow fill and firmness information before checkout?",
+        "stage": "trust",
+        "topic": "Pillow product transparency",
+        "seoKeyword": "pillow fill firmness retailers USA",
+        "tags": [
+          "Pillow product transparency"
+        ]
+      },
+      {
+        "text": "I want to order two bed pillows and a duvet insert in the USA; which brands offer an easy coordinated shopping option?",
+        "stage": "convert",
+        "topic": "Bedding essentials purchase",
+        "seoKeyword": "buy pillows duvet insert USA",
+        "tags": [
+          "Bedding essentials purchase"
+        ]
+      },
+      {
+        "text": "What are strong alternatives to Brooklinen for duvet inserts and pillows available in the United States?",
+        "stage": "prefer",
+        "topic": "Bedding essential alternatives",
+        "seoKeyword": "Brooklinen duvet pillow alternatives USA",
+        "tags": [
+          "Bedding essential alternatives"
+        ]
+      },
+      {
+        "text": "Which U.S. retailers should I shortlist for plush cotton bath towels with a hotel-like feel?",
+        "stage": "prefer",
+        "topic": "Bath towels",
+        "seoKeyword": "plush cotton bath towel brands USA",
+        "tags": [
+          "Bath towels"
+        ]
+      },
+      {
+        "text": "Compare Brooklinen and Boll & Branch for a bath towel bundle purchased in the United States.",
+        "stage": "prefer",
+        "topic": "Towel brand comparison",
+        "seoKeyword": "Brooklinen Boll Branch towels USA",
+        "tags": [
+          "Towel brand comparison"
+        ]
+      },
+      {
+        "text": "Where can I buy lightweight waffle bath towels online in the USA?",
+        "stage": "convert",
+        "topic": "Waffle towels",
+        "seoKeyword": "buy waffle bath towels USA",
+        "tags": [
+          "Waffle towels"
+        ]
+      },
+      {
+        "text": "Recommend American bedding and bath retailers for a coordinated set of bath towels, hand towels and washcloths.",
+        "stage": "prefer",
+        "topic": "Bath bundles",
+        "seoKeyword": "bath hand washcloth towel bundles USA",
+        "tags": [
+          "Bath bundles"
+        ]
+      },
+      {
+        "text": "Which stores serving U.S. shoppers offer cotton bathrobes in both plush and lightweight waffle styles?",
+        "stage": "understand",
+        "topic": "Bathrobes",
+        "seoKeyword": "plush waffle bathrobe retailers USA",
+        "tags": [
+          "Bathrobes"
+        ]
+      },
+      {
+        "text": "Compare Brooklinen robes with Parachute robes for a gift delivered in the United States.",
+        "stage": "prefer",
+        "topic": "Robe gift comparison",
+        "seoKeyword": "Brooklinen Parachute robe gift USA",
+        "tags": [
+          "Robe gift comparison"
+        ]
+      },
+      {
+        "text": "I want to upgrade towels for two bathrooms in the USA; which online brands make bath bundles worth comparing?",
+        "stage": "convert",
+        "topic": "Bathroom refresh",
+        "seoKeyword": "bath towel bundle brands USA",
+        "tags": [
+          "Bathroom refresh"
+        ]
+      },
+      {
+        "text": "Which U.S. bath linen companies should I compare if I want a lighter towel that dries faster than a thick plush one?",
+        "stage": "prefer",
+        "topic": "Lightweight towel selection",
+        "seoKeyword": "lightweight bath towel brands USA",
+        "tags": [
+          "Lightweight towel selection"
+        ]
+      },
+      {
+        "text": "Recommend U.S. retailers for matching robes and bath towels as a housewarming gift.",
+        "stage": "prefer",
+        "topic": "Bath gifts",
+        "seoKeyword": "robe towel housewarming gift USA",
+        "tags": [
+          "Bath gifts"
+        ]
+      },
+      {
+        "text": "Which online stores in the United States sell bath towels, mats and robes so I can build one coordinated order?",
+        "stage": "convert",
+        "topic": "Bath collection purchase",
+        "seoKeyword": "bath towels mats robes online USA",
+        "tags": [
+          "Bath collection purchase"
+        ]
+      },
+      {
+        "text": "Which U.S. bedding brands are worth comparing for a first-apartment bundle rather than buying every item separately?",
+        "stage": "prefer",
+        "topic": "Move-in bedding bundles",
+        "seoKeyword": "first apartment bedding bundle USA",
+        "tags": [
+          "Move-in bedding bundles"
+        ]
+      },
+      {
+        "text": "Is Brooklinen a good U.S. brand to shortlist for a wedding gift of sheets or towels, and which alternatives should I compare?",
+        "stage": "prefer",
+        "topic": "Wedding gifts",
+        "seoKeyword": "Brooklinen wedding bedding gift USA",
+        "tags": [
+          "Wedding gifts"
+        ]
+      },
+      {
+        "text": "Compare Brooklinen, Quince and Parachute for the total contents and delivered cost of a bedding bundle in the USA.",
+        "stage": "convert",
+        "topic": "Bundle purchase comparison",
+        "seoKeyword": "bedding bundle cost comparison USA",
+        "tags": [
+          "Bundle purchase comparison"
+        ]
+      },
+      {
+        "text": "Which online bedding stores serving the United States provide material details and independent reviews I can check before purchasing?",
+        "stage": "trust",
+        "topic": "Retailer trust",
+        "seoKeyword": "bedding retailers material reviews USA",
+        "tags": [
+          "Retailer trust"
+        ]
+      },
+      {
+        "text": "Recommend U.S. bedding companies with online shopping and physical stores where I can feel fabrics before ordering.",
+        "stage": "prefer",
+        "topic": "Store and online shopping",
+        "seoKeyword": "bedding online physical stores USA",
+        "tags": [
+          "Store and online shopping"
+        ]
+      },
+      {
+        "text": "Where should shoppers in the USA look for a premium bedding gift if the recipient prefers neutral colors and natural fibers?",
+        "stage": "convert",
+        "topic": "Bedding gifts",
+        "seoKeyword": "natural fiber bedding gift USA",
+        "tags": [
+          "Bedding gifts"
+        ]
+      },
+      {
+        "text": "Which U.S. brands should I compare with Brooklinen before replacing all the sheets and towels in my home?",
+        "stage": "prefer",
+        "topic": "Whole home refresh",
+        "seoKeyword": "Brooklinen sheets towels alternatives USA",
+        "tags": [
+          "Whole home refresh"
+        ]
+      },
+      {
+        "text": "I want to purchase cotton sheets in the United States and compare written return terms; which retailers should I put side by side?",
+        "stage": "trust",
+        "topic": "Purchase terms comparison",
+        "seoKeyword": "cotton sheets retailer returns USA",
+        "tags": [
+          "Purchase terms comparison"
+        ]
+      },
+      {
+        "text": "Which bedding retailers in the USA sell a full bedroom bundle including sheets, a comforter or insert, and pillows?",
+        "stage": "understand",
+        "topic": "Complete bedroom bundles",
+        "seoKeyword": "complete bedroom bedding bundle USA",
+        "tags": [
+          "Complete bedroom bundles"
+        ]
+      },
+      {
+        "text": "Give me three U.S. bedding and bath stores to compare before placing an order for linen sheets, a duvet insert and plush towels.",
+        "stage": "convert",
+        "topic": "Retailer purchase shortlist",
+        "seoKeyword": "linen duvet plush towel retailers USA",
+        "tags": [
+          "Retailer purchase shortlist"
+        ]
+      }
+    ],
+    "anchorDate": "2026-10-26"
+  },
+  {
+    "id": "account_kan_tor_acco_demo_v1",
+    "name": "Kan-Tor & Acco",
+    "website": "https://ktalegal.com/",
+    "aliases": [
+      "Kan-Tor and Acco",
+      "KTA Legal",
+      "KTA"
+    ],
+    "country": "IL",
+    "language": "en",
+    "timezone": "Asia/Jerusalem",
+    "industry": "U.S. immigration legal services",
+    "serviceArea": "Israel, including Ramat Gan and Tel Aviv, for immigration to the USA",
+    "services": [
+      "E-2 investor visa representation",
+      "E-1 treaty trader visa representation",
+      "L-1 employee transfer visa representation",
+      "Employment-based green card representation",
+      "U.S. consular processing support",
+      "Family-based U.S. immigration representation",
+      "H-1B visa representation"
+    ],
+    "audience": [
+      "Israeli entrepreneurs investing in the USA",
+      "Israeli employers transferring U.S. staff",
+      "Israel-based U.S. visa clients"
+    ],
+    "description": "Kan-Tor & Acco is an immigration law firm with its Israel head office in Ramat Gan. Its U.S. Immigration Department represents businesses and individuals in employment and family immigration matters. Published services include E-2 investor and E-1 treaty trader matters, L-1 employee transfers, employment-based green cards and consular processing issues. Its U.S. practice also works with startups planning American operations. This demonstration centers on Israel-based clients choosing legal representation for U.S. E-2 and related business immigration services, without making a finding about any individual’s eligibility.",
+    "criteria": [
+      "Relevant experience with Israeli clients and U.S. E-2 filings",
+      "Attorney admission and the team responsible for the matter",
+      "Business and ownership documentation review scope",
+      "Written legal fees and third-party cost exclusions",
+      "Support for consular preparation and follow-up",
+      "Responsiveness and communication in the client’s preferred language",
+      "Clear explanation of case-specific uncertainties"
+    ],
+    "competitors": [
+      {
+        "name": "AK Immigration",
+        "website": "https://ak-immigration.co.il/",
+        "aliases": [],
+        "sourceUrls": [
+          "https://ak-immigration.co.il/"
+        ]
+      },
+      {
+        "name": "Schear Immigration Law",
+        "website": "https://www.si-visa.com/",
+        "aliases": [
+          "Schear Immigration"
+        ],
+        "sourceUrls": [
+          "https://www.si-visa.com/"
+        ]
+      },
+      {
+        "name": "Decker, Pex, Levi Law Firm",
+        "website": "https://lawoffice.org.il/",
+        "aliases": [
+          "Decker Pex Levi"
+        ],
+        "sourceUrls": [
+          "https://lawoffice.org.il/en/category/usa-immigration/"
+        ]
+      },
+      {
+        "name": "Klarfeld Law Offices",
+        "website": "https://www.klarfeldlaw.com/",
+        "aliases": [
+          "Klarfeld"
+        ],
+        "sourceUrls": [
+          "https://www.klarfeldlaw.com/english/"
+        ]
+      },
+      {
+        "name": "Visa Law",
+        "website": "https://www.visalaw.co.il/",
+        "aliases": [
+          "Raudor Feldman Visa Law"
+        ],
+        "sourceUrls": [
+          "https://www.visalaw.co.il/visas/"
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://ktalegal.com/practice-areas/us-immigration/",
+        "title": "US Immigration - Kan-Tor And Acco",
+        "kind": "official",
+        "claims": [
+          "Israel head office in Ramat Gan",
+          "Employment and family-based U.S. visa services",
+          "E-1, E-2 and consular processing matters"
+        ]
+      },
+      {
+        "url": "https://ktalegal.com/practice-areas/us-immigration/investors-visa/",
+        "title": "Investors Visa - Kan-Tor And Acco",
+        "kind": "official",
+        "claims": [
+          "E-2 investor and E-1 treaty trader service focus"
+        ]
+      },
+      {
+        "url": "https://ktalegal.com/practice-areas/us-immigration/employment-based-visas-non-immigrant/",
+        "title": "Employment Based Visas (Non-Immigrant) - Kan-Tor And Acco",
+        "kind": "official",
+        "claims": [
+          "Employment visa categories including L-1"
+        ]
+      },
+      {
+        "url": "https://ktalegal.com/practice-areas/us-immigration/employment-based-green-cards/",
+        "title": "Employment Based Green Cards - Kan-Tor And Acco",
+        "kind": "official",
+        "claims": [
+          "Employment-based green card services"
+        ]
+      },
+      {
+        "url": "https://ktalegal.com/about-us/meet-the-partners/",
+        "title": "Meet the Partners - Kan-Tor And Acco",
+        "kind": "official",
+        "claims": [
+          "U.S. immigration practice team",
+          "E-1, E-2, L-1 and H-1B preparation experience"
+        ]
+      },
+      {
+        "url": "https://amcham.co.il/about/board-of-directors/101-about",
+        "title": "The Israel-America Chamber of Commerce - About",
+        "kind": "independent",
+        "claims": [
+          "Amit Acco identified as a founding partner of Kan-Tor & Acco"
+        ]
+      },
+      {
+        "url": "https://www.ibanet.org/document?id=Conf2502-Working-prog",
+        "title": "IBA Global Immigration Conference working programme",
+        "kind": "independent",
+        "claims": [
+          "Amit Acco listed with Kan-Tor & Acco, Ramat Gan"
+        ]
+      }
+    ],
+    "blogs": [
+      {
+        "url": "https://ktalegal.com/increased-scrutiny-of-l-1-visa-applications-at-u-s-consulates-what-multinational-companies-need-to-know/",
+        "title": "Increased Scrutiny of L-1 Visa Applications at U.S. Consulates: What Multinational Companies Need to Know",
+        "contentType": "BLOG",
+        "sourcePublishedAt": "2026-07-23T12:00:00Z"
+      },
+      {
+        "url": "https://ktalegal.com/kan-tor-acco-your-one-stop-solution-for-corporate-immigration-in-israel-and-the-us/",
+        "title": "Kan-Tor & Acco: Your One-Stop Solution for Corporate Immigration in Israel and the US",
+        "contentType": "BLOG",
+        "sourcePublishedAt": "2023-03-29T12:00:00Z"
+      },
+      {
+        "url": "https://ktalegal.com/embassy-in-jerusalem-and-tel-aviv-normalizes-operations/",
+        "title": "U.S. Embassy Resumes Normal Operations in Jerusalem and Tel Aviv: Visa Services Open After Authorized Departure",
+        "contentType": "BLOG",
+        "sourcePublishedAt": "2024-01-04T12:00:00Z"
+      }
+    ],
+    "brandbook": {
+      "keyFeatures": [
+        "Israel-based U.S. immigration practice",
+        "E-2 investor and E-1 treaty trader services",
+        "Corporate employee transfer representation",
+        "Startup U.S. relocation planning",
+        "Consular processing support"
+      ],
+      "values": [
+        "Client care",
+        "Case-specific planning",
+        "Professional integrity"
+      ],
+      "personality": [
+        "Professional",
+        "Detail oriented",
+        "Business aware"
+      ],
+      "toneOfVoice": [
+        "Clear",
+        "Measured",
+        "Practical"
+      ],
+      "industryCategory": "Legal services",
+      "subIndustryCategory": "U.S. E-2 and business immigration counsel for clients in Israel",
+      "postGuidelines": {
+        "dos": [
+          "Focus on choosing qualified counsel and understanding the proposed engagement scope.",
+          "Use the firm’s public pages to describe services, with authoritative current sources for legal requirements.",
+          "Date historical client alerts and distinguish them from current operating conditions.",
+          "Describe case outcomes as dependent on facts and government decisions."
+        ],
+        "donts": [
+          "Guarantee a visa, approval, interview, processing time or investment outcome.",
+          "Determine eligibility or prescribe a legal strategy for an individual.",
+          "Invent attorney qualifications, success rates, fees or testimonials.",
+          "Present the firm as a government agency or imply government endorsement.",
+          "Repeat historic consular procedures or visa rules as current without verification.",
+          "Present synthetic demo metrics as actual firm results."
+        ]
+      },
+      "unknowns": [
+        "Legal fees, availability and engagement scope require direct confirmation.",
+        "Public visa guides contain historical procedure descriptions and cannot establish current law or consular availability.",
+        "Attorney credentials should be checked with the relevant licensing authority before engagement.",
+        "Brand voice descriptors are editorial interpretations of the firm’s public materials."
+      ]
+    },
+    "traffic": {
+      "pages": [
+        "/",
+        "/practice-areas/us-immigration/",
+        "/practice-areas/us-immigration/investors-visa/",
+        "/practice-areas/us-immigration/employment-based-visas-non-immigrant/",
+        "/practice-areas/us-immigration/employment-based-green-cards/",
+        "/about-us/meet-the-partners/",
+        "/about-us/"
+      ],
+      "countries": [
+        "IL",
+        "US",
+        "GB",
+        "CA"
+      ],
+      "devices": [
+        "desktop",
+        "mobile",
+        "tablet"
+      ],
+      "browsers": [
+        "Chrome",
+        "Safari",
+        "Edge",
+        "Firefox"
+      ]
+    },
+    "prompts": [
+      {
+        "text": "Which law firms in Israel should I shortlist for help with a U.S. E-2 investor visa application?",
+        "stage": "prefer",
+        "topic": "E-2 counsel discovery",
+        "seoKeyword": "E2 visa lawyers Israel USA",
+        "tags": [
+          "E-2 counsel discovery"
+        ]
+      },
+      {
+        "text": "Recommend U.S. immigration lawyers in the Tel Aviv and Ramat Gan area of Israel who handle E-2 investor cases.",
+        "stage": "prefer",
+        "topic": "Local E-2 counsel",
+        "seoKeyword": "E2 lawyers Tel Aviv Ramat Gan Israel",
+        "tags": [
+          "Local E-2 counsel"
+        ]
+      },
+      {
+        "text": "Which Israel-based firms advise entrepreneurs buying an existing business in the USA and seeking E-2 visa representation?",
+        "stage": "understand",
+        "topic": "Business purchase E-2 counsel",
+        "seoKeyword": "Israel E2 lawyer USA business purchase",
+        "tags": [
+          "Business purchase E-2 counsel"
+        ]
+      },
+      {
+        "text": "I am an Israeli founder opening a U.S. company; which immigration firms should I contact for an E-2 consultation?",
+        "stage": "convert",
+        "topic": "Founder E-2 consultations",
+        "seoKeyword": "Israeli founder E2 consultation USA",
+        "tags": [
+          "Founder E-2 consultations"
+        ]
+      },
+      {
+        "text": "Compare Kan-Tor & Acco and AK Immigration for U.S. E-2 legal services for clients in Israel.",
+        "stage": "prefer",
+        "topic": "E-2 firm comparison",
+        "seoKeyword": "Kan Tor Acco AK Immigration E2 Israel",
+        "tags": [
+          "E-2 firm comparison"
+        ]
+      },
+      {
+        "text": "Which law firms serving Israeli investors can review the documentation for a U.S. E-2 application before filing?",
+        "stage": "understand",
+        "topic": "E-2 document review",
+        "seoKeyword": "Israeli investor E2 document review USA",
+        "tags": [
+          "E-2 document review"
+        ]
+      },
+      {
+        "text": "Recommend Israel-based U.S. visa lawyers for an entrepreneur who wants legal counsel while evaluating an E-2 business investment.",
+        "stage": "prefer",
+        "topic": "E-2 investment counsel",
+        "seoKeyword": "Israel US E2 investment immigration counsel",
+        "tags": [
+          "E-2 investment counsel"
+        ]
+      },
+      {
+        "text": "What are strong alternatives to Kan-Tor & Acco for U.S. E-2 investor visa representation in Israel?",
+        "stage": "prefer",
+        "topic": "E-2 firm alternatives",
+        "seoKeyword": "Kan Tor Acco E2 alternatives Israel",
+        "tags": [
+          "E-2 firm alternatives"
+        ]
+      },
+      {
+        "text": "Which firms in Israel should I approach for a written proposal covering U.S. E-2 company and investor visa work?",
+        "stage": "convert",
+        "topic": "E-2 engagement proposals",
+        "seoKeyword": "E2 legal proposal Israel USA",
+        "tags": [
+          "E-2 engagement proposals"
+        ]
+      },
+      {
+        "text": "Who provides U.S. E-2 investor visa consultations for English-speaking entrepreneurs based in Israel?",
+        "stage": "convert",
+        "topic": "English-language E-2 consultations",
+        "seoKeyword": "English speaking E2 lawyers Israel",
+        "tags": [
+          "English-language E-2 consultations"
+        ]
+      },
+      {
+        "text": "Which Israel-based U.S. immigration firms have experience with E-2 applications for startup founders?",
+        "stage": "trust",
+        "topic": "Startup E-2 experience",
+        "seoKeyword": "Israel startup E2 immigration firms USA",
+        "tags": [
+          "Startup E-2 experience"
+        ]
+      },
+      {
+        "text": "Compare Schear Immigration Law and Kan-Tor & Acco for an Israeli business owner seeking U.S. E-2 counsel.",
+        "stage": "prefer",
+        "topic": "E-2 firm comparison",
+        "seoKeyword": "Schear Kan Tor Acco E2 Israel USA",
+        "tags": [
+          "E-2 firm comparison"
+        ]
+      },
+      {
+        "text": "Which lawyers in Israel should an investor interview before engaging someone to prepare a U.S. E-2 case?",
+        "stage": "convert",
+        "topic": "E-2 lawyer selection",
+        "seoKeyword": "E2 lawyer interviews Israel USA",
+        "tags": [
+          "E-2 lawyer selection"
+        ]
+      },
+      {
+        "text": "Recommend law firms serving Israeli entrepreneurs that can coordinate E-2 investor and qualifying employee applications for the USA.",
+        "stage": "prefer",
+        "topic": "E-2 company and employee counsel",
+        "seoKeyword": "Israel E2 investor employee lawyers USA",
+        "tags": [
+          "E-2 company and employee counsel"
+        ]
+      },
+      {
+        "text": "Which U.S. immigration practices in Israel offer E-2 case assessment consultations for people considering a new American venture?",
+        "stage": "understand",
+        "topic": "E-2 case assessment",
+        "seoKeyword": "E2 case assessment lawyers Israel USA",
+        "tags": [
+          "E-2 case assessment"
+        ]
+      },
+      {
+        "text": "I want to compare E-2 representation fees and scope in Israel for a USA business launch; which firms should I request quotes from?",
+        "stage": "convert",
+        "topic": "E-2 legal fees",
+        "seoKeyword": "E2 legal fees quotes Israel USA",
+        "tags": [
+          "E-2 legal fees"
+        ]
+      },
+      {
+        "text": "Which Israeli law firms should I compare for help assembling an E-2 investment evidence package for the United States?",
+        "stage": "prefer",
+        "topic": "E-2 evidence preparation",
+        "seoKeyword": "E2 evidence preparation lawyer Israel United States",
+        "tags": [
+          "E-2 evidence preparation"
+        ]
+      },
+      {
+        "text": "Recommend Israel-based counsel for a U.S. E-2 renewal consultation for an existing business owner.",
+        "stage": "prefer",
+        "topic": "E-2 renewal counsel",
+        "seoKeyword": "E2 renewal lawyer Israel USA",
+        "tags": [
+          "E-2 renewal counsel"
+        ]
+      },
+      {
+        "text": "Which U.S. immigration firms serving Israel offer legal support for E-2 consular interview preparation?",
+        "stage": "understand",
+        "topic": "E-2 interview preparation",
+        "seoKeyword": "E2 interview preparation lawyers Israel USA",
+        "tags": [
+          "E-2 interview preparation"
+        ]
+      },
+      {
+        "text": "Compare Kan-Tor & Acco, Klarfeld Law Offices and Decker Pex Levi for E-2 legal consultations in Israel about investing in the USA.",
+        "stage": "prefer",
+        "topic": "E-2 firm shortlist",
+        "seoKeyword": "E2 law firm comparison Israel USA",
+        "tags": [
+          "E-2 firm shortlist"
+        ]
+      },
+      {
+        "text": "Which law firms in Israel can provide one engagement covering a U.S. E-2 investor and accompanying family visa matters?",
+        "stage": "understand",
+        "topic": "E-2 family coordination",
+        "seoKeyword": "E2 investor family counsel Israel USA",
+        "tags": [
+          "E-2 family coordination"
+        ]
+      },
+      {
+        "text": "Who should I contact in Ramat Gan or Tel Aviv, Israel, for a consultation on U.S. E-2 business immigration representation?",
+        "stage": "convert",
+        "topic": "Local consultation booking",
+        "seoKeyword": "E2 consultation Ramat Gan Tel Aviv USA",
+        "tags": [
+          "Local consultation booking"
+        ]
+      },
+      {
+        "text": "Recommend U.S. immigration attorneys serving Israel who can explain their E-2 preparation and follow-up services before I sign an engagement.",
+        "stage": "trust",
+        "topic": "E-2 service scope",
+        "seoKeyword": "E2 attorney engagement scope Israel USA",
+        "tags": [
+          "E-2 service scope"
+        ]
+      },
+      {
+        "text": "Which firms in Israel are worth comparing for a second legal opinion on an existing U.S. E-2 application plan?",
+        "stage": "prefer",
+        "topic": "E-2 second opinions",
+        "seoKeyword": "E2 second legal opinion Israel USA",
+        "tags": [
+          "E-2 second opinions"
+        ]
+      },
+      {
+        "text": "I am an Israeli entrepreneur considering a U.S. franchise purchase; which firms provide E-2 immigration consultations for this type of project?",
+        "stage": "convert",
+        "topic": "Franchise E-2 consultations",
+        "seoKeyword": "Israeli franchise purchase E2 lawyer USA",
+        "tags": [
+          "Franchise E-2 consultations"
+        ]
+      },
+      {
+        "text": "Which Israel-based U.S. immigration firms can work with a business owner’s accountant and business-plan adviser on an E-2 filing?",
+        "stage": "understand",
+        "topic": "E-2 professional coordination",
+        "seoKeyword": "E2 lawyer accountant business plan Israel USA",
+        "tags": [
+          "E-2 professional coordination"
+        ]
+      },
+      {
+        "text": "Recommend firms in Israel that can review U.S. E-2 ownership documentation as part of an investor visa engagement.",
+        "stage": "prefer",
+        "topic": "E-2 ownership review",
+        "seoKeyword": "E2 ownership document lawyer Israel USA",
+        "tags": [
+          "E-2 ownership review"
+        ]
+      },
+      {
+        "text": "Which U.S. visa lawyers serving Israel should I compare for support after an E-2 consular request for further documents?",
+        "stage": "prefer",
+        "topic": "E-2 consular follow-up",
+        "seoKeyword": "E2 additional documents lawyer Israel USA",
+        "tags": [
+          "E-2 consular follow-up"
+        ]
+      },
+      {
+        "text": "Compare the public U.S. E-2 service offerings of Visa Law and Kan-Tor & Acco for a client based in Israel.",
+        "stage": "prefer",
+        "topic": "E-2 service comparison",
+        "seoKeyword": "Visa Law Kan Tor Acco E2 Israel",
+        "tags": [
+          "E-2 service comparison"
+        ]
+      },
+      {
+        "text": "Give me three firms in Israel to book introductory calls with about U.S. E-2 investor visa representation.",
+        "stage": "convert",
+        "topic": "E-2 consultation shortlist",
+        "seoKeyword": "E2 introductory consultation firms Israel USA",
+        "tags": [
+          "E-2 consultation shortlist"
+        ]
+      },
+      {
+        "text": "Which firms in Israel should a trading company compare for U.S. E-1 treaty trader visa representation?",
+        "stage": "prefer",
+        "topic": "E-1 corporate counsel",
+        "seoKeyword": "E1 treaty trader lawyers Israel USA",
+        "tags": [
+          "E-1 corporate counsel"
+        ]
+      },
+      {
+        "text": "Recommend Israel-based U.S. immigration counsel who handle both E-1 trader and E-2 investor business visa matters.",
+        "stage": "prefer",
+        "topic": "E-1 and E-2 counsel",
+        "seoKeyword": "E1 E2 business visa lawyers Israel USA",
+        "tags": [
+          "E-1 and E-2 counsel"
+        ]
+      },
+      {
+        "text": "An Israeli employer needs U.S. E-1 employee visa counsel; which law firms should it contact?",
+        "stage": "convert",
+        "topic": "E-1 employee consultations",
+        "seoKeyword": "Israeli employer E1 employee lawyer USA",
+        "tags": [
+          "E-1 employee consultations"
+        ]
+      },
+      {
+        "text": "Which U.S. immigration firms in Israel are good candidates for a consultation comparing E-1 and E-2 representation for a company?",
+        "stage": "understand",
+        "topic": "Business visa service selection",
+        "seoKeyword": "E1 E2 consultation law firms Israel USA",
+        "tags": [
+          "Business visa service selection"
+        ]
+      },
+      {
+        "text": "Compare AK Immigration and Kan-Tor & Acco for U.S. business visa support for an Israel-based trading company.",
+        "stage": "prefer",
+        "topic": "Business immigration firm comparison",
+        "seoKeyword": "AK Immigration Kan Tor Acco business visas Israel",
+        "tags": [
+          "Business immigration firm comparison"
+        ]
+      },
+      {
+        "text": "Which law firms in Israel should I shortlist for L-1 employee transfers to a U.S. subsidiary?",
+        "stage": "prefer",
+        "topic": "L-1 employee transfers",
+        "seoKeyword": "L1 employee transfer lawyers Israel USA",
+        "tags": [
+          "L-1 employee transfers"
+        ]
+      },
+      {
+        "text": "Recommend U.S. immigration practices in Israel that handle L-1 new-office cases for startups expanding to America.",
+        "stage": "prefer",
+        "topic": "L-1 new-office counsel",
+        "seoKeyword": "L1 new office startup lawyer Israel USA",
+        "tags": [
+          "L-1 new-office counsel"
+        ]
+      },
+      {
+        "text": "Which Israel-based firms should an HR team contact about ongoing legal support for transfers of employees to the USA?",
+        "stage": "convert",
+        "topic": "Corporate relocation counsel",
+        "seoKeyword": "Israel HR employee transfer immigration counsel USA",
+        "tags": [
+          "Corporate relocation counsel"
+        ]
+      },
+      {
+        "text": "Compare Schear Immigration Law and Kan-Tor & Acco for an Israeli company’s U.S. L-1 transfer engagement.",
+        "stage": "prefer",
+        "topic": "L-1 firm comparison",
+        "seoKeyword": "Schear Kan Tor Acco L1 Israel USA",
+        "tags": [
+          "L-1 firm comparison"
+        ]
+      },
+      {
+        "text": "Which U.S. immigration firms serving Israel offer consular interview preparation for L-1 transfer applicants?",
+        "stage": "understand",
+        "topic": "L-1 consular preparation",
+        "seoKeyword": "L1 consular interview preparation Israel USA",
+        "tags": [
+          "L-1 consular preparation"
+        ]
+      },
+      {
+        "text": "Recommend Israel-based lawyers for employment-based U.S. green card representation for a company’s eligible personnel.",
+        "stage": "prefer",
+        "topic": "Employment green card counsel",
+        "seoKeyword": "employment green card lawyers Israel USA",
+        "tags": [
+          "Employment green card counsel"
+        ]
+      },
+      {
+        "text": "Which law firms in Israel handle both temporary U.S. employment visas and employment-based green card engagements?",
+        "stage": "understand",
+        "topic": "Employment immigration coverage",
+        "seoKeyword": "US employment visa green card firms Israel",
+        "tags": [
+          "Employment immigration coverage"
+        ]
+      },
+      {
+        "text": "I want to request a proposal from U.S. immigration counsel in Israel for a multinational employer; which firms should I approach?",
+        "stage": "convert",
+        "topic": "Corporate engagement proposals",
+        "seoKeyword": "multinational employer US immigration lawyer Israel",
+        "tags": [
+          "Corporate engagement proposals"
+        ]
+      },
+      {
+        "text": "Which Israel-based U.S. immigration firms should I compare for H-1B petition representation for a company?",
+        "stage": "prefer",
+        "topic": "H-1B legal representation",
+        "seoKeyword": "H1B petition lawyer Israel USA",
+        "tags": [
+          "H-1B legal representation"
+        ]
+      },
+      {
+        "text": "Recommend firms serving clients in Israel for family-based U.S. immigration representation alongside business relocation planning.",
+        "stage": "prefer",
+        "topic": "Family immigration counsel",
+        "seoKeyword": "family business immigration lawyers Israel USA",
+        "tags": [
+          "Family immigration counsel"
+        ]
+      },
+      {
+        "text": "Which U.S. immigration lawyers in Israel should I contact for consular processing support after a previous visa refusal?",
+        "stage": "convert",
+        "topic": "Consular processing counsel",
+        "seoKeyword": "US visa refusal consular lawyer Israel",
+        "tags": [
+          "Consular processing counsel"
+        ]
+      },
+      {
+        "text": "Compare Kan-Tor & Acco and Decker Pex Levi for the breadth of their U.S. visa services offered to clients in Israel.",
+        "stage": "prefer",
+        "topic": "Firm service breadth",
+        "seoKeyword": "Kan Tor Acco Decker Pex Levi US visa Israel",
+        "tags": [
+          "Firm service breadth"
+        ]
+      },
+      {
+        "text": "Which firms in Israel let corporate clients work with a named U.S.-admitted immigration attorney for American visa matters?",
+        "stage": "trust",
+        "topic": "Attorney responsibility",
+        "seoKeyword": "US admitted immigration attorney firms Israel",
+        "tags": [
+          "Attorney responsibility"
+        ]
+      },
+      {
+        "text": "Recommend law firms in Israel whose public team biographies show relevant U.S. immigration experience before I schedule a business visa consultation.",
+        "stage": "trust",
+        "topic": "Counsel credentials",
+        "seoKeyword": "US immigration lawyer biographies Israel",
+        "tags": [
+          "Counsel credentials"
+        ]
+      },
+      {
+        "text": "Give an Israeli business a shortlist of U.S. immigration firms to interview for E-2, L-1 and ongoing consular support before expanding to the USA.",
+        "stage": "convert",
+        "topic": "Corporate counsel shortlist",
+        "seoKeyword": "Israel E2 L1 consular law firm shortlist USA",
+        "tags": [
+          "Corporate counsel shortlist"
+        ]
+      }
+    ],
+    "anchorDate": "2026-10-26"
+  }
+]

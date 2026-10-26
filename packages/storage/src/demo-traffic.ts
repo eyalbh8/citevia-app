@@ -25,7 +25,7 @@ export function demoNumericProfile(config: DemoConfig): Required<NonNullable<Dem
   if (profile !== undefined && (!profile || typeof profile !== 'object' || Array.isArray(profile)))
     throw new Error('Invalid demo numeric profile');
   const bounds = {
-    visibilityAdjustment: [-.2, .2], growthCurve: [.5, 2], trafficScale: [.25, 2], monthlyGrowth: [0, .25],
+    visibilityAdjustment: [-.2, .2], growthCurve: [.5, 2], trafficScale: [.01, 2], monthlyGrowth: [0, .25],
   } as const;
   const result = { ...DEFAULT_PROFILE };
   for (const key of Object.keys(bounds) as (keyof typeof bounds)[]) {

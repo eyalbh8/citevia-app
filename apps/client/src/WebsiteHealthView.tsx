@@ -99,9 +99,10 @@ export default function WebsiteHealthView({ project, path, notify }: { project: 
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const reportId = selectedId || listedHistory[0]?.id;
   const details = useApi<{ audit: WebsiteHealthAudit }>(reportId ? `${collectionPath}/${encodeURIComponent(reportId)}` : null);
-  const history = listedHistory.map(item => details.data?.audit.id === item.id ? details.data.audit : item);
+  const detailAudit = details.data?.audit;
+  const history = listedHistory.map(item => detailAudit && detailAudit.id === item.id ? detailAudit : item);
   const selectedHistory = history.find(audit => audit.id === reportId);
-  const audit = details.data?.audit.id === reportId ? details.data.audit : selectedHistory;
+  const audit = detailAudit && detailAudit.id === reportId ? detailAudit : selectedHistory;
   const current = audit?.results[device];
   const lab = current?.lab;
   const previous = audit ? previousWebsiteHealthAudit(history, audit, device) : undefined;

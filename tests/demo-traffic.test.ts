@@ -32,6 +32,18 @@ function reconcile(traffic: TrafficAggregate) {
 }
 
 describe('modest virtual AI traffic', () => {
+  it('supports niche businesses with fewer than one hundred monthly AI referrals without losing reconciliation', () => {
+    const niche: Project = { ...project, demo: { ...project.demo!, profile: { trafficScale: .035, monthlyGrowth: .065 } } };
+    const traffic = aggregateScenarioTraffic(niche, monthFilters(2026, 9));
+    expect(traffic.current).toBeGreaterThan(60);
+    expect(traffic.current).toBeLessThan(100);
+    expect(traffic.current).toBeGreaterThan(traffic.previous);
+    reconcile(traffic);
+    const splits = [filters('2026-10-01T00:00:00.000Z', '2026-10-15T23:59:59.999Z'),
+      filters('2026-10-16T00:00:00.000Z', '2026-10-31T23:59:59.999Z')];
+    expect(splits.reduce((sum, range) => sum + aggregateScenarioTraffic(niche, range).current, 0)).toBe(traffic.current);
+  });
+
   it('sets ChatGPT to 2,000 and each other provider to a few dozen in the anchor month', () => {
     const traffic = aggregateScenarioTraffic(project, monthFilters(2026, 9));
     expect(traffic.providers.map((item) => [item.provider, item.visits])).toEqual([

@@ -12,6 +12,19 @@ import { PostgresRepository, type Repository } from '@citevia/storage';
 import { openConfigurationDatabase } from './configure-analysis.js';
 
 export const SERVICE_DEMO_DATES = { anchorDate: '2026-10-25', startDate: '2026-04-25', endDate: '2027-04-25' } as const;
+export function serviceDemoDates(anchorDate = SERVICE_DEMO_DATES.anchorDate as string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(anchorDate) || !Number.isFinite(Date.parse(`${anchorDate}T00:00:00Z`)) ||
+    new Date(`${anchorDate}T00:00:00Z`).toISOString().slice(0, 10) !== anchorDate)
+    throw new Error('Supply a valid scenario anchor date in YYYY-MM-DD format.');
+  const anchor = new Date(`${anchorDate}T00:00:00Z`);
+  const shift = (months: number) => {
+    const date = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + months, 1));
+    const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+    date.setUTCDate(Math.min(anchor.getUTCDate(), lastDay));
+    return date.toISOString().slice(0, 10);
+  };
+  return { anchorDate, startDate: shift(-6), endDate: shift(6) };
+}
 export const SERVICE_DEMO_CONTENT_ORIGIN = 'https://app.citevia.io';
 const publicUrl = z.string().url().refine(value => {
   const url = new URL(value);
@@ -26,7 +39,7 @@ const sourceReference = z.union([publicUrl, z.object({
 })]).transform(value => typeof value === 'string' ? { url: value } : value);
 const profileSchema = z.object({
   visibilityAdjustment: z.number().min(-.2).max(.2).optional(), growthCurve: z.number().min(.5).max(2).optional(),
-  trafficScale: z.number().min(.25).max(2).optional(), monthlyGrowth: z.number().min(0).max(.25).optional(),
+  trafficScale: z.number().min(.01).max(2).optional(), monthlyGrowth: z.number().min(0).max(.25).optional(),
 }).strict();
 const copySchema = z.object({
   introduction: z.string().trim().min(10).max(1000), positiveCompany: z.string().min(5).max(600),
@@ -36,6 +49,7 @@ export const serviceDemoSourceSchema = z.object({
   id: z.string().regex(/^account_[a-z0-9][a-z0-9_-]{0,80}_demo_v1$/), name: z.string().trim().min(1).max(120),
   website: publicUrl, aliases: textList.default([]), country: z.string().regex(/^[A-Za-z]{2}$/),
   language: z.string().regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/).default('en'), timezone: z.string().default('UTC'),
+  anchorDate: z.string().optional(),
   industry: z.string().trim().min(2).max(150), serviceArea: z.string().trim().min(2).max(150),
   services: z.array(z.string().trim().min(2).max(100)).min(5).max(30), audience: textList.min(1),
   description: z.string().trim().min(20).max(4000), criteria: textList.optional(),
@@ -104,15 +118,15 @@ export function serviceDemoProfile(id: string): NonNullable<DemoConfig['profile'
     trafficScale: (85 + seed % 31) / 100, monthlyGrowth: (9 + seed % 3) / 100 };
 }
 
-function weeklyPublicationDates() {
+function weeklyPublicationDates(window = serviceDemoDates()) {
   const dates: string[] = [];
-  for (let day = Date.parse(`${SERVICE_DEMO_DATES.startDate}T00:00:00Z`); day <= Date.parse(`${SERVICE_DEMO_DATES.endDate}T23:59:59Z`); day += 86400000)
+  for (let day = Date.parse(`${window.startDate}T00:00:00Z`); day <= Date.parse(`${window.endDate}T23:59:59Z`); day += 86400000)
     if ([1, 3, 5].includes(new Date(day).getUTCDay())) dates.push(`${new Date(day).toISOString().slice(0, 10)}T08:00:00.000Z`);
   return dates;
 }
 
 function trackedContent(source: ParsedSource, referenceUrls: string[]): NonNullable<DemoConfig['trackedUrls']> {
-  const dates = weeklyPublicationDates(), official = domain(source.website);
+  const dates = weeklyPublicationDates(serviceDemoDates(source.anchorDate)), official = domain(source.website);
   for (const blog of source.blogs) if (!owns(blog.url, official) || !trackedUrlKey(blog.url))
     throw new Error('Verified public articles must use the official company website.');
   const real = [...new Map(source.blogs.map(blog => [trackedUrlKey(blog.url), blog])).values()].slice(0, dates.length);
@@ -143,6 +157,7 @@ function trackedContent(source: ParsedSource, referenceUrls: string[]): NonNulla
 /** Public website metadata creates a compact synthetic scenario, never historical customer measurements. */
 export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOString()): Project {
   const source = serviceDemoSourceSchema.parse(value), official = domain(source.website);
+  const dates = serviceDemoDates(source.anchorDate);
   if (!Number.isFinite(Date.parse(copiedAt))) throw new Error('Supply a valid copy timestamp.');
   if (new Set(source.services.map(normalized)).size < 5) throw new Error('Supply at least five distinct verified services.');
   if (new Set(source.competitors.map(item => normalized(item.name))).size !== 5 ||
@@ -159,7 +174,7 @@ export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOStri
   const brand = { id: 'target', name: source.name, aliases: source.aliases, domains: [official] };
   const prompts = source.prompts || generatedPrompts(source);
   if (new Set(prompts.map(prompt => normalized(prompt.text))).size !== 50) throw new Error('Supply fifty distinct industry-specific questions.');
-  const at = `${SERVICE_DEMO_DATES.startDate}T00:00:00.000Z`, raw = source.brandbook;
+  const at = `${dates.startDate}T00:00:00.000Z`, raw = source.brandbook;
   const brandbook: Brandbook = {
     about: source.description, industryCategory: raw.industryCategory || source.industry,
     subIndustryCategory: raw.subIndustryCategory || source.services[0], companyCountry: source.country.toUpperCase(), language: source.language,
@@ -189,7 +204,7 @@ export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOStri
       branded: isBrandedPrompt(prompt.text, brand), stage, topic: prompt.topic || source.industry, intent: STAGE_INTENTS[stage][0],
       seoKeyword: prompt.seoKeyword || undefined, tags: 'tags' in prompt ? prompt.tags || [] : [source.industry], createdAt: at, updatedAt: at,
     }; }), brandbook, createdAt: at, updatedAt: copiedAt,
-    demo: { version: 1, source: 'website-demo', ...SERVICE_DEMO_DATES, sourceAccountId: `website:${official}`, sourceCopiedAt: copiedAt,
+    demo: { version: 1, source: 'website-demo', ...dates, sourceAccountId: `website:${official}`, sourceCopiedAt: copiedAt,
       profile: { ...serviceDemoProfile(source.id), ...source.profile },
       industry: { label: source.industry, audience: source.audience.join('; '), services: source.services, criteria }, copy: source.copy,
       samples: source.services.slice(0, 5).map((service, index) => ({ promptText: prompts[index * 10].text,
@@ -211,10 +226,11 @@ export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOStri
 }
 
 function validateServiceDemo(project: Project) {
+  const dates = serviceDemoDates(project.demo?.anchorDate);
   if (!/^account_[a-z0-9][a-z0-9_-]{0,80}_demo_v1$/.test(project.id) || project.demo?.source !== 'website-demo' ||
     project.demo.sourceAccountId !== `website:${project.brand.domains[0]}` || project.enabled ||
-    project.prompts.length !== 50 || project.competitors.length !== 5 || project.demo.trackedUrls?.length !== 156 ||
-    Object.entries(SERVICE_DEMO_DATES).some(([key, value]) => project.demo![key as keyof typeof SERVICE_DEMO_DATES] !== value) ||
+    project.prompts.length !== 50 || project.competitors.length !== 5 || project.demo.trackedUrls?.length !== weeklyPublicationDates(dates).length ||
+    Object.entries(dates).some(([key, value]) => project.demo![key as keyof typeof SERVICE_DEMO_DATES] !== value) ||
     JSON.stringify(project.scanSchedule?.slotsUtcMinutes) !== '[600,5640]' ||
     JSON.stringify(project.scanProviders?.map(item => item.provider)) !== '["openai","perplexity","gemini"]')
     throw new Error('Refusing to save a configuration without a complete public website demo identity.');
@@ -250,7 +266,7 @@ export async function createServiceDemo(repository: Pick<Repository, 'getProject
     competitors: project.competitors.length, trackedUrls: project.demo!.trackedUrls!.length,
     officialArticles: project.demo!.trackedUrls!.filter(article => !article.demoPost).length,
     demoArticles: project.demo!.trackedUrls!.filter(article => article.demoPost).length,
-    ...SERVICE_DEMO_DATES, scansPerWeek: 2, publicationsPerWeek: 3, providers: 3, configurationBytes: bytes,
+    ...serviceDemoDates(project.demo!.anchorDate), scansPerWeek: 2, publicationsPerWeek: 3, providers: 3, configurationBytes: bytes,
     persistedSyntheticAnswers: 0, persistedSyntheticTrafficEvents: 0, paidCalls: 0 };
 }
 

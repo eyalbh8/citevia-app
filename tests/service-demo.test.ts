@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, withDemoRuntime } from '@citevia/storage';
 import type { CapturedAnswer, RunSummary } from '@citevia/core';
 import {
-  buildServiceDemo, createServiceDemo, SERVICE_DEMO_CONTENT_ORIGIN, SERVICE_DEMO_DATES, serviceDemoProfile,
+  buildServiceDemo, createServiceDemo, SERVICE_DEMO_CONTENT_ORIGIN, SERVICE_DEMO_DATES, serviceDemoDates, serviceDemoProfile,
 } from '../scripts/create-service-demo.js';
 
 const copiedAt = '2026-10-25T12:00:00.000Z';
@@ -25,6 +25,21 @@ const source = () => ({
 });
 
 describe('compact public website service demos', () => {
+  it('anchors new accounts to six calendar months each way while retaining legacy scenario dates', async () => {
+    const project = buildServiceDemo({ ...source(), anchorDate: '2026-10-26' }, copiedAt);
+    expect(project.demo).toMatchObject({ anchorDate: '2026-10-26', startDate: '2026-04-26', endDate: '2027-04-26' });
+    expect(project.createdAt).toBe('2026-04-26T00:00:00.000Z');
+    expect(project.demo!.trackedUrls).toHaveLength(157);
+    expect(project.demo!.trackedUrls!.at(-1)!.publishedAt).toBe('2027-04-26T08:00:00.000Z');
+    expect(await createServiceDemo(new MemoryRepository(), project)).toMatchObject({
+      status: 'preview', startDate: '2026-04-26', endDate: '2027-04-26', trackedUrls: 157,
+    });
+    expect(serviceDemoDates()).toEqual(SERVICE_DEMO_DATES);
+    expect(serviceDemoDates('2026-08-31')).toEqual({ anchorDate: '2026-08-31', startDate: '2026-02-28', endDate: '2027-02-28' });
+    expect(() => serviceDemoDates('2026-02-30')).toThrow('valid scenario anchor');
+    expect(() => serviceDemoDates('not-a-date')).toThrow('valid scenario anchor');
+  });
+
   it('builds fifty industry/region questions and a complete researched brandbook without customer data', () => {
     const original = source(), before = structuredClone(original), project = buildServiceDemo(original, copiedAt);
     expect(original).toEqual(before);
