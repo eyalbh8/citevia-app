@@ -570,7 +570,6 @@ export default function PromptsView({
                       />
                     </th>
                     {sortHeader('Prompts', 'text')}
-                    <th scope="col">SEO keyword</th>
                     <th scope="col">
                       <span
                         className="prompt-heading-hint"
@@ -630,9 +629,6 @@ export default function PromptsView({
                             Archived
                           </small>
                         )}
-                      </td>
-                      <td className="prompt-keyword" dir="auto">
-                        {prompt.seoKeyword || '—'}
                       </td>
                       <td>
                         <span className="prompt-region">
