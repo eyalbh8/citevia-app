@@ -153,10 +153,7 @@ export function DashboardView({
   actions?: ReactNode;
 }) {
   const [selection, setSelection] =
-    useState<MonitorSelection>(() => ({
-      ...initialSelection('7', project.demo),
-      branded: project.demo ? '' : 'false',
-    }));
+    useState<MonitorSelection>(() => initialSelection('7', project.demo));
   const [retry, setRetry] = useState(0);
   const overview = useApi<DashboardOverview>(
     `${path}/dashboard/overview${selectionQuery(selection)}`,

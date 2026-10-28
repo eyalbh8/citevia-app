@@ -78,12 +78,11 @@ async function dashboard(account = project) {
 const latestQuery = () => new URL(mocks.useApi.mock.calls.at(-1)![0], 'https://citevia.test').searchParams;
 
 describe('dashboard discovery reporting', () => {
-  it('opens real accounts on non-branded discovery results with a visible filter', async () => {
+  it('opens real accounts on all prompts without hiding branded observations', async () => {
     await dashboard();
-    expect(latestQuery().get('branded')).toBe('false');
-    expect(container.querySelector('[aria-label="Branded: Non-branded"]')).not.toBeNull();
+    expect(latestQuery().has('branded')).toBe(false);
     expect(container.querySelector('.overview-ranking .card-description')?.textContent)
-      .toBe('Discovery visibility from non-branded prompts');
+      .toBe('Top brands by visibility across all prompts');
   });
 
   it('keeps demo accounts on their existing all-prompts overview', async () => {
@@ -93,15 +92,15 @@ describe('dashboard discovery reporting', () => {
       .toBe('Top brands by visibility across all prompts');
   });
 
-  it('allows the user to include branded prompts again', async () => {
+  it('keeps non-branded discovery as an explicit filter choice', async () => {
     await dashboard();
-    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Branded: Non-branded"]')!;
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Branded"]')!;
     await act(async () => trigger.click());
-    const option = document.querySelector<HTMLElement>('[role="option"][aria-label="All prompts"]')!;
+    const option = document.querySelector<HTMLElement>('[role="option"][aria-label="Non-branded"]')!;
     await act(async () => option.click());
-    expect(latestQuery().has('branded')).toBe(false);
+    expect(latestQuery().get('branded')).toBe('false');
     expect(container.querySelector('.overview-ranking .card-description')?.textContent)
-      .toBe('Top brands by visibility across all prompts');
+      .toBe('Discovery visibility from non-branded prompts');
   });
 
   it('shows the target’s actual position when retained below the top five', async () => {
@@ -114,7 +113,7 @@ describe('dashboard discovery reporting', () => {
     expect(target.textContent).toContain('XTrade');
     expect(target.textContent).toContain('Your brand');
     expect(container.querySelector('.overview-ranking .overview-card-footer')?.textContent)
-      .toMatch(/non-branded/i);
+      .toContain('Your brand stays visible alongside the top five.');
   });
 
   it('keeps an unmentioned target visible without assigning a false position', async () => {

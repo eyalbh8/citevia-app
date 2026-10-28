@@ -227,7 +227,7 @@ function findRun(project: Project, id: string): ScanRun | null {
 
 const measurementPlans = new WeakMap<Project, Map<ScanProvider, {
   promptOrder: Map<string, number>;
-  scans: Map<number, { phase: number; mentionCount: number; positiveCount: number }>;
+  scans: Map<number, { phase: number; mentionCount: number; positiveStart: number }>;
 }>>();
 
 /** Service scenarios retain annual growth while each pair of weekly scans moves. */
@@ -250,8 +250,8 @@ function measurementPlan(project: Project, provider: ScanProvider) {
     hash(`${provider}:${a.id}`) - hash(`${provider}:${b.id}`) || a.id.localeCompare(b.id),
   );
   const plan = { promptOrder: new Map(ordered.map((prompt, index) => [prompt.id, index])),
-    scans: new Map<number, { phase: number; mentionCount: number; positiveCount: number }>() };
-  let previousCount = 0, previousPositive = 0;
+    scans: new Map<number, { phase: number; mentionCount: number; positiveStart: number }>() };
+  let previousCount = 0, previousPositive = 0, previousPositiveStart = prompts.length;
   const profile = {
     openai: { baseline: 0.42, growth: 0.54, curve: 1 },
     perplexity: { baseline: 0.34, growth: 0.56, curve: 1.08 },
@@ -272,9 +272,14 @@ function measurementPlan(project: Project, provider: ScanProvider) {
           Math.ceil(mentionCount * (0.3 + 0.66 * phase)),
           previousCount ? Math.ceil(mentionCount * previousPositive / previousCount - 1e-10) : 0,
         ));
-    plan.scans.set(at, { phase, mentionCount, positiveCount });
+    // New mention cohorts enter with positive sentiment rather than diluting
+    // a prompt's existing provider scores. Existing positive cohorts stay
+    // positive as the historical sentiment curve improves.
+    const positiveStart = Math.min(previousPositiveStart, mentionCount - positiveCount);
+    plan.scans.set(at, { phase, mentionCount, positiveStart });
     previousCount = mentionCount;
     previousPositive = positiveCount;
+    previousPositiveStart = positiveStart;
   }
   providers.set(provider, plan);
   return plan;
@@ -301,7 +306,7 @@ function sourceCompanies(project: Project) {
 /** Stable prompt thresholds share the same scan movement across every report. */
 function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): BrandAnalysis[] {
   const plan = measurementPlan(project, run.snapshot.provider!);
-  const { phase, mentionCount, positiveCount } = plan.scans.get(Date.parse(run.scheduledAt))!;
+  const { phase, mentionCount, positiveStart } = plan.scans.get(Date.parse(run.scheduledAt))!;
   const index = plan.promptOrder.get(prompt.id)!;
   const mentioned = index < mentionCount;
   const movement = weeklyMovement(project, Date.parse(run.scheduledAt));
@@ -325,7 +330,7 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
     explicitRank: mentioned ? rank : null,
     appearanceRank: mentioned ? rank : null,
     mentionOrder: mentioned ? rank : null,
-    sentiment: mentioned ? index < positiveCount ? 'positive' : 'neutral' : 'not_applicable',
+    sentiment: mentioned ? index >= positiveStart ? 'positive' : 'neutral' : 'not_applicable',
     evidence: [],
     rankEvidence: null,
     sentimentEvidence: null,
