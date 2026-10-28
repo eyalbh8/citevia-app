@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import {
   JOURNEY_STAGES,
+  journeyGoal,
   MAX_BRANDED_PROMPTS,
   PROMPT_INTENTS,
   type ScanProvider,
@@ -581,7 +582,7 @@ export default function PromptsView({
                     <th scope="col">
                       <span
                         className="prompt-heading-hint"
-                        title="Search intent and branded status"
+                        title="Journey stage (Understand, Prefer, Trust, Convert) and branded status"
                       >
                         Intent
                       </span>
@@ -640,15 +641,17 @@ export default function PromptsView({
                       </td>
                       <td>
                         <div className="prompt-intent">
-                          {prompt.intent ? (
+                          {prompt.stage ? (
                             <span
-                              className={`intent-chip intent-${prompt.intent}`}
-                              title={labelize(prompt.intent)}
+                              className={`intent-chip intent-${prompt.stage}`}
+                              title={`${labelize(prompt.stage)}: ${journeyGoal(prompt.stage, project.brand.name)}`}
+                              role="img"
+                              aria-label={`${labelize(prompt.stage)}: ${journeyGoal(prompt.stage, project.brand.name)}`}
                             >
-                              {prompt.intent.charAt(0).toUpperCase()}
+                              {prompt.stage.charAt(0).toUpperCase()}
                             </span>
                           ) : (
-                            <span title="Intent not assigned">—</span>
+                            <span title="Journey stage not assigned">—</span>
                           )}
                           <span
                             className="intent-chip intent-branded"

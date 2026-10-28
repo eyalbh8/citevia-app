@@ -223,14 +223,13 @@
   background: #dfdfdf;
   color: var(--text);
 }
-.intent-commercial,
-.intent-comparison {
+.intent-prefer {
   background: #ffd69f;
 }
-.intent-transactional {
+.intent-convert {
   background: #c7e8cb;
 }
-.intent-validation {
+.intent-trust {
   background: var(--primary-soft);
 }
 .prompt-metric {
