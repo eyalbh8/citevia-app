@@ -30,6 +30,10 @@ export interface PromptMetricsRow extends Prompt {
   sentimentCount: number;
   responseId: string | null;
   comparison: PromptMetricComparison | null;
+  /** Saved analysis models actually included in the selected period. */
+  analysisModels?: string[];
+  /** Measurements use a saved analysis setting rather than the next-scan setting. */
+  historicalAnalysis?: boolean;
 }
 export interface PromptHistory {
   runs: ScanRun[];
@@ -278,7 +282,12 @@ export function promptPeriodMetrics(
     history.runs
       .filter(
         (run) =>
-          matchesPromptMethod(project, run) &&
+          // Changing future analysis settings must not erase saved measurements.
+          // All other target, collection-model, parser and locale checks still apply.
+          matchesPromptMethod(
+            { ...project, extractionModel: run.snapshot.extractionModel },
+            run,
+          ) &&
           (!provider || snapshotProvider(run.snapshot) === provider),
       )
       .map((run) => [run.id, run]),
@@ -294,57 +303,115 @@ export function promptPeriodMetrics(
     .sort((a, b) =>
       runs.get(b.runId)!.createdAt.localeCompare(runs.get(a.runId)!.createdAt),
     );
-  // A saved answer may be reanalyzed several times. Count its latest compatible successful analysis once.
-  const seen = new Set<string>();
-  const measured = candidates
-    .filter((row) => {
-      const run = runs.get(row.runId)!;
-      const key = `${snapshotProvider(run.snapshot)}:${row.promptId}:${row.captureKey || row.responseId}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) =>
-      promptMeasuredAt(b, runs.get(b.runId)!).localeCompare(
-        promptMeasuredAt(a, runs.get(a.runId)!),
-      ),
-    );
+  const inWindow = (row: PromptResult, from: number, to: number) => {
+    const timestamp = Date.parse(promptMeasuredAt(row, runs.get(row.runId)!));
+    return timestamp >= from && timestamp <= to;
+  };
   return {
     items: project.prompts.map((prompt) => {
-      const rows = measured.filter((row) => matchesPrompt(prompt, row));
-      const inWindow = (row: PromptResult, from: number, to: number) => {
-        const timestamp = Date.parse(
-          promptMeasuredAt(row, runs.get(row.runId)!),
+      const matching = candidates.filter((row) => matchesPrompt(prompt, row));
+      const methods = new Map<ScanProvider, ScanRun>();
+      const providers = new Set(
+        matching.map((row) => snapshotProvider(runs.get(row.runId)!.snapshot)),
+      );
+      for (const provider of providers) {
+        const providerRows = matching.filter(
+          (row) => snapshotProvider(runs.get(row.runId)!.snapshot) === provider,
         );
-        return timestamp >= from && timestamp <= to;
-      };
+        const current = providerRows.filter((row) =>
+          inWindow(row, startMs, endMs),
+        );
+        const available = current.length
+          ? current
+          : providerRows.filter((row) =>
+              inWindow(row, previousStartMs, startMs - 1),
+            );
+        // Prefer successful analysis with the current setting when available.
+        // Otherwise use the latest saved successful method, never a fabricated rescore.
+        const selected =
+          available.find((row) =>
+            matchesPromptMethod(project, runs.get(row.runId)!),
+          ) ||
+          available[0];
+        if (selected) methods.set(provider, runs.get(selected.runId)!);
+      }
+      const seen = new Set<string>();
+      const rows = matching
+        .filter((row) => {
+          const run = runs.get(row.runId)!;
+          const provider = snapshotProvider(run.snapshot);
+          const selected = methods.get(provider);
+          if (!selected || !sameTargetMethod(run.snapshot, selected.snapshot))
+            return false;
+          // Select the methodology before deduplicating reanalyses of one answer.
+          const key = `${provider}:${row.captureKey || row.responseId}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .sort((a, b) =>
+          promptMeasuredAt(b, runs.get(b.runId)!).localeCompare(
+            promptMeasuredAt(a, runs.get(a.runId)!),
+          ),
+        );
       const current = rows.filter((row) => inWindow(row, startMs, endMs)),
         previous = rows.filter((row) =>
           inWindow(row, previousStartMs, startMs - 1),
         );
-      const comparison = previous.length
+      const currentProviders = new Set(
+        current.map((row) => snapshotProvider(runs.get(row.runId)!.snapshot)),
+      );
+      const previousProviders = new Set(
+        previous.map((row) => snapshotProvider(runs.get(row.runId)!.snapshot)),
+      );
+      const pairedProviders = [...currentProviders]
+        .filter((provider) => previousProviders.has(provider))
+        .sort();
+      // A provider whose old analysis method has no current-method baseline
+      // must not enter the change through a different provider's baseline.
+      const paired = (row: PromptResult) =>
+        pairedProviders.includes(snapshotProvider(runs.get(row.runId)!.snapshot));
+      const comparedCurrent = current.filter(paired),
+        comparedPrevious = previous.filter(paired);
+      const comparison = pairedProviders.length
         ? {
-            current,
-            previous,
+            current: comparedCurrent,
+            previous: comparedPrevious,
             metadata: {
               mode: 'previous_period' as const,
               baseline: {
                 start: new Date(previousStartMs).toISOString(),
                 end: new Date(startMs - 1).toISOString(),
-                measurementCount: previous.length,
+                measurementCount: comparedPrevious.length,
               },
-              current: { start, end, measurementCount: current.length },
-              providers: [
-                ...new Set(
-                  [...current, ...previous].map((row) =>
-                    snapshotProvider(runs.get(row.runId)!.snapshot),
-                  ),
-                ),
-              ].sort(),
+              current: {
+                start,
+                end,
+                measurementCount: comparedCurrent.length,
+              },
+              providers: pairedProviders,
             },
           }
         : firstLastDayComparison(current, runs);
-      return metricRow(project, prompt, current, previous, comparison);
+      return {
+        ...metricRow(
+          project,
+          prompt,
+          current,
+          comparison ? previous : [],
+          comparison,
+        ),
+        // Keep history coverage visible even when no paired comparison is possible.
+        previousMeasurementCount: previous.length,
+        analysisModels: [
+          ...new Set(
+            current.map((row) => runs.get(row.runId)!.snapshot.extractionModel),
+          ),
+        ].sort(),
+        historicalAnalysis: current.some(
+          (row) => !matchesPromptMethod(project, runs.get(row.runId)!),
+        ),
+      };
     }),
     period: {
       start,

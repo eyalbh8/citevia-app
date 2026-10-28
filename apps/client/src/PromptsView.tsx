@@ -60,6 +60,12 @@ type SortKey =
   'text' | 'avgVisibility' | 'avgSentimentScore' | 'avgRank' | 'createdAt';
 const PAGE_SIZE = 20;
 
+function savedAnalysisNote(prompt: PromptMetricsRow) {
+  return prompt.historicalAnalysis
+    ? ` Uses saved analysis from earlier settings${prompt.analysisModels?.length ? ` (${prompt.analysisModels.join(', ')})` : ''}. Changes compare matching analysis settings.`
+    : '';
+}
+
 export function PromptMetricChange({
   value,
   comparison,
@@ -472,8 +478,10 @@ export default function PromptsView({
           </div>
         </div>
         <p className="prompt-comparison-note">
-          Values average the selected period. Percentage changes compare the previous period,
-          or the first and latest scan days when earlier data is unavailable.
+          {filtered.filter((prompt) => prompt.measurementCount > 0).length} of {filtered.length} matching prompts have analyzed answers.
+          {' '}Values summarize saved analyses in the selected period. Changes compare matching analysis settings
+          in the previous period, or the first and latest comparable scan days.
+          {filtered.some((prompt) => prompt.historicalAnalysis) && ' Some scores use earlier saved analysis settings.'}
         </p>
         {pendingSetup && (
           <p className="prompt-notice">
@@ -664,7 +672,7 @@ export default function PromptsView({
                       <td>
                         <div
                           className="prompt-metric"
-                          title={`${prompt.measurementCount} successfully analyzed answers`}
+                          title={`${prompt.measurementCount} successfully analyzed answers.${savedAnalysisNote(prompt)}`}
                         >
                           <VisibilityGauge value={prompt.avgVisibility} />
                           <PromptMetricChange
@@ -676,7 +684,7 @@ export default function PromptsView({
                       <td>
                         <div
                           className="prompt-metric"
-                          title={`${prompt.sentimentCount} classified brand mentions`}
+                          title={`${prompt.sentimentCount} classified brand mentions.${savedAnalysisNote(prompt)}`}
                         >
                           {prompt.avgSentimentScore === null ? (
                             <span className="prompt-missing">—</span>
@@ -697,7 +705,7 @@ export default function PromptsView({
                       <td>
                         <div
                           className="prompt-metric"
-                          title={`${prompt.rankCount} ranked brand mentions. Lower is better.`}
+                          title={`${prompt.rankCount} ranked brand mentions. Lower is better.${savedAnalysisNote(prompt)}`}
                         >
                           <span className="prompt-rank">
                             {prompt.avgRank === null

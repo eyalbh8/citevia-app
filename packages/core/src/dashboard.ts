@@ -34,6 +34,8 @@ export interface DashboardOverview {
     name: string;
     domain: string | null;
     isTarget: boolean;
+    /** Position among all mentioned brands, before the displayed rows are limited. */
+    position?: number | null;
     rank: number | null;
     rankChange: number | null;
     mentions: number;
@@ -246,8 +248,12 @@ export function aggregateDashboardOverview(
     }
   }
   const observedDays = [...days].sort();
-  const ranking: DashboardOverview['ranking'] = brands
-    .filter((brand) => mentions.has(brand.id))
+  const rankedBrands: DashboardOverview['ranking'] = brands
+    .filter(
+      (brand) =>
+        mentions.has(brand.id) ||
+        (observations.length > 0 && brand.id === project.brand.id),
+    )
     .map((brand) => {
       const brandRanks = ranks.get(brand.id) || new Map<string, number>();
       const rankDates = [...brandRanks.keys()].sort();
@@ -278,7 +284,15 @@ export function aggregateDashboardOverview(
         Number(b.isTarget) - Number(a.isTarget) ||
         a.name.localeCompare(b.name),
     )
-    .slice(0, 5);
+    .map((brand, index) => ({
+      ...brand,
+      position: brand.mentions ? index + 1 : null,
+    }));
+  const ranking = rankedBrands.slice(0, 5);
+  // Keep a low-visibility target in the comparison instead of hiding the gap
+  // behind the top-five limit. Its position and measurements remain unchanged.
+  const target = rankedBrands.find((brand) => brand.isTarget);
+  if (target && !ranking.includes(target)) ranking.push(target);
 
   const stages = new Map<
     string,

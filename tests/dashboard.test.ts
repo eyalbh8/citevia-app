@@ -179,9 +179,9 @@ describe('dashboard overview measurement semantics', () => {
     const data = aggregateDashboardOverview(value, period, filters, [earlier, reanalysis, kept]);
     expect(data).toMatchObject({
       analyzed: 1,
-      ranking: [],
+      ranking: [{ brandId: value.brand.id, mentions: 0, rank: null, position: null }],
       sources: [],
-      trend: [{ date: '2026-10-20', mentions: {} }],
+      trend: [{ date: '2026-10-20', mentions: { [value.brand.id]: 0 } }],
       providers: [
         { provider: 'openai', count: 0, change: 0 },
         { provider: 'gemini', count: 0, change: null },
@@ -287,9 +287,13 @@ describe('dashboard overview measurement semantics', () => {
     const duplicate = structuredClone(first);
     duplicate.result.promptId = 'same-text-another-id';
     duplicate.result.responseId = 'same-scan~duplicate';
+    const reanalysis = structuredClone(first);
+    reanalysis.run.id = reanalysis.result.runId = 'same-scan-reanalysis';
+    reanalysis.run.reanalysisOf = first.run.id;
     const result = aggregateDashboardOverview(value, period, filters, [
       first,
       duplicate,
+      reanalysis,
       observation(value, 'next-scan', '2026-10-18'),
       observation(value, 'gemini-scan', '2026-10-18', { provider: 'gemini' }),
     ]);
@@ -298,6 +302,102 @@ describe('dashboard overview measurement semantics', () => {
       { provider: 'gemini', count: 1, change: 0 },
     ]);
     expect(result.ranking[0].mentions).toBe(3);
+    expect(result.ranking[0].position).toBe(1);
+    expect(result.trend).toEqual([
+      { date: '2026-10-15', mentions: { [value.brand.id]: 1 } },
+      { date: '2026-10-18', mentions: { [value.brand.id]: 2 } },
+    ]);
+  });
+
+  it('shows the genuine discovery gap after excluding branded prompts, including a sixth-place target', () => {
+    const value = project();
+    value.prompts[0].branded = false;
+    value.prompts[1].branded = true;
+    value.competitors = Array.from({ length: 5 }, (_, index) => ({
+      id: `competitor-${index}`,
+      name: `Competitor ${index}`,
+      aliases: [],
+      domains: [`competitor-${index}.example`],
+    }));
+    const discovery = Array.from({ length: 7 }, (_, index) =>
+      observation(value, `discovery-${index}`, '2026-10-15', {
+        mentioned: index === 0,
+        competitors: value.competitors
+          .filter((_, competitor) => index < 7 - competitor)
+          .map((competitor) => competitor.id),
+      }),
+    );
+    const branded = Array.from({ length: 8 }, (_, index) =>
+      observation(value, `branded-${index}`, '2026-10-18', { prompt: 1 }),
+    );
+    const input = [...discovery, ...branded];
+    const before = structuredClone(input);
+    const all = aggregateDashboardOverview(value, period, filters, input);
+    expect(all.ranking[0]).toMatchObject({ isTarget: true, mentions: 9, position: 1 });
+    expect(all.ranking).toHaveLength(5);
+
+    const selected = aggregateDashboardOverview(value, period, { ...filters, branded: 'false' }, input);
+    expect(selected.analyzed).toBe(7);
+    expect(selected.ranking.map((row) => row.mentions)).toEqual([7, 6, 5, 4, 3, 1]);
+    expect(selected.ranking.at(-1)).toMatchObject({
+      brandId: value.brand.id,
+      isTarget: true,
+      mentions: 1,
+      rank: 6,
+      position: 6,
+    });
+    expect(selected.trend).toEqual([{
+      date: '2026-10-15',
+      mentions: {
+        'competitor-0': 7,
+        'competitor-1': 6,
+        'competitor-2': 5,
+        'competitor-3': 4,
+        'competitor-4': 3,
+        [value.brand.id]: 1,
+      },
+    }]);
+    expect(input).toEqual(before);
+
+    const largerIndustry = structuredClone(value);
+    largerIndustry.competitors.push({
+      id: 'another-competitor', name: 'Another competitor', aliases: [], domains: ['another.example'],
+    });
+    const largerInput = structuredClone(input);
+    for (const item of largerInput.slice(0, 2)) item.result.brands!.push(brand('another-competitor'));
+    const larger = aggregateDashboardOverview(largerIndustry, period, { ...filters, branded: 'false' }, largerInput);
+    expect(larger.ranking).toHaveLength(6);
+    expect(larger.ranking.at(-1)).toMatchObject({ isTarget: true, mentions: 1, rank: 7, position: 7 });
+  });
+
+  it('retains an unmentioned target with zeroes and no rank alongside the leading competitors', () => {
+    const value = project();
+    value.competitors = Array.from({ length: 6 }, (_, index) => ({
+      id: `competitor-${index}`,
+      name: `Competitor ${index}`,
+      aliases: [],
+      domains: [`competitor-${index}.example`],
+    }));
+    const data = aggregateDashboardOverview(value, period, filters, [
+      observation(value, 'first', '2026-10-15', {
+        mentioned: false,
+        competitors: value.competitors.map((competitor) => competitor.id),
+      }),
+      observation(value, 'last', '2026-10-18', { mentioned: false }),
+    ]);
+    expect(data.ranking).toHaveLength(6);
+    expect(data.ranking.slice(0, 5).every((row) => !row.isTarget && row.mentions === 1)).toBe(true);
+    expect(data.ranking.at(-1)).toMatchObject({
+      brandId: value.brand.id,
+      mentions: 0,
+      position: null,
+      rank: null,
+      rankChange: null,
+      sentiment: null,
+      sentimentChange: null,
+    });
+    expect(data.trend.map((day) => day.mentions[value.brand.id])).toEqual([0, 0]);
+    expect(data.trend.flatMap((day) => Object.keys(day.mentions))).not.toContain('competitor-5');
   });
 
   it('uses daily competition ranks, zero-mention observed days, and score-point sentiment changes', () => {
@@ -574,8 +674,8 @@ describe('dashboard overview measurement semantics', () => {
       aggregateDashboardOverview(value, period, filters, [item]),
     ).toMatchObject({
       analyzed: 1,
-      ranking: [],
-      trend: [{ date: '2026-10-15', mentions: {} }],
+      ranking: [{ brandId: value.brand.id, mentions: 0, rank: null, position: null, sentiment: null }],
+      trend: [{ date: '2026-10-15', mentions: { [value.brand.id]: 0 } }],
     });
   });
 });

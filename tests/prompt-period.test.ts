@@ -364,6 +364,209 @@ describe('iGEO prompt period metrics', () => {
       visibilityChange: null,
     });
   });
+
+  it('retains saved prompt measurements after changing the future analysis model', () => {
+    const f = fixture();
+    f.observation('2026-10-13T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-16T12:00:00Z', { rank: 4, sentiment: 'negative' });
+    const latest = f.observation('2026-10-20T12:00:00Z', { rank: 3 });
+    const savedModel = f.project.extractionModel;
+    f.project.extractionModel = 'new-analysis-model';
+
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 2,
+        previousMeasurementCount: 1,
+        avgVisibility: 100,
+        avgRank: 3.5,
+        avgSentimentScore: 50,
+        visibilityChange: 100,
+        analysisModels: [savedModel],
+        historicalAnalysis: true,
+        comparison: { mode: 'previous_period' },
+      });
+    // Explicit single-scan consumers continue to require the current method.
+    expect(promptMetrics(f.project, latest.run, [latest.result])[0])
+      .toMatchObject({ measurementCount: 0, avgVisibility: null });
+  });
+
+  it('does not turn an analysis-model transition into a visibility or rank change', () => {
+    const f = fixture();
+    f.observation('2026-10-13T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-16T12:00:00Z', { rank: 5, sentiment: 'negative' });
+    f.project.extractionModel = 'new-analysis-model';
+    f.observation('2026-10-20T12:00:00Z', { rank: 1 });
+
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 1,
+        previousMeasurementCount: 0,
+        avgVisibility: 100,
+        avgRank: 1,
+        visibilityChange: null,
+        rankChange: null,
+        sentimentChange: null,
+        comparison: null,
+        analysisModels: ['new-analysis-model'],
+        historicalAnalysis: false,
+      });
+  });
+
+  it('compares only paired providers when another provider changes its analysis model', () => {
+    const f = fixture();
+    const savedModel = f.project.extractionModel;
+    f.observation('2026-10-13T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-13T12:00:00Z', { provider: 'gemini', mentioned: false });
+    f.observation('2026-10-16T12:00:00Z', { provider: 'gemini', mentioned: false });
+    f.project.extractionModel = 'new-analysis-model';
+    f.observation('2026-10-20T12:00:00Z');
+
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 2,
+        previousMeasurementCount: 1,
+        avgVisibility: 50,
+        visibilityChange: 0,
+        rankChange: null,
+        analysisModels: [savedModel, 'new-analysis-model'].sort(),
+        historicalAnalysis: true,
+        comparison: {
+          mode: 'previous_period',
+          providers: ['gemini'],
+          baseline: { measurementCount: 1 },
+          current: { measurementCount: 1 },
+        },
+      });
+  });
+
+  it('does not compare providers observed only in different periods', () => {
+    const f = fixture();
+    f.observation('2026-10-13T12:00:00Z', { provider: 'gemini', mentioned: false });
+    f.observation('2026-10-20T12:00:00Z');
+
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 1,
+        previousMeasurementCount: 1,
+        avgVisibility: 100,
+        visibilityChange: null,
+        rankChange: null,
+        sentimentChange: null,
+        comparison: null,
+      });
+  });
+
+  it('falls back to matched scan days when the previous period only contains another provider', () => {
+    const f = fixture();
+    f.observation('2026-10-13T12:00:00Z', { provider: 'gemini', mentioned: false });
+    f.observation('2026-10-16T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-20T12:00:00Z');
+
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 2,
+        previousMeasurementCount: 1,
+        avgVisibility: 50,
+        visibilityChange: 100,
+        comparison: {
+          mode: 'first_last_day',
+          providers: ['openai'],
+          baseline: { measurementCount: 1 },
+          current: { measurementCount: 1 },
+        },
+      });
+  });
+
+  it('prefers the current analysis method before deduplicating saved-answer reanalyses', () => {
+    const f = fixture();
+    const original = f.observation('2026-10-16T12:00:00Z', { rank: 5 });
+    const oldModel = f.project.extractionModel;
+    f.project.extractionModel = 'new-analysis-model';
+    const current = f.observation('2026-10-19T12:00:00Z', { rank: 2 });
+    const laterHistorical = f.observation('2026-10-20T12:00:00Z', { mentioned: false });
+    laterHistorical.run.snapshot.extractionModel = oldModel;
+    for (const reanalysis of [current, laterHistorical]) {
+      reanalysis.run.reanalysisOf = original.run.id;
+      reanalysis.result.captureKey = original.result.captureKey;
+      reanalysis.result.capturedAt = original.result.capturedAt;
+    }
+
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 1,
+        avgVisibility: 100,
+        avgRank: 2,
+        responseId: current.result.responseId,
+        analysisModels: ['new-analysis-model'],
+        historicalAnalysis: false,
+        comparison: null,
+      });
+    expect(current.result.capturedAt).toBe('2026-10-16T12:00:00Z');
+  });
+
+  it('uses the latest saved historical method and compares only its matching earlier measurements', () => {
+    const f = fixture();
+    const previous = f.observation('2026-10-13T12:00:00Z', { rank: 4 });
+    f.observation('2026-10-16T12:00:00Z', { rank: 1 });
+    const latest = f.observation('2026-10-20T12:00:00Z', { rank: 3 });
+    previous.run.snapshot.extractionModel = 'saved-analysis-model';
+    latest.run.snapshot.extractionModel = 'saved-analysis-model';
+    f.project.extractionModel = 'future-analysis-model';
+
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 1,
+        previousMeasurementCount: 1,
+        avgRank: 3,
+        rankChange: 25,
+        analysisModels: ['saved-analysis-model'],
+        historicalAnalysis: true,
+      });
+  });
+
+  it('keeps different extraction fallback settings in separate comparison cohorts', () => {
+    const f = fixture();
+    const previous = f.observation('2026-10-13T12:00:00Z', { mentioned: false });
+    const early = f.observation('2026-10-16T12:00:00Z', { mentioned: false });
+    const latest = f.observation('2026-10-20T12:00:00Z');
+    previous.run.snapshot.extractionFallbackModel = 'old-fallback';
+    early.run.snapshot.extractionFallbackModel = 'old-fallback';
+    latest.run.snapshot.extractionFallbackModel = 'new-fallback';
+    f.project.extractionModel = 'future-analysis-model';
+
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 1,
+        previousMeasurementCount: 0,
+        avgVisibility: 100,
+        visibilityChange: null,
+        comparison: null,
+        historicalAnalysis: true,
+      });
+  });
+
+  it('does not revive saved analysis for edited prompts, another parser, collection model, brand or locale', () => {
+    const f = fixture();
+    f.observation('2026-10-16T12:00:00Z');
+    f.project.extractionModel = 'future-analysis-model';
+    f.observation('2026-10-20T12:00:00Z').result.prompt.version++;
+    f.observation('2026-10-20T12:00:00Z').result.prompt.text = 'Changed question?';
+    f.observation('2026-10-20T12:00:00Z').run.snapshot.parserVersion = 'changed-parser';
+    f.observation('2026-10-20T12:00:00Z').run.snapshot.generationModel = 'changed-collection-model';
+    f.observation('2026-10-20T12:00:00Z').run.snapshot.brand = { ...f.project.brand, name: 'Other brand' };
+    f.observation('2026-10-20T12:00:00Z').run.snapshot.country = 'DE';
+    f.observation('2026-10-20T12:00:00Z').run.snapshot.language = 'de';
+    f.observation('2026-10-20T12:00:00Z').run.reportingExcludedAt = end;
+    f.observation('2026-10-20T12:00:00Z').run.projectId = 'another-account';
+
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({
+        measurementCount: 1,
+        avgVisibility: 100,
+        comparison: null,
+        historicalAnalysis: true,
+      });
+  });
 });
 
 it('validates periods, returns empty metrics before the first scan, and scopes reads to members', async () => {

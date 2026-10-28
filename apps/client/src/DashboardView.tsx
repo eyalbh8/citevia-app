@@ -32,7 +32,7 @@ import {
 } from './MonitoringUI';
 import './dashboard.css';
 
-const brandColors = ['#3930cf', '#148a91', '#b27621', '#ad537d', '#7685ce'];
+const brandColors = ['#3930cf', '#148a91', '#b27621', '#ad537d', '#7685ce', '#7b8431'];
 const stageColors: Record<string, string> = {
   understand: '#7685ce',
   prefer: '#3930cf',
@@ -153,7 +153,10 @@ export function DashboardView({
   actions?: ReactNode;
 }) {
   const [selection, setSelection] =
-    useState<MonitorSelection>(() => initialSelection('7', project.demo));
+    useState<MonitorSelection>(() => ({
+      ...initialSelection('7', project.demo),
+      branded: project.demo ? '' : 'false',
+    }));
   const [retry, setRetry] = useState(0);
   const overview = useApi<DashboardOverview>(
     `${path}/dashboard/overview${selectionQuery(selection)}`,
@@ -333,7 +336,13 @@ export function DashboardView({
                     <h2 className="card-title" id="ranking-title">
                       Industry Ranking
                     </h2>
-                    <p className="card-description">Top brands by visibility</p>
+                    <p className="card-description">
+                      {selection.branded === 'false'
+                        ? 'Discovery visibility from non-branded prompts'
+                        : selection.branded === 'true'
+                          ? 'Visibility from prompts that name your brand'
+                          : 'Top brands by visibility across all prompts'}
+                    </p>
                   </div>
                   {project.role === 'owner' && !project.demo && (
                     <a
@@ -377,7 +386,7 @@ export function DashboardView({
                             key={b.brandId}
                             className={b.isTarget ? 'is-target' : ''}
                           >
-                            <td>{index + 1}</td>
+                            <td>{b.position === null ? '—' : b.position ?? index + 1}</td>
                             <th scope="row">
                               <div className="overview-brand">
                                 <DomainLogo
@@ -395,7 +404,7 @@ export function DashboardView({
                                   title={b.domain || b.name}
                                 >
                                   {b.name}
-                                  {b.isTarget && <small>Your brand</small>}
+                                  {b.isTarget && <small>Your brand{b.mentions === 0 ? ' · Not mentioned' : ''}</small>}
                                 </span>
                               </div>
                             </th>
@@ -452,7 +461,7 @@ export function DashboardView({
                   <div className="overview-card-footer">
                     <span>
                       {project.competitors.length
-                        ? 'Rank reflects daily mention totals.'
+                        ? `Rank reflects daily mention totals${selection.branded === 'false' ? ' from non-branded prompts' : ''}. Your brand stays visible alongside the top five.`
                         : 'Add competitors to compare your brand with other companies.'}
                     </span>
                   </div>
