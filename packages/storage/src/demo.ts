@@ -66,6 +66,8 @@ function configFor(project: Project): DemoConfig | null {
   if (!config) return null;
   if (config.version !== 1 || !['igeo-nayax', 'igeo-dr-roof', 'website-demo'].includes(config.source) ||
       !Number.isFinite(day(config.startDate)) || !Number.isFinite(day(config.endDate)) ||
+      !Number.isFinite(day(config.anchorDate)) || day(config.anchorDate) < day(config.startDate) ||
+      day(config.anchorDate) > day(config.endDate) ||
       day(config.endDate) < day(config.startDate) ||
       day(config.endDate) - day(config.startDate) > 366 * DAY)
     throw new Error('Invalid demo scenario configuration');
@@ -148,6 +150,16 @@ function progress(project: Project, at: number) {
   ));
   const curve = demoNumericProfile(config).growthCurve;
   return curve === 1 ? phase : phase ** curve;
+}
+
+/** Most prompt cohorts lead by the saved anchor, with the final few improving afterward. */
+function rankImprovement(project: Project, at: number) {
+  const phase = progress(project, at);
+  const anchor = progress(project, day(configFor(project)!.anchorDate));
+  // Inclusive date bounds also support the one-day scenarios used for website previews.
+  const historical = Math.min(1, phase / Math.max(Number.EPSILON, anchor));
+  const projected = Math.max(0, (phase - anchor) / Math.max(Number.EPSILON, 1 - anchor));
+  return historical * 5.925 + projected * .075;
 }
 
 function runId(at: number, provider: ScanProvider) {
@@ -297,14 +309,16 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
     const threshold = (hash(`${prompt.id}:${brand.id}:${run.snapshot.provider}`) % 1000) / 1000;
     const seed = hash(`${project.id}:${brand.id}:${run.snapshot.provider}:weekly-mentions`);
     const variation = movement * (seed % 2 ? 1 : -1) * (.03 + (seed % 4) * .01);
-    return threshold < 0.50 - 0.18 * phase - competitorIndex * 0.025 + variation;
+    return threshold < 0.50 - 0.30 * phase - competitorIndex * 0.025 + variation;
   });
   if (configFor(project)!.companyDiscovery && !mentioned && !visibleCompetitors.length && project.competitors.length)
     visibleCompetitors.push(project.competitors[hash(`${project.id}:${run.snapshot.provider}:${prompt.id}:discovery`) % project.competitors.length]);
   // All earlier ordinal positions must have a company in the simulated answer.
   // Sparse fixtures without source alternatives use the highest supportable rank.
+  // Later mention cohorts rank at least as well, so growing visibility cannot
+  // dilute the improving rank curve by introducing lower-ranked prompt results.
   const rank = Math.min(1 + visibleCompetitors.length + sourceCompanies(project).length,
-    Math.max(1, 7 - Math.floor(phase * 5.8)));
+    Math.max(1, 7 - Math.floor(rankImprovement(project, Date.parse(run.scheduledAt)) + index / Math.max(1, activePrompts(project).length))));
   const target: BrandAnalysis = {
     brandId: project.brand.id,
     mentioned,
