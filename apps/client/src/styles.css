@@ -525,6 +525,7 @@ input[type="checkbox"] { accent-color: var(--primary); }
 
 .provider-banner { display: flex; align-items: flex-start; gap: 10px; padding: 16px 18px; margin-bottom: 22px; border: 1px solid #e9ddba; border-radius: 12px; background: #fffbf1; color: #805d1c; font-size: 12px; line-height: 1.8; }
 .provider-banner > svg { flex-shrink: 0; margin-top: 2px; }
+.presentation-scenario-notice > span { min-width: 0; overflow-wrap: anywhere; }
 .page-buttons button { padding: 0 9px; }
 .data-table td:first-child { min-width: 200px; }
 

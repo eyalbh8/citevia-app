@@ -27,11 +27,22 @@ const iso = (at: number) => new Date(at).toISOString();
 const day = (value: string) => Date.parse(`${value}T00:00:00.000Z`);
 const checkedMetadata = new WeakMap<DemoConfig, string>();
 
-function validateMetadata(config: DemoConfig, projectId: string) {
+function validateMetadata(config: DemoConfig, project: Project) {
+  const projectId = project.id;
   if (checkedMetadata.get(config) === projectId) return;
   if (config.companyDiscovery !== undefined && config.companyDiscovery !== true)
     throw new Error('Invalid company discovery scenario');
   const validText = (value: unknown, limit: number) => typeof value === 'string' && value.trim().length > 0 && value.length <= limit;
+  if (config.presentation) {
+    const { label, targetRank, mentionCount, reportingOnly } = config.presentation;
+    const rivals = project.competitors.slice(0, targetRank - 1);
+    if (!validText(label, 160) || !Number.isInteger(targetRank) || targetRank < 2 || targetRank > 10 ||
+      !Number.isInteger(mentionCount) || mentionCount < 1 || mentionCount > 50 || reportingOnly !== true ||
+      rivals.length !== targetRank - 1 || new Set(rivals.map(brand => brand.id)).size !== rivals.length ||
+      new Set(rivals.map(brand => brand.name.trim().toLowerCase())).size !== rivals.length ||
+      rivals.some(brand => brand.id === project.brand.id || brand.name.trim().toLowerCase() === project.brand.name.trim().toLowerCase()))
+      throw new Error('Invalid illustrative presentation configuration');
+  }
   if (config.industry && (!validText(config.industry.label, 120) || !validText(config.industry.audience, 160) ||
     [config.industry.services, config.industry.criteria].some(items => !Array.isArray(items) || !items.length ||
       items.length > 10 || items.some(item => !validText(item, 160)))))
@@ -72,7 +83,7 @@ function configFor(project: Project): DemoConfig | null {
       day(config.endDate) - day(config.startDate) > 366 * DAY)
     throw new Error('Invalid demo scenario configuration');
   demoNumericProfile(config);
-  validateMetadata(config, project.id);
+  validateMetadata(config, project);
   return config;
 }
 
@@ -303,8 +314,35 @@ function sourceCompanies(project: Project) {
   return pool;
 }
 
+const presentationOrderCache = new WeakMap<Project, Map<string, number>>();
+/** Shared, rotating blocks cover every prompt without increasing total mentions. */
+function presentationMeasurements(project: Project, run: ScanRun, prompt: Prompt): BrandAnalysis[] {
+  const presentation = configFor(project)!.presentation!;
+  const prompts = activePrompts(project);
+  let order = presentationOrderCache.get(project);
+  if (!order) {
+    const sorted = [...prompts].sort((a, b) => hash(`${project.id}:${a.id}`) - hash(`${project.id}:${b.id}`) || a.id.localeCompare(b.id));
+    order = new Map(sorted.map((item, index) => [item.id, index]));
+    presentationOrderCache.set(project, order);
+  }
+  const providers = projectProviders(project);
+  const scanIndex = scanTimes(project).indexOf(Date.parse(run.scheduledAt));
+  const providerIndex = providers.findIndex(item => item.provider === run.snapshot.provider);
+  const count = Math.min(prompts.length, presentation.mentionCount);
+  const offset = (scanIndex * providers.length + providerIndex) * count % Math.max(1, prompts.length);
+  const mentioned = (order.get(prompt.id)! - offset + prompts.length) % Math.max(1, prompts.length) < count;
+  const measurement = (brandId: string, visible: boolean, rank: number): BrandAnalysis => ({
+    brandId, mentioned: visible,
+    explicitRank: visible ? rank : null, appearanceRank: visible ? rank : null, mentionOrder: visible ? rank : null,
+    sentiment: visible ? 'neutral' : 'not_applicable', evidence: [], rankEvidence: null, sentimentEvidence: null,
+  });
+  return [measurement(project.brand.id, mentioned, presentation.targetRank),
+    ...project.competitors.map((brand, index) => measurement(brand.id, index < presentation.targetRank - 1, index + 1))];
+}
+
 /** Stable prompt thresholds share the same scan movement across every report. */
 function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): BrandAnalysis[] {
+  if (configFor(project)!.presentation) return presentationMeasurements(project, run, prompt);
   const plan = measurementPlan(project, run.snapshot.provider!);
   const { phase, mentionCount, positiveStart } = plan.scans.get(Date.parse(run.scheduledAt))!;
   const index = plan.promptOrder.get(prompt.id)!;
@@ -491,8 +529,10 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
   );
   const selection = sentences.join('\n');
   // The source excerpt is a reusable illustration, not a second provider call.
-  const excerpt = result.target?.mentioned ? sample?.answerText?.trim().slice(0, 1800) : undefined;
+  const presentation = configFor(project)!.presentation;
+  const excerpt = !presentation && result.target?.mentioned ? sample?.answerText?.trim().slice(0, 1800) : undefined;
   const text = [
+    presentation ? 'Illustrative scenario. These generated examples are not captured provider responses.' : '',
     copy.introduction,
     selection || copy.fallback,
     excerpt || '',
@@ -516,7 +556,8 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
     blocks: [{ id: 'answer', text }], text, citations,
     sources: citations.map(({ url, title }) => ({ url, title })),
     usage: emptyUsage(), createdAt: result.capturedAt!,
-    raw: { demo: true, source: configFor(project)!.source, projection: result.capturedAt! > `${configFor(project)!.anchorDate}T23:59:59.999Z` },
+    raw: { demo: true, source: configFor(project)!.source, projection: result.capturedAt! > `${configFor(project)!.anchorDate}T23:59:59.999Z`,
+      ...(presentation ? { illustrative: true, presentation } : {}) },
   };
   const analysis: Analysis = {
     brands,
@@ -528,6 +569,7 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
     parserVersion: project.parserVersion,
     model: project.extractionModel,
     createdAt: result.completedAt!, usage: emptyUsage(),
+    ...(presentation ? { raw: { illustrative: true, presentation } } : {}),
   };
   return { result, answer, analysis };
 }
@@ -599,11 +641,11 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
   const overrides: Partial<Repository> = {
     async listTrackedUrls(projectId) {
       const project = await demoProject(projectId);
-      return project ? trackingFor(project).listTrackedUrls() : runtime.repository.listTrackedUrls(projectId);
+      return project && !project.demo!.presentation?.reportingOnly ? trackingFor(project).listTrackedUrls() : runtime.repository.listTrackedUrls(projectId);
     },
     async listTrackingMatches(projectId, trackedUrlId) {
       const project = await demoProject(projectId);
-      return project ? trackingFor(project).listTrackingMatches(trackedUrlId) : runtime.repository.listTrackingMatches(projectId, trackedUrlId);
+      return project && !project.demo!.presentation?.reportingOnly ? trackingFor(project).listTrackingMatches(trackedUrlId) : runtime.repository.listTrackingMatches(projectId, trackedUrlId);
     },
     async listRuns(projectId, limit = 60) {
       const project = await demoProject(projectId);
@@ -614,18 +656,21 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
     },
     async getRun(projectId, id) {
       const project = await demoProject(projectId);
-      return project ? findRun(project, id) : runtime.repository.getRun(projectId, id);
+      return project ? findRun(project, id) ?? (project.demo!.presentation && !id.startsWith('run_demo_') ? runtime.repository.getRun(projectId, id) : null)
+        : runtime.repository.getRun(projectId, id);
     },
     async listResults(projectId, id) {
       const project = await demoProject(projectId);
       if (!project) return runtime.repository.listResults(projectId, id);
       const run = findRun(project, id);
+      if (!run && project.demo!.presentation && !id.startsWith('run_demo_')) return runtime.repository.listResults(projectId, id);
       return run ? activePrompts(project).map((prompt) => resultFor(project, run, prompt)) : [];
     },
     async getResult(projectId, id, promptId) {
       const project = await demoProject(projectId);
       if (!project) return runtime.repository.getResult(projectId, id, promptId);
       const run = findRun(project, id), prompt = activePrompts(project).find((item) => item.id === promptId);
+      if (!run && project.demo!.presentation && !id.startsWith('run_demo_')) return runtime.repository.getResult(projectId, id, promptId);
       return run && prompt ? resultFor(project, run, prompt) : null;
     },
     async listPromptHistory(projectId, start, end, promptId) {
@@ -640,6 +685,8 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
       const project = await demoProject(projectId);
       if (!project) return runtime.repository.listNativeCitations(projectId, captureKeys);
       const items: { captureKey: string; citations: Citation[] }[] = [];
+      if (project.demo!.presentation) items.push(...await runtime.repository.listNativeCitations(projectId,
+        captureKeys.filter(captureKey => !captureKey.slice(captureKey.indexOf(':') + 1).startsWith(PREFIX))));
       for (const captureKey of new Set(captureKeys)) {
         const provider = captureKey.slice(0, captureKey.indexOf(':'));
         const key = captureKey.slice(captureKey.indexOf(':') + 1);
@@ -653,6 +700,8 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
       const project = await demoProject(projectId);
       if (!project) return runtime.repository.listSavedAnalyses(projectId, refs);
       const items = [];
+      if (project.demo!.presentation) items.push(...await runtime.repository.listSavedAnalyses(projectId,
+        refs.filter(ref => !ref.captureKey.startsWith(PREFIX))));
       for (const ref of refs) {
         const details = await keyDetails(ref.captureKey);
         if (details?.project.id !== projectId || !details.prompt || details.kind !== 'capture.json') continue;
@@ -664,11 +713,11 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
     },
     async aggregateTraffic(projectId, filters) {
       const project = await demoProject(projectId);
-      return project ? aggregateScenarioTraffic(project, filters) : runtime.repository.aggregateTraffic(projectId, filters);
+      return project && !project.demo!.presentation?.reportingOnly ? aggregateScenarioTraffic(project, filters) : runtime.repository.aggregateTraffic(projectId, filters);
     },
     async trafficStatus(projectId, testId) {
       const project = await demoProject(projectId);
-      if (!project) return runtime.repository.trafficStatus(projectId, testId);
+      if (!project || project.demo!.presentation?.reportingOnly) return runtime.repository.trafficStatus(projectId, testId);
       const config = configFor(project)!;
       const last = iso(Math.max(day(config.startDate), Math.min(now().getTime(), day(config.endDate) + DAY - 1)));
       return {

@@ -334,7 +334,9 @@ export function DashboardView({
                       Industry Ranking
                     </h2>
                     <p className="card-description">
-                      {selection.branded === 'false'
+                      {project.demo?.presentation
+                        ? 'Illustrative rankings across the selected prompts'
+                        : selection.branded === 'false'
                         ? 'Discovery visibility from non-branded prompts'
                         : selection.branded === 'true'
                           ? 'Visibility from prompts that name your brand'

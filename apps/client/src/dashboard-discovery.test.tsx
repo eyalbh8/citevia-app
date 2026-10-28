@@ -92,6 +92,15 @@ describe('dashboard discovery reporting', () => {
       .toBe('Top brands by visibility across all prompts');
   });
 
+  it('labels presentation rankings as illustrative while retaining all prompts', async () => {
+    await dashboard({ ...project, demo: { ...demo, presentation: {
+      label: 'XTrade visibility scenario', targetRank: 8, mentionCount: 12, reportingOnly: true,
+    } } });
+    expect(latestQuery().has('branded')).toBe(false);
+    expect(container.querySelector('.overview-ranking .card-description')?.textContent)
+      .toBe('Illustrative rankings across the selected prompts');
+  });
+
   it('keeps non-branded discovery as an explicit filter choice', async () => {
     await dashboard();
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Branded"]')!;

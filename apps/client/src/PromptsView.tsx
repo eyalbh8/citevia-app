@@ -478,7 +478,7 @@ export default function PromptsView({
           </div>
         </div>
         <p className="prompt-comparison-note">
-          {filtered.filter((prompt) => prompt.measurementCount > 0).length} of {filtered.length} matching prompts have analyzed answers.
+          {filtered.filter((prompt) => prompt.measurementCount > 0).length} of {filtered.length} matching prompts have {project.demo?.presentation ? 'simulated' : 'analyzed'} answers.
           {' '}Values summarize saved analyses in the selected period. Changes compare matching analysis settings
           in the previous period, or the first and latest comparable scan days.
           {filtered.some((prompt) => prompt.historicalAnalysis) && ' Some scores use earlier saved analysis settings.'}

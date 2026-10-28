@@ -8,6 +8,7 @@ import {
 import { SentimentScore } from './ScoreBadge';
 import AnswerMarkdown from './AnswerMarkdown';
 import DomainLogo from './DomainLogo';
+import PresentationScenarioNotice from './PresentationScenarioNotice';
 import {
   ExternalLink as LinkIcon,
   Info,
@@ -42,7 +43,7 @@ export default function ResponseDrawer({
     <Drawer title="Answer details" onClose={onClose}>
       <ErrorNotice error={error} />
       {loading && !data ? (
-        <Skeleton variant="detail" rows={3} label="Opening the original answer…" />
+        <Skeleton variant="detail" rows={3} label="Opening the answer…" />
       ) : (
         data && <ResponseDetailContent data={data} />
       )}
@@ -52,6 +53,13 @@ export default function ResponseDrawer({
 
 export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
   const { result, answer, run } = data;
+  const metadata = answer?.raw;
+  const illustrative = typeof metadata === 'object' && metadata !== null &&
+    'illustrative' in metadata && metadata.illustrative === true;
+  const presentation = illustrative && 'presentation' in metadata ? metadata.presentation : undefined;
+  const scenarioLabel = typeof presentation === 'object' && presentation !== null &&
+    'label' in presentation && typeof presentation.label === 'string' && presentation.label.trim()
+      ? presentation.label : 'Simulated visibility example';
   const target =
     data.analysis?.brands.find(
       (brand) => brand.brandId === run.snapshot.brand.id,
@@ -59,6 +67,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
   const aliases = [run.snapshot.brand.name, ...run.snapshot.brand.aliases];
   return (
     <>
+      {illustrative && <PresentationScenarioNotice label={scenarioLabel} />}
       <div className="eyebrow">
         {formatDate(result.capturedAt || run.createdAt, true)} ·{' '}
         {result.prompt.branded ? 'Branded' : 'Discovery'} prompt
@@ -108,7 +117,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
         <>
           <h3 className="drawer-section-title">
             <MessageSquareText size={14} />
-            Original answer{' '}
+            {illustrative ? 'Illustrative answer' : 'Original answer'}{' '}
             <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 400 }}>
               {answer.model}
             </span>
@@ -185,17 +194,20 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
             </div>
           ) : (
             <p className="sentiment-note">
-              The API did not return citation annotations for this answer.
+              {illustrative
+                ? 'No citations are included in this illustrative answer.'
+                : 'The API did not return citation annotations for this answer.'}
             </p>
           )}
           <h3 className="drawer-section-title">
             <Search size={14} />
-            Retrieved sources{' '}
+            {illustrative ? 'Illustrative sources' : 'Retrieved sources'}{' '}
             <span className="tag">{answer.sources.length}</span>
           </h3>
           <p className="card-description">
-            Search sources returned by the API. Retrieval does not imply a
-            citation in the answer.
+            {illustrative
+              ? 'Example sources included in this simulated answer.'
+              : 'Search sources returned by the API. Retrieval does not imply a citation in the answer.'}
           </p>
           {answer.sources.length ? (
             <div className="citation-list">
@@ -213,7 +225,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
             </div>
           ) : (
             <p className="sentiment-note">
-              No retrieved-source list was returned.
+              {illustrative ? 'No illustrative sources are included.' : 'No retrieved-source list was returned.'}
             </p>
           )}
           {answer.searchSuggestions?.map((html, index) => (
@@ -232,13 +244,19 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
           <div className="setting-note" style={{ marginTop: 25 }}>
             <Info size={14} />
             <span>
-              Captured from the{' '}
-              {PROVIDER_LABELS[snapshotProvider(run.snapshot)]} API. Rank and
-              sentiment are analyzed with OpenAI. Highlighting is for
-              navigation; rank and sentiment come from validated evidence. This
-              answer is preserved with its original scan configuration.
-              {run.reanalysisOf &&
-                ' This report reanalyzes saved answers from an earlier scan; no new collection calls were made.'}
+              {illustrative ? (
+                <>This answer, its ranking and its sentiment are simulated for an illustrative scenario. Original provider answers and scan records are preserved.</>
+              ) : (
+                <>
+                  Captured from the{' '}
+                  {PROVIDER_LABELS[snapshotProvider(run.snapshot)]} API. Rank and
+                  sentiment are analyzed with OpenAI. Highlighting is for
+                  navigation; rank and sentiment come from validated evidence. This
+                  answer is preserved with its original scan configuration.
+                  {run.reanalysisOf &&
+                    ' This report reanalyzes saved answers from an earlier scan; no new collection calls were made.'}
+                </>
+              )}
             </span>
           </div>
         </>

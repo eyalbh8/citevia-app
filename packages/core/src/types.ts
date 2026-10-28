@@ -82,6 +82,8 @@ export interface DemoConfig {
   source: 'igeo-nayax' | 'igeo-dr-roof' | 'website-demo';
   /** Company-discovery scenarios always name and cite at least one researched provider. */
   companyDiscovery?: true;
+  /** An explicitly labeled illustration layered over preserved source observations. */
+  presentation?: { label: string; targetRank: number; mentionCount: number; reportingOnly: true };
   anchorDate: string;
   startDate: string;
   endDate: string;
