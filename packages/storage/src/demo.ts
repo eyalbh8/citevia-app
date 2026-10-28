@@ -353,9 +353,8 @@ const trackedCitationCache = new WeakMap<Project, {
 }>();
 const contentPickupCache = new WeakMap<Project, Map<string, { url: string; title: string }[]>>();
 
-/** Enroll each service post in one scenario capture at its first subsequent scan. */
+/** Enroll each tracked post in one scenario capture at its first subsequent scan. */
 function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
-  if (!['igeo-dr-roof', 'website-demo'].includes(configFor(project)!.source)) return [];
   let pickups = contentPickupCache.get(project);
   if (!pickups) {
     pickups = new Map();

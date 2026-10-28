@@ -503,6 +503,82 @@ describe('prompt table score fields', () => {
   });
 });
 describe('saved-answer reanalysis', () => {
+  it('uses the current Gemini analyzer in a new report while preserving OpenAI source evidence', async () => {
+    vi.stubEnv('ANALYSIS_FALLBACK_MODEL', 'gpt-6-luna');
+    try {
+      const repository = new MemoryRepository(),
+        artifacts = new MemoryArtifacts(),
+        queue = new MemoryQueue();
+      const project = {
+        ...newProject({ prompts: ['Compare reporting tools.'] }),
+        extractionModel: 'gpt-4.1-mini-2025-04-14',
+      };
+      await repository.saveProject(project, null);
+      const provider = new FixtureProvider();
+      const fixtureExtract = provider.extract.bind(provider);
+      const collect = vi.spyOn(provider, 'collect');
+      const extract = vi.spyOn(provider, 'extract').mockImplementation(async (answer, config) => ({
+        ...await fixtureExtract(answer, config), model: config.extractionModel,
+      }));
+      const scanner = new Scanner({ repository, artifacts, queue, provider });
+      await scanner.handle({
+        kind: 'kickoff', projectId: project.id,
+        scheduledAt: new Date().toISOString(), trigger: 'manual',
+      });
+      while (queue.messages.length) await scanner.handle(queue.messages.shift()!);
+      const source = structuredClone((await repository.listRuns(project.id))[0]);
+      const originalRows = await repository.listResults(project.id, source.id);
+      const original = originalRows[0];
+      const originalAnswer = await artifacts.get(original.captureKey!);
+      const originalAnalysis = await artifacts.get(original.analysisKey!);
+      const stagedKey = `${original.captureKey}.scored-v2.json`;
+      await artifacts.put(stagedKey, originalAnalysis);
+      expect(source.snapshot).toMatchObject({
+        extractionModel: project.extractionModel, extractionFallbackModel: 'gpt-6-luna',
+      });
+      await repository.saveProject({
+        ...project, version: project.version + 1, extractionModel: 'gemini-3.8-flash',
+      }, project.version);
+      collect.mockClear();
+      extract.mockClear();
+
+      const reanalysis = await reanalyzeCapturedRun(
+        { repository, artifacts, queue }, project.id, source.id, 'gemini-rescore',
+      );
+      expect(reanalysis).toMatchObject({ sourceRunId: source.id, capturedAnswers: 1, newCollectionCalls: 0 });
+      expect(reanalysis.runId).not.toBe(source.id);
+      expect(await repository.listRuns(project.id)).toHaveLength(2);
+      const pendingRun = await repository.getRun(project.id, reanalysis.runId);
+      expect(pendingRun?.snapshot).toMatchObject({
+        brand: source.snapshot.brand, competitors: source.snapshot.competitors,
+        prompts: source.snapshot.prompts, generationModel: source.snapshot.generationModel,
+        extractionModel: 'gemini-3.8-flash', analysisMode: 'realtime',
+      });
+      expect(pendingRun?.snapshot.extractionFallbackModel).toBeUndefined();
+      const [pending] = await repository.listResults(project.id, reanalysis.runId);
+      // Same brands and parser make this staged artifact otherwise reusable; its old model must disqualify it.
+      expect(pending).toMatchObject({ status: 'captured', captureKey: original.captureKey, capturedAt: original.capturedAt });
+      expect(pending.analysisKey).toBeUndefined();
+
+      while (queue.messages.length) await scanner.handle(queue.messages.shift()!);
+      expect(collect).not.toHaveBeenCalled();
+      expect(extract).toHaveBeenCalledOnce();
+      expect(extract).toHaveBeenCalledWith(originalAnswer, expect.objectContaining({
+        extractionModel: 'gemini-3.8-flash', extractionFallbackModel: undefined,
+      }));
+      const [result] = await repository.listResults(project.id, reanalysis.runId);
+      expect(result).toMatchObject({ status: 'succeeded', captureKey: original.captureKey, capturedAt: original.capturedAt });
+      expect(result.analysisKey).not.toBe(stagedKey);
+      expect(await artifacts.get(result.analysisKey!)).toMatchObject({ model: 'gemini-3.8-flash' });
+      expect(await artifacts.get(stagedKey)).toEqual(originalAnalysis);
+      expect(await artifacts.get(original.captureKey!)).toEqual(originalAnswer);
+      expect(await repository.getRun(project.id, source.id)).toEqual(source);
+      expect(await repository.listResults(project.id, source.id)).toEqual(originalRows);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('creates one idempotent report and never recollects missing or captured answers', async () => {
     const repository = new MemoryRepository(),
       artifacts = new MemoryArtifacts(),

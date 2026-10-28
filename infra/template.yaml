@@ -85,8 +85,8 @@ Parameters:
     Description: Independent Responses API model for agent content creation, web research and editorial revisions. Does not change visibility scans.
   ExtractionModel:
     Type: String
-    Default: gpt-6-luna
-    Description: Responses API model supporting strict structured output.
+    Default: gemini-3.8-flash
+    Description: Answer analysis model with structured output; Gemini uses realtime generateContent and saved OpenAI models remain supported.
   ExtractionFallbackModel:
     Type: String
     Default: ''
@@ -95,7 +95,7 @@ Parameters:
     Type: String
     Default: 'false'
     AllowedValues: ['true', 'false']
-    Description: Opt in to asynchronous analysis after evaluating extraction quality and scan completion latency.
+    Description: Opt in to asynchronous OpenAI analysis for scheduled runs pinned to OpenAI models. Gemini analysis stays realtime.
   AnalysisCacheEnabled:
     Type: String
     Default: 'true'
@@ -251,7 +251,7 @@ Globals:
         ANALYSIS_CACHE_ENABLED: !Ref AnalysisCacheEnabled
         CITEVIA_WRITE_COMPATIBILITY_RESULTS: !Ref WriteCompatibilityResults
         CITEVIA_COMPACT_RUN_STATE: !Ref CompactRunState
-        OPENAI_EXTRACTION_FALLBACK_MODEL: !Ref ExtractionFallbackModel
+        ANALYSIS_FALLBACK_MODEL: !Ref ExtractionFallbackModel
         LLM_MONTHLY_BUDGET_USD: !Ref LlmMonthlyBudgetUsd
 
 Resources:
@@ -606,7 +606,7 @@ Resources:
           GEMINI_SECRET_ARN: !Ref GeminiSecretArn
           OPENAI_GENERATION_MODEL: !Ref GenerationModel
           OPENAI_CONTENT_MODEL: !Ref ContentGenerationModel
-          OPENAI_EXTRACTION_MODEL: !Ref ExtractionModel
+          ANALYSIS_MODEL: !Ref ExtractionModel
           PERPLEXITY_PRESET: !Ref PerplexityPreset
           GEMINI_GENERATION_MODEL: !Ref GeminiGenerationModel
           ALLOWED_ORIGIN: !Ref FrontendOrigin
@@ -673,7 +673,7 @@ Resources:
           OPENAI_SECRET_ARN: !Ref OpenAiSecretArn
           OPENAI_GENERATION_MODEL: !Ref GenerationModel
           OPENAI_CONTENT_MODEL: !Ref ContentGenerationModel
-          OPENAI_EXTRACTION_MODEL: !Ref ExtractionModel
+          ANALYSIS_MODEL: !Ref ExtractionModel
           OPENAI_ONBOARDING_MODEL: !Ref OnboardingModel
           UNSPLASH_SECRET_ARN: !Ref UnsplashSecretArn
           GOOGLE_PAGESPEED_SECRET_ARN: !Ref GooglePageSpeedSecretArn

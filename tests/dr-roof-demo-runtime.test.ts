@@ -259,7 +259,7 @@ describe('compact Dr. Roof scenario runtime', () => {
 
   it.each([
     ['visibilityAdjustment', -.21], ['visibilityAdjustment', .21],
-    ['growthCurve', 0], ['growthCurve', 2.1], ['trafficScale', 0], ['trafficScale', 2.1],
+    ['growthCurve', 0], ['growthCurve', 2.1], ['trafficScale', 0], ['trafficScale', 10.1],
     ['monthlyGrowth', -.01], ['monthlyGrowth', .26], ['monthlyGrowth', NaN], ['trafficScale', Infinity],
   ] as const)('rejects out-of-bounds %s numeric settings', async (field, value) => {
     const saved = project();

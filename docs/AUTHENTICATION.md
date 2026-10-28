@@ -30,6 +30,8 @@ Missing configuration shows setup instructions or denies protected API calls. No
 
 After a verified sign-in, the first API request saves the real Descope identity with no administrator role and no account assignments. A user can sign in before being assigned an account, but cannot read customer data.
 
+If a database user already has the same email, verified sign-in links the Descope identity to that existing record when it has no identity mapping. This preserves the user's UUID, administrator status and account assignments. Email matching is case-insensitive. An existing identity mapping is never replaced automatically; a different Descope identity or a legacy mapping still requires administrator review.
+
 - iGEO `users`: UUID, normalized actual email, name, last name, `is_system_admin`, created/updated timestamps. Passwords and session/refresh tokens are not stored here.
 - iGEO `user_accounts`: user/account foreign keys, `OWNER` or `VIEWER` assignment and timestamps. System-admin all-account access does not require inserting a membership for every customer.
 - `citevia_identities`: stable namespaced Descope subject, external user ID, user foreign key, provider, disabled flag, access version and last-seen timestamp. The additive `003_descope_users.sql` migration preserves the original iGEO user tables.

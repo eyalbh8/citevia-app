@@ -17,6 +17,7 @@ import {
 import {
   ProviderError,
   responseFailure,
+  responseModel,
   responseText,
   type ProviderReceipt,
 } from './provider.js';
@@ -441,7 +442,7 @@ export function parseScoredExtraction(
     parserVersion: SCORED_PARSER_VERSION,
     validationVersion: 'exact-evidence-v2.2',
     validationWarnings: warnings,
-    model: String(receipt.response.model ?? snapshot.extractionModel),
+    model: responseModel(receipt.response, snapshot.extractionModel),
     createdAt: receipt.receivedAt,
     usage: usage(receipt.response),
     raw: receipt,

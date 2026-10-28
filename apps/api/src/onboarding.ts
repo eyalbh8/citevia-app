@@ -6,6 +6,7 @@ import {
   WEEKLY_SCHEDULE,
   DEFAULT_PERPLEXITY_PRESET,
   DEFAULT_GEMINI_MODEL,
+  DEFAULT_ANALYSIS_MODEL,
   type OnboardingJob,
   type OnboardingInput,
   type Project,
@@ -60,7 +61,7 @@ export async function createAccounts(
       generationModel:
         process.env.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14',
       extractionModel:
-        process.env.OPENAI_EXTRACTION_MODEL || 'gpt-6-luna',
+        process.env.ANALYSIS_MODEL || process.env.OPENAI_EXTRACTION_MODEL || DEFAULT_ANALYSIS_MODEL,
       scanProviders: [
         {
           provider: 'openai',

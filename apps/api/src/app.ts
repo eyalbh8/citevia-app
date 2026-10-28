@@ -26,6 +26,8 @@ import {
   sameMethod,
   settingsSchema,
   projectProviders,
+  analysisProvider,
+  DEFAULT_ANALYSIS_MODEL,
   snapshotProvider,
   scanProviderSchema,
   SCAN_PROVIDERS,
@@ -239,14 +241,14 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             ),
           mode: 'live',
         });
-      const requireProvider = (providers: ScanProvider[] = ['openai']) => {
-        if (options.providerConfigured === false)
+      const requireProvider = (providers: ScanProvider[] = ['openai'], model = process.env.ANALYSIS_MODEL || process.env.OPENAI_EXTRACTION_MODEL || DEFAULT_ANALYSIS_MODEL) => {
+        const required = [...new Set([analysisProvider(model), ...providers])];
+        if (required.includes('openai') && options.providerConfigured === false)
           throw new HttpError(
             503,
             'OPENAI_NOT_CONFIGURED',
             'Configure OPENAI_API_KEY or OPENAI_SECRET_ARN and restart the server to enable generation and scans.',
           );
-        const required = [...new Set(['openai' as const, ...providers])];
         const missing = required.filter(
           (provider) => options.providerAvailability?.[provider] === false,
         );
@@ -254,7 +256,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           throw new HttpError(
             503,
             'PROVIDER_NOT_CONFIGURED',
-            `Configure API credentials for ${missing.map((provider) => PROVIDER_LABELS[provider]).join(', ')} before scanning. OpenAI is also used for answer analysis.`,
+            `Configure API credentials for ${missing.map((provider) => PROVIDER_LABELS[provider]).join(', ')} before scanning. ${PROVIDER_LABELS[analysisProvider(model)]} is used for answer analysis.`,
           );
       };
       if (path === '/v1/projects' && method === 'GET') {
@@ -369,16 +371,16 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         (tail === 'runs' ||
           tail === 'onboarding/retry' ||
           /^runs\/[^/]+\/retry-failed$/.test(tail))
-      )
+      ) {
+        const retryRun = /^runs\/[^/]+\/retry-failed$/.test(tail)
+          ? await selectedRun(tail.split('/')[1]) : undefined;
         requireProvider(
           tail === 'onboarding/retry' || tail === 'runs'
-            ? projectProviders(stored).map((config) => config.provider)
-            : [
-                snapshotProvider(
-                  (await selectedRun(tail.split('/')[1])).snapshot,
-                ),
-              ],
+            ? [...projectProviders(stored).map((config) => config.provider), ...(tail === 'onboarding/retry' ? ['openai' as const] : [])]
+            : [snapshotProvider(retryRun!.snapshot)],
+          retryRun?.snapshot.extractionModel ?? stored.extractionModel,
         );
+      }
       if (tail === 'settings' && method === 'GET') return response({ ...project, nextScanAt: nextProjectScan(project, now()) });
       if (tail === 'competitors/suggestions' && method === 'GET')
         return response(await competitorSuggestions(runtime, project, now()));

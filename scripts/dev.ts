@@ -85,13 +85,13 @@ await assertRealLocalData(db);
 const runtime = { repository, artifacts, queue };
 const websiteHealth = new WebsiteHealthEngine(runtime);
 let scanner: Scanner | undefined;
-if (configured) {
+if (Object.values(providerAvailability()).some(Boolean)) {
   const provider = createScanProviderFromEnv(runtime);
-  const onboarding = new OnboardingEngine(
+  const onboarding = configured ? new OnboardingEngine(
     runtime,
     new OpenAIOnboardingProvider(await createResponseProviderFromEnv()),
     async () => {},
-  );
+  ) : undefined;
   scanner = new Scanner({ ...runtime, dispatch: new SqlScanDispatchStore(db), provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv), websiteHealth });
 }
 api = createAuthenticatedApi(runtime, createDescopeIdentityProvider(), {

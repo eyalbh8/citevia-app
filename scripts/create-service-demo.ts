@@ -39,7 +39,7 @@ const sourceReference = z.union([publicUrl, z.object({
 })]).transform(value => typeof value === 'string' ? { url: value } : value);
 const profileSchema = z.object({
   visibilityAdjustment: z.number().min(-.2).max(.2).optional(), growthCurve: z.number().min(.5).max(2).optional(),
-  trafficScale: z.number().min(.01).max(2).optional(), monthlyGrowth: z.number().min(0).max(.25).optional(),
+  trafficScale: z.number().min(.01).max(10).optional(), monthlyGrowth: z.number().min(0).max(.25).optional(),
 }).strict();
 const copySchema = z.object({
   introduction: z.string().trim().min(10).max(1000), positiveCompany: z.string().min(5).max(600),

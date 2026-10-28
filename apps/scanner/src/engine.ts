@@ -4,6 +4,7 @@ import {
   isTerminal,
   RETENTION_DAYS,
   projectProviders,
+  analysisProvider,
   scanProvidersSchema,
   isCurrentScheduledOccurrence,
   type ScanProvider,
@@ -193,7 +194,7 @@ export class Scanner {
       else await store.defer(reservation, new Date(Math.max(this.now().getTime(),
         latest.retryNotBefore ? Date.parse(latest.retryNotBefore) : 0,
         this.hasLiveLease(latest) ? Date.parse(latest.leaseExpiresAt!) : 0,
-      )).toISOString(), latest.captureKey ? 'openai' : latestRun.snapshot.provider ?? 'openai');
+      )).toISOString(), latest.captureKey ? analysisProvider(latestRun.snapshot.extractionModel) : latestRun.snapshot.provider ?? 'openai');
       await this.dispatch();
     }
   }
@@ -246,9 +247,10 @@ export class Scanner {
       const expiresAt =
         Math.floor(now.getTime() / 1000) + RETENTION_DAYS * 86400;
       const configs = scanProvidersSchema.parse(projectProviders(project));
+      const fallbackModel = (process.env.ANALYSIS_FALLBACK_MODEL ?? process.env.OPENAI_EXTRACTION_FALLBACK_MODEL)?.trim();
       const snapshot = structuredClone({
         projectId: project.id,
-        analysisMode: message.trigger !== 'manual' && process.env.ANALYSIS_BATCH_ENABLED === 'true' && this.dependencies.analysisBatch ? 'batch' as const : 'realtime' as const,
+        analysisMode: message.trigger !== 'manual' && analysisProvider(project.extractionModel) === 'openai' && process.env.ANALYSIS_BATCH_ENABLED === 'true' && this.dependencies.analysisBatch ? 'batch' as const : 'realtime' as const,
         projectName: project.name,
         brand: project.brand,
         competitors: project.competitors,
@@ -260,8 +262,8 @@ export class Scanner {
         provider: configs[0].provider,
         scanProviders: configs,
         extractionModel: project.extractionModel,
-        ...(process.env.OPENAI_EXTRACTION_FALLBACK_MODEL?.trim() && process.env.OPENAI_EXTRACTION_FALLBACK_MODEL.trim() !== project.extractionModel
-          ? { extractionFallbackModel: process.env.OPENAI_EXTRACTION_FALLBACK_MODEL.trim() } : {}),
+        ...(fallbackModel && fallbackModel !== project.extractionModel && analysisProvider(fallbackModel) === analysisProvider(project.extractionModel)
+          ? { extractionFallbackModel: fallbackModel } : {}),
         parserVersion: project.parserVersion,
         configVersion: project.version,
       });
@@ -413,7 +415,7 @@ export class Scanner {
     await this.dependencies.dispatch!.enqueue(results
       .filter(result => !isTerminal(result.status) && result.status !== 'analysis_pending')
       .map(result => ({ projectId: result.projectId, runId: result.runId, promptId: result.promptId,
-        provider: result.captureKey ? 'openai' : run.snapshot.provider ?? 'openai',
+        provider: result.captureKey ? analysisProvider(run.snapshot.extractionModel) : run.snapshot.provider ?? 'openai',
         readyAt: new Date(Math.max(this.now().getTime(),
           result.retryNotBefore ? Date.parse(result.retryNotBefore) : 0,
           this.hasLiveLease(result) ? Date.parse(result.leaseExpiresAt!) : 0,

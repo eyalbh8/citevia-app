@@ -14,6 +14,12 @@ export const PROVIDER_LABELS: Record<ScanProvider, string> = {
 };
 export const DEFAULT_PERPLEXITY_PRESET = 'fast@2026-10-16.0';
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+export const DEFAULT_ANALYSIS_MODEL = 'gemini-3.8-flash';
+
+/** Saved model IDs retain the analysis provider used by immutable run snapshots. */
+export function analysisProvider(model: string): 'openai' | 'gemini' {
+  return /^gemini-/.test(model) ? 'gemini' : 'openai';
+}
 export const scanProviderSchema = z.enum(SCAN_PROVIDERS);
 export const scanProvidersSchema = z
   .array(

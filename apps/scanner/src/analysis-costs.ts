@@ -1,17 +1,20 @@
 import { createHash } from 'node:crypto';
-import type { Analysis, CapturedAnswer, RunSnapshot } from '@citevia/core';
+import { analysisProvider, type Analysis, type CapturedAnswer, type RunSnapshot } from '@citevia/core';
 import type { AnswerProvider, ArtifactStore, CallLedger } from '@citevia/storage';
 import { analysisRequest, parseAnalysisReceipt } from './analysis-request.js';
 import { hasCompleteTokenUsage, observeCall } from './cost-observer.js';
 import { extractionBody, object, type ProviderReceipt } from './provider.js';
+import { geminiAnalysisBody } from './gemini-analysis.js';
 
 const MAX_CACHE_AGE = 90 * 86400_000;
 export function analysisCacheKey(answer: CapturedAnswer, snapshot: RunSnapshot): string | null {
   if (!snapshot.projectId) return null;
   // Exact model input includes company identities, instructions, schema and evidence.
   // Keep block IDs too: cache reuse must never transplant offsets onto other blocks.
-  const data = { version: 1, parserVersion:snapshot.parserVersion, fallbackModel:snapshot.extractionFallbackModel, blocks:answer.blocks,
-    body:extractionBody(analysisRequest(answer,snapshot)) };
+  const provider = analysisProvider(snapshot.extractionModel);
+  const request = analysisRequest(answer, snapshot);
+  const data = { version: 2, provider, model: snapshot.extractionModel, parserVersion:snapshot.parserVersion, fallbackModel:snapshot.extractionFallbackModel, blocks:answer.blocks,
+    body: provider === 'gemini' ? geminiAnalysisBody(request) : extractionBody(request) };
   return `analysis-cache/${snapshot.projectId}/${createHash('sha256').update(JSON.stringify(data)).digest('hex')}.json`;
 }
 export interface AnalysisCacheEntry { savedAt: string; receipt: ProviderReceipt }

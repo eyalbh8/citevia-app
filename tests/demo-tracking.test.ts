@@ -131,9 +131,9 @@ describe('virtual tracked URL evidence', () => {
     expect(createScenarioTracking(project, { history, evidence }).listTrackingMatches()).toEqual(prefixed);
   });
 
-  it('builds and caches only requested Dr. Roof URL evidence until the whole catalog is needed', () => {
+  it.each(['igeo-dr-roof', 'igeo-nayax', 'website-demo'] as const)('builds and caches only requested %s URL evidence until the whole catalog is needed', (source) => {
     const { project, history, evidence, samples } = fixture();
-    project.demo!.source = 'igeo-dr-roof';
+    project.demo!.source = source;
     const otherUrl = 'https://other.example/blog/';
     project.demo!.trackedUrls!.push({ url: otherUrl, title: 'Another enrolled source',
       publishedAt: '2026-05-01T00:00:00.000Z', createdAt: '2026-05-04T00:00:00.000Z' });
@@ -160,18 +160,19 @@ describe('virtual tracked URL evidence', () => {
     expect(history).toHaveBeenCalledTimes(3);
   });
 
-  it('keeps Nayax full-catalog behavior and ordinary projects unchanged', () => {
+  it('derives the same Nayax measurements from scoped or full-catalog reads and leaves ordinary projects unchanged', () => {
     const { project, history, evidence } = fixture();
     const adapter = createScenarioTracking(project, { history, evidence });
     const selected = adapter.listTrackingMatches(adapter.listTrackedUrls()[0].id);
     expect(selected).toHaveLength(2);
     expect(evidence).toHaveBeenCalledTimes(2);
-    expect(history).toHaveBeenCalledWith('2026-04-23T00:00:00.000Z', '2027-04-23T23:59:59.999Z');
+    expect(history).toHaveBeenCalledWith('2026-05-04T00:00:00.000Z', '2027-04-23T23:59:59.999Z');
     expect(adapter.listTrackingMatches()).toEqual(selected);
-    expect(history).toHaveBeenCalledTimes(1);
+    expect(history).toHaveBeenCalledWith('2026-04-23T00:00:00.000Z', '2027-04-23T23:59:59.999Z');
+    expect(history).toHaveBeenCalledTimes(2);
     delete project.demo;
     expect(createScenarioTracking(project, { history, evidence }).listTrackingMatches()).toEqual([]);
-    expect(history).toHaveBeenCalledTimes(1);
+    expect(history).toHaveBeenCalledTimes(2);
   });
 });
 

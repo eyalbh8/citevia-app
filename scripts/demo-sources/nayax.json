@@ -1,0 +1,327 @@
+{
+  "id": "account_nayax_demo_v1",
+  "name": "Nayax",
+  "website": "https://www.nayax.com/",
+  "aliases": [],
+  "country": "US",
+  "language": "en",
+  "timezone": "UTC",
+  "anchorDate": "2026-10-23",
+  "industry": "Unattended retail payments and management",
+  "serviceArea": "global unattended retail markets",
+  "services": [
+    "Cashless payments with VPOS Touch and Onyx",
+    "Remote telemetry with Nayax Core",
+    "Mobile fleet management with MoMa",
+    "Vending inventory and restocking",
+    "Monyx Wallet payments and loyalty",
+    "Nova Market micro market self-checkout"
+  ],
+  "audience": [
+    "Unattended retail business operators",
+    "Vending machine fleet owners",
+    "Micro market operators",
+    "Laundromat and car wash owners",
+    "Office coffee service operators"
+  ],
+  "description": "Nayax provides cashless payment acceptance, telemetry, management software, and consumer engagement tools for unattended retail businesses. Operators use VPOS Touch and Onyx card readers, the Nayax Core management platform, the MoMa mobile app, and Monyx Wallet payment and loyalty tools. The Nova Market kiosk supports self-checkout in micro markets. This source supports the existing Nayax demonstration account and its global unattended retail content; service availability, accepted payment methods, compatibility, and commercial terms depend on the market and merchant agreement.",
+  "criteria": [
+    "Machine and protocol compatibility",
+    "Accepted payment methods in the deployment market",
+    "Connectivity and remote monitoring requirements",
+    "Inventory and restocking workflow",
+    "Payment processing and subscription terms",
+    "Consumer loyalty and refund capabilities"
+  ],
+  "competitors": [
+    {
+      "name": "Cantaloupe",
+      "website": "https://www.cantaloupe.com/",
+      "aliases": [],
+      "sourceUrls": [
+        "https://www.cantaloupe.com/"
+      ]
+    },
+    {
+      "name": "Crane Payment Innovations",
+      "website": "https://www.cranepi.com/",
+      "aliases": [],
+      "sourceUrls": [
+        "https://www.cranepi.com/"
+      ]
+    },
+    {
+      "name": "Ingenico",
+      "website": "https://www.ingenico.com/",
+      "aliases": [],
+      "sourceUrls": [
+        "https://www.ingenico.com/"
+      ]
+    },
+    {
+      "name": "PayRange",
+      "website": "https://www.payrange.com/",
+      "aliases": [],
+      "sourceUrls": [
+        "https://www.payrange.com/"
+      ]
+    },
+    {
+      "name": "365 Retail Markets",
+      "website": "https://www.365retailmarkets.com/",
+      "aliases": [],
+      "sourceUrls": [
+        "https://www.365retailmarkets.com/"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.nayax.com/about/",
+      "title": "About Us - Unlock the Potential of Your Business | Nayax",
+      "kind": "official",
+      "claims": [
+        "Cashless payments, IoT services and management solutions for unattended retail",
+        "Global commerce and merchant services platform"
+      ]
+    },
+    {
+      "url": "https://www.nayax.com/solution/vpos-touch/",
+      "title": "VPOS Touch Credit Card Reader Cashless Payment Device",
+      "kind": "official",
+      "claims": [
+        "Cashless payment acceptance and integrated machine telemetry",
+        "Remote machine monitoring and sales reporting"
+      ]
+    },
+    {
+      "url": "https://nayax.com/solution/onyx",
+      "title": "Onyx Contactless Card Reader Cashless Payment Device",
+      "kind": "official",
+      "claims": [
+        "Contactless card reader with telemetry for unattended businesses"
+      ]
+    },
+    {
+      "url": "https://www.nayax.com/solution/moma/",
+      "title": "MoMa Mobile App for Vending Management | Nayax",
+      "kind": "official",
+      "claims": [
+        "Mobile machine, sales and inventory management",
+        "Remote pricing, refunds and bulk machine actions"
+      ]
+    },
+    {
+      "url": "https://www.nayax.com/solution/vending-management-system/",
+      "title": "Vending Management System for Vending Business Optimization",
+      "kind": "official",
+      "claims": [
+        "Inventory dashboards, product maps, picklists and restocking tools"
+      ]
+    },
+    {
+      "url": "https://nayax-u.nayax.com/article/nayax-core-2239",
+      "title": "Nayax Core",
+      "kind": "official",
+      "claims": [
+        "Cloud management platform for businesses operating unattended machines"
+      ]
+    },
+    {
+      "url": "https://www.nayax.com/solution/monyx-wallet/",
+      "title": "Monyx Wallet Payment and Loyalty App for Automated Businesses",
+      "kind": "official",
+      "claims": [
+        "Consumer payment app and loyalty programs",
+        "Promotions, prepaid cards and refund tools"
+      ]
+    },
+    {
+      "url": "https://www.nayax.com/solution/nova-market/",
+      "title": "Nova Market: Self-Service Kiosk",
+      "kind": "official",
+      "claims": [
+        "Micro market self-checkout with payments, inventory tracking and real-time management"
+      ]
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Nayax",
+      "title": "Nayax",
+      "kind": "independent",
+      "claims": [
+        "Company identity and international business presence"
+      ]
+    },
+    {
+      "url": "https://www.nayax.com/blog/",
+      "title": "Nayax's Blog | Articles on Payments, Vending, and More",
+      "kind": "official",
+      "claims": [
+        "Existing official article titles and publication dates"
+      ]
+    }
+  ],
+  "blogs": [
+    {
+      "url": "https://www.nayax.com/blog/best-selling-vending-machine-items/",
+      "title": "Best Products to Sell in Vending Machines 2026",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-09-27T09:18:35.606Z",
+      "sourcePublishedAt": "2026-03-26T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/payment-system-for-vending-business/",
+      "title": "How to Choose the Right Payment System for Your Vending Business",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2024-08-08T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/vending-machine-inventory-management/",
+      "title": "Vending Machine Inventory Management: The Secret to Mastering Your Inventory",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2024-07-11T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/how-to-start-a-vending-machine-business-your-journey-best-practices-and-tips/",
+      "title": "How to Start a Vending Machine Business: Your Journey, Best Practices, and Tips",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2024-12-11T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/how-to-build-a-successful-cashless-vending-business/",
+      "title": "How to Start a Vending Business in 10 Simple Steps",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2022-12-13T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/the-benefits-of-remote-management-for-vending-machines-how-nayaxs-solution-can-help/",
+      "title": "The Benefits of Remote Management for Vending Machines: How Nayax’s Solution Can Help",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2025-08-18T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/how-to-grow-your-business-with-nayaxs-vending-machine-management-app/",
+      "title": "How to Grow Your Business with Nayax’s Vending Machine Management App",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2023-05-15T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/the-benefits-of-using-a-vending-machine-inventory-picklist-in-moma-2-0/",
+      "title": "Improve Your Vending Management with MoMa 2.0’s Inventory Picklist",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2022-12-05T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/importance-of-telemetry-in-vending/",
+      "title": "The Importance of Telemetry in Vending: How Nayax’s Solution Can Help Improve Operations",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2024-07-29T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/best-cashless-payment-solution-for-food-events/",
+      "title": "Best Cashless Payment Options for Food Events",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2026-02-11T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/how-to-build-a-profitable-micro-market-vending-business/",
+      "title": "How to Build a Profitable Micro Market Vending Business",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2023-04-16T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/the-big-benefits-of-automated-payment-systems-for-small-businesses/",
+      "title": "The Big Benefits of Automated Payment Systems for Small Businesses",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2025-01-15T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/mastering-micro-market-industry/",
+      "title": "Micro Market Vending: The Ultimate Guide to Mastering the Industry",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2023-05-01T00:00:00.000Z"
+    },
+    {
+      "url": "https://www.nayax.com/blog/spring-into-peak-season-5-ways-to-drive-more-revenue/",
+      "title": "Spring into Peak Season: 5 Ways to Drive More Revenue",
+      "contentType": "BLOG",
+      "sourcePublishedAt": "2026-03-24T00:00:00.000Z"
+    }
+  ],
+  "brandbook": {
+    "keyFeatures": [
+      "Cashless payment acceptance for magnetic swipe, contact, and contactless cards",
+      "Real-time telemetry and remote machine management dashboard",
+      "Multi-currency support and global payment processing",
+      "Consumer engagement and loyalty programs via Monyx Wallet",
+      "Comprehensive inventory management and sales reporting tools"
+    ],
+    "toneOfVoice": [
+      "Professional",
+      "Innovative",
+      "Empowering"
+    ],
+    "values": [
+      "Connectivity",
+      "Efficiency",
+      "Innovation"
+    ],
+    "personality": [
+      "Reliable",
+      "Tech-savvy",
+      "Global"
+    ],
+    "targetAudience": [
+      "Small Business Owners",
+      "retailers"
+    ],
+    "industryCategory": "Financial Technology",
+    "subIndustryCategory": "Unattended Retail & Payment Processing",
+    "postGuidelines": {
+      "dos": [
+        "Use verified Nayax product information.",
+        "Confirm country-specific payment and product availability with Nayax.",
+        "Describe demonstration content and measurements as illustrative."
+      ],
+      "donts": [
+        "Invent prices, compatibility guarantees, customer results or security certifications.",
+        "Present illustrative traffic or visibility as observed company performance."
+      ]
+    },
+    "unknowns": [
+      "Commercial terms, device compatibility and market availability require direct confirmation.",
+      "Official blog publication dates are preserved separately from demonstration publication dates.",
+      "Brand voice descriptors come from the existing account profile."
+    ]
+  },
+  "traffic": {
+    "pages": [
+      "/",
+      "/solution/vpos-touch/",
+      "/solution/onyx/",
+      "/solution/moma/",
+      "/solution/vending-management-system/",
+      "/solution/monyx-wallet/",
+      "/solution/nova-market/",
+      "/blog/"
+    ],
+    "countries": [
+      "US",
+      "GB",
+      "IL",
+      "DE",
+      "AU"
+    ],
+    "devices": [
+      "desktop",
+      "mobile",
+      "tablet"
+    ],
+    "browsers": [
+      "Chrome",
+      "Safari",
+      "Edge",
+      "Firefox"
+    ]
+  }
+}

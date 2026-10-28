@@ -9,6 +9,7 @@ import {
   cleanupExpiredAuthState,
   SqlProviderAdmissionStore,
   SqlScanDispatchStore,
+  PostgresRepository,
 } from '@citevia/storage';
 import type { Project, ScanMessage } from '@citevia/core';
 import { Scanner } from './engine.js';
@@ -25,6 +26,7 @@ import { refreshPortfolio } from './portfolio-refresh.js';
 import { AnalysisBatchCoordinator } from './analysis-batch.js';
 import { OpenAIBatchClient, type BatchClient } from './openai-batch.js';
 import { providerApiKey } from './provider-http.js';
+import { configureAnalysis } from './analysis-configuration.js';
 
 const id = z
   .string()
@@ -173,6 +175,7 @@ export const handler = async (
     | SQSEvent
     | ScanMessage
     | { kind: 'database:migrate' }
+    | { kind: 'analysis:configure'; projectId?: string; model?: string; apply?: boolean }
     | { kind: 'prompts:refresh'; projectId: string; requestId: string }
     | {
         kind: 'scan:reanalyze';
@@ -185,6 +188,22 @@ export const handler = async (
   // Includes direct migrations/admin/reanalysis invocations; no source database writer bypasses the freeze.
   const paused = maintenanceResult(event);
   if (paused) return paused;
+  if ('kind' in event && event.kind === 'analysis:configure') {
+    // IAM-only maintenance: queue validation deliberately rejects this payload.
+    const input = z.object({
+      kind: z.literal('analysis:configure'),
+      projectId: id.optional(),
+      model: z.string().regex(/^gemini-[A-Za-z0-9._-]{1,150}$/).optional(),
+      apply: z.boolean().default(false),
+    }).strict().parse(event);
+    const db = productionDatabase();
+    const ids = input.projectId ? [input.projectId] : (await db.query<{ id: string }>(
+      `SELECT id FROM citevia_projects WHERE data->>'extractionModel' !~ '^gemini-' ORDER BY id`,
+    )).rows.map(row => row.id);
+    return configureAnalysis(new PostgresRepository(db), ids, {
+      model: input.model, project: input.projectId, apply: input.apply,
+    });
+  }
   if ('kind' in event && event.kind === 'prompts:refresh') {
     const input = z
       .object({

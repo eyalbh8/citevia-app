@@ -391,6 +391,21 @@ describe('API authentication and customer isolation', () => {
 });
 
 describe('real-provider readiness and prompt catalog', () => {
+  it('requires Gemini credentials for Gemini analysis even when collecting OpenAI answers', async () => {
+    const f = await fixture(undefined, { providerAvailability: { openai: true, gemini: false, perplexity: true } });
+    await f.repository.saveProject({ ...f.project, extractionModel: 'gemini-3.8-flash', version: 2 }, 1);
+    const response = await f.call(`${BASE}/runs`, jsonRequest('POST', {}, { 'Idempotency-Key': 'gemini-readiness' }));
+    expect(response.status).toBe(503);
+    expect(await read(response)).toMatchObject({ error: { code: 'PROVIDER_NOT_CONFIGURED', message: expect.stringContaining('Gemini is used for answer analysis') } });
+    expect(f.queue.messages).toHaveLength(0);
+  });
+  it('admits Gemini-only scans without an OpenAI dependency', async () => {
+    const f = await fixture(undefined, { providerConfigured: false, providerAvailability: { openai: false, gemini: true, perplexity: false } });
+    await f.repository.saveProject({ ...f.project, extractionModel: 'gemini-3.8-flash', scanProviders: [{ provider: 'gemini', model: DEFAULT_GEMINI_MODEL }], version: 2 }, 1);
+    const response = await f.call(`${BASE}/runs`, jsonRequest('POST', {}, { 'Idempotency-Key': 'gemini-only-ready' }));
+    expect(response.status).toBe(202);
+    expect(f.queue.messages).toHaveLength(1);
+  });
   it('blocks paid work before creating accounts or reserving scans when OpenAI is unconfigured', async () => {
     const f = await fixture(undefined, { providerConfigured: false });
     await f.repository.bootstrapAdmin((await f.repository.getUser(OWNER))!.id);

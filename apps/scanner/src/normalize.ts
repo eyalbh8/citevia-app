@@ -14,6 +14,14 @@ import {
 const nonnegative = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 export function usage(response: NativeResponse): Usage {
+  const gemini = object(response.usageMetadata);
+  if (gemini) return {
+    inputTokens: nonnegative(gemini.promptTokenCount),
+    outputTokens: nonnegative(gemini.candidatesTokenCount) + nonnegative(gemini.thoughtsTokenCount),
+    totalTokens: nonnegative(gemini.totalTokenCount),
+    cachedInputTokens: nonnegative(gemini.cachedContentTokenCount),
+    reasoningTokens: nonnegative(gemini.thoughtsTokenCount),
+  };
   const value = object(response.usage);
   const inputDetails = object(value?.input_tokens_details);
   const outputDetails = object(value?.output_tokens_details);

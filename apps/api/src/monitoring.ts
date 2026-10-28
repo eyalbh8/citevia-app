@@ -423,7 +423,7 @@ export async function monitoringRoute(
     ),
   ]);
   const scoped = allMatches.filter((m) =>
-    (!['igeo-dr-roof', 'website-demo'].includes(project.demo?.source || '') || m.capture.capturedAt <= period.end) && matchesMonitoringFilters(
+    (!project.demo || m.capture.capturedAt <= period.end) && matchesMonitoringFilters(
       m.capture.prompt,
       m.capture.provider,
       m.capture.country,

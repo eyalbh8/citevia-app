@@ -1,6 +1,6 @@
 # Native scan providers
 
-Each account owns one portfolio of up to 50 active prompts. A weekly or manual kickoff freezes the prompts, brand, competitors, locale, provider list and models, then creates a separate run for each enabled provider. All three providers produce up to 150 answers and 150 independent analyses per account per week. Exact compatible analysis reuse can avoid paid calls; scheduled analyses can use native Batch. Onboarding research, generation and retries add calls. Provider APIs are billed separately. See [cost optimization and rollout](COST_OPTIMIZATION.md).
+Each account owns one portfolio of up to 50 active prompts. A weekly or manual kickoff freezes the prompts, brand, competitors, locale, provider list and models, then creates a separate run for each enabled provider. All three providers produce up to 150 answers and 150 independent analyses per account per week. Exact compatible analysis reuse can avoid paid calls; scheduled analyses pinned to OpenAI can use native Batch; Gemini analyses run in realtime. Onboarding research, generation and retries add calls. Provider APIs are billed separately. See [cost optimization and rollout](COST_OPTIMIZATION.md).
 
 New accounts enable ChatGPT, Perplexity and Gemini. Existing accounts with no `scanProviders` setting retain OpenAI only. An owner or system administrator can enable providers and edit their models/presets in **Settings → Scan providers**. Saving changes applies to future kickoffs; captured answers and historical snapshots are preserved. At least one provider must remain enabled.
 
@@ -15,22 +15,24 @@ OPENAI_API_KEY=YOUR_OPENAI_KEY
 PERPLEXITY_API_KEY=YOUR_PERPLEXITY_KEY
 GEMINI_API_KEY=YOUR_GEMINI_KEY
 OPENAI_GENERATION_MODEL=gpt-4.1-2025-04-14
-OPENAI_EXTRACTION_MODEL=gpt-6-luna
+ANALYSIS_MODEL=gemini-3.8-flash
 PERPLEXITY_PRESET=fast@2026-10-16.0
 GEMINI_GENERATION_MODEL=gemini-3.8-flash
 ```
 
 Alternatively set `OPENAI_SECRET_ARN`, `PERPLEXITY_SECRET_ARN` and `GEMINI_SECRET_ARN`. A secret accepts a raw key or JSON with the corresponding `*_API_KEY` field. Local Secrets Manager access needs an AWS identity with permission to read those exact secrets. Direct keys need no AWS access. Restart `npm run dev` after configuration changes. Descope configuration and login are also required; see [local setup](LOCAL_DEVELOPMENT.md).
 
-OpenAI remains required for generating brandbooks/prompts and for structured evidence analysis of every provider’s captured answer. Analysis uses the original saved answer only, with no tools/search, and validates every evidence quote and rank/sentiment span. Perplexity and Gemini collection calls go directly to their native APIs. They never use OpenAI to impersonate another provider. There is no fallback to a different collection provider.
+OpenAI remains required for generating brandbooks/prompts and ChatGPT collection. Gemini now performs structured evidence analysis of captured OpenAI, Perplexity and Gemini answers by default. `ANALYSIS_MODEL` controls new-account analysis independently from collection; the legacy `OPENAI_EXTRACTION_MODEL` is honored when the neutral setting is unset. Existing project models change only through `analysis:configure`. Analysis uses the original saved answer only, with no tools/search, and validates every evidence quote and rank/sentiment span. Historical OpenAI snapshots and already submitted OpenAI batches retain their provider and continue to import normally. Perplexity and Gemini collection calls go directly to their native APIs. They never use OpenAI to impersonate another provider. There is no fallback to a different collection provider.
 
-`GET /v1/runtime` reports the presence of server key/secret configuration without exposing values. It does not prove valid billing, permissions or model access. Manual admission checks all enabled providers and OpenAI analysis before enqueueing. New-account onboarding checks all three because its initial scans enable all three. A scheduled job with invalid/missing credentials records a provider-specific failure through the normal retry/deadline process.
+`GET /v1/runtime` reports the presence of server key/secret configuration without exposing values. It does not prove valid billing, permissions or model access. Manual admission checks all enabled collection providers and the configured analysis provider before enqueueing. New-account onboarding checks all three because its initial scans enable all three. A scheduled job with invalid/missing credentials records a provider-specific failure through the normal retry/deadline process.
 
 ## Native APIs and evidence
 
-- **ChatGPT:** OpenAI Responses API with required web search, native URL annotations and returned search sources. The existing OpenAI collection/extraction behavior is retained.
+- **ChatGPT:** OpenAI Responses API with required web search, native URL annotations and returned search sources. OpenAI models saved in historical analysis snapshots remain supported.
 - **Perplexity:** `POST https://api.perplexity.ai/v1/agent`, with a versioned `preset`, neutral user question, language preference and the web search tool. The preset’s native citation/search instructions are preserved. The full response, actual preset/model, text, annotations, native source references, search results and usage are retained. Inline numeric or typed `[id]` citations map to the API’s returned search-result IDs, never their array order. Repeated references are preserved; conflicting IDs are not assigned an invented URL. Retrieved-only sources remain separate from citations.
-- **Gemini:** `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with `googleSearch`. Grounding chunks populate retrieved sources; grounding supports populate citations. Native UTF-8 byte offsets are converted to JS text offsets and checked against the native segment text. Unusable offsets retain the citation URL with a null text range. Thought parts are excluded from the displayed answer. Refusals and token-limit endings remain distinct from complete answers. Search suggestions returned by Google appear in a sandboxed iframe with scripts disabled. Query counts are stored separately from search-call counts.
+- **Gemini collection:** `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` with `googleSearch`. Grounding chunks populate retrieved sources; grounding supports populate citations. Native UTF-8 byte offsets are converted to JS text offsets and checked against the native segment text. Unusable offsets retain the citation URL with a null text range. Thought parts are excluded from the displayed answer. Refusals and token-limit endings remain distinct from complete answers. Search suggestions returned by Google appear in a sandboxed iframe with scripts disabled. Query counts are stored separately from search-call counts.
+
+Gemini analysis uses the same native `generateContent` API with strict JSON output and the shared evidence schema; it sends no search tool or grounding request. Its native usage, returned model and receipt remain stored for cost and evidence audits.
 
 The checked-in Gemini and Perplexity defaults are candidates taken from current documentation, **not live-validated configuration**. Run the commands below using your accounts before production. Prefer versioned presets/model IDs; a moving alias can change underlying behavior. The native returned model/version remains in each capture for audit. Comparisons require the same provider, configured model/preset, extraction model, parser, brand/competitors, locale and matching prompt versions.
 
@@ -54,7 +56,7 @@ GET /v1/projects/{id}/dashboard?provider=gemini&runId={geminiRunId}
 
 ## Live validation, prepared for later
 
-Use a text file containing your actual questions, one per line. Each command selects **only one provider**, with 1–10 prompts. It makes real paid collection requests and paid OpenAI extraction requests; it does not insert accounts into the running application or provide fabricated answers.
+Use a text file containing your actual questions, one per line. Each command selects **only one provider**, with 1–10 prompts. It makes real paid collection requests and paid configured-provider analysis requests (Gemini by default); it does not insert accounts into the running application or provide fabricated answers.
 
 ```sh
 npm run scan:spike -- --help
@@ -79,7 +81,7 @@ There are still exactly two application Lambdas, one shared SQS queue, and one w
 - [Gemini generateContent and grounding segment byte offsets](https://ai.google.dev/api/generate-content).
 - [Gemini Google Search grounding](https://ai.google.dev/gemini-api/docs/google-search).
 
-Documentation was checked October 20, 2026. Context7 tools were unavailable in this session, so official provider documentation was used directly. Availability and charges must be validated with your own provider accounts before enabling production schedules.
+Collection documentation was checked October 20, 2026. Context7 tools were unavailable in this session, so official provider documentation was used directly. Availability and charges must be validated with your own provider accounts before enabling production schedules.
 
 ## Rank, sentiment and saved-answer reanalysis
 

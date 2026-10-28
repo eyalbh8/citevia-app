@@ -8,17 +8,18 @@ Production moved to Neon PostgreSQL; the verified settings and recovery procedur
 
 ## Implemented behavior
 
-- New accounts default to `gpt-6-luna` analysis. Existing accounts and historical
-  run snapshots keep their explicit models until the configuration command is applied.
+- New accounts default to `gemini-3.8-flash` analysis for captured answers from
+  all three collection providers. Existing account settings migrate through the
+  configuration command; historical run snapshots retain their explicit models.
 - Analysis sends compact evidence IDs/text. Exact offsets, block identities,
-  native citations and rank verification remain server-side. Luna uses no reasoning
-  for this constrained extraction task.
+  native citations and rank verification remain server-side. Gemini uses native
+  structured JSON output with no search or collection tools.
 - An exact, account-scoped cache revalidates native receipts before reuse. Its key
   includes the complete analysis request, parser, block identities and fallback
   policy. Reuse records zero newly purchased tokens. It never skips fresh collection.
-- Scheduled scans can use native OpenAI Batch: one independent answer per request,
+- Scheduled scans pinned to OpenAI models can use native OpenAI Batch: one independent answer per request,
   durable submission/import state, stable IDs, selective failures and a minimum
-  30-hour deadline. Manual scans and saved-answer reanalysis stay immediate.
+  30-hour deadline. Gemini analysis, manual scans and saved-answer reanalysis stay immediate.
 - Passive tracker installation heartbeats are limited to once per 30 minutes per
   browser session/origin/account. SQL also coalesces fresh same-version receipts.
   Actual AI pageviews and explicit connection tests bypass the passive throttle.
@@ -42,6 +43,17 @@ Production moved to Neon PostgreSQL; the verified settings and recovery procedur
 
 ## Model validation and configuration
 
+Production rollout on 28 October 2026 deployed Gemini analysis and migrated all
+15 existing non-Gemini account settings to `gemini-3.8-flash` with no conflicts.
+A subsequent preview found no remaining non-Gemini accounts. Both application
+Lambdas use the Gemini analysis default and the production health check passed.
+The isolated deployment source passed 1,051 tests. Live checks using the existing
+production Gemini credential validated singleton and multiple evidence rows,
+positive sentiment and an absent brand through the normal evidence parser.
+These checks verify integration behavior, rather than a broad quality benchmark.
+Original run snapshots and already submitted OpenAI batches retain their settings;
+new scans and explicitly requested reanalysis use the current account model.
+
 Create a JSONL evaluation corpus from saved captures. Each row has `answer`
 (`CapturedAnswer`), `snapshot` (`RunSnapshot`) and optional human labels in
 `expected.brands` and `expected.companies`. Use `analysis:eval --help` for the full
@@ -49,8 +61,8 @@ label format. Include languages, aliases, absent brands, URLs-only mentions,
 untracked companies, long answers, mixed sentiment and numbered lists.
 
 ```sh
-npm run analysis:eval -- --input saved-answers.jsonl --candidate gpt-6-luna
-npm run analysis:eval -- --input saved-answers.jsonl --candidate gpt-6-luna --execute --output evaluation.json
+npm run analysis:eval -- --input saved-answers.jsonl --candidate gemini-3.8-flash
+npm run analysis:eval -- --input saved-answers.jsonl --candidate gemini-3.8-flash --execute --output evaluation.json
 ```
 
 The first command only validates the corpus and estimates the workload. The
@@ -65,15 +77,24 @@ Preview the effect on existing accounts, then apply to a selected account:
 
 ```sh
 npm run analysis:configure -- --mode aws
-npm run analysis:configure -- --mode aws --project ACCOUNT_ID --model gpt-6-luna --apply
+npm run analysis:configure -- --mode aws --project ACCOUNT_ID --model gemini-3.8-flash --apply
 ```
 
-Without `--project`, only retiring GPT-4.1 mini account settings are selected.
-The command uses compare-and-swap and reports concurrent edits. It never changes
-collection models or saved run snapshots. After a passing pilot, `--apply` without
-`--project` rolls out to the retiring-model cohort.
+Without `--project`, all accounts with non-Gemini analysis models are selected,
+including GPT Luna and other explicit OpenAI choices. Existing Gemini settings
+are preserved unless the account is explicitly selected. The command uses
+compare-and-swap and reports concurrent edits. It changes future analysis only;
+collection, onboarding/content models and saved run snapshots remain unchanged.
+After a passing pilot, `--apply` without `--project` migrates that cohort.
 
-Optional `OPENAI_EXTRACTION_FALLBACK_MODEL` permits one additional realtime call
+The scanner also supports an IAM-only maintenance payload for private production
+database access: `{"kind":"analysis:configure","apply":false}` previews the
+same cohort; `"apply":true` applies it. Optional `"projectId":"ACCOUNT_ID"`
+selects one account and `"model":"gemini-3.8-flash"` overrides the target. Invoke
+the existing scanner Lambda directly; SQS rejects maintenance payloads. Neither
+configuration path starts a scan or purchases an analysis call.
+
+Optional `ANALYSIS_FALLBACK_MODEL` (legacy `OPENAI_EXTRACTION_FALLBACK_MODEL`) permits one additional realtime call
 after `invalid_extraction`. It never runs after a timeout/uncertain provider call.
 Both native receipts and the actual returned model remain attributable. Batch
 validation failures stay failed individual items for explicit retry rather than
@@ -90,8 +111,10 @@ scheduled scan exercises the live provider completion/import path.
 
 The deployment workflow inherits the deployed Batch flag when its GitHub variable
 is absent; an explicit `true` or `false` overrides it. The local production SAM
-configuration also stores the enabled flag. Enabling Batch affects new scheduled
-manifests only. Manual scans and saved-answer reanalysis stay immediate. Turning
+configuration also stores the enabled flag. Batch eligibility is limited to new
+scheduled manifests pinned to an OpenAI analysis model; Gemini always uses realtime
+analysis. Migrating account settings to Gemini leaves those existing OpenAI
+batches and immutable snapshots intact. Manual scans and saved-answer reanalysis stay immediate. Turning
 it off does not abandon batches
 already in progress. Keep their configured provider credential available.
 
@@ -197,6 +220,6 @@ and supports `--limit`/`--after` pagination. Keep the new readers while completi
 the rollback. Merely reverting the binary can expose stale JSON counters.
 
 Official references: [OpenAI Batch](https://developers.openai.com/api/docs/guides/batch),
-[Luna](https://developers.openai.com/api/docs/models/gpt-6-luna),
+[Gemini structured output](https://ai.google.dev/gemini-api/docs/structured-output),
 [model deprecations](https://developers.openai.com/api/docs/deprecations),
 [Aurora auto-pause](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-serverless-v2-auto-pause.html).

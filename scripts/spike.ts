@@ -6,6 +6,7 @@ import {
   scanProviderSchema,
   DEFAULT_PERPLEXITY_PRESET,
   DEFAULT_GEMINI_MODEL,
+  DEFAULT_ANALYSIS_MODEL,
 } from '@citevia/core';
 import { Scanner } from '../apps/scanner/src/engine.js';
 import { createScanProviderFromEnv } from '../apps/scanner/src/providers.js';
@@ -16,7 +17,7 @@ async function main() {
     args = new Map<string, string>();
   if (argv.includes('--help')) {
     console.log(
-      'Usage: npm run scan:spike -- --prompts ./prompts.txt --brand "Brand" --domain example.com [--provider openai|perplexity|gemini] [--count 10]\nMakes up to 10 paid collection + extraction requests on the selected provider only. Requires that provider key and OpenAI for analysis. Saves evidence under .local-data/spike/. Review native citations, offsets, quality and cost before production.',
+      'Usage: npm run scan:spike -- --prompts ./prompts.txt --brand "Brand" --domain example.com [--provider openai|perplexity|gemini] [--count 10]\nMakes up to 10 paid collection calls on the selected provider and 10 analysis calls (Gemini by default). Requires credentials for both selected models. Saves evidence under .local-data/spike/. Review native citations, offsets, quality and cost before production.',
     );
     return;
   }
@@ -70,7 +71,7 @@ async function main() {
     {
       generation: process.env.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14',
       extraction:
-        process.env.OPENAI_EXTRACTION_MODEL || 'gpt-4.1-mini-2025-04-14',
+        process.env.ANALYSIS_MODEL || process.env.OPENAI_EXTRACTION_MODEL || DEFAULT_ANALYSIS_MODEL,
     },
   );
   project.competitors = [];

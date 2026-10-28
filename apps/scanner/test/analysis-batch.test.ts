@@ -430,7 +430,7 @@ describe('scanner batch lifecycle', () => {
     const run = await repository.getRun(project.id, replacement.runId);
     expect(run?.snapshot.analysisMode).toBe('realtime');
     expect(run?.snapshot.projectId).toBe(project.id);
-    expect(run?.snapshot.extractionModel).toBe(f.run.snapshot.extractionModel);
+    expect(run?.snapshot.extractionModel).toBe(project.extractionModel);
     expect(replacement.newCollectionCalls).toBe(0);
   });
   it('captures all answers first, keeps manual scans realtime, then imports scheduled analysis through CAS', async () => {

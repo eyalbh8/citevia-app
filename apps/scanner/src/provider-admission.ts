@@ -1,4 +1,4 @@
-import { snapshotProvider, type ScanProvider } from '@citevia/core';
+import { analysisProvider, snapshotProvider, type ScanProvider } from '@citevia/core';
 import type { AnswerProvider, ProviderAdmissionPolicy, ProviderAdmissionStore } from '@citevia/storage';
 import { ProviderError } from './provider.js';
 
@@ -64,7 +64,7 @@ export function guardScanProvider(provider: AnswerProvider, store: ProviderAdmis
     }
   }
   return {
-    collect: (prompt, snapshot) => run(snapshotProvider(snapshot), () => provider.collect(prompt, snapshot), 'openai'),
-    extract: (answer, snapshot) => run('openai', () => provider.extract(answer, snapshot)),
+    collect: (prompt, snapshot) => run(snapshotProvider(snapshot), () => provider.collect(prompt, snapshot), analysisProvider(snapshot.extractionModel)),
+    extract: (answer, snapshot) => run(analysisProvider(snapshot.extractionModel), () => provider.extract(answer, snapshot)),
   };
 }

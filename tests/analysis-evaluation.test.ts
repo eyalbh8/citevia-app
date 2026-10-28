@@ -41,6 +41,28 @@ function provider(invalidCandidate = false): ResponseProvider {
 }
 
 describe('saved-answer analysis evaluation', () => {
+  it('evaluates Gemini natively without initializing OpenAI or production storage', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'citevia-analysis-eval-gemini-'));
+    const input = join(directory, 'answers.jsonl');
+    vi.stubEnv('APP_MODE', 'aws');
+    vi.stubEnv('GEMINI_API_KEY', 'evaluation-gemini-test');
+    vi.stubEnv('OPENAI_API_KEY', '');
+    vi.stubEnv('OPENAI_SECRET_ARN', '');
+    const { appearanceRank: _, mentionOrder: __, ...observation } = brandRow();
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({
+      modelVersion: 'gemini-3.8-flash',
+      candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ brands: [observation] }) }] } }],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50, thoughtsTokenCount: 10, totalTokenCount: 160 },
+    }));
+    vi.stubGlobal('fetch', fetcher);
+    try {
+      await writeFile(input, JSON.stringify({ ...sample, snapshot: { ...sample.snapshot, extractionModel: 'gemini-3.8-flash' } }));
+      const report = JSON.parse(await runEvaluationCli(['--input', input, '--execute']));
+      expect(report).toMatchObject({ baseline: { valid: 1 }, candidate: { valid: 1 }, samples: [{ candidate: { usage: { outputTokens: 60 }, estimatedUsd: expect.any(Number) } }] });
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(String(fetcher.mock.calls[0]?.[0])).toContain('generativelanguage.googleapis.com');
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   it('defaults to a local dry run without initializing credentials or making paid calls', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'citevia-analysis-eval-'));
     const input = join(directory, 'answers.jsonl');
@@ -50,8 +72,8 @@ describe('saved-answer analysis evaluation', () => {
       await writeFile(input, JSON.stringify(sample));
       const report = JSON.parse(await runEvaluationCli(['--input', input, '--output', output], factory));
       expect(factory).not.toHaveBeenCalled();
-      expect(report).toMatchObject({ qualityProven: false, plan: { mode: 'dry-run', samples: 1, labelledSamples: 0, candidate: 'gpt-6-luna' } });
-      expect(report.plan.models.map((item: { model: string }) => item.model)).toEqual(['gpt-4.1-mini-2025-04-14', 'gpt-6-luna']);
+      expect(report).toMatchObject({ qualityProven: false, plan: { mode: 'dry-run', samples: 1, labelledSamples: 0, candidate: 'gemini-3.8-flash' } });
+      expect(report.plan.models.map((item: { model: string }) => item.model)).toEqual(['gpt-4.1-mini-2025-04-14', 'gemini-3.8-flash']);
       expect(report.plan.models.every((item: { estimatedUsd: number }) => item.estimatedUsd > 0)).toBe(true);
       expect(await readFile(output, 'utf8')).not.toContain(answer.text);
       expect(await readFile(input, 'utf8')).toBe(JSON.stringify(sample));
@@ -59,7 +81,7 @@ describe('saved-answer analysis evaluation', () => {
   });
   it('executes extraction only, retains parser failures and does not claim agreement is correctness', async () => {
     const responseProvider = provider(true);
-    const report = await evaluateAnalysis([sample], { execute: true }, async () => responseProvider);
+    const report = await evaluateAnalysis([sample], { execute: true, candidate: 'gpt-6-luna' }, async () => responseProvider);
     expect(responseProvider.answer).not.toHaveBeenCalled();
     expect(responseProvider.extract).toHaveBeenCalledTimes(2);
     expect(report).toMatchObject({
@@ -85,7 +107,7 @@ describe('saved-answer analysis evaluation', () => {
     vi.stubGlobal('fetch', fetcher);
     try {
       await writeFile(input, JSON.stringify(sample));
-      const report = JSON.parse(await runEvaluationCli(['--input', input, '--execute']));
+      const report = JSON.parse(await runEvaluationCli(['--input', input, '--candidate', 'gpt-6-luna', '--execute']));
       expect(report).toMatchObject({baseline:{valid:1},candidate:{valid:1}});
       expect(fetcher).toHaveBeenCalledTimes(2);
       expect(fetcher.mock.calls.every(([url])=>url==='https://api.openai.com/v1/responses')).toBe(true);
@@ -93,7 +115,7 @@ describe('saved-answer analysis evaluation', () => {
   });
   it('shares a request when the saved baseline and candidate are identical', async () => {
     const responseProvider = provider();
-    const report = await evaluateAnalysis([{ ...sample, snapshot: { ...sample.snapshot, extractionModel: 'gpt-6-luna' } }], { execute: true }, async () => responseProvider);
+    const report = await evaluateAnalysis([{ ...sample, snapshot: { ...sample.snapshot, extractionModel: 'gpt-6-luna' } }], { execute: true, candidate: 'gpt-6-luna' }, async () => responseProvider);
     expect(responseProvider.extract).toHaveBeenCalledOnce();
     expect(report.plan.models).toHaveLength(1);
     expect(report).toMatchObject({ baselineAgreement: { pairedValidSamples: 1, mentions: { total: 1, correct: 1 } } });
@@ -105,7 +127,7 @@ describe('saved-answer analysis evaluation', () => {
       const receipt = await original(request);
       return { ...receipt, response: { ...receipt.response, usage: undefined } };
     };
-    const report = await evaluateAnalysis([sample], { execute: true }, async () => responseProvider);
+    const report = await evaluateAnalysis([sample], { execute: true, candidate: 'gpt-6-luna' }, async () => responseProvider);
     expect(report).toMatchObject({
       baseline: {valid:1},candidate:{valid:1},
       samples:[{baseline:{estimatedUsd:null},candidate:{estimatedUsd:null}}],

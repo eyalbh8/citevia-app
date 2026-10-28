@@ -11,6 +11,7 @@ import type {
 import {
   ProviderError,
   responseFailure,
+  responseModel,
   responseText,
   type ProviderReceipt,
 } from './provider.js';
@@ -312,7 +313,7 @@ export function parseExtraction(
       ...snapshot.competitors,
     ]),
     parserVersion: snapshot.parserVersion,
-    model: String(receipt.response.model ?? snapshot.extractionModel),
+    model: responseModel(receipt.response, snapshot.extractionModel),
     createdAt: receipt.receivedAt,
     usage: usage(receipt.response),
     raw: receipt,

@@ -3,14 +3,28 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
-import type { Analysis, CapturedAnswer, EvidenceSpan, RunSnapshot, Usage } from '@citevia/core';
+import { analysisProvider, DEFAULT_ANALYSIS_MODEL, type Analysis, type CapturedAnswer, type EvidenceSpan, type RunSnapshot, type Usage } from '@citevia/core';
 import { analysisRequest, parseAnalysisReceipt } from '../apps/scanner/src/analysis-request.js';
 import { estimateProviderCost, hasCompleteTokenUsage, PRICE_VERSION } from '../apps/scanner/src/cost-observer.js';
 import { usage } from '../apps/scanner/src/normalize.js';
 import { createResponseProviderFromEnv } from '../apps/scanner/src/openai.js';
-import { ProviderError, type ResponseProvider } from '../apps/scanner/src/provider.js';
+import { ProviderError, responseModel, type ResponseProvider } from '../apps/scanner/src/provider.js';
+import { GeminiAnalysisProvider } from '../apps/scanner/src/gemini-analysis.js';
+import { providerApiKey } from '../apps/scanner/src/provider-http.js';
 
-const evaluationProvider = () => createResponseProviderFromEnv(null);
+// Evaluation initializes only the providers selected by the samples/candidate,
+// without opening the application's production cost ledger.
+const evaluationProvider = async (): Promise<ResponseProvider> => {
+  let openai: Promise<ResponseProvider> | undefined;
+  let gemini: Promise<GeminiAnalysisProvider> | undefined;
+  const primary = () => openai ??= createResponseProviderFromEnv(null);
+  return {
+    answer: request => primary().then(provider => provider.answer(request)),
+    extract: async request => analysisProvider(request.model) === 'gemini'
+      ? (await (gemini ??= providerApiKey('gemini').then(apiKey => new GeminiAnalysisProvider({ apiKey })))).extract(request)
+      : (await primary()).extract(request),
+  };
+};
 
 const sentiment = z.enum(['positive', 'neutral', 'negative', 'mixed', 'unknown', 'not_applicable']);
 const span = z.object({ blockId: z.string(), quote: z.string(), start: z.number().int().nonnegative(), end: z.number().int().nonnegative() });
@@ -230,14 +244,14 @@ export async function evaluateAnalysis(
   options: EvaluationOptions = {},
   providerFactory: () => Promise<ResponseProvider> = evaluationProvider,
 ) {
-  const candidate = options.candidate ?? 'gpt-6-luna';
+  const candidate = options.candidate ?? DEFAULT_ANALYSIS_MODEL;
   const outputTokens = options.estimatedOutputTokens ?? 400;
   const planned = new Map<string, { model: string; requests: number; estimatedInputTokens: number; assumedOutputTokens: number; estimatedUsd: number | null }>();
   for (const sample of samples) {
     for (const model of new Set([options.baseline ?? sample.snapshot.extractionModel, candidate])) {
       const request = analysisRequest(sample.answer, { ...sample.snapshot, extractionModel: model });
       const inputTokens = Math.ceil(Buffer.byteLength(JSON.stringify(request)) / 4);
-      const cost = estimateProviderCost('openai', model, { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens });
+      const cost = estimateProviderCost(analysisProvider(model), model, { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens });
       const previous = planned.get(model) ?? { model, requests: 0, estimatedInputTokens: 0, assumedOutputTokens: 0, estimatedUsd: 0 };
       previous.requests += 1;
       previous.estimatedInputTokens += inputTokens;
@@ -266,7 +280,7 @@ export async function evaluateAnalysis(
         const receipt = await provider.extract(analysisRequest(sample.answer, snapshot));
         const tokens = usage(receipt.response);
         outcome = { status: 'invalid', usage: tokens,
-          estimatedUsd: hasCompleteTokenUsage(receipt.response) ? estimateProviderCost('openai', String(receipt.response.model ?? model), tokens) : null };
+          estimatedUsd: hasCompleteTokenUsage(receipt.response, analysisProvider(model)) ? estimateProviderCost(analysisProvider(model), responseModel(receipt.response, model), tokens) : null };
         outcome.analysis = parseAnalysisReceipt(receipt, sample.answer, snapshot);
         outcome.status = 'valid';
       } catch (error) {
@@ -302,7 +316,7 @@ export async function runEvaluationCli(argv: string[], providerFactory = evaluat
     limit: { type: 'string', default: '300' }, 'estimated-output-tokens': { type: 'string', default: '400' },
     execute: { type: 'boolean', default: false }, help: { type: 'boolean', default: false },
   } });
-  if (values.help) return 'Usage: npm run analysis:eval -- --input saved-answers.jsonl [--candidate gpt-6-luna] [--baseline MODEL] [--limit 300] [--estimated-output-tokens 400] [--output report.json] [--execute]\nDefault is a local dry run without credentials or paid calls. --execute explicitly authorizes up to two paid extraction calls per sample; no collection or search. Each JSONL row: {id?,answer:CapturedAnswer,snapshot:RunSnapshot,expected?:{brands:[{brandId,mentioned,sentiment?,explicitRank?,appearanceRank?,evidence?}],companies?:[{name,rank?,sentiment?,evidence?}]}}. Omit unknown labels; companies, when present, must be the complete labelled inventory.';
+  if (values.help) return 'Usage: npm run analysis:eval -- --input saved-answers.jsonl [--candidate gemini-3.8-flash] [--baseline MODEL] [--limit 300] [--estimated-output-tokens 400] [--output report.json] [--execute]\nDefault is a local dry run without credentials or paid calls. --execute explicitly authorizes up to two paid extraction calls per sample; no collection or search. Each JSONL row: {id?,answer:CapturedAnswer,snapshot:RunSnapshot,expected?:{brands:[{brandId,mentioned,sentiment?,explicitRank?,appearanceRank?,evidence?}],companies?:[{name,rank?,sentiment?,evidence?}]}}. Omit unknown labels; companies, when present, must be the complete labelled inventory.';
   const limit = Number(values.limit), estimatedOutputTokens = Number(values['estimated-output-tokens']);
   if (!values.input || !Number.isInteger(limit) || limit < 1 || limit > 1000 || !Number.isInteger(estimatedOutputTokens) || estimatedOutputTokens < 1)
     throw new Error('Supply --input, --limit 1–1000 and a positive integer --estimated-output-tokens; use --help.');

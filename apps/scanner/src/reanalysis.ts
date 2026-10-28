@@ -34,6 +34,8 @@ export async function reanalyzeCapturedRun(
       ...source.snapshot,
       projectId,
       analysisMode: 'realtime' as const,
+      extractionModel: project.extractionModel,
+      extractionFallbackModel: undefined,
       competitors: structuredClone(project.competitors),
       parserVersion: PARSER_VERSION,
     };
@@ -53,7 +55,7 @@ export async function reanalyzeCapturedRun(
       const useValidated =
         sameBrands &&
         validated?.parserVersion === PARSER_VERSION &&
-        validated.model === source.snapshot.extractionModel &&
+        validated.model === snapshot.extractionModel &&
         validated.brands.length === 1 + snapshot.competitors.length &&
         [snapshot.brand, ...snapshot.competitors].every((brand) =>
           validated.brands.some((row) => row.brandId === brand.id),

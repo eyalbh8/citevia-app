@@ -197,7 +197,25 @@ export function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 
+function isGeminiResponse(response: NativeResponse): boolean {
+  return Array.isArray(response.candidates) || object(response.promptFeedback) !== undefined ||
+    object(response.usageMetadata) !== undefined || typeof response.modelVersion === 'string';
+}
+
+export function responseModel(response: NativeResponse, fallbackModel: string): string {
+  if (typeof response.modelVersion === 'string') return response.modelVersion;
+  return typeof response.model === 'string' ? response.model : fallbackModel;
+}
+
 export function responseText(response: NativeResponse): string {
+  if (isGeminiResponse(response)) {
+    const candidate = object(Array.isArray(response.candidates) ? response.candidates[0] : undefined);
+    const content = object(candidate?.content);
+    return (Array.isArray(content?.parts) ? content.parts : []).flatMap(item => {
+      const part = object(item);
+      return typeof part?.text === 'string' && part.thought !== true ? [part.text] : [];
+    }).join('');
+  }
   return (response.output ?? []).flatMap(item => {
     const value = object(item);
     return value?.type === 'message' && Array.isArray(value.content)
@@ -209,6 +227,20 @@ export function responseText(response: NativeResponse): string {
 }
 
 export function responseFailure(response: NativeResponse, requireSearch = false): ProviderError | undefined {
+  if (isGeminiResponse(response)) {
+    const candidate = object(Array.isArray(response.candidates) ? response.candidates[0] : undefined);
+    const feedback = object(response.promptFeedback);
+    const blocked = typeof feedback?.blockReason === 'string' && feedback.blockReason !== 'BLOCK_REASON_UNSPECIFIED';
+    const refused = ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY',
+      'IMAGE_PROHIBITED_CONTENT', 'MODEL_ARMOR'].includes(String(candidate?.finishReason));
+    if (blocked || refused) return new ProviderError('response_refused', 'The model refused this response.', false);
+    if (candidate?.finishReason !== 'STOP') return new ProviderError('response_incomplete', 'The model did not complete its response.', false);
+    if (!responseText(response).trim()) return new ProviderError('response_empty', 'The model returned no answer text.', false);
+    const grounding = object(candidate.groundingMetadata);
+    if (requireSearch && !(Array.isArray(grounding?.webSearchQueries) && grounding.webSearchQueries.length))
+      return new ProviderError('search_not_performed', 'The answer did not complete the required web search.', false);
+    return undefined;
+  }
   const output = response.output ?? [];
   const refusal = output.some(item => {
     const value = object(item);

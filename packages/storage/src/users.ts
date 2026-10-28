@@ -83,12 +83,29 @@ export class PostgresUsers implements UserRepository {
       ]);
       let user = await this.find(tx, 'i.subject', identity.subject);
       if (!user) {
-        const id = uuidFor(`user:${identity.subject}`);
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+          `identity-email:${identity.email}`,
+        ]);
         try {
-          await tx.query(
-            `INSERT INTO users(id,email,name,last_name,updated_at) VALUES($1,$2,$3,$4,now())`,
-            [id, identity.email, identity.name, identity.lastName],
+          const existing = await tx.query(
+            'SELECT id FROM users WHERE lower(email)=$1 FOR UPDATE',
+            [identity.email],
           );
+          const id = existing.rows[0]
+            ? String(existing.rows[0].id)
+            : uuidFor(`user:${identity.subject}`);
+          if (existing.rows[0]) {
+            await tx.query(
+              'UPDATE users SET email=$2,name=$3,last_name=$4,updated_at=now() WHERE id=$1',
+              [id, identity.email, identity.name, identity.lastName],
+            );
+          } else {
+            await tx.query(
+              `INSERT INTO users(id,email,name,last_name,updated_at) VALUES($1,$2,$3,$4,now())`,
+              [id, identity.email, identity.name, identity.lastName],
+            );
+          }
+          // The unique user_id constraint prevents replacing an existing link.
           await tx.query(
             `INSERT INTO citevia_identities(subject,user_id,provider,external_user_id,last_seen_at) VALUES($1,$2,'descope',$3,$4)`,
             [

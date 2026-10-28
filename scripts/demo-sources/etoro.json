@@ -1,0 +1,828 @@
+{
+  "id": "account_etoro_demo_v1",
+  "name": "eToro",
+  "website": "https://www.etoro.com/",
+  "aliases": [
+    "eToro UK",
+    "eToro (UK) Ltd"
+  ],
+  "country": "GB",
+  "language": "en",
+  "timezone": "Europe/London",
+  "anchorDate": "2026-10-28",
+  "companyDiscovery": true,
+  "industry": "Online investing and multi-asset brokerage",
+  "serviceArea": "the United Kingdom",
+  "services": [
+    "Stock and ETF investing",
+    "CopyTrader social investing",
+    "Smart Portfolios",
+    "Eligible cryptoasset investing",
+    "CFD trading on non-crypto markets",
+    "Virtual portfolio practice",
+    "Investment education via eToro Academy"
+  ],
+  "audience": [
+    "UK self-directed investors",
+    "UK stock and ETF platform shoppers",
+    "Eligible UK copy-trading users",
+    "Experienced UK CFD traders"
+  ],
+  "description": "eToro is an online trading and investing platform offering access to stocks, ETFs, cryptoassets and CFDs, alongside CopyTrader, Smart Portfolios, virtual portfolio practice and the eToro Academy. This account focuses on company discovery by UK residents. The official UK help centre describes local product restrictions, including the prohibition on crypto CFDs for UK retail clients and eligibility checks for cryptoasset investing. Buying an underlying asset differs from trading a CFD, and product availability depends on the instrument, account and jurisdiction. Investments can lose value; copy trading and past performance do not guarantee future results. The group investor relations website reports 4.36 million funded accounts and $20.2 billion in assets under administration as of 31 August 2026. Those scale figures inform this illustrative account profile and do not measure AI referral traffic.",
+  "criteria": [
+    "UK eligibility and the responsible regulated legal entity",
+    "Underlying asset ownership versus CFD exposure",
+    "All commissions, spreads, currency conversion and financing costs",
+    "Available markets and account funding methods",
+    "Risk disclosures, leverage and investment suitability",
+    "Client asset arrangements and product-specific protections",
+    "Research, education, reporting and customer service"
+  ],
+  "competitors": [
+    {
+      "name": "Trading 212",
+      "website": "https://www.trading212.com/",
+      "aliases": [
+        "Trading212"
+      ],
+      "sourceUrls": [
+        "https://www.trading212.com/"
+      ]
+    },
+    {
+      "name": "IG",
+      "website": "https://www.ig.com/uk/",
+      "aliases": [
+        "IG Markets"
+      ],
+      "sourceUrls": [
+        "https://www.ig.com/uk/cfd-trading"
+      ]
+    },
+    {
+      "name": "XTB",
+      "website": "https://www.xtb.com/en",
+      "aliases": [],
+      "sourceUrls": [
+        "https://www.xtb.com/en/help-center/instruments-3/what-financial-instruments-does-xtb-offer"
+      ]
+    },
+    {
+      "name": "CMC Markets",
+      "website": "https://www.cmcmarkets.com/en-gb",
+      "aliases": [
+        "CMC"
+      ],
+      "sourceUrls": [
+        "https://www.cmcmarkets.com/en-gb"
+      ]
+    },
+    {
+      "name": "Interactive Brokers",
+      "website": "https://www.interactivebrokers.co.uk/en/home.php",
+      "aliases": [
+        "IBKR"
+      ],
+      "sourceUrls": [
+        "https://www.interactivebrokers.co.uk/en/trading/trading-platforms.php"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://help.etoro.com/s/article/What-is-the-eToro-trading-experience-for-UK-residents?language=en_GB",
+      "title": "What is the eToro trading experience for UK residents?",
+      "kind": "official",
+      "claims": [
+        "Asset classes available to UK clients",
+        "UK cryptoasset eligibility and crypto-CFD restrictions",
+        "US-based ETFs available to UK clients as CFDs"
+      ]
+    },
+    {
+      "url": "https://www.etoro.com/customer-service/regulation-license/",
+      "title": "Regulation and License | eToro",
+      "kind": "official",
+      "claims": [
+        "eToro UK regulatory entity and product-dependent investor protections"
+      ]
+    },
+    {
+      "url": "https://www.etoro.com/trading/platforms/",
+      "title": "The eToro online trading platform and mobile app",
+      "kind": "official",
+      "claims": [
+        "Stock investing, platform tools and virtual portfolio access"
+      ]
+    },
+    {
+      "url": "https://www.etoro.com/copytrader/how-it-works/",
+      "title": "Copy Systems Explained | eToro",
+      "kind": "official",
+      "claims": [
+        "How CopyTrader copies portfolio allocations and subsequent actions",
+        "Copy trading risk disclosures"
+      ]
+    },
+    {
+      "url": "https://help.etoro.com/articles/en_GB/Knowledge/what-are-smart-portfolios",
+      "title": "What are Smart Portfolios?",
+      "kind": "official",
+      "claims": [
+        "Thematic, top-trader and partner portfolios",
+        "Periodic portfolio rebalancing"
+      ]
+    },
+    {
+      "url": "https://www.etoro.com/trading/demo-account/",
+      "title": "Demo account. Real lessons.",
+      "kind": "official",
+      "claims": [
+        "Virtual portfolio uses simulated trades and virtual funds"
+      ]
+    },
+    {
+      "url": "https://www.etoro.com/academy/",
+      "title": "eToro Academy: The Knowledge To Invest",
+      "kind": "official",
+      "claims": [
+        "Educational guides, courses and videos"
+      ]
+    },
+    {
+      "url": "https://www.etoro.com/trading/fees/",
+      "title": "eToro Fees: What You Pay to Invest",
+      "kind": "official",
+      "claims": [
+        "Fees depend on product and transaction",
+        "Spreads, commissions, conversion and financing charges require current review"
+      ]
+    },
+    {
+      "url": "https://www.etoro.com/customer-service/copytrading-risks/",
+      "title": "Risks Associated with Social Trading",
+      "kind": "official",
+      "claims": [
+        "Copy trading involves automated execution and loss risk",
+        "Past performance and risk scores do not guarantee future results"
+      ]
+    },
+    {
+      "url": "https://investors.etoro.com/",
+      "title": "Investor relations | eToro",
+      "kind": "official",
+      "claims": [
+        "4.36 million funded accounts as of 31 August 2026",
+        "20.2 billion USD assets under administration as of 31 August 2026",
+        "Scale evidence only, not AI traffic measurement"
+      ]
+    },
+    {
+      "url": "https://www.fca.org.uk/firms/copy-trading",
+      "title": "Copy trading | Financial Conduct Authority",
+      "kind": "independent",
+      "claims": [
+        "Regulatory context and authorisation requirements for copy trading"
+      ]
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/EToro",
+      "title": "EToro",
+      "kind": "independent",
+      "claims": [
+        "Company identity and online investing business context"
+      ]
+    }
+  ],
+  "blogs": [
+    {
+      "url": "https://www.etoro.com/copytrader/copy-vs-mirror/",
+      "title": "Copy Trading vs Mirror Trading",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/investing-in-bond-etfs/",
+      "title": "Investing in Bond ETFs",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/investors-guide-to-reading-financial-reports/",
+      "title": "How To Read Financial Reports",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/measuring-portfolio-performance/",
+      "title": "How To Measure Portfolio Performance",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/fractional-shares/",
+      "title": "Understanding Fractional Shares",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/how-to-build-an-investment-portfolio/",
+      "title": "Building A Balanced Investment Portfolio",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/how-to-build-a-diversified-portfolio/",
+      "title": "How to Build A Diversified Investment Portfolio",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/risk-management/",
+      "title": "How to Manage Risk as a Trader or Investor",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/investing-vs-trading/",
+      "title": "Investing vs Trading",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/trading/cfds-vs-stocks/",
+      "title": "CFDs vs Stocks: What is the Difference?",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/trading/risks-of-cfd-trading/",
+      "title": "The Risks of CFD Trading",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/trading/cfd-leverage-and-margin/",
+      "title": "Leverage and Margin for CFD Trading",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/what-is-etf/",
+      "title": "What Is An ETF?",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "url": "https://www.etoro.com/investing/dollar-cost-averaging/",
+      "title": "Dollar Cost Averaging",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    }
+  ],
+  "prompts": [
+    {
+      "text": "Which online investing platforms are available to UK residents who want to buy stocks and ETFs?",
+      "stage": "understand",
+      "topic": "Investment platform discovery",
+      "seoKeyword": "UK stocks ETF investing platforms",
+      "tags": [
+        "Investment platform discovery"
+      ]
+    },
+    {
+      "text": "Which UK investing apps support fractional shares for people starting with a small portfolio?",
+      "stage": "understand",
+      "topic": "Fractional share platforms",
+      "seoKeyword": "fractional share investing apps UK",
+      "tags": [
+        "Fractional share platforms"
+      ]
+    },
+    {
+      "text": "Which platforms offer copy trading to UK residents, and how do their services differ?",
+      "stage": "understand",
+      "topic": "Copy trading platforms",
+      "seoKeyword": "copy trading platforms UK",
+      "tags": [
+        "Copy trading platforms"
+      ]
+    },
+    {
+      "text": "What brokers let UK customers try a virtual portfolio before deciding whether to open a funded account?",
+      "stage": "understand",
+      "topic": "Practice accounts",
+      "seoKeyword": "virtual portfolio brokers UK",
+      "tags": [
+        "Practice accounts"
+      ]
+    },
+    {
+      "text": "Which multi-asset platforms available in the UK clearly separate buying investments from trading CFDs?",
+      "stage": "understand",
+      "topic": "Multi-asset platforms",
+      "seoKeyword": "UK multi asset platform stocks versus CFDs",
+      "tags": [
+        "Multi-asset platforms"
+      ]
+    },
+    {
+      "text": "Which online brokers give UK retail investors access to shares listed on international exchanges?",
+      "stage": "understand",
+      "topic": "International share dealing",
+      "seoKeyword": "international share dealing platforms UK",
+      "tags": [
+        "International share dealing"
+      ]
+    },
+    {
+      "text": "What platforms should a UK resident research for access to UK- or EU-listed ETFs?",
+      "stage": "understand",
+      "topic": "ETF platform discovery",
+      "seoKeyword": "UK EU listed ETF platforms UK residents",
+      "tags": [
+        "ETF platform discovery"
+      ]
+    },
+    {
+      "text": "Which investment platforms available in the UK include educational guides and market research?",
+      "stage": "understand",
+      "topic": "Investor education",
+      "seoKeyword": "UK investment platforms education research",
+      "tags": [
+        "Investor education"
+      ]
+    },
+    {
+      "text": "Which companies offer a mobile investing app and a web platform for UK retail customers?",
+      "stage": "understand",
+      "topic": "Mobile and web platforms",
+      "seoKeyword": "UK mobile web investing platforms",
+      "tags": [
+        "Mobile and web platforms"
+      ]
+    },
+    {
+      "text": "Which platforms allow eligible UK adults to buy cryptoassets while explaining the relevant restrictions and risks?",
+      "stage": "understand",
+      "topic": "Crypto platform discovery",
+      "seoKeyword": "UK eligible cryptoasset investing platforms risks",
+      "tags": [
+        "Crypto platform discovery"
+      ]
+    },
+    {
+      "text": "Which UK-accessible investment platforms offer thematic portfolios alongside individual investments?",
+      "stage": "understand",
+      "topic": "Thematic portfolio platforms",
+      "seoKeyword": "UK thematic investment portfolio platforms",
+      "tags": [
+        "Thematic portfolio platforms"
+      ]
+    },
+    {
+      "text": "Which online brokers explain share commissions, currency conversion charges and CFD costs clearly for UK customers?",
+      "stage": "understand",
+      "topic": "Cost transparency",
+      "seoKeyword": "UK online broker fees currency conversion CFDs",
+      "tags": [
+        "Cost transparency"
+      ]
+    },
+    {
+      "text": "Compare eToro and Trading 212 for a UK resident researching stock and ETF investing platforms.",
+      "stage": "prefer",
+      "topic": "Broker comparison",
+      "seoKeyword": "eToro Trading 212 UK stocks ETF comparison",
+      "tags": [
+        "Broker comparison"
+      ]
+    },
+    {
+      "text": "How should a UK resident compare eToro and IG when choosing between investing in shares and trading CFDs?",
+      "stage": "prefer",
+      "topic": "Investing and CFD comparison",
+      "seoKeyword": "eToro IG UK share investing CFD comparison",
+      "tags": [
+        "Investing and CFD comparison"
+      ]
+    },
+    {
+      "text": "Compare eToro and XTB for UK customers, focusing on asset ownership, platform tools and the full fee schedule.",
+      "stage": "prefer",
+      "topic": "Broker comparison",
+      "seoKeyword": "eToro XTB UK broker comparison",
+      "tags": [
+        "Broker comparison"
+      ]
+    },
+    {
+      "text": "Which UK brokers would you shortlist for a small self-directed stock portfolio, and what trade-offs matter?",
+      "stage": "prefer",
+      "topic": "Small portfolio platforms",
+      "seoKeyword": "small self directed stock portfolio brokers UK",
+      "tags": [
+        "Small portfolio platforms"
+      ]
+    },
+    {
+      "text": "Which platforms are worth comparing for a UK investor planning regular ETF purchases?",
+      "stage": "prefer",
+      "topic": "Regular investing platforms",
+      "seoKeyword": "regular ETF investing platform comparison UK",
+      "tags": [
+        "Regular investing platforms"
+      ]
+    },
+    {
+      "text": "Which UK-accessible brokers support GBP funding, and how do their currency conversion arrangements compare?",
+      "stage": "prefer",
+      "topic": "GBP funding",
+      "seoKeyword": "GBP funding investment brokers UK comparison",
+      "tags": [
+        "GBP funding"
+      ]
+    },
+    {
+      "text": "Which investment platforms provide useful company research and watchlists for UK retail investors?",
+      "stage": "prefer",
+      "topic": "Research tools",
+      "seoKeyword": "UK investment platforms research watchlists",
+      "tags": [
+        "Research tools"
+      ]
+    },
+    {
+      "text": "What alternatives to eToro should a UK customer investigate for social or copy trading, considering risk and availability?",
+      "stage": "prefer",
+      "topic": "Copy trading alternatives",
+      "seoKeyword": "eToro copy trading alternatives UK",
+      "tags": [
+        "Copy trading alternatives"
+      ]
+    },
+    {
+      "text": "Compare the practice-account experience offered by eToro, IG and CMC Markets for UK residents.",
+      "stage": "prefer",
+      "topic": "Practice account comparison",
+      "seoKeyword": "eToro IG CMC Markets demo account UK",
+      "tags": [
+        "Practice account comparison"
+      ]
+    },
+    {
+      "text": "Which brokers should UK customers compare if they want to buy shares without leverage rather than open CFDs?",
+      "stage": "prefer",
+      "topic": "Underlying share ownership",
+      "seoKeyword": "UK brokers real shares without leverage",
+      "tags": [
+        "Underlying share ownership"
+      ]
+    },
+    {
+      "text": "Which UK brokers offer a consistent experience across desktop browsers and mobile investing apps?",
+      "stage": "prefer",
+      "topic": "Platform usability",
+      "seoKeyword": "UK desktop mobile investment platform comparison",
+      "tags": [
+        "Platform usability"
+      ]
+    },
+    {
+      "text": "For occasional share purchases from the UK, which brokers are worth comparing on total costs rather than headline commission?",
+      "stage": "prefer",
+      "topic": "Occasional dealing costs",
+      "seoKeyword": "UK occasional share dealing total broker costs",
+      "tags": [
+        "Occasional dealing costs"
+      ]
+    },
+    {
+      "text": "Which CFD providers available to experienced UK retail traders clearly explain spreads and overnight financing?",
+      "stage": "prefer",
+      "topic": "CFD cost comparison",
+      "seoKeyword": "UK CFD broker spreads overnight financing comparison",
+      "tags": [
+        "CFD cost comparison"
+      ]
+    },
+    {
+      "text": "Which investing platforms offer portfolio overviews and risk information for UK customers managing several asset types?",
+      "stage": "prefer",
+      "topic": "Portfolio tools",
+      "seoKeyword": "UK multi asset portfolio overview risk tools",
+      "tags": [
+        "Portfolio tools"
+      ]
+    },
+    {
+      "text": "Which online brokers make it straightforward for UK customers to review account activity and transaction history?",
+      "stage": "prefer",
+      "topic": "Account reporting",
+      "seoKeyword": "UK online brokers account activity reporting",
+      "tags": [
+        "Account reporting"
+      ]
+    },
+    {
+      "text": "How do Interactive Brokers, eToro and Trading 212 compare for UK residents seeking international share access?",
+      "stage": "prefer",
+      "topic": "International broker comparison",
+      "seoKeyword": "Interactive Brokers eToro Trading 212 UK international shares",
+      "tags": [
+        "International broker comparison"
+      ]
+    },
+    {
+      "text": "Which brokers should an experienced UK resident compare for non-crypto CFD trading, including eligibility and risk controls?",
+      "stage": "prefer",
+      "topic": "CFD provider discovery",
+      "seoKeyword": "UK non crypto CFD providers eligibility risk controls",
+      "tags": [
+        "CFD provider discovery"
+      ]
+    },
+    {
+      "text": "Which platforms let UK customers verify whether a US share order buys the underlying stock or opens a derivative position?",
+      "stage": "prefer",
+      "topic": "Trade classification",
+      "seoKeyword": "UK US share investing underlying asset versus CFD",
+      "tags": [
+        "Trade classification"
+      ]
+    },
+    {
+      "text": "Which UK investment platforms are operated by FCA-authorised firms, and how can I verify the exact legal entity?",
+      "stage": "trust",
+      "topic": "Regulatory verification",
+      "seoKeyword": "UK investment platform FCA legal entity verification",
+      "tags": [
+        "Regulatory verification"
+      ]
+    },
+    {
+      "text": "Which brokers clearly label the difference between real investments and CFDs before a UK customer places an order?",
+      "stage": "trust",
+      "topic": "Product transparency",
+      "seoKeyword": "UK broker real investments CFD order transparency",
+      "tags": [
+        "Product transparency"
+      ]
+    },
+    {
+      "text": "Which UK cryptoasset platforms explain appropriateness checks, customer categorisation and investment risks before onboarding?",
+      "stage": "trust",
+      "topic": "Crypto onboarding safeguards",
+      "seoKeyword": "UK crypto platform appropriateness customer categorisation",
+      "tags": [
+        "Crypto onboarding safeguards"
+      ]
+    },
+    {
+      "text": "How can I check that a UK investing platform website belongs to the firm listed by the FCA rather than a clone?",
+      "stage": "trust",
+      "topic": "Firm identity checks",
+      "seoKeyword": "UK investing platform FCA clone firm check",
+      "tags": [
+        "Firm identity checks"
+      ]
+    },
+    {
+      "text": "Which UK online brokers publish clear complaints procedures and customer support channels?",
+      "stage": "trust",
+      "topic": "Customer support",
+      "seoKeyword": "UK broker complaints procedures support channels",
+      "tags": [
+        "Customer support"
+      ]
+    },
+    {
+      "text": "What investment platforms available in the UK provide account security features and clear guidance for protecting login access?",
+      "stage": "trust",
+      "topic": "Account security",
+      "seoKeyword": "UK investment platform account security",
+      "tags": [
+        "Account security"
+      ]
+    },
+    {
+      "text": "Which copy trading platforms available in the UK explain that copied performance and stop-loss settings cannot guarantee returns?",
+      "stage": "trust",
+      "topic": "Copy trading risk disclosure",
+      "seoKeyword": "UK copy trading past performance stop loss risks",
+      "tags": [
+        "Copy trading risk disclosure"
+      ]
+    },
+    {
+      "text": "Which UK brokers clearly explain how client money and assets are held and which compensation protections apply by product?",
+      "stage": "trust",
+      "topic": "Client asset protection",
+      "seoKeyword": "UK broker client money asset custody protection",
+      "tags": [
+        "Client asset protection"
+      ]
+    },
+    {
+      "text": "Which CFD providers in the UK make leverage risks and retail loss warnings easy to find before an account is funded?",
+      "stage": "trust",
+      "topic": "CFD risk disclosure",
+      "seoKeyword": "UK CFD provider leverage retail loss warnings",
+      "tags": [
+        "CFD risk disclosure"
+      ]
+    },
+    {
+      "text": "Which investment platforms publish transparent withdrawal procedures, charges and account verification requirements for UK residents?",
+      "stage": "trust",
+      "topic": "Withdrawal transparency",
+      "seoKeyword": "UK investment platform withdrawal charges verification",
+      "tags": [
+        "Withdrawal transparency"
+      ]
+    },
+    {
+      "text": "Which online investment companies can a UK adult contact to discuss account eligibility and the onboarding process?",
+      "stage": "convert",
+      "topic": "Account onboarding",
+      "seoKeyword": "UK online investing account eligibility onboarding",
+      "tags": [
+        "Account onboarding"
+      ]
+    },
+    {
+      "text": "Which UK brokers explain the identity and address documents needed before I start an account application?",
+      "stage": "convert",
+      "topic": "Verification documents",
+      "seoKeyword": "UK broker application identity address documents",
+      "tags": [
+        "Verification documents"
+      ]
+    },
+    {
+      "text": "Where can a UK resident open a practice account to compare investing platforms before depositing real money?",
+      "stage": "convert",
+      "topic": "Open a practice account",
+      "seoKeyword": "open virtual investing practice account UK",
+      "tags": [
+        "Open a practice account"
+      ]
+    },
+    {
+      "text": "Which brokers should I contact to confirm supported GBP deposit methods and any currency conversion costs?",
+      "stage": "convert",
+      "topic": "Funding enquiries",
+      "seoKeyword": "UK broker GBP deposit methods FX cost enquiries",
+      "tags": [
+        "Funding enquiries"
+      ]
+    },
+    {
+      "text": "Which UK investment platforms publish their portfolio transfer policies so I can check whether an existing holding can be moved?",
+      "stage": "convert",
+      "topic": "Transfer policy enquiries",
+      "seoKeyword": "UK investment platform portfolio transfer policy",
+      "tags": [
+        "Transfer policy enquiries"
+      ]
+    },
+    {
+      "text": "Which platforms can explain their UK copy trading setup process, eligibility checks and minimum allocation before I sign up?",
+      "stage": "convert",
+      "topic": "Copy trading onboarding",
+      "seoKeyword": "UK copy trading setup eligibility minimum allocation",
+      "tags": [
+        "Copy trading onboarding"
+      ]
+    },
+    {
+      "text": "Where can I obtain the current UK fee schedules for eToro, Trading 212, XTB, IG and CMC Markets?",
+      "stage": "convert",
+      "topic": "Obtain broker fee schedules",
+      "seoKeyword": "current UK broker fee schedules comparison",
+      "tags": [
+        "Obtain broker fee schedules"
+      ]
+    },
+    {
+      "text": "Which brokers can help me confirm that a specific UK- or EU-listed ETF is available to a UK retail account?",
+      "stage": "convert",
+      "topic": "ETF availability enquiries",
+      "seoKeyword": "UK EU listed ETF broker availability UK retail",
+      "tags": [
+        "ETF availability enquiries"
+      ]
+    },
+    {
+      "text": "Which UK-accessible investment platforms offer customer service contact options before I complete an application?",
+      "stage": "convert",
+      "topic": "Pre-application support",
+      "seoKeyword": "UK investment platform contact before application",
+      "tags": [
+        "Pre-application support"
+      ]
+    },
+    {
+      "text": "Which UK brokers provide downloadable transaction records and explain what reports are available to account holders?",
+      "stage": "convert",
+      "topic": "Reporting enquiries",
+      "seoKeyword": "UK broker downloadable transaction account reports",
+      "tags": [
+        "Reporting enquiries"
+      ]
+    }
+  ],
+  "brandbook": {
+    "keyFeatures": [
+      "Stock and ETF investing",
+      "CopyTrader social investing",
+      "Smart Portfolios",
+      "Virtual practice portfolio",
+      "eToro Academy",
+      "Multi-asset platform with product and jurisdiction restrictions"
+    ],
+    "values": [
+      "Accessible financial education",
+      "Transparency about product risks and costs",
+      "Community-based learning"
+    ],
+    "toneOfVoice": [
+      "Clear",
+      "Educational",
+      "Balanced about risk"
+    ],
+    "personality": [
+      "Digitally focused",
+      "Community oriented",
+      "Practical"
+    ],
+    "industryCategory": "Financial services",
+    "subIndustryCategory": "UK online investing and multi-asset brokerage",
+    "postGuidelines": {
+      "dos": [
+        "Focus on company and platform discovery for UK residents.",
+        "Distinguish underlying investments from CFDs and simulated trades.",
+        "Explain that eligibility, fees and availability depend on the account and instrument.",
+        "State that investments can lose value and past performance does not guarantee future results.",
+        "Use the current official fee and regulatory pages for details."
+      ],
+      "donts": [
+        "Promise returns, recommend a particular asset or imply investment suitability.",
+        "Offer UK retail crypto CFDs or claim all products receive identical regulatory protection.",
+        "Claim ISA features, fees, transfer support or compensation limits without current evidence.",
+        "Present illustrative AI traffic as measured platform analytics.",
+        "Suggest virtual portfolio performance predicts live trading outcomes."
+      ]
+    },
+    "unknowns": [
+      "The Academy pages display an update date of 8 September 2026; original publication dates are not confirmed and are omitted.",
+      "Financial services and protections vary by product, legal entity and client eligibility.",
+      "Traffic scale, visibility and growth are illustrative scenario choices informed by public company scale, not observed AI referrals.",
+      "Brand voice descriptors are editorial interpretations of public educational materials."
+    ]
+  },
+  "copy": {
+    "introduction": "Compare UK-accessible investment platforms by legal entity, available instruments, costs and risk. Check whether each position is an underlying investment or a CFD, and confirm current UK eligibility.",
+    "positiveCompany": " is a platform to assess for UK-accessible investing and trading. Verify product eligibility, underlying assets versus CFDs and the complete fee schedule. Investments can lose value, and past performance does not guarantee future results.",
+    "neutralCompany": " is another broker to research. Compare UK product restrictions, asset ownership, fees, account protections and customer service with the alternatives.",
+    "fallback": "Start with the official UK product, fee and regulatory pages for each company. Confirm the responsible legal entity and whether the intended instrument is available to your account. This comparison is educational and does not recommend an investment."
+  },
+  "profile": {
+    "trafficScale": 10,
+    "monthlyGrowth": 0.065,
+    "visibilityAdjustment": 0.075,
+    "growthCurve": 1.02
+  },
+  "traffic": {
+    "pages": [
+      "/",
+      "/trading/platforms/",
+      "/trading/fees/",
+      "/copytrader/how-it-works/",
+      "/trading/demo-account/",
+      "/academy/",
+      "/investing/what-is-etf/",
+      "/investing/fractional-shares/",
+      "/investing/risk-management/",
+      "/trading/cfds-vs-stocks/"
+    ],
+    "countries": [
+      "GB",
+      "US",
+      "DE",
+      "FR",
+      "AU"
+    ],
+    "devices": [
+      "mobile",
+      "desktop",
+      "tablet"
+    ],
+    "browsers": [
+      "Chrome",
+      "Safari",
+      "Edge",
+      "Firefox"
+    ]
+  }
+}
