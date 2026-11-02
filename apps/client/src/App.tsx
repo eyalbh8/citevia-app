@@ -573,13 +573,11 @@ function Workspace() {
               'mentions',
               'tracking',
               ...(systemAdmin ? ['blog-performance' as const] : []),
-              ...(systemAdmin && currentProject?.geoBacklinks?.enabled ? ['geo-backlinks' as const] : []),
               'sources',
               'traffic',
               'website-health',
               'agents',
               'brandbook',
-              ...(systemAdmin ? ['users' as const] : []),
             ] as View[]
           ).map((key) => {
             const Icon = views[key].icon;
@@ -623,6 +621,28 @@ function Workspace() {
             Settings
           </button>
         </nav>
+        {systemAdmin && (
+          <>
+            <div className="nav-rule" />
+            <div className="nav-caption">SYSTEM ADMIN</div>
+            <nav aria-label="System admin" className="nav-list">
+              {(['users', ...(currentProject?.geoBacklinks?.enabled ? ['geo-backlinks'] : [])] as View[]).map((key) => {
+                const Icon = views[key].icon;
+                return (
+                  <button
+                    key={key}
+                    className={`nav-item ${view === key ? 'active' : ''}`}
+                    aria-current={view === key ? 'page' : undefined}
+                    onClick={() => navigate(key)}
+                  >
+                    <Icon />
+                    {views[key].title}
+                  </button>
+                );
+              })}
+            </nav>
+          </>
+        )}
         <div className="sidebar-bottom">
           <div className="plan-card">
             <div className="plan-title">
