@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-11-02T22:29:04.596Z",
+  "environment": "production",
+  "region": "us-east-1",
+  "method": "Read-only AWS CLI queries and signed GuardDuty GetDetector request. No test findings, alarm changes, credential changes, or other AWS mutations performed by this verification.",
+  "guardDuty": {
+    "detectorId": "c5bfbb3b90c74890ac526b4cd43e8002",
+    "status": "ENABLED",
+    "findingPublishingFrequency": "FIFTEEN_MINUTES",
+    "features": [
+      {
+        "name": "CLOUD_TRAIL",
+        "status": "ENABLED"
+      },
+      {
+        "name": "DNS_LOGS",
+        "status": "ENABLED"
+      },
+      {
+        "name": "FLOW_LOGS",
+        "status": "ENABLED"
+      },
+      {
+        "name": "S3_DATA_EVENTS",
+        "status": "ENABLED"
+      },
+      {
+        "name": "EKS_AUDIT_LOGS",
+        "status": "ENABLED"
+      },
+      {
+        "name": "EBS_MALWARE_PROTECTION",
+        "status": "ENABLED"
+      },
+      {
+        "name": "RDS_LOGIN_EVENTS",
+        "status": "ENABLED"
+      },
+      {
+        "name": "AI_PROTECTION",
+        "status": "DISABLED"
+      },
+      {
+        "name": "AI_ANALYST",
+        "status": "DISABLED"
+      },
+      {
+        "name": "EKS_RUNTIME_MONITORING",
+        "status": "DISABLED"
+      },
+      {
+        "name": "LAMBDA_NETWORK_LOGS",
+        "status": "ENABLED"
+      },
+      {
+        "name": "RUNTIME_MONITORING",
+        "status": "DISABLED"
+      }
+    ],
+    "verification": "Current service response includes S3_DATA_EVENTS and LAMBDA_NETWORK_LOGS as ENABLED; existing local CLI model omits the features property.",
+    "findingDelivery": "EventBridge findings delivery is verified separately; this evidence does not assert successful end-to-end sample-finding delivery."
+  },
+  "cloudTrail": {
+    "trailName": "citevia-production-security",
+    "status": {
+      "IsLogging": true,
+      "LatestDeliveryTime": "2026-11-03T00:27:31.077000+02:00",
+      "LatestDeliveryError": null,
+      "LatestCloudWatchLogsDeliveryTime": "2026-11-03T00:27:30.488000+02:00",
+      "LatestCloudWatchLogsDeliveryError": null,
+      "LatestDigestDeliveryTime": "2026-11-03T00:18:00.946000+02:00",
+      "LatestDigestDeliveryError": null
+    },
+    "boundedS3Objects": {
+      "Count": 5,
+      "Truncated": true,
+      "Objects": [
+        {
+          "Bytes": 2478,
+          "LastModified": "2026-11-02T22:17:50+00:00"
+        },
+        {
+          "Bytes": 1452,
+          "LastModified": "2026-11-02T22:22:18+00:00"
+        },
+        {
+          "Bytes": 4834,
+          "LastModified": "2026-11-02T22:17:39+00:00"
+        },
+        {
+          "Bytes": 3171,
+          "LastModified": "2026-11-02T22:23:20+00:00"
+        },
+        {
+          "Bytes": 22756,
+          "LastModified": "2026-11-02T22:22:30+00:00"
+        }
+      ]
+    },
+    "auditLogGroup": "citevia-production-security-AuditLogs-5re3YJQG5SC1",
+    "auditLogsObserved": true,
+    "limits": "Object listing is intentionally limited to five keys without downloading log contents. Delivery timestamps are observations, not a guarantee of immediate or complete delivery."
+  },
+  "rootAccountControls": {
+    "AccountAccessKeysPresent": 0,
+    "AccountMFAEnabled": 1
+  },
+  "rootActivity": {
+    "triggeringMetricWindow": {
+      "start": "2026-11-02T22:14:00Z",
+      "end": "2026-11-02T22:19:00Z",
+      "matchingLogRecords": 2,
+      "eventTime": "2026-11-02T22:17:17Z",
+      "eventName": "ListManagedNotificationEvents",
+      "eventSource": "notifications.amazonaws.com",
+      "readOnly": true,
+      "identityType": "Root",
+      "mfaAuthenticated": true,
+      "consoleSession": true,
+      "cloudFormationInvoker": false
+    },
+    "expandedCloudWatchWindow": {
+      "start": "2026-11-02T22:00:00Z",
+      "end": "2026-11-02T22:30:00Z",
+      "recordCount": 8,
+      "hasNextToken": false,
+      "allExplicitReadOnly": true,
+      "allSameSourceAddress": true,
+      "distinctEventNames": [
+        "ListManagedNotificationEvents"
+      ],
+      "mfaAuthenticated": true,
+      "consoleSession": true,
+      "sessionCreationTime": "2026-11-02T18:09:37Z",
+      "invokedByPresent": false,
+      "observedRootMutations": 0
+    },
+    "signInLookup": {
+      "region": "us-east-1",
+      "lookupCount": 1,
+      "rootLoginCount": 1,
+      "hasNextToken": false,
+      "events": [
+        {
+          "eventTime": "2026-11-02T18:09:37Z",
+          "eventName": "ConsoleLogin",
+          "result": "Success",
+          "mfaUsed": "Yes",
+          "browserSession": true
+        }
+      ]
+    },
+    "recentSignInLookup": {
+      "start": "2026-11-02T21:00:00Z",
+      "end": "2026-11-02T22:30:00Z",
+      "region": "us-east-1",
+      "lookupCount": 0,
+      "rootLoginCount": 0,
+      "hasNextToken": false
+    },
+    "mutationHistoryLookup": {
+      "start": "2026-11-02T22:00:00Z",
+      "end": "2026-11-02T22:30:00Z",
+      "region": "us-east-1",
+      "lookupCount": 50,
+      "rootMutationCount": 0,
+      "hasNextToken": true,
+      "events": []
+    },
+    "assessment": "The two triggering records are read-only requests from an MFA-authenticated root browser session, whose successful ConsoleLogin occurred at 18:09:37 UTC. They are not the deployment IAM user's PutRolePolicy action. Human ownership/authorization of the root browser session remains unconfirmed.",
+    "limitations": [
+      "CloudWatch query covers only records already delivered to the newly enabled trail, with latest observed CloudWatch delivery at 22:27:30 UTC.",
+      "The separate mutation-history lookup returned no root mutations in its first 50 records but has another page; it is not an exhaustive mutation-history clearance.",
+      "ConsoleLogin and mutation-history lookups are scoped to us-east-1 and their stated windows.",
+      "MFA and read-only activity do not establish the human operator's identity or prove absence of compromise.",
+      "Source addresses, full user agents, credentials, and customer content are deliberately excluded."
+    ]
+  }
+}
