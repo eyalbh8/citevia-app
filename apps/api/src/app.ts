@@ -186,6 +186,21 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         'Settings changed. Refresh and try again.',
       );
   }
+  function validateCompetitors(next: Project) {
+    if (new Set([next.brand.id, ...next.competitors.map(brand => brand.id)]).size !== next.competitors.length + 1)
+      throw new HttpError(400, 'DUPLICATE_BRAND', 'Brand identifiers must be unique');
+    const names = new Set([next.brand.name, ...next.brand.aliases].map(promptFingerprint).filter(Boolean));
+    const domains = new Set(next.brand.domains.map(normalizeDomain).filter(Boolean));
+    return next.competitors.map(competitor => {
+      const ownNames = [...new Set([competitor.name, ...competitor.aliases].map(promptFingerprint).filter(Boolean))];
+      const ownDomains = [...new Set(competitor.domains.map(domain => normalizeDomain(domain)!))];
+      if (ownNames.some(name => names.has(name)) || ownDomains.some(domain => domains.has(domain)))
+        throw new HttpError(400, 'DUPLICATE_COMPETITOR', 'Each competitor must have a distinct name and website, different from your brand.');
+      ownNames.forEach(name => names.add(name));
+      ownDomains.forEach(domain => domains.add(domain));
+      return { ...competitor, domains: ownDomains };
+    });
+  }
   const handle = async (
     request: Request,
     identity?: VerifiedIdentity,
@@ -316,12 +331,13 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       const stored = await repository.getProject(projectId);
       if (!stored) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
       const project = { ...stored, role: stored.demo ? 'viewer' as const : member.role };
-      if (stored.demo && !['GET', 'HEAD'].includes(method))
+      const editingCompetitors = tail === 'competitors' && method === 'PATCH';
+      if (stored.demo && !['GET', 'HEAD'].includes(method) && !editingCompetitors)
         throw new HttpError(403, 'ACCOUNT_READ_ONLY', 'This account is read-only. Scans and edits are unavailable.');
       const providerFilter = query.has('provider')
         ? scanProviderSchema.parse(query.get('provider'))
         : undefined;
-      if (!['GET', 'HEAD'].includes(method) && member.role !== 'owner')
+      if (!['GET', 'HEAD'].includes(method) && member.role !== 'owner' && !editingCompetitors)
         throw new HttpError(
           403,
           'FORBIDDEN',
@@ -553,6 +569,17 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           role: member.role,
         });
       }
+      if (editingCompetitors) {
+        const input = settingsSchema.pick({ version: true, competitors: true })
+          .extend({ competitors: settingsSchema.shape.competitors.unwrap() }).strict().parse(await body(request));
+        if (input.version !== stored.version)
+          throw new HttpError(409, 'VERSION_CONFLICT', 'Competitors changed. Refresh and try again.');
+        const next = { ...stored, competitors: input.competitors, competitorsConfiguredAt: now().toISOString(),
+          version: stored.version + 1, updatedAt: now().toISOString() };
+        next.competitors = validateCompetitors(next);
+        await persistProject(next, stored.version);
+        return response({ ...next, role: project.role });
+      }
       if (tail === 'settings' && method === 'PATCH') {
         const input = settingsSchema.parse(await body(request));
         if (input.geoBacklinks !== undefined && !user.isSystemAdmin)
@@ -590,52 +617,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           updatedAt: now().toISOString(),
           scheduleStatus: 'pending' as const,
         };
-        if (
-          new Set([next.brand.id, ...next.competitors.map((b) => b.id)])
-            .size !==
-          next.competitors.length + 1
-        )
-          throw new HttpError(
-            400,
-            'DUPLICATE_BRAND',
-            'Brand identifiers must be unique',
-          );
-        if (input.competitors || input.brand) {
-          const names = new Set(
-            [next.brand.name, ...next.brand.aliases]
-              .map(promptFingerprint)
-              .filter(Boolean),
-          );
-          const domains = new Set(
-            next.brand.domains.map(normalizeDomain).filter(Boolean),
-          );
-          next.competitors = next.competitors.map((competitor) => {
-            const ownNames = [
-              ...new Set(
-                [competitor.name, ...competitor.aliases]
-                  .map(promptFingerprint)
-                  .filter(Boolean),
-              ),
-            ];
-            const ownDomains = [
-              ...new Set(
-                competitor.domains.map((domain) => normalizeDomain(domain)!),
-              ),
-            ];
-            if (
-              ownNames.some((name) => names.has(name)) ||
-              ownDomains.some((domain) => domains.has(domain))
-            )
-              throw new HttpError(
-                400,
-                'DUPLICATE_COMPETITOR',
-                'Each competitor must have a distinct name and website, different from your brand.',
-              );
-            ownNames.forEach((name) => names.add(name));
-            ownDomains.forEach((domain) => domains.add(domain));
-            return { ...competitor, domains: ownDomains };
-          });
-        }
+        if (input.competitors || input.brand) next.competitors = validateCompetitors(next);
         await persistProject(next, stored.version);
         try {
           for (let attempt = 0; attempt < 3; attempt++) {

@@ -59,7 +59,6 @@ export async function refreshNayaxContent(
     anchorDate: existing.demo.anchorDate,
     startDate: existing.demo.startDate,
     endDate: existing.demo.endDate,
-    publicationsPerWeek: 3,
     configurationBytes,
     persistedSyntheticAnswers: 0,
     persistedSyntheticTrafficEvents: 0,

@@ -30,7 +30,6 @@ export default function CompetitorSettings({
     showSuggestions ? `${path}/competitors/suggestions` : null,
     retry,
   );
-  const owner = project.role === 'owner' && !project.demo;
   const names = new Set(
     [project.brand, ...value].flatMap((brand) =>
       [brand.name, ...brand.aliases].map(promptFingerprint),
@@ -70,7 +69,6 @@ export default function CompetitorSettings({
               size={28}
             />
             <strong>{competitor.name || `Competitor ${index + 1}`}</strong>
-            {owner && (
               <button
                 className="icon-button"
                 type="button"
@@ -81,7 +79,6 @@ export default function CompetitorSettings({
               >
                 <Trash2 size={15} />
               </button>
-            )}
           </div>
           <div className="competitor-editor-fields">
             <label className="field">
@@ -129,7 +126,6 @@ export default function CompetitorSettings({
           mentioned in your saved answers.
         </p>
       )}
-      {owner && (
         <div className="competitor-actions">
           <button
             className="button button-outline"
@@ -149,7 +145,6 @@ export default function CompetitorSettings({
             {showSuggestions ? 'Hide suggestions' : 'Find suggestions'}
           </button>
         </div>
-      )}
       {showSuggestions && (
         <div
           className="competitor-suggestions"
@@ -158,7 +153,7 @@ export default function CompetitorSettings({
           <h4>Mentioned in your AI answers</h4>
           <p>
             Alternatives from a sample of recent saved answers. Choose your
-            competitors, add their official website, and save your settings to
+            competitors, add their official website, and save your competitors to
             start tracking.
           </p>
           <ErrorNotice

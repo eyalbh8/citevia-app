@@ -73,6 +73,7 @@ import TrafficView from './TrafficView';
 import WebsiteHealthView from './WebsiteHealthView';
 import SourcesView from './SourcesView';
 import SettingsView from './SettingsView';
+import CompetitorsView from './CompetitorsView';
 import PromptsView from './PromptsView';
 import ResponseDrawer from './ResponseDrawer';
 import AccountsView from './AccountsView';
@@ -97,6 +98,7 @@ type View =
   | 'website-health'
   | 'sources'
   | 'settings'
+  | 'competitors'
   | 'accounts'
   | 'brandbook'
   | 'prompts'
@@ -105,6 +107,7 @@ type View =
   | 'mcp'
   | 'users';
 const views = {
+  competitors: { title: 'Competitors', description: 'Choose the brands you compare with in AI answers.', icon: Users },
   'geo-backlinks': { title: 'GEO Backlink Strategy', description: 'Plan monthly outreach and track your AI visibility.', icon: Link2 },
   'blog-performance': { title: 'Blog performance', description: 'Review tracked blogs and prepare the next article.', icon: FileText },
   'website-health': { title: 'Website Health', description: 'Find what to improve on mobile and desktop.', icon: Activity },
@@ -578,6 +581,7 @@ function Workspace() {
               'website-health',
               'agents',
               'brandbook',
+              'competitors',
             ] as View[]
           ).map((key) => {
             const Icon = views[key].icon;
@@ -612,21 +616,13 @@ function Workspace() {
             <Plug />
             MCP connections
           </button>
-          <button
-            className={`nav-item ${view === 'settings' ? 'active' : ''}`}
-            aria-current={view === 'settings' ? 'page' : undefined}
-            onClick={() => navigate('settings')}
-          >
-            <Settings2 />
-            Settings
-          </button>
         </nav>
         {systemAdmin && (
           <>
             <div className="nav-rule" />
             <div className="nav-caption">SYSTEM ADMIN</div>
             <nav aria-label="System admin" className="nav-list">
-              {(['users', ...(currentProject?.geoBacklinks?.enabled ? ['geo-backlinks'] : [])] as View[]).map((key) => {
+              {(['users', 'settings', ...(currentProject?.geoBacklinks?.enabled ? ['geo-backlinks'] : [])] as View[]).map((key) => {
                 const Icon = views[key].icon;
                 return (
                   <button
@@ -636,7 +632,7 @@ function Workspace() {
                     onClick={() => navigate(key)}
                   >
                     <Icon />
-                    {views[key].title}
+                    {key === 'settings' ? 'Settings' : views[key].title}
                   </button>
                 );
               })}
@@ -904,7 +900,7 @@ function Workspace() {
             project && (
               <>
                 <PresentationScenarioNotice demo={project.demo} />
-                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'geo-backlinks', 'agents', 'integrations'].includes(view) &&
+                {!['dashboard', 'settings', 'competitors', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'geo-backlinks', 'agents', 'integrations'].includes(view) &&
                   run && (
                     <div className="status-strip">
                       <span
@@ -935,7 +931,7 @@ function Workspace() {
                   )}
                 {dashboard.loading &&
                 !dashboard.data &&
-                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'geo-backlinks', 'agents', 'integrations'].includes(view) ? (
+                !['dashboard', 'settings', 'competitors', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'geo-backlinks', 'agents', 'integrations'].includes(view) ? (
                   <Skeleton variant="cards" label="Bringing your results together…" />
                 ) : view === 'website-health' ? (
                   <WebsiteHealthView key={project.id} project={project} path={path} notify={setToast} />
@@ -945,15 +941,17 @@ function Workspace() {
                   <BlogPerformanceView key={project.id} project={project} systemAdmin={systemAdmin} onTracking={() => navigate('tracking')} />
                 ) : view === 'agents' ? (
                   <AgentsView key={project.id} project={project} onIntegrations={(highlight) => navigate('integrations', highlight)} />
+                ) : view === 'competitors' ? (
+                  <CompetitorsView key={project.id} project={project} path={path} onSaved={settingsSaved} notify={setToast} />
                 ) : view === 'settings' ? (
-                  <SettingsView
+                  systemAdmin ? <SettingsView
                     key={project.id}
                     path={path}
                     systemAdmin={systemAdmin}
                     nextScanAt={dashboard.data?.nextScanAt}
                     onSaved={settingsSaved}
                     notify={setToast}
-                  />
+                  /> : <Empty title="Administrator access required" description="Project settings are managed by your system administrator." />
                 ) : view === 'prompts' ? (
                   <PromptsView
                     key={project.id}

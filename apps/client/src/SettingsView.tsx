@@ -7,7 +7,7 @@ import {
   RefreshCw,
   Save,
 } from 'lucide-react';
-import type { Brand, Page, Project, ScanRun } from '@citevia/core';
+import type { Page, Project, ScanRun } from '@citevia/core';
 import {
   projectProviders,
   PROVIDER_LABELS,
@@ -19,9 +19,9 @@ import {
 } from '@citevia/core';
 import { idempotentPost, request, useApi } from './api';
 import { Badge, Empty, ErrorNotice, formatDate } from './components';
-import CompetitorSettings from './CompetitorSettings';
 import SocialAutomationSettings from './SocialAutomationSettings';
 import GeoBacklinkSettings from './GeoBacklinkSettings';
+import './project-settings.css';
 
 function scheduleLabel(project: Project) {
   if (!project.scanSchedule) return `${project.scheduleExpression} (${project.timezone})`;
@@ -48,6 +48,7 @@ export default function SettingsView({
     loading,
   } = useApi<Project>(`${path}/settings`);
   const runs = useApi<Page<ScanRun>>(`${path}/runs`);
+  const [section, setSection] = useState('general');
   return (
     <>
       <ErrorNotice error={error} retry={onSaved} />
@@ -56,7 +57,17 @@ export default function SettingsView({
       ) : (
         project && (
           <>
-            <div className="settings-grid">
+            <div className="project-settings-page">
+            <nav className="settings-sections" aria-label="Settings sections">
+              {[
+                ['general', 'General'], ['publishing', 'Publishing'],
+                ...(systemAdmin ? [['geo', 'GEO backlinks']] : []),
+              ].map(([key, label]) => (
+                <button type="button" key={key} aria-current={section === key ? 'page' : undefined}
+                  className={section === key ? 'active' : ''} onClick={() => setSection(key)}>{label}</button>
+              ))}
+            </nav>
+            {section === 'general' && <div className="settings-grid">
               <ProjectForm
                 key={`${project.id}-${project.version}`}
                 project={project}
@@ -64,7 +75,7 @@ export default function SettingsView({
                 onSaved={onSaved}
                 notify={notify}
               />
-              <aside className="card">
+              <aside className="settings-sidebar"><section className="card">
                 <div className="card-header">
                   <div>
                     <h2 className="card-title">Your scan schedule</h2>
@@ -122,12 +133,12 @@ export default function SettingsView({
                       />
                     </div>
                   )}
-                  <h3
-                    className="drawer-section-title"
-                    style={{ marginBottom: 13 }}
-                  >
-                    Recent scans
-                  </h3>
+                </div>
+              </section>
+              <section className="card">
+                <div className="card-header"><div><h2 className="card-title">Recent scans</h2>
+                  <p className="card-description">Your latest snapshots and their status.</p></div></div>
+                <div className="card-content">
                   <ErrorNotice error={runs.error} />
                   <div className="run-history">
                     {runs.loading && !runs.data && (
@@ -151,28 +162,12 @@ export default function SettingsView({
                       <p className="card-description">No scans yet.</p>
                     )}
                   </div>
-                  <h3 className="drawer-section-title">Collection settings</h3>
-                  <p className="scan-options">
-                    {projectProviders(project).map((config) => (
-                      <span key={config.provider}>
-                        {PROVIDER_LABELS[config.provider]}: {config.model}
-                        <br />
-                      </span>
-                    ))}
-                    <br />
-                    Analysis model: {project.extractionModel}
-                    <br />
-                    Parser: {project.parserVersion}
-                    <br />
-                    Search is enabled for every provider. Gemini decides when to
-                    ground an answer. OpenAI analyzes all captured answers.
-                  </p>
                 </div>
-              </aside>
-            </div>
-            {systemAdmin && <GeoBacklinkSettings key={`${project.id}-${project.version}`} project={project} path={path} onSaved={onSaved} notify={notify} />}
-            <SocialAutomationSettings key={project.id} project={project} path={path} onSaved={onSaved} notify={notify} />
-            <section className="card">
+              </section></aside>
+            </div>}
+            {section === 'geo' && systemAdmin && <GeoBacklinkSettings key={`${project.id}-${project.version}`} project={project} path={path} onSaved={onSaved} notify={notify} />}
+            {section === 'publishing' && <SocialAutomationSettings key={project.id} project={project} path={path} onSaved={onSaved} notify={notify} />}
+            {section === 'general' &&             <section className="card">
               <div className="card-header">
                 <div>
                   <h2 className="card-title">Your prompt portfolio</h2>
@@ -185,7 +180,8 @@ export default function SettingsView({
                   Manage prompts
                 </a>
               </div>
-            </section>
+            </section>}
+            </div>
           </>
         )
       )}
@@ -344,8 +340,6 @@ function ProjectForm({
   const [country, setCountry] = useState(project.country),
     [language, setLanguage] = useState(project.language),
     [timezone, setTimezone] = useState(project.timezone);
-  const [competitors, setCompetitors] = useState<Brand[]>(project.competitors);
-  const [competitorsEdited, setCompetitorsEdited] = useState(false);
   const [scanProviders, setScanProviders] = useState(projectProviders(project));
   const [saving, setSaving] = useState(false),
     [error, setError] = useState<Error>();
@@ -375,27 +369,13 @@ function ProjectForm({
             aliases: split(aliases),
             domains: split(domains),
           },
-          ...(competitorsEdited
-            ? {
-                competitors: competitors.map((competitor) => ({
-                  ...competitor,
-                  name: competitor.name.trim(),
-                  aliases: competitor.aliases.flatMap(split),
-                  domains: competitor.domains.flatMap(split),
-                })),
-              }
-            : {}),
           country: country.toUpperCase(),
           language,
           timezone,
           scanProviders,
         }),
       });
-      notify(
-        competitorsEdited && competitors.length
-          ? 'Settings saved. Competitors are tracked in the dashboard and future scans.'
-          : 'Project settings saved.',
-      );
+      notify('Project settings saved.');
       onSaved();
     } catch (error) {
       setError(error as Error);
@@ -409,7 +389,7 @@ function ProjectForm({
         <div>
           <h2 className="card-title">Brand & workspace</h2>
           <p className="card-description">
-            Tell Citevia what to look for in the answers
+            Manage your project identity and the regions you track.
           </p>
         </div>
       </div>
@@ -428,6 +408,7 @@ function ProjectForm({
           style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
         >
           <div className="form-stack">
+            <div className="settings-group-heading"><h3>Brand identity</h3><p>Names and websites used to recognize your brand.</p></div>
             <div className="field-row">
               <label className="field">
                 Project name
@@ -471,6 +452,7 @@ function ProjectForm({
                 Separate domains with commas. These identify your owned sources.
               </small>
             </label>
+            <div className="settings-group-heading"><h3>Region & language</h3><p>Set your search location and how scan times are displayed.</p></div>
             <div className="field-row">
               <label className="field">
                 Country
@@ -527,19 +509,17 @@ function ProjectForm({
                 {project.scanSchedule ? 'Used to display scan times. Changing the timezone keeps your scheduled start times unchanged.' : 'A valid IANA timezone for your saved schedule.'}
               </small>
             </label>
-            <div className="form-stack">
-              <strong>Scan providers</strong>
+            <div className="settings-group-heading"><h3>AI coverage</h3><p>Choose where to measure your brand visibility.</p></div>
+            <div className="settings-provider-list">
               <p className="card-description">
-                The same portfolio of up to 50 prompts runs on each selected
-                provider. All three means up to 150 answers per scan. API keys are
-                configured on the server.
+                Each selected provider checks the same active prompts during a scan.
               </p>
               {SCAN_PROVIDERS.map((provider) => {
                 const config = scanProviders.find(
                   (item) => item.provider === provider,
                 );
                 return (
-                  <div key={provider}>
+                  <div className="settings-provider" key={provider}>
                     <label className="toggle-label">
                       <input
                         type="checkbox"
@@ -567,27 +547,6 @@ function ProjectForm({
                       />
                       {PROVIDER_LABELS[provider]}
                     </label>
-                    {config && (
-                      <label className="field">
-                        {provider === 'perplexity'
-                          ? 'Agent API preset'
-                          : 'Answer model'}
-                        <input
-                          required
-                          maxLength={160}
-                          value={config.model}
-                          onChange={(event) =>
-                            setScanProviders((previous) =>
-                              previous.map((item) =>
-                                item.provider === provider
-                                  ? { ...item, model: event.target.value }
-                                  : item,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
-                    )}
                   </div>
                 );
               })}
@@ -595,15 +554,6 @@ function ProjectForm({
                 <p role="alert">Select at least one provider.</p>
               )}
             </div>
-            <CompetitorSettings
-              project={project}
-              path={path}
-              value={competitors}
-              onChange={(value) => {
-                setCompetitors(value);
-                setCompetitorsEdited(true);
-              }}
-            />
             {owner && (
               <div className="form-actions">
                 <button

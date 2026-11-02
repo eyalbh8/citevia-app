@@ -62,10 +62,10 @@ describe('compact public website service demos', () => {
     const project = buildServiceDemo({ ...source(), anchorDate: '2026-10-26' }, copiedAt);
     expect(project.demo).toMatchObject({ anchorDate: '2026-10-26', startDate: '2026-04-26', endDate: '2027-04-26' });
     expect(project.createdAt).toBe('2026-04-26T00:00:00.000Z');
-    expect(project.demo!.trackedUrls).toHaveLength(157);
-    expect(project.demo!.trackedUrls!.at(-1)!.publishedAt).toBe('2027-04-26T08:00:00.000Z');
+    expect(project.demo!.trackedUrls).toHaveLength(44);
+    expect(project.demo!.trackedUrls!.at(-1)!.publishedAt).toBe('2027-04-19T08:00:00.000Z');
     expect(await createServiceDemo(new MemoryRepository(), project)).toMatchObject({
-      status: 'preview', startDate: '2026-04-26', endDate: '2027-04-26', trackedUrls: 157,
+      status: 'preview', startDate: '2026-04-26', endDate: '2027-04-26', trackedUrls: 44,
     });
     expect(serviceDemoDates()).toEqual(SERVICE_DEMO_DATES);
     expect(serviceDemoDates('2026-08-31')).toEqual({ anchorDate: '2026-08-31', startDate: '2026-02-28', endDate: '2027-02-28' });
@@ -98,34 +98,18 @@ describe('compact public website service demos', () => {
     expect(Buffer.byteLength(JSON.stringify(project))).toBeLessThan(250000);
   });
 
-  it('keeps the full three-publication cadence using distinct real articles and Citevia-only drafts', () => {
+  it('tracks only distinct official articles across past and future scenario enrollment dates', () => {
     const project = buildServiceDemo(source(), copiedAt), articles = project.demo!.trackedUrls!;
-    expect(articles).toHaveLength(156);
-    expect(articles.filter(article => !article.demoPost)).toHaveLength(44);
-    expect(articles.filter(article => article.demoPost)).toHaveLength(112);
-    expect(articles.filter(article => article.publishedAt <= copiedAt)).toHaveLength(78);
-    expect(new Set(articles.map(article => article.url)).size).toBe(156);
-    const weeks = new Map<string, number>();
+    expect(articles).toHaveLength(44);
+    expect(new Set(articles.map(article => article.url)).size).toBe(44);
+    expect(articles.filter(article => article.publishedAt <= copiedAt)).toHaveLength(22);
+    expect(articles.some(article => article.publishedAt > copiedAt)).toBe(true);
     for (const article of articles) {
-      const date = new Date(article.publishedAt);
-      expect([1, 3, 5]).toContain(date.getUTCDay());
-      expect(article.publishedAt.endsWith('T08:00:00.000Z')).toBe(true);
-      date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
-      const week = date.toISOString().slice(0, 10); weeks.set(week, (weeks.get(week) || 0) + 1);
-      if (article.demoPost) {
-        expect(article.url.startsWith(`${SERVICE_DEMO_CONTENT_ORIGIN}/demo-content/${project.id}/`)).toBe(true);
-        expect(article.body).toContain('has not been published by Fixture Gutter Services');
-        expect(article.body!.length).toBeLessThanOrEqual(1200);
-        expect(article.provenance).toMatchObject({ kind: 'demo-draft', sourceUrls: [source().blogs[0].url, source().website, source().sources[1].url] });
-      } else {
-        expect(source().blogs.map(blog => blog.url)).toContain(article.url);
-        expect(article.sourcePublishedAt).toBe('2025-01-01T00:00:00.000Z');
-        expect(article.body).toBeUndefined();
-      }
+      expect(source().blogs.map(blog => blog.url)).toContain(article.url);
+      expect(article.demoPost).toBeUndefined();
+      expect(article.body).toBeUndefined();
+      expect(article.sourcePublishedAt).toBe('2025-01-01T00:00:00.000Z');
     }
-    expect(weeks.size).toBe(52);
-    expect([...weeks.values()].every(count => count === 3)).toBe(true);
-    expect(articles.filter(article => !article.demoPost && article.publishedAt <= copiedAt)).toHaveLength(22);
     expect(buildServiceDemo(source(), copiedAt)).toEqual(project);
   });
 
@@ -134,7 +118,7 @@ describe('compact public website service demos', () => {
     value.blogs.push({ ...value.blogs[0], url: `${value.blogs[0].url}?utm_source=chatgpt#section` });
     const project = buildServiceDemo(value, copiedAt);
     expect(project.demo?.trackedUrls?.filter(article => !article.demoPost)).toHaveLength(44);
-    expect(project.demo?.trackedUrls?.filter(article => article.demoPost)).toHaveLength(112);
+    expect(project.demo?.trackedUrls?.filter(article => article.demoPost)).toHaveLength(0);
     const allReal = source();
     allReal.blogs = Array.from({ length: 156 }, (_, index) => ({ ...allReal.blogs[0], url: `https://www.fixture-gutters.com/blog/article-${index}/` }));
     expect(buildServiceDemo(allReal, copiedAt).demo?.trackedUrls?.some(article => article.demoPost)).toBe(false);
@@ -162,7 +146,7 @@ describe('compact public website service demos', () => {
     expect(project.prompts[0].text).toContain('homeowners');
     expect(project.prompts[10].text).toContain('vehicle owners');
     expect(project.prompts[20].text).toContain('business owners');
-    expect(project.demo?.trackedUrls?.filter(article => article.demoPost).some(article => article.body?.includes('questions business owners'))).toBe(true);
+    expect(project.demo?.trackedUrls?.every(article => !article.demoPost && article.url.startsWith(value.website))).toBe(true);
   });
 
   it('rejects duplicate questions/services/competitors and unverified company URLs', () => {
@@ -182,7 +166,7 @@ describe('compact public website service demos', () => {
   it('previews, creates only compact configuration, stays idempotent and protects existing identities', async () => {
     const repository = new MemoryRepository(), project = buildServiceDemo(source(), copiedAt), save = vi.spyOn(repository, 'saveProject');
     expect(await createServiceDemo(repository, project)).toMatchObject({ status: 'preview', prompts: 50, competitors: 5,
-      trackedUrls: 156, officialArticles: 44, demoArticles: 112, persistedSyntheticAnswers: 0, persistedSyntheticTrafficEvents: 0, paidCalls: 0 });
+      trackedUrls: 44, officialArticles: 44, demoArticles: 0, persistedSyntheticAnswers: 0, persistedSyntheticTrafficEvents: 0, paidCalls: 0 });
     expect(save).not.toHaveBeenCalled();
     expect((await createServiceDemo(repository, project, true)).status).toBe('created');
     expect((await createServiceDemo(repository, project, true)).status).toBe('exists');
@@ -198,11 +182,11 @@ describe('compact public website service demos', () => {
     await expect(createServiceDemo({ getProject: async () => null, saveProject: async () => false }, project, true)).rejects.toThrow('concurrently');
     await expect(createServiceDemo(repository, { ...project, enabled: true }, true)).rejects.toThrow('demo identity');
     const forged = structuredClone(project);
-    forged.demo!.trackedUrls!.find(article => article.demoPost)!.url = 'https://app.citevia.io/demo-content/another-account/article';
-    await expect(createServiceDemo(new MemoryRepository(), forged, true)).rejects.toThrow('own Citevia account route');
+    forged.demo!.trackedUrls![0].url = 'https://app.citevia.io/demo-content/another-account/article';
+    await expect(createServiceDemo(new MemoryRepository(), forged, true)).rejects.toThrow('selected company website');
     const traversal = structuredClone(project);
-    traversal.demo!.trackedUrls!.find(article => article.demoPost)!.url = `${SERVICE_DEMO_CONTENT_ORIGIN}/demo-content/${project.id}/../another-account/article`;
-    await expect(createServiceDemo(new MemoryRepository(), traversal, true)).rejects.toThrow('own Citevia account route');
+    traversal.demo!.trackedUrls![0].url = `${SERVICE_DEMO_CONTENT_ORIGIN}/demo-content/${project.id}/../another-account/article`;
+    await expect(createServiceDemo(new MemoryRepository(), traversal, true)).rejects.toThrow('selected company website');
   });
 
   it('derives current history and website-specific answers while leaving underlying measurements empty', async () => {
@@ -219,8 +203,8 @@ describe('compact public website service demos', () => {
     const urls = await runtime.repository.listTrackedUrls(project.id);
     expect(urls.some(url => url.publishedAt > copiedAt)).toBe(true);
     const current = urls.filter(url => url.publishedAt <= copiedAt);
-    expect(current).toHaveLength(78);
-    expect(current.filter(url => url.publishedAt >= '2026-10-19')).toHaveLength(3);
+    expect(current).toHaveLength(22);
+    expect(current.every(url => source().blogs.some(blog => blog.url === url.url))).toBe(true);
     expect(await base.listRuns(project.id)).toEqual([]);
   });
 
@@ -234,8 +218,8 @@ describe('compact public website service demos', () => {
     for (const competitor of value.competitors) expect(domains.has(new URL(competitor.website).hostname)).toBe(true);
     expect(domains.has('fixture-gutters.com')).toBe(true);
     expect(domains.has('thisoldhouse.com')).toBe(true);
-    expect(domains.has('citevia.io')).toBe(true);
-    expect(domains.size).toBe(8);
+    expect(domains.has('citevia.io')).toBe(false);
+    expect(domains.size).toBe(7);
     const allowedUrls = new Set([value.website, ...value.blogs.map(blog => blog.url), ...value.sources.map(reference => reference.url),
       ...value.competitors.map(competitor => competitor.website), ...project.demo!.trackedUrls!.map(article => article.url)]);
     expect(summary!.urls.every(row => allowedUrls.has(row.url!))).toBe(true);

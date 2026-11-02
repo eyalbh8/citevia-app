@@ -78,7 +78,6 @@ const owns = (value: string, official: string) => domain(value) === official || 
 const unique = (values: string[]) => [...new Set(values)];
 const isoDate = (value?: string) => value ? new Date(value).toISOString() : undefined;
 const normalized = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
-const slug = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 function audienceFor(source: ParsedSource, service: string) {
   const preferred = /commercial|business|access control/i.test(service) ? /business|commercial|property manager/i
@@ -126,32 +125,17 @@ function weeklyPublicationDates(window = serviceDemoDates()) {
   return dates;
 }
 
-function trackedContent(source: ParsedSource, referenceUrls: string[]): NonNullable<DemoConfig['trackedUrls']> {
+function trackedContent(source: ParsedSource): NonNullable<DemoConfig['trackedUrls']> {
   const dates = weeklyPublicationDates(serviceDemoDates(source.anchorDate)), official = domain(source.website);
   for (const blog of source.blogs) if (!owns(blog.url, official) || !trackedUrlKey(blog.url))
     throw new Error('Verified public articles must use the official company website.');
-  const real = [...new Map(source.blogs.map(blog => [trackedUrlKey(blog.url), blog])).values()].slice(0, dates.length);
-  const positions = new Map(real.map((blog, index) => [Math.floor(index * dates.length / real.length), blog]));
-  const criteria = source.criteria || ['The proposed scope', 'Suitability for your needs', 'Pricing and timing'];
-  const angles = ['A practical guide to', 'Questions to ask about', 'Planning for', 'Comparing options for', 'Understanding the cost of',
-    'Preparing for', 'Choosing a provider for', 'What to expect from', 'Avoiding common mistakes with', 'A checklist for', 'When to consider', 'Discussing'];
-  return dates.map((publishedAt, index) => {
-    const blog = positions.get(index);
-    if (blog) return { ...blog, sourcePublishedAt: isoDate(blog.sourcePublishedAt), sourceTrackedAt: isoDate(blog.sourceTrackedAt),
+  const articles = [...new Map(source.blogs.map(blog => [trackedUrlKey(blog.url), blog])).values()].slice(0, dates.length);
+  // Enrollment dates belong to the scenario; source publication dates remain separate.
+  // Reuse only researched pages, never invent URLs or manufacture unique query strings.
+  return articles.map((blog, index) => {
+    const publishedAt = dates[Math.floor(index * dates.length / articles.length)];
+    return { ...blog, sourcePublishedAt: isoDate(blog.sourcePublishedAt), sourceTrackedAt: isoDate(blog.sourceTrackedAt),
       publishedAt, createdAt: publishedAt };
-    const service = source.services[Math.floor(index / angles.length) % source.services.length].toLowerCase();
-    const month = new Date(publishedAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-    const title = `${angles[index % angles.length]} ${service} in ${source.serviceArea} — ${month}`.slice(0, 200);
-    const contentSlug = `${publishedAt.slice(0, 10)}-${slug(service).slice(0, 45)}-${index + 1}`;
-    const url = `${SERVICE_DEMO_CONTENT_ORIGIN}/demo-content/${encodeURIComponent(source.id)}/${contentSlug}`;
-    const body = [
-      `${source.name} lists ${service} among its services for ${source.serviceArea}. This guide outlines questions ${audienceFor(source, service).toLowerCase()} can discuss with a provider.`,
-      `Start with ${criteria.slice(0, 3).map(item => item.toLowerCase()).join(', ')}. Compare the proposed work, expected timing and follow-up arrangements for your situation.`,
-      `Review the linked sources for published service information. This illustrative article belongs to the demonstration account and has not been published by ${source.name}.`,
-    ].join('\n\n');
-    if (body.length > 1200) throw new Error('Demo article body exceeds 1,200 characters; shorten service or audience metadata.');
-    return { url, title, contentType: 'BLOG' as const, publishedAt, createdAt: publishedAt, demoPost: true,
-      body, provenance: { kind: 'demo-draft' as const, sourceUrls: referenceUrls.slice(0, 3) } };
   });
 }
 
@@ -220,7 +204,7 @@ export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOStri
       traffic: { pages: source.traffic?.pages || unique(['/', ...source.blogs.slice(0, 5).map(item => new URL(item.url).pathname)]),
         countries: source.traffic?.countries || [source.country.toUpperCase(), 'GB', 'CA', 'AU'],
         devices: source.traffic?.devices || ['desktop', 'mobile', 'tablet'], browsers: source.traffic?.browsers || ['Chrome', 'Safari', 'Edge', 'Firefox'] },
-      trackedUrls: trackedContent(source, citationPool),
+      trackedUrls: trackedContent(source),
     },
   };
   validateServiceDemo(project);
@@ -231,27 +215,18 @@ function validateServiceDemo(project: Project) {
   const dates = serviceDemoDates(project.demo?.anchorDate);
   if (!/^account_[a-z0-9][a-z0-9_-]{0,80}_demo_v1$/.test(project.id) || project.demo?.source !== 'website-demo' ||
     project.demo.sourceAccountId !== `website:${project.brand.domains[0]}` || project.enabled ||
-    project.prompts.length !== 50 || project.competitors.length !== 5 || project.demo.trackedUrls?.length !== weeklyPublicationDates(dates).length ||
+    project.prompts.length !== 50 || project.competitors.length !== 5 || !project.demo.trackedUrls?.length ||
     Object.entries(dates).some(([key, value]) => project.demo![key as keyof typeof SERVICE_DEMO_DATES] !== value) ||
     JSON.stringify(project.scanSchedule?.slotsUtcMinutes) !== '[600,5640]' ||
     JSON.stringify(project.scanProviders?.map(item => item.provider)) !== '["openai","perplexity","gemini"]')
     throw new Error('Refusing to save a configuration without a complete public website demo identity.');
-  const expectedPrefix = `${SERVICE_DEMO_CONTENT_ORIGIN}/demo-content/${encodeURIComponent(project.id)}/`;
   const seen = new Set<string>();
   for (const article of project.demo.trackedUrls) {
     const key = trackedUrlKey(article.url);
     if (!key || seen.has(key)) throw new Error('Demo publications require distinct normalized URLs.');
     seen.add(key);
-    if (article.demoPost) {
-      const url = new URL(article.url);
-      const expectedPath = `/demo-content/${encodeURIComponent(project.id)}/`;
-      if (!article.url.startsWith(expectedPrefix) || url.origin !== SERVICE_DEMO_CONTENT_ORIGIN || url.search || url.hash ||
-        !url.pathname.startsWith(expectedPath) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(url.pathname.slice(expectedPath.length)) ||
-        !article.body || article.body.length > 1200 || article.provenance?.kind !== 'demo-draft' || !article.provenance.sourceUrls.length)
-        throw new Error('A demo draft must use its own Citevia account route and include body/source provenance.');
-      if (article.provenance.sourceUrls.length > 10 || article.provenance.sourceUrls.some(url => !publicUrl.safeParse(url).success))
-        throw new Error('Demo draft references must be valid public source URLs.');
-    } else if (!owns(article.url, project.brand.domains[0])) throw new Error('Official articles must belong to the selected company.');
+    if (article.demoPost || !owns(article.url, project.brand.domains[0]))
+      throw new Error('Tracked articles must belong to the selected company website.');
   }
 }
 
@@ -268,7 +243,7 @@ export async function createServiceDemo(repository: Pick<Repository, 'getProject
     competitors: project.competitors.length, trackedUrls: project.demo!.trackedUrls!.length,
     officialArticles: project.demo!.trackedUrls!.filter(article => !article.demoPost).length,
     demoArticles: project.demo!.trackedUrls!.filter(article => article.demoPost).length,
-    ...serviceDemoDates(project.demo!.anchorDate), scansPerWeek: 2, publicationsPerWeek: 3, providers: 3, configurationBytes: bytes,
+    ...serviceDemoDates(project.demo!.anchorDate), scansPerWeek: 2, providers: 3, configurationBytes: bytes,
     persistedSyntheticAnswers: 0, persistedSyntheticTrafficEvents: 0, paidCalls: 0 };
 }
 

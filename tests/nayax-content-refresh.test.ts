@@ -44,8 +44,8 @@ describe('scoped Nayax publication refresh', () => {
     await repository.saveProject(existing, null);
     const save = vi.spyOn(repository, 'saveProject');
     const report = await refreshNayaxContent(repository, source(), false, now());
-    expect(report).toMatchObject({ status: 'preview', expectedVersion: 3, nextVersion: 4, trackedUrls: 157,
-      officialArticles: 2, demoArticles: 155, startDate: '2026-04-23', endDate: '2027-04-23', paidCalls: 0 });
+    expect(report).toMatchObject({ status: 'preview', expectedVersion: 3, nextVersion: 4, trackedUrls: 2,
+      officialArticles: 2, demoArticles: 0, startDate: '2026-04-23', endDate: '2027-04-23', paidCalls: 0 });
     expect(save).not.toHaveBeenCalled();
     expect(await repository.getProject(existing.id)).toEqual(existing);
   });
@@ -64,10 +64,9 @@ describe('scoped Nayax publication refresh', () => {
     expect(await repository.getProject(existing.id)).toEqual(expected);
     expect(await repository.getProject(unrelated.id)).toEqual(unrelated);
     expect(trackedUrls[0].publishedAt).toBe('2026-04-24T08:00:00.000Z');
-    expect(trackedUrls.at(-1)!.publishedAt).toBe('2027-04-23T08:00:00.000Z');
+    expect(trackedUrls.at(-1)!.publishedAt).toBe('2026-10-23T08:00:00.000Z');
     expect(trackedUrls.every(article => [1, 3, 5].includes(new Date(article.publishedAt).getUTCDay()))).toBe(true);
-    expect(trackedUrls.filter(article => article.demoPost).every(article =>
-      article.url.startsWith(`https://app.citevia.io/demo-content/${existing.id}/`) && article.provenance?.kind === 'demo-draft')).toBe(true);
+    expect(trackedUrls.every(article => !article.demoPost && new URL(article.url).hostname === 'www.nayax.com')).toBe(true);
     save.mockClear();
     expect(await refreshNayaxContent(repository, source(), true, new Date('2026-10-29T12:00:00.000Z'))).toMatchObject({ status: 'unchanged', expectedVersion: 4, nextVersion: 4 });
     expect(save).not.toHaveBeenCalled();

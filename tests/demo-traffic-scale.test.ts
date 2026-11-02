@@ -42,7 +42,7 @@ describe('company-size scenario traffic scales', () => {
     expect(traffic.providers.map(provider => provider.visits)).toEqual([2000, 36, 54, 42, 24, 18].map(count => Math.round(count * scale)));
     expect(traffic.current).toBeGreaterThan(traffic.previous);
     expect(project.prompts).toHaveLength(50);
-    expect(project.demo!.trackedUrls).toHaveLength(157);
+    expect(project.demo!.trackedUrls).toHaveLength(1);
     expect(project.demo!.trackedUrls!.every(post => [1, 3, 5].includes(new Date(post.publishedAt).getUTCDay()))).toBe(true);
     reconcile(traffic);
   });

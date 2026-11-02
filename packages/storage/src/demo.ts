@@ -639,6 +639,11 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
     return { project, run, prompt, kind };
   }
   const overrides: Partial<Repository> = {
+    async saveProject(project, expectedVersion) {
+      const saved = await runtime.repository.saveProject(project, expectedVersion);
+      if (saved) projects.delete(project.id);
+      return saved;
+    },
     async listTrackedUrls(projectId) {
       const project = await demoProject(projectId);
       return project && !project.demo!.presentation?.reportingOnly ? trackingFor(project).listTrackedUrls() : runtime.repository.listTrackedUrls(projectId);
