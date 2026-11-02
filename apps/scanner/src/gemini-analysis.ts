@@ -21,6 +21,11 @@ export function geminiAnalysisBody(input: ExtractionRequest): Record<string, unk
     generationConfig: {
       candidateCount: 1,
       maxOutputTokens: input.maxOutputTokens ?? 12000,
+      // Keep reasoning from consuming the structured JSON output budget.
+      // Gemini 3.8 Flash supports low, medium and high; minimal is rejected.
+      ...(input.model.startsWith('gemini-3.8-flash')
+        ? { thinkingConfig: { thinkingLevel: 'low' } }
+        : {}),
       responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema: geminiAnalysisSchema(input.schema) } },
     },
   };

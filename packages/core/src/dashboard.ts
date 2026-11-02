@@ -8,6 +8,7 @@ import type {
 } from './types.js';
 import { projectProviders, snapshotProvider } from './providers.js';
 import { brandSentimentScore } from './scoring.js';
+import { isReportableRun } from './metrics.js';
 import { isOwnedDomain, normalizeDomain } from './urls.js';
 import {
   matchesMonitoringFilters,
@@ -20,6 +21,8 @@ export interface DashboardOverview {
   period: MonitoringPeriod;
   filters: MonitoringFilters & { topic?: string };
   analyzed: number;
+  /** Selected scans are still collecting or analyzing answers. */
+  scanInProgress?: boolean;
   providers: { provider: ScanProvider; count: number; change: number | null }[];
   stages: {
     key: string;
@@ -75,8 +78,7 @@ export function dashboardObservations(
       result.projectId === project.id &&
       run.projectId === project.id &&
       result.runId === run.id &&
-      !run.reportingExcludedAt &&
-      ['completed', 'partial'].includes(run.status) &&
+      isReportableRun(run) &&
       result.status === 'succeeded' &&
       enabled.includes(provider) &&
       at >= Date.parse(period.start) &&

@@ -122,12 +122,20 @@ export function extractionInput(
 
 /** A false substring match (e.g. Acme within Acmeology) must not establish presence. */
 export function aliasOffset(text: string, brand: Brand): number {
-  const normalized = text.normalize('NFC');
+  // These typography variants have the same visible spelling. Keep their
+  // UTF-16 lengths so evidence offsets still address the original answer.
+  const normalize = (value: string) => value.normalize('NFC')
+    .replace(/[\u00a0\u2007\u202f]/gu, ' ')
+    .replace(/[\u2010\u2011]/gu, '-');
+  const normalized = normalize(text);
   let position = Infinity;
   for (const alias of [brand.name, ...brand.aliases].filter(Boolean)) {
-    const escaped = alias
-      .normalize('NFC')
-      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escaped = Array.from(normalize(alias), (character) => {
+      const literal = character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Markdown can escape punctuation in a name, e.g. E\*TRADE. Match
+      // either rendering without removing characters from the saved evidence.
+      return '\\`*_{}[]()#+-.!>|~'.includes(character) ? `\\\\?${literal}` : literal;
+    }).join('');
     const match = new RegExp(
       `(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`,
       'iu',
