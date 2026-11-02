@@ -1,0 +1,180 @@
+{
+  "releaseCommit": "5709d822355f030949b371c02c4f4350a366c60b",
+  "pullRequest": "https://github.com/eyalbh8/citevia-app/pull/2",
+  "awsRegion": "us-east-1",
+  "applicationStack": {
+    "name": "citevia-production",
+    "status": "UPDATE_COMPLETE"
+  },
+  "securityStack": {
+    "name": "citevia-production-security",
+    "status": "CREATE_COMPLETE"
+  },
+  "frontendDeployment": {
+    "appId": "d1hh33486g85zz",
+    "branch": "main",
+    "jobId": "68",
+    "status": "SUCCEED",
+    "finishedAtUtc": "2026-11-02T22:22:33Z",
+    "browserCheck": "Google sign-in control rendered; no authenticated browser session was available",
+    "browserConsoleErrorsAndWarnings": 0
+  },
+  "ci": {
+    "head": "6d69d7f2e1aac42cea2afeae44bb7de14c5fcaeb",
+    "allFourChecksPassed": true,
+    "validationRun": 41535251697,
+    "securityRun": 41535251582,
+    "linuxTestsPassed": 1609,
+    "linuxTestsSkipped": 2,
+    "localTestsPassed": 1610,
+    "localTestsSkipped": 1,
+    "testFiles": 132,
+    "dependencyAuditKnownVulnerabilities": 0
+  },
+  "subscriptions": {
+    "topicName": "citevia-production-Alerts-P11AlA4bECnW",
+    "confirmed": [
+      "eyal@citevia.io",
+      "gaby@citevia.io",
+      "info@citevia.io"
+    ],
+    "observedAtUtcMinute": "2026-11-02T22:20Z"
+  },
+  "alarmDelivery": {
+    "controlledApiAlarmAction": "success",
+    "actionAtUtc": "2026-11-02T22:17:18Z",
+    "realPrivilegedAlarmEmailReportedByUser": true
+  },
+  "migrationInvocation": {
+    "statusCode": 200,
+    "migrated": true
+  },
+  "runtimeIamEvidence": "security-iam-production-2026-11-02.json",
+  "costPolicy": {
+    "monthlyAccountTargetUsd": 100,
+    "monthlyAiAdmissionUsd": 70,
+    "nonAiReserveUsd": 30,
+    "exactAllInInvoiceCeiling": false,
+    "globalAiCeilingConfigured": false
+  },
+  "authenticatedMcpSmoke": {
+    "accounts": "passed",
+    "settings": "passed",
+    "dashboard": "passed",
+    "completedRuns": "passed",
+    "paidWorkTriggered": false
+  },
+  "limitations": [
+    "Authentication UI rendering is not a complete signed-in browser journey.",
+    "IAM simulations are not live role-assumption/decryption tests.",
+    "Cost reserve requires invoice allocation and reconciliation.",
+    "Root console session ownership remains unconfirmed.",
+    "Independent penetration testing, large-account load tests and timed disaster recovery remain open."
+  ],
+  "apiHttpVerification": {
+    "verifiedAt": "2026-11-02T22:23:09.068060+00:00",
+    "checks": [
+      {
+        "path": "/health",
+        "status": 200,
+        "bytesRead": 39,
+        "contentType": "application/json; charset=utf-8",
+        "securityHeaders": {
+          "strict-transport-security": "max-age=31536000",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        },
+        "health": {
+          "status": "ok",
+          "service": "citevia-api"
+        }
+      },
+      {
+        "path": "/v1/projects",
+        "status": 401,
+        "bytesRead": 85,
+        "contentType": "application/json",
+        "securityHeaders": {
+          "strict-transport-security": "max-age=31536000",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        }
+      },
+      {
+        "path": "/.well-known/oauth-authorization-server",
+        "status": 200,
+        "bytesRead": 481,
+        "contentType": "application/json; charset=utf-8",
+        "securityHeaders": {
+          "strict-transport-security": "max-age=31536000",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        },
+        "metadataKeys": [
+          "issuer",
+          "authorization_endpoint",
+          "token_endpoint",
+          "registration_endpoint",
+          "response_types_supported",
+          "grant_types_supported",
+          "code_challenge_methods_supported",
+          "scopes_supported",
+          "token_endpoint_auth_methods_supported"
+        ]
+      },
+      {
+        "path": "/.well-known/oauth-protected-resource",
+        "status": 200,
+        "bytesRead": 157,
+        "contentType": "application/json; charset=utf-8",
+        "securityHeaders": {
+          "strict-transport-security": "max-age=31536000",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        },
+        "metadataKeys": [
+          "resource",
+          "authorization_servers",
+          "scopes_supported",
+          "bearer_methods_supported"
+        ]
+      },
+      {
+        "path": "/v1/traffic/tracker.js",
+        "status": 200,
+        "bytesRead": 5625,
+        "contentType": "application/javascript; charset=utf-8",
+        "securityHeaders": {
+          "strict-transport-security": "max-age=31536000",
+          "x-content-type-options": "nosniff",
+          "x-frame-options": "DENY",
+          "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+        }
+      }
+    ],
+    "paidWorkTriggered": false,
+    "customerDataWritten": false
+  },
+  "frontendHttpVerification": {
+    "verifiedAt": "2026-11-02T22:23:27.565848+00:00",
+    "status": 200,
+    "headers": {
+      "strict-transport-security": "max-age=31536000",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+      "content-security-policy": "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests",
+      "content-security-policy-report-only": "default-src 'self'; script-src 'self' https://descopecdn.com https://*.descopecdn.com https://static.descope.com https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' https: data: blob:; font-src 'self' https: data:; connect-src 'self' https://api.citevia.io https://*.descope.com https://*.descopecdn.com https://*.amazonaws.com https://www.google.com https://challenges.cloudflare.com; frame-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; base-uri 'self'; object-src 'none'; frame-ancestors 'none'",
+      "cache-control": "no-cache, max-age=0, s-maxage=0, must-revalidate"
+    },
+    "javascriptAssets": [
+      "/assets/index-BBcNy8YF.js"
+    ]
+  },
+  "guardDutyDeliveryEvidence": "security-findings-delivery-production-2026-11-02.json"
+}

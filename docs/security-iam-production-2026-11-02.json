@@ -1,0 +1,105 @@
+{
+  "verifiedAtUtc": "2026-11-02T22:25:13.949126+00:00",
+  "awsAccountId": "935542360668",
+  "region": "us-east-1",
+  "method": "IAM SimulatePrincipalPolicy resource-specific decisions for secretsmanager:GetSecretValue; inline policy inventory and hashes; secret resource-policy metadata only",
+  "simulatorContext": {
+    "iam:PassedToService": "scheduler.amazonaws.com"
+  },
+  "simulatorContextReason": "Resolves the unrelated scheduler PassRole condition under its allowed value; no GetSecretValue statement depends on this context.",
+  "secretValuesRead": false,
+  "temporaryCutoverPoliciesAbsent": true,
+  "secretArns": {
+    "runtime_database": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/neon-postgres-runtime-wkiSIM",
+    "migration_database": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/neon-postgres-migrations-dSjUzY",
+    "old_owner_database": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/neon-postgres-mXfbob",
+    "old_combined_provider": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia-Culo37",
+    "openai": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/providers/openai-v1-h40e2e",
+    "perplexity": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/providers/perplexity-v1-OzvRB6",
+    "gemini": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/providers/gemini-v1-LPU6oc",
+    "zernio": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/providers/zernio-v1-aslvqq",
+    "descope": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/descope-1em5Ip",
+    "unsplash": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/unsplash-4uynU4",
+    "pagespeed": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/providers/pagespeed-v1-l5ldk8",
+    "crux": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/providers/crux-v1-C4uGm6"
+  },
+  "roles": {
+    "api": {
+      "roleArn": "arn:aws:iam::935542360668:role/citevia-production-ApiFunctionRole-DWl3M0GhB1B5",
+      "inlinePolicies": [
+        {
+          "name": "ApiFunctionRolePolicy0",
+          "sha256": "3463fc740cca055a5523709bf16b0a1183a6b9c5e2b12a0798e75bf5778a04a2"
+        }
+      ],
+      "attachedManagedPolicies": [
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      ],
+      "getSecretValueDecisions": {
+        "runtime_database": "allowed",
+        "migration_database": "implicitDeny",
+        "old_owner_database": "implicitDeny",
+        "old_combined_provider": "implicitDeny",
+        "openai": "implicitDeny",
+        "perplexity": "implicitDeny",
+        "gemini": "implicitDeny",
+        "zernio": "allowed",
+        "descope": "allowed",
+        "unsplash": "implicitDeny",
+        "pagespeed": "implicitDeny",
+        "crux": "implicitDeny"
+      },
+      "allExpectedDecisionsMatched": true
+    },
+    "scanner": {
+      "roleArn": "arn:aws:iam::935542360668:role/citevia-production-ScannerFunctionRole-jE7Y91OSV2o8",
+      "inlinePolicies": [
+        {
+          "name": "DeadLetterQueuePolicy",
+          "sha256": "4ed74bbad8b2b7299d8eff497b9dc6fa527df42a80ff57026d14abadb988d7c4"
+        },
+        {
+          "name": "ScannerFunctionRolePolicy0",
+          "sha256": "e1459305d3f3e42ba04b2b569ca6135e2eb39ae5a363591d05f9fcedcbf587fb"
+        }
+      ],
+      "attachedManagedPolicies": [
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole",
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      ],
+      "getSecretValueDecisions": {
+        "runtime_database": "allowed",
+        "migration_database": "implicitDeny",
+        "old_owner_database": "implicitDeny",
+        "old_combined_provider": "implicitDeny",
+        "openai": "allowed",
+        "perplexity": "allowed",
+        "gemini": "allowed",
+        "zernio": "allowed",
+        "descope": "implicitDeny",
+        "unsplash": "allowed",
+        "pagespeed": "allowed",
+        "crux": "allowed"
+      },
+      "allExpectedDecisionsMatched": true
+    }
+  },
+  "secretsWithoutResourcePolicies": [
+    "crux",
+    "descope",
+    "gemini",
+    "migration_database",
+    "old_combined_provider",
+    "old_owner_database",
+    "openai",
+    "pagespeed",
+    "perplexity",
+    "runtime_database",
+    "unsplash",
+    "zernio"
+  ],
+  "simulationChecksPassed": 24,
+  "scope": "Identity-policy simulation plus absence of secret resource policies. This is not a live role-assumption or KMS-decryption test."
+}
