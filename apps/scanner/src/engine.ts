@@ -106,6 +106,12 @@ export class Scanner {
       return this.dispatch();
     }
     switch (message.kind) {
+      case 'social-reconcile':
+        if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
+        return this.dependencies.socialAutomation.reconcile();
+      case 'social-generation':
+        if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
+        return this.dependencies.socialAutomation.handleGeneration(message);
       case 'social-occurrence':
         if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
         return this.dependencies.socialAutomation.handleOccurrence(message);
@@ -928,6 +934,14 @@ export class Scanner {
   }
 
   async handleDeadLetter(message: ScanMessage): Promise<void> {
+    if (message.kind === 'social-reconcile') {
+      if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
+      return this.dependencies.socialAutomation.reconcile();
+    }
+    if (message.kind === 'social-generation') {
+      if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
+      return this.dependencies.socialAutomation.handleGeneration(message);
+    }
     if (message.kind === 'social-publication') {
       if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
       return this.dependencies.socialAutomation.deadLetter(message.projectId, message.publicationId);

@@ -72,4 +72,12 @@ describe('Lambda event adapter', () => {
     expect(result).toEqual({ ok: true });
     expect(handle).toHaveBeenCalledWith({ kind: 'reconcile' });
   });
+  it('accepts the dedicated social clock and validated batch-generation message', async () => {
+    const handle = vi.fn();
+    expect(await createHandler({ handle } as unknown as Scanner)({ kind: 'social-reconcile' })).toEqual({ ok: true });
+    expect(handle).toHaveBeenCalledWith({ kind: 'social-reconcile' });
+    expect(parseScanMessage({ kind: 'social-generation', projectId: 'project-1', revision: 1, scheduledAt: instant, trigger: 'manual' }))
+      .toMatchObject({ kind: 'social-generation', trigger: 'manual' });
+    expect(() => parseScanMessage({ kind: 'social-reconcile', projectId: 'project-1' })).toThrow();
+  });
 });

@@ -78,7 +78,7 @@ export interface PostgresRepositoryOptions {
 export class PostgresRepository extends PostgresUsers implements Repository {
   reserveSocialOccurrence(input: import('@citevia/core').ReserveSocialOccurrenceInput) { return social.reserveSocialOccurrence(this.db, input); }
   getSocialPublication(projectId: string, publicationId: string) { return social.getSocialPublication(this.db, projectId, publicationId); }
-  listActiveSocialPublications(limit?: number) { return social.listActiveSocialPublications(this.db, limit); }
+  listActiveSocialPublications(limit?: number, now?: string) { return social.listActiveSocialPublications(this.db, limit, now); }
   listSocialPublications(projectId: string, offset: number, limit: number) { return social.listSocialPublications(this.db, projectId, offset, limit); }
   saveSocialPublication(publication: import('@citevia/core').SocialPublication, expectedVersion: number) { return social.saveSocialPublication(this.db, publication, expectedVersion); }
   getWebsiteHealthAudit(projectId: string, auditId: string) { return websiteHealth.getWebsiteHealthAudit(this.db, projectId, auditId); }

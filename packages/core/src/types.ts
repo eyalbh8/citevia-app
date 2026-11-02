@@ -460,6 +460,8 @@ export interface Page<T> {
   total: number;
 }
 export type ScanMessage =
+  | import('./social-automation.js').SocialReconcileMessage
+  | import('./social-automation.js').SocialGenerationMessage
   | import('./social-automation.js').SocialOccurrenceMessage
   | { kind: 'social-publication'; projectId: string; publicationId: string }
   | { kind: 'website-health'; projectId: string; auditId: string }

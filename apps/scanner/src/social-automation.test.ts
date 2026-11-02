@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, type Project, type SocialChannel, type SocialDestination, type SocialPublication } from '@citevia/core';
-import { MemoryArtifacts, MemoryQueue, MemoryRepository, SocialPublisherError, type SocialPublisher } from '@citevia/storage';
+import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, socialApprovalSnapshot, type Project, type SocialChannel, type SocialDestination, type SocialPublication } from '@citevia/core';
+import { MemoryArtifacts, MemoryQueue, MemoryRepository, SocialPublisherError, type SocialPublisher, type SocialMediaUploadStore } from '@citevia/storage';
 import { newProject } from '../../../tests/fixtures/scanner.js';
 import { SocialAutomationEngine } from './social-automation.js';
 import type { SocialBrandStyle, SocialGeneratedCopy, SocialGeneratedImage, SocialMediaGenerator } from './social-media.js';
@@ -15,7 +16,7 @@ const copy = (channel: SocialChannel): SocialGeneratedCopy => ({
   format: channel === 'instagram' ? 'carousel' : channel === 'tiktok' ? 'video' : 'image',
 });
 
-async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDrafts = false) {
+async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDrafts = false, usePrivateMedia = true) {
   let clock = new Date(initialTime);
   const repository = new MemoryRepository(), artifacts = new MemoryArtifacts(), queue = new MemoryQueue();
   const destinationOptions: NonNullable<Project['socialDestinationOptions']> = {};
@@ -47,8 +48,25 @@ async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDraft
     renderVideo: vi.fn<SocialMediaGenerator['renderVideo']>().mockResolvedValue({ bytes: new Uint8Array([4, 5, 6]), mime: 'video/mp4', width: 720, height: 1280, durationSeconds: 18, hasAudio: false }),
   };
   const publisherFactory = vi.fn(async () => publisher), generatorFactory = vi.fn(async () => generator);
+  const privateMedia = new Map<string, Uint8Array>();
+  const uploadStore = {
+    start: vi.fn<SocialMediaUploadStore['start']>().mockResolvedValue({ url: 'https://private.example.com/upload', fields: {} }),
+    complete: vi.fn<SocialMediaUploadStore['complete']>(),
+    put: vi.fn<SocialMediaUploadStore['put']>().mockImplementation(async (key, bytes, mimeType, id) => {
+      const versionId = String(privateMedia.size + 1);
+      privateMedia.set(`${key}:${versionId}`, new Uint8Array(bytes));
+      return { id, key, versionId, mimeType, size: bytes.length, type: mimeType === 'video/mp4' ? 'video' : 'image', url: `https://private.example.com/${key}?versionId=${versionId}` };
+    }),
+    read: vi.fn<SocialMediaUploadStore['read']>().mockImplementation(async source => {
+      const bytes = privateMedia.get(`${source.key}:${source.versionId}`);
+      if (!bytes) throw new Error('Missing versioned media');
+      return new Uint8Array(bytes);
+    }),
+    preview: vi.fn<SocialMediaUploadStore['preview']>().mockImplementation(async source => `${source.url}&signature=preview`),
+  };
+  const inspectVideo = vi.fn(async (_bytes: Uint8Array) => ({ durationSeconds: 18, width: 1080, height: 1920 }));
   const runtime = { repository, artifacts, queue };
-  const worker = new SocialAutomationEngine(runtime, publisherFactory, generatorFactory, () => new Date(clock));
+  const worker = new SocialAutomationEngine(runtime, publisherFactory, generatorFactory, () => new Date(clock), undefined, () => usePrivateMedia ? uploadStore : undefined, inspectVideo);
   const message = { kind: 'social-occurrence' as const, projectId: project.id, revision: 1, slotId: 'monday', scheduledAt: initialTime };
   await worker.handleOccurrence(message);
   const publications = (await repository.listSocialPublications(project.id, 0, 50)).items;
@@ -58,6 +76,10 @@ async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDraft
     const current = await read(id);
     expect(await repository.saveSocialPublication({ ...current, ...patch, version: current.version + 1 }, current.version)).toBe(true);
     return read(id);
+  };
+  const approve = async (id = publications[0].id, extra: Partial<NonNullable<SocialPublication['approval']>> = {}) => {
+    const post = await read(id);
+    return update({ status: 'scheduled', stage: 'publish', nextAttemptAt: post.scheduledAt, approval: { approvedBy: 'owner', approvedAt: clock.toISOString(), previewConfirmed: true, expressConsentGiven: true, contentHash: createHash('sha256').update(socialApprovalSnapshot(post)).digest('hex'), ...extra } }, id);
   };
   const updateProject = async (patch: Partial<Project>) => {
     const current = (await repository.getProject(project.id))!;
@@ -74,14 +96,16 @@ async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDraft
     throw new Error('Publication did not reach the requested stage');
   };
   const finish = (id = publications[0].id) => runTo(post => !ACTIVE_SOCIAL_PUBLICATION_STATUSES.includes(post.status), id);
-  return { runtime, project, publications, publisher, generator, publisherFactory, generatorFactory, worker, message, read, update, updateProject, advanceClock, runTo, finish };
+  return { runtime, project, publications, publisher, generator, publisherFactory, generatorFactory, worker, message, read, update, updateProject, advanceClock, runTo, finish, approve, uploadStore, inspectVideo };
 }
 
 describe('scheduled social generation', () => {
-  it('publishes each connected image platform with its own copy and approved image assets', async () => {
+  it('requires review of every connected image platform before publishing its own copy and assets', async () => {
     const channels = ['facebook', 'instagram', 'linkedin', 'x', 'pinterest', 'reddit'] as const;
     const f = await fixture([...channels]);
-    for (const post of f.publications) expect((await f.finish(post.id)).status).toBe('published');
+    for (const post of f.publications) expect((await f.finish(post.id)).status).toBe('review_required');
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+    for (const post of f.publications) { await f.approve(post.id); expect((await f.finish(post.id)).status).toBe('published'); }
     expect(f.publisher.publish).toHaveBeenCalledTimes(channels.length);
     expect(f.generator.analyzeStyle).toHaveBeenCalledTimes(channels.length);
     expect(f.generator.generateImage).toHaveBeenCalledTimes(8); // Instagram has 3; the others have 1.
@@ -104,6 +128,8 @@ describe('scheduled social generation', () => {
     await f.worker.handleOccurrence(f.message);
     expect((await f.runtime.repository.listSocialPublications(f.project.id, 0, 50)).total).toBe(1);
     await f.finish();
+    await f.approve();
+    await f.finish();
     await f.worker.handlePublication(f.project.id, f.publications[0].id);
     await f.worker.handleOccurrence(f.message);
     expect(f.publisher.publish).toHaveBeenCalledTimes(1);
@@ -123,6 +149,8 @@ describe('scheduled social generation', () => {
     expect(f.generator.analyzeStyle).toHaveBeenCalledTimes(1);
     expect((await f.read()).stage).toBe('queued');
     f.advanceClock(7 * 60);
+    await f.finish();
+    await f.approve();
     await f.finish();
     expect(f.generator.analyzeStyle).toHaveBeenCalledTimes(1);
     expect(f.publisher.publish).toHaveBeenCalledTimes(1);
@@ -158,6 +186,27 @@ describe('scheduled social generation', () => {
     expect(f.publisher.publish).not.toHaveBeenCalled();
   });
 
+  it.each(['media upload', 'TikTok options'] as const)('honors a pause while awaiting %s before sending the public request', async stage => {
+    const f = await fixture([stage === 'TikTok options' ? 'tiktok' : 'facebook']);
+    await f.finish();
+    await f.approve(undefined, stage === 'TikTok options' ? {
+      privacyLevel: 'PUBLIC_TO_EVERYONE', allowComment: true, allowDuet: false, allowStitch: false, musicSoundId: 'music-one',
+    } : {});
+    const pause = () => f.updateProject({ socialAutomation: { ...f.project.socialAutomation!, enabled: false, revision: 2 } });
+    if (stage === 'media upload') f.publisher.uploadMedia.mockImplementationOnce(async filename => {
+      await pause();
+      return { url: `https://media.zernio.com/${filename}` };
+    });
+    else f.publisher.tiktokMusic.mockImplementationOnce(async () => {
+      await pause();
+      return [{ id: 'music-one', name: 'Business soundtrack', artist: 'Licensed artist' }];
+    });
+    expect(await f.finish()).toMatchObject({ status: 'cancelled', error: { code: 'automation_paused' } });
+    expect((await f.read()).publishAttemptAt).toBeUndefined();
+    expect((await f.read()).media).toHaveLength(1);
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+  });
+
   it('cancels a disconnected destination before any paid generation', async () => {
     const f = await fixture();
     f.publisher.accounts.mockResolvedValue([]);
@@ -178,8 +227,23 @@ describe('scheduled social generation', () => {
 });
 
 describe('publication delivery recovery', () => {
+  it('keeps a prior unknown request uncertain if a pause occurs during retry preparation', async () => {
+    const f = await fixture(['tiktok']);
+    await f.finish();
+    await f.approve(undefined, { privacyLevel: 'PUBLIC_TO_EVERYONE', allowComment: true, allowDuet: false, allowStitch: false, musicSoundId: 'music-one' });
+    f.publisher.publish.mockRejectedValueOnce(new SocialPublisherError('publisher_timeout', 'No confirmed response.', true, true));
+    await f.runTo(post => Boolean(post.publishAttemptAt));
+    f.publisher.tiktokMusic.mockImplementationOnce(async () => {
+      await f.updateProject({ socialAutomation: { ...f.project.socialAutomation!, enabled: false, revision: 2 } });
+      return [{ id: 'music-one', name: 'Business soundtrack', artist: 'Licensed artist' }];
+    });
+    expect(await f.finish()).toMatchObject({ status: 'uncertain', error: { code: 'automation_paused' } });
+    expect(f.publisher.publish).toHaveBeenCalledTimes(1);
+  });
   it('keeps the reserved board when preferences change during an uncertain publish retry', async () => {
     const f = await fixture(['pinterest']);
+    await f.finish();
+    await f.approve();
     f.publisher.publish.mockRejectedValueOnce(new SocialPublisherError('publisher_timeout', 'No confirmed response.', true, true));
     await f.runTo(post => Boolean(post.publishAttemptAt));
     await f.updateProject({ socialDestinationOptions: { 'pinterest-account': { boardId: 'different-board' } } });
@@ -191,6 +255,8 @@ describe('publication delivery recovery', () => {
 
   it('retries an unknown publish outcome with the same idempotency key and no new generation', async () => {
     const f = await fixture();
+    await f.finish();
+    await f.approve();
     f.publisher.publish.mockRejectedValueOnce(new SocialPublisherError('publisher_timeout', 'No confirmed response.', true, true));
     expect((await f.finish()).status).toBe('published');
     expect(f.publisher.publish).toHaveBeenCalledTimes(2);
@@ -202,6 +268,8 @@ describe('publication delivery recovery', () => {
 
   it('polls a pending provider post instead of resubmitting it, including after pausing', async () => {
     const f = await fixture();
+    await f.finish();
+    await f.approve();
     f.publisher.publish.mockResolvedValue({ providerPostId: 'provider-one', status: 'publishing' });
     await f.runTo(post => post.status === 'publishing');
     await f.updateProject({ socialAutomation: { ...f.project.socialAutomation!, enabled: false, revision: 2 } });
@@ -212,6 +280,8 @@ describe('publication delivery recovery', () => {
 
   it('uses a durable publication receipt if the final state write is interrupted', async () => {
     const f = await fixture();
+    await f.finish();
+    await f.approve();
     const save = f.runtime.repository.saveSocialPublication.bind(f.runtime.repository);
     let interrupted = false;
     vi.spyOn(f.runtime.repository, 'saveSocialPublication').mockImplementation(async (post, version) => {
@@ -226,24 +296,146 @@ describe('publication delivery recovery', () => {
   });
 });
 
+describe('reviewed publishing calendar', () => {
+  it.each([{ order: [2, 0, 1] }, { order: [2, 0] }])('publishes the reviewed legacy carousel order $order after reordering or removing slides', async ({ order }) => {
+    const f = await fixture(['instagram'], false, false);
+    f.generator.generateImage.mockImplementation(async (_project, _prompt, _copy, _destination, _style, index) => ({
+      ...image, bytes: new Uint8Array([index + 1, 20, 30]),
+    }));
+    await f.finish();
+    const original = (await f.read()).media!;
+    expect(original.every(asset => !asset.id)).toBe(true);
+    await f.update({ media: order.map(index => original[index]) });
+    await f.approve();
+    f.publisher.uploadMedia.mockClear();
+    expect((await f.finish()).status).toBe('published');
+    expect(f.publisher.uploadMedia.mock.calls.map(call => [...call[1]])).toEqual(order.map(index => [index + 1, 20, 30]));
+    expect(f.publisher.publish.mock.calls[0][2].media).toHaveLength(order.length);
+    expect(f.generator.generateImage).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps approved posts waiting until the exact publishing time, including premature queue deliveries', async () => {
+    const f = await fixture();
+    expect((await f.finish()).status).toBe('review_required');
+    const scheduledAt = '2026-11-02T10:00:00.000Z';
+    await f.update({ scheduledAt });
+    await f.approve();
+    await f.worker.handlePublication(f.project.id, f.publications[0].id);
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+    f.runtime.queue.messages.length = 0;
+    await f.worker.reconcile();
+    expect(f.runtime.queue.messages).toEqual([]);
+    // A stale queue writer cannot defeat the worker's scheduledAt boundary.
+    await f.update({ nextAttemptAt: undefined, status: 'queued' });
+    await f.worker.handlePublication(f.project.id, f.publications[0].id);
+    expect(await f.read()).toMatchObject({ status: 'scheduled', nextAttemptAt: scheduledAt });
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+    f.advanceClock(3600);
+    await f.worker.reconcile();
+    expect(f.runtime.queue.messages).toContainEqual({ kind: 'social-publication', projectId: f.project.id, publicationId: f.publications[0].id });
+    expect((await f.finish()).status).toBe('published');
+    expect(f.publisher.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes edited text and media rather than the original generation receipt', async () => {
+    const f = await fixture();
+    await f.finish();
+    const content = { title: 'Reviewed title', body: 'The owner corrected this answer.', hashtags: ['#Reviewed'] };
+    const source = await f.uploadStore.put(`projects/${f.project.id}/social/${f.publications[0].id}/media/replacement`, new Uint8Array([8, 9, 10]), 'image/png', 'replacement');
+    const media = [{ id: source.id, type: 'image' as const, mimeType: source.mimeType, url: source.url }];
+    await f.update({ content, media, checkpoints: { ...(await f.read()).checkpoints, mediaSources: { [source.id]: source } } });
+    await f.approve();
+    expect((await f.finish()).status).toBe('published');
+    expect(f.publisher.publish.mock.calls[0][2]).toMatchObject({ title: content.title, text: `${content.body}\n\n#Reviewed`, media: [{ type: 'image', url: expect.stringContaining('media.zernio.com') }] });
+    expect(f.publisher.uploadMedia.mock.calls[0][1]).toEqual(new Uint8Array([8, 9, 10]));
+    expect(f.generator.generateCopy).toHaveBeenCalledTimes(1);
+    expect(f.generator.generateImage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['content', 'media', 'scheduledAt'] as const)('invalidates approval when %s changes, even if an old approval is accidentally retained', async field => {
+    const f = await fixture();
+    await f.finish();
+    await f.approve();
+    const patch: Partial<SocialPublication> = field === 'content'
+      ? { content: { title: 'Changed', body: 'Unapproved edit', hashtags: [] } }
+      : field === 'media' ? { media: [{ type: 'image', mimeType: 'image/png', url: 'https://media.zernio.com/unapproved.png' }] }
+        : { scheduledAt: '2026-11-02T08:59:00.000Z' };
+    await f.update(patch);
+    expect((await f.finish()).status).toBe('review_required');
+    expect((await f.read()).approval).toBeUndefined();
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it('does not trust a legacy approval without an exact reviewed-content fingerprint', async () => {
+    const f = await fixture();
+    await f.finish();
+    await f.update({ status: 'queued', approval: { approvedBy: 'owner', approvedAt: initialTime, previewConfirmed: true, expressConsentGiven: true } });
+    expect((await f.finish()).status).toBe('review_required');
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it('can review a monthly draft well after its generation day', async () => {
+    const f = await fixture();
+    await f.finish();
+    await f.update({ scheduledAt: '2026-11-25T09:00:00.000Z' });
+    f.advanceClock(23 * 86400);
+    await f.approve();
+    expect((await f.finish()).status).toBe('published');
+    expect(f.generator.generateCopy).toHaveBeenCalledTimes(1);
+    expect(f.uploadStore.read).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'image-0', versionId: '1' }));
+    expect(f.publisher.uploadMedia).toHaveBeenCalledTimes(1);
+    expect(f.publisher.publish.mock.calls[0][2].media[0].url).not.toContain('private.example.com');
+  });
+});
+
+describe('daily, weekly and monthly preparation', () => {
+  it.each([
+    ['daily', 1], ['weekly', 7], ['monthly', 29],
+  ] as const)('prepares all remaining %s publishing slots exactly once', async (generationCadence, count) => {
+    const f = await fixture();
+    await f.updateProject({ socialAutomation: { ...f.project.socialAutomation!, generationCadence, generationTime: '08:00',
+      slots: Array.from({ length: 7 }, (_, dayOfWeek) => ({ id: `day-${dayOfWeek}`, dayOfWeek, time: '10:00' })) } });
+    const message = { kind: 'social-generation' as const, projectId: f.project.id, revision: 1, scheduledAt: initialTime, trigger: 'manual' as const };
+    await f.worker.handleGeneration(message);
+    await f.worker.handleGeneration(message);
+    const posts = (await f.runtime.repository.listSocialPublications(f.project.id, 0, 100)).items.filter(post => post.id !== f.publications[0].id);
+    expect(posts).toHaveLength(count);
+    expect(posts.every(post => Date.parse(post.scheduledAt) > Date.parse(initialTime))).toBe(true);
+    expect(new Set(posts.map(post => post.occurrenceId)).size).toBe(count);
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+    expect(f.generator.generateCopy).not.toHaveBeenCalled();
+  });
+
+  it('does not prepare any content for stale or paused generation events', async () => {
+    const f = await fixture();
+    const message = { kind: 'social-generation' as const, projectId: f.project.id, revision: 1, scheduledAt: initialTime, trigger: 'manual' as const };
+    await f.worker.handleGeneration({ ...message, revision: 2 });
+    await f.updateProject({ socialAutomation: { ...f.project.socialAutomation!, enabled: false } });
+    await f.worker.handleGeneration(message);
+    expect((await f.runtime.repository.listSocialPublications(f.project.id, 0, 100)).total).toBe(1);
+    expect(f.publisher.accounts).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('TikTok reviews', () => {
   it('renders a real MP4 and stops for review without publishing', async () => {
     const f = await fixture(['tiktok']);
     const stopped = await f.finish();
     expect(stopped.status).toBe('review_required');
-    expect(stopped.media).toEqual([{ type: 'video', mimeType: 'video/mp4', url: expect.stringMatching(/\.mp4$/) }]);
+    expect(stopped.media).toEqual([{ id: 'video', type: 'video', mimeType: 'video/mp4', url: expect.stringContaining('private.example.com') }]);
     expect(f.generator.generateImage).toHaveBeenCalledTimes(3);
     expect(f.generator.checkImage).toHaveBeenCalledTimes(3);
     expect(f.generator.renderVideo).toHaveBeenCalledTimes(1);
-    expect(f.publisher.uploadMedia).toHaveBeenCalledTimes(1);
-    expect(f.publisher.uploadMedia.mock.calls[0][2]).toBe('video/mp4');
+    expect(f.publisher.uploadMedia).not.toHaveBeenCalled();
+    expect(f.uploadStore.put).toHaveBeenCalledTimes(1);
+    expect(f.uploadStore.put.mock.calls[0][2]).toBe('video/mp4');
     expect(f.publisher.publish).not.toHaveBeenCalled();
   });
 
   it('publishes the reviewed video with the selected licensed soundtrack and AI disclosure', async () => {
     const f = await fixture(['tiktok']);
     await f.finish();
-    await f.update({ status: 'queued', approval: { approvedBy: 'owner', approvedAt: initialTime, previewConfirmed: true, expressConsentGiven: true, privacyLevel: 'PUBLIC_TO_EVERYONE', allowComment: true, allowDuet: false, allowStitch: false, musicSoundId: 'music-one' } });
+    await f.approve(undefined, { privacyLevel: 'PUBLIC_TO_EVERYONE', allowComment: true, allowDuet: false, allowStitch: false, musicSoundId: 'music-one' });
     expect((await f.finish()).status).toBe('published');
     expect(f.publisher.publish).toHaveBeenCalledTimes(1);
     expect(f.publisher.publish.mock.calls[0][2]).toMatchObject({
@@ -263,10 +455,34 @@ describe('TikTok reviews', () => {
     expect(f.publisher.publish).not.toHaveBeenCalled();
   });
 
+  it('checks the actual replacement video duration against current creator limits', async () => {
+    const f = await fixture(['tiktok']);
+    await f.finish();
+    const source = await f.uploadStore.put(`projects/${f.project.id}/social/${f.publications[0].id}/media/replacement`, new Uint8Array([7, 8, 9]), 'video/mp4', 'replacement');
+    await f.update({ media: [{ id: source.id, type: 'video', mimeType: source.mimeType, url: source.url }],
+      checkpoints: { ...(await f.read()).checkpoints, mediaSources: { [source.id]: source }, videoDuration: 18 } });
+    f.inspectVideo.mockResolvedValue({ durationSeconds: 650, width: 1080, height: 1920 });
+    await f.approve(undefined, { privacyLevel: 'PUBLIC_TO_EVERYONE', allowComment: true, allowDuet: false, allowStitch: false, musicSoundId: 'music-one' });
+    expect(await f.finish()).toMatchObject({ status: 'review_required', error: { code: 'tiktok_options_changed' } });
+    expect(f.inspectVideo).toHaveBeenCalledExactlyOnceWith(new Uint8Array([7, 8, 9]));
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+    expect((await f.read()).approval).toBeUndefined();
+  });
+
+  it('returns an invalid replacement video to review so it can be corrected', async () => {
+    const f = await fixture(['tiktok']);
+    await f.finish();
+    f.inspectVideo.mockRejectedValue(new Error('Malformed video stream'));
+    await f.approve(undefined, { privacyLevel: 'PUBLIC_TO_EVERYONE', allowComment: true, allowDuet: false, allowStitch: false, musicSoundId: 'music-one' });
+    expect(await f.finish()).toMatchObject({ status: 'review_required', error: { code: 'review_media_invalid' } });
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+    expect(f.publisher.uploadMedia).not.toHaveBeenCalled();
+  });
+
   it('returns a TikTok post to review when its selected music is no longer available', async () => {
     const f = await fixture(['tiktok']);
     await f.finish();
-    await f.update({ status: 'queued', approval: { approvedBy: 'owner', approvedAt: initialTime, previewConfirmed: true, expressConsentGiven: true, privacyLevel: 'PUBLIC_TO_EVERYONE', allowComment: true, allowDuet: false, allowStitch: false, musicSoundId: 'music-one' } });
+    await f.approve(undefined, { privacyLevel: 'PUBLIC_TO_EVERYONE', allowComment: true, allowDuet: false, allowStitch: false, musicSoundId: 'music-one' });
     f.publisher.tiktokMusic.mockResolvedValue([]);
     const post = await f.finish();
     expect(post).toMatchObject({ status: 'review_required', error: { code: 'tiktok_options_changed' } });

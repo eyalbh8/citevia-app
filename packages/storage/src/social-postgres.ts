@@ -38,9 +38,11 @@ export async function reserveSocialOccurrence(db: SqlDatabase, input: ReserveSoc
 export async function getSocialPublication(db: SqlDatabase, projectId: string, publicationId: string): Promise<SocialPublication | null> {
   return ((await db.query('SELECT data FROM citevia_social_publications WHERE project_id=$1 AND id=$2', [projectId, publicationId])).rows[0]?.data as SocialPublication) ?? null;
 }
-export async function listActiveSocialPublications(db: SqlDatabase, limit = 100): Promise<SocialPublication[]> {
-  return (await db.query('SELECT data FROM citevia_social_publications WHERE status=ANY($1::text[]) ORDER BY updated_at,id LIMIT $2',
-    [ACTIVE_SOCIAL_PUBLICATION_STATUSES, socialPageBounds(0, limit).limit])).rows.map(row => row.data as SocialPublication);
+export async function listActiveSocialPublications(db: SqlDatabase, limit = 100, now = new Date().toISOString()): Promise<SocialPublication[]> {
+  return (await db.query(`SELECT data FROM citevia_social_publications WHERE status=ANY($1::text[])
+    AND (data->>'nextAttemptAt' IS NULL OR (data->>'nextAttemptAt')::timestamptz <= $3::timestamptz)
+    ORDER BY updated_at,id LIMIT $2`,
+    [ACTIVE_SOCIAL_PUBLICATION_STATUSES, socialPageBounds(0, limit).limit, now])).rows.map(row => row.data as SocialPublication);
 }
 export async function listSocialPublications(db: SqlDatabase, projectId: string, offset: number, limit: number): Promise<{ items: SocialPublication[]; total: number }> {
   const bounds = socialPageBounds(offset, limit);

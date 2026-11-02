@@ -12,3 +12,4 @@ export * from './provider-admission.js';
 export * from './scan-dispatch.js';
 export * from './demo.js';
 export * from './social-publisher.js';
+export * from './social-uploads.js';

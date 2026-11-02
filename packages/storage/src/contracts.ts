@@ -25,6 +25,7 @@ import type {
   ReserveSocialOccurrenceInput,
   ReserveSocialOccurrenceResult,
   SocialOccurrenceMessage,
+  SocialGenerationMessage,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 import type { McpRepository } from './mcp.js';
@@ -56,7 +57,7 @@ export interface Repository extends UserRepository, McpRepository {
   /** Atomically select a prompt and reserve every eligible connected destination once. */
   reserveSocialOccurrence(input: ReserveSocialOccurrenceInput): Promise<ReserveSocialOccurrenceResult>;
   getSocialPublication(projectId: string, publicationId: string): Promise<SocialPublication | null>;
-  listActiveSocialPublications(limit?: number): Promise<SocialPublication[]>;
+  listActiveSocialPublications(limit?: number, now?: string): Promise<SocialPublication[]>;
   listSocialPublications(projectId: string, offset: number, limit: number): Promise<{ items: SocialPublication[]; total: number }>;
   saveSocialPublication(publication: SocialPublication, expectedVersion: number): Promise<boolean>;
   getWebsiteHealthAudit(projectId: string, auditId: string): Promise<WebsiteHealthJob | null>;
@@ -199,6 +200,7 @@ export interface AnalysisBatchPort {
 }
 export interface ScannerDependencies extends Runtime {
   socialAutomation?: {
+    handleGeneration(message: SocialGenerationMessage): Promise<void>;
     handleOccurrence(message: SocialOccurrenceMessage): Promise<void>;
     handlePublication(projectId: string, publicationId: string): Promise<void>;
     reconcile(): Promise<void>;

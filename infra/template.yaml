@@ -449,6 +449,15 @@ Resources:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
       VersioningConfiguration: {Status: Enabled}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - !Ref FrontendOrigin
+              - !If [IncludeDevOrigin, !Ref DevOrigin, !Ref 'AWS::NoValue']
+            AllowedMethods: [GET, HEAD, POST]
+            AllowedHeaders: ['*']
+            ExposedHeaders: [ETag]
+            MaxAge: 3600
       LifecycleConfiguration:
         Rules:
           - Id: EvidenceRetention
@@ -658,6 +667,9 @@ Resources:
             - Effect: Allow
               Action: s3:GetObject
               Resource: !Sub '${EvidenceBucket.Arn}/*'
+            - Effect: Allow
+              Action: [s3:PutObject, s3:GetObjectVersion]
+              Resource: !Sub '${EvidenceBucket.Arn}/projects/*/social/*'
             # Missing-object probes return 404 only when the caller can list this bucket.
             - Effect: Allow
               Action: s3:ListBucket
@@ -763,6 +775,9 @@ Resources:
             - Effect: Allow
               Action: [s3:GetObject, s3:PutObject]
               Resource: !Sub '${EvidenceBucket.Arn}/*'
+            - Effect: Allow
+              Action: s3:GetObjectVersion
+              Resource: !Sub '${EvidenceBucket.Arn}/projects/*/social/*'
             # Checkpoint reads must distinguish an absent object from access denied.
             - Effect: Allow
               Action: s3:ListBucket
@@ -804,6 +819,12 @@ Resources:
           Properties:
             Schedule: rate(15 minutes)
             Input: '{"kind":"reconcile"}'
+            State: !If [MaintenanceEnabled, DISABLED, ENABLED]
+        SocialReconcile:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Input: '{"kind":"social-reconcile"}'
             State: !If [MaintenanceEnabled, DISABLED, ENABLED]
 
   ApiFunctionLogs:

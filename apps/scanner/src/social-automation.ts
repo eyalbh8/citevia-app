@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, DEFAULT_AGENT_CONTENT_MODEL, socialOccurrenceLocalDate,
-  type AgentPostJob, type Project, type SocialOccurrenceMessage, type SocialPublication } from '@citevia/core';
-import { createSocialPublisher, socialPublisherConfigured, SocialPublisherError, type Runtime, type SocialPublisher, type SocialPublishResult } from '@citevia/storage';
+import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, DEFAULT_AGENT_CONTENT_MODEL, socialOccurrenceLocalDate, socialGenerationOccurrences, socialApprovalSnapshot,
+  type AgentPostJob, type Project, type SocialGenerationMessage, type SocialOccurrenceMessage, type SocialPublication } from '@citevia/core';
+import { createSocialPublisher, createSocialMediaUploadStore, socialPublisherConfigured, SocialPublisherError,
+  type Runtime, type SocialPublisher, type SocialPublishResult, type SocialPublishMedia, type SocialMediaUploadStore, type SocialUploadedMedia } from '@citevia/storage';
 import { createSocialMediaGenerator, type SocialBrandStyle, type SocialGeneratedCopy, type SocialGeneratedImage,
   type SocialGeneratedVideo, type SocialMediaGenerator } from './social-media.js';
+import { inspectSocialVideo } from './social-video.js';
 
 type ImageReceipt = Omit<SocialGeneratedImage, 'bytes'> & { base64: string };
 type VideoReceipt = Omit<SocialGeneratedVideo, 'bytes'> & { base64: string };
@@ -16,7 +18,29 @@ const uncertainty = () => new SocialPublisherError('generation_uncertain', 'A ge
 export class SocialAutomationEngine {
   constructor(private runtime: Runtime, private publisher: () => Promise<SocialPublisher> = createSocialPublisher,
     private generator: () => Promise<SocialMediaGenerator> = createSocialMediaGenerator, private now = () => new Date(),
-    private publishingConfigured = () => publisher !== createSocialPublisher || socialPublisherConfigured()) {}
+    private publishingConfigured = () => publisher !== createSocialPublisher || socialPublisherConfigured(),
+    private uploads: () => SocialMediaUploadStore | undefined = createSocialMediaUploadStore,
+    private inspectVideo = inspectSocialVideo) {}
+
+  async handleGeneration(message: SocialGenerationMessage): Promise<void> {
+    const project = await this.runtime.repository.getProject(message.projectId);
+    const now = this.now().toISOString();
+    const occurrences = project && socialGenerationOccurrences(project, message, now);
+    if (!project || !occurrences?.length) return;
+    const destinations = project.socialProfileId && this.publishingConfigured()
+      ? await (await this.publisher()).accounts(project.socialProfileId) : [];
+    // Reserve chronologically so prompt rotation follows the publishing calendar.
+    // A partially completed batch is safe to replay: each slot/date is unique.
+    for (const occurrence of occurrences) {
+      const reserved = await this.runtime.repository.reserveSocialOccurrence({ ...occurrence, now, destinations,
+        generationScheduledAt: message.scheduledAt, generationTrigger: message.trigger });
+      if (reserved.status !== 'created' && reserved.status !== 'existing') continue;
+      await this.runtime.queue.send(reserved.publications.filter(post => !terminal(post) &&
+        !(Date.parse(post.nextAttemptAt || '') > this.now().getTime())).map(post => ({
+        kind: 'social-publication' as const, projectId: project.id, publicationId: post.id,
+      })));
+    }
+  }
 
   async handleOccurrence(message: SocialOccurrenceMessage): Promise<void> {
     const project = await this.runtime.repository.getProject(message.projectId);
@@ -58,6 +82,9 @@ export class SocialAutomationEngine {
     const stop = async (status: 'failed' | 'cancelled' | 'uncertain', code: string, message: string) => {
       await this.persist(current, { status, error: { code, message }, leaseOwner: undefined, leaseUntil: undefined });
     };
+    const stopPaused = () => stop(current.publishAttemptAt ? 'uncertain' : 'cancelled', 'automation_paused', current.publishAttemptAt
+      ? 'Automation was paused after a publishing request. Check the connected account to confirm its outcome.'
+      : 'Automation was paused or its schedule changed. Saved content is preserved.');
     try {
       if (current.publishAttemptAt && !current.providerPostId) {
         const receipt = await artifacts.get<SocialPublishResult>(this.key(current, 'publication'));
@@ -70,9 +97,7 @@ export class SocialAutomationEngine {
         return;
       }
       const project = await this.enabled(current);
-      if (!project) { await stop(current.publishAttemptAt ? 'uncertain' : 'cancelled', 'automation_paused', current.publishAttemptAt
-        ? 'Automation was paused after a publishing request. Check the connected account to confirm its outcome.'
-        : 'Automation was paused or its schedule changed. Saved content is preserved.'); return; }
+      if (!project) { await stopPaused(); return; }
       if ((current.attempts || 0) > 5) { await stop(current.publishAttemptAt ? 'uncertain' : 'failed', 'recovery_exhausted', 'This post could not finish after repeated interruptions.'); return; }
       if (this.now().getTime() - Date.parse(current.scheduledAt) > 6 * 86400000) {
         await stop('cancelled', 'post_expired', 'This scheduled post expired before publication.'); return;
@@ -118,21 +143,21 @@ export class SocialAutomationEngine {
         await this.advance(current, 'copy'); return;
       }
       const style = (await artifacts.get<{ value: SocialBrandStyle }>(this.key(current, 'style')))?.value;
-      if (!style) throw new Error('social_style_missing');
+      if (!style && current.stage !== 'publish') throw new Error('social_style_missing');
       if (current.stage === 'copy') {
-        const copy = await paid('copy', async () => (await media()).generateCopy(frozenProject, current.prompt, destination, style));
+        const copy = await paid('copy', async () => (await media()).generateCopy(frozenProject, current.prompt, destination, style!));
         await this.advance(current, 'image-0', { content: { title: copy.title, body: copy.body, hashtags: copy.hashtags } }); return;
       }
       const copy = (await artifacts.get<{ value: SocialGeneratedCopy }>(this.key(current, 'copy')))?.value;
-      if (!copy) throw new Error('social_copy_missing');
-      const total = copy.slides.length;
+      if (!copy && current.stage !== 'publish') throw new Error('social_copy_missing');
+      const total = copy?.slides.length ?? 0;
       const imageStep = current.stage.match(/^(image|qa|upload)-(\d+)$/);
       if (imageStep) {
         const index = Number(imageStep[2]);
         if (index >= total) throw new Error('social_image_index');
         if (imageStep[1] === 'image') {
           await paid<ImageReceipt>(current.stage, async () => {
-            const { bytes, ...meta } = await (await media()).generateImage(frozenProject, current.prompt, copy, destination, style, index, total);
+            const { bytes, ...meta } = await (await media()).generateImage(frozenProject, current.prompt, copy!, destination, style!, index, total);
             return { ...meta, base64: Buffer.from(bytes).toString('base64') };
           });
           await this.advance(current, `qa-${index}`); return;
@@ -141,14 +166,24 @@ export class SocialAutomationEngine {
         if (!image) throw new Error('social_image_missing');
         const bytes = Buffer.from(image.base64, 'base64');
         if (imageStep[1] === 'qa') {
-          await paid(current.stage, async () => { await (await media()).checkImage(frozenProject, current.prompt, copy, destination, style, { ...image, bytes }, index); return true; });
+          await paid(current.stage, async () => { await (await media()).checkImage(frozenProject, current.prompt, copy!, destination, style!, { ...image, bytes }, index); return true; });
           await this.advance(current, `upload-${index}`); return;
         }
         if (destination.channel !== 'tiktok') {
           const key = this.key(current, `upload-${index}`);
-          const uploaded = await artifacts.get<{ url: string }>(key) ?? await publisher.uploadMedia(`${current.id}-${index}.jpg`, bytes, image.mime);
+          let uploaded = await artifacts.get<{ url: string; source?: SocialUploadedMedia }>(key);
+          if (!uploaded) {
+            const store = this.uploads(), id = `image-${index}`;
+            if (store) {
+              const source = await store.put(`projects/${current.projectId}/social/${current.id}/media/${id}`, bytes, image.mime, id);
+              uploaded = { url: source.url, source };
+            } else uploaded = await publisher.uploadMedia(`${current.id}-${index}.jpg`, bytes, image.mime);
+          }
           await artifacts.put(key, uploaded);
-          current = await this.persist(current, { media: [...(current.media || []).slice(0, index), { type: 'image', mimeType: image.mime, url: uploaded.url }] });
+          current = await this.persist(current, { media: [...(current.media || []).slice(0, index), { type: 'image', mimeType: image.mime, url: uploaded.url,
+            ...(uploaded.source ? { id: uploaded.source.id } : {}) }],
+            ...(uploaded.source ? { checkpoints: { ...current.checkpoints, mediaSources: {
+              ...(current.checkpoints?.mediaSources as Record<string, SocialUploadedMedia> | undefined), [uploaded.source.id]: uploaded.source } } } : {}) });
         }
         await this.advance(current, index + 1 < total ? `image-${index + 1}` : destination.channel === 'tiktok' ? 'render' : 'publish'); return;
       }
@@ -161,7 +196,7 @@ export class SocialAutomationEngine {
             if (!image) throw new Error('social_image_missing');
             images.push({ ...image, bytes: Buffer.from(image.base64, 'base64') });
           }
-          const { bytes, ...meta } = await (await media()).renderVideo(copy, images);
+          const { bytes, ...meta } = await (await media()).renderVideo(copy!, images);
           await artifacts.put(key, { ...meta, base64: Buffer.from(bytes).toString('base64') });
         }
         await this.advance(current, 'upload-video'); return;
@@ -170,14 +205,36 @@ export class SocialAutomationEngine {
         const video = await artifacts.get<VideoReceipt>(this.key(current, 'video'));
         if (!video) throw new Error('social_video_missing');
         const key = this.key(current, 'video-upload');
-        const uploaded = await artifacts.get<{ url: string }>(key) ?? await publisher.uploadMedia(`${current.id}.mp4`, Buffer.from(video.base64, 'base64'), video.mime);
+        let uploaded = await artifacts.get<{ url: string; source?: SocialUploadedMedia }>(key);
+        if (!uploaded) {
+          const store = this.uploads();
+          if (store) {
+            const source = await store.put(`projects/${current.projectId}/social/${current.id}/media/video`, Buffer.from(video.base64, 'base64'), video.mime, 'video');
+            uploaded = { url: source.url, source };
+          } else uploaded = await publisher.uploadMedia(`${current.id}.mp4`, Buffer.from(video.base64, 'base64'), video.mime);
+        }
         await artifacts.put(key, uploaded);
-        await this.advance(current, 'publish', { media: [{ type: 'video', url: uploaded.url, mimeType: video.mime }],
-          checkpoints: { ...current.checkpoints, videoDuration: video.durationSeconds } }); return;
+        await this.advance(current, 'publish', { media: [{ type: 'video', url: uploaded.url, mimeType: video.mime, ...(uploaded.source ? { id: uploaded.source.id } : {}) }],
+          checkpoints: { ...current.checkpoints, videoDuration: video.durationSeconds,
+            ...(uploaded.source ? { mediaSources: { ...(current.checkpoints?.mediaSources as Record<string, SocialUploadedMedia> | undefined), [uploaded.source.id]: uploaded.source } } : {}) } }); return;
       }
       if (current.stage !== 'publish') throw new Error('social_stage_unknown');
-      if (destination.channel === 'tiktok' && !current.approval) {
-        await this.advance(current, 'publish', { status: 'review_required' }); return;
+      const approval = current.approval;
+      if (!approval?.previewConfirmed || !approval.expressConsentGiven || !current.content ||
+        approval.contentHash !== digest(socialApprovalSnapshot(current))) {
+        if (current.publishAttemptAt) { await stop('uncertain', 'approval_changed', 'The publishing request no longer matches its reviewed content. Check the connected account.'); return; }
+        await this.advance(current, 'publish', { status: 'review_required', approval: undefined }); return;
+      }
+      const scheduled = Date.parse(current.scheduledAt);
+      if (!Number.isFinite(scheduled)) {
+        await this.advance(current, 'publish', { status: 'review_required', approval: undefined,
+          error: { code: 'invalid_publishing_time', message: 'Choose a valid publishing time and approve this post again.' } }); return;
+      }
+      if (scheduled > this.now().getTime()) {
+        // Long waits live in the database, not in SQS (which permits at most 15 minutes).
+        // Even a premature/duplicate delivery must never send a public post early.
+        await this.persist(current, { status: 'scheduled', leaseOwner: undefined, leaseUntil: undefined,
+          attempts: 0, nextAttemptAt: current.scheduledAt }); return;
       }
       const receiptKey = this.key(current, 'publication');
       const receipt = await artifacts.get<SocialPublishResult>(receiptKey);
@@ -185,24 +242,37 @@ export class SocialAutomationEngine {
       if (current.publishAttemptAt && this.now().getTime() - Date.parse(current.publishAttemptAt) >= 23 * 3600000) {
         await stop('uncertain', 'publication_uncertain', 'The publishing result could not be confirmed. Check the social account before creating another post.'); return;
       }
-      if (!await this.enabled(current)) { await stop('cancelled', 'automation_paused', 'Automation was paused before publication.'); return; }
-      const approval = current.approval;
+      if (!await this.enabled(current)) { await stopPaused(); return; }
+      // Vendor media links need not survive a month in review. Keep original bytes
+      // privately and upload the immutable approved version only when it is due.
+      const mediaReceiptKey = this.key(current, `publish-media-${approval.contentHash}`);
+      let prepared = await artifacts.get<{ media: SocialPublishMedia[]; videoDuration?: number }>(mediaReceiptKey);
+      if (!prepared) {
+        if (current.publishAttemptAt) { await stop('uncertain', 'publication_media_uncertain', 'The sent media could not be recovered. Check the connected account before retrying.'); return; }
+        prepared = await this.preparePublishMedia(current, publisher);
+        await artifacts.put(mediaReceiptKey, prepared);
+      }
       if (destination.channel === 'tiktok') {
         const creator = await publisher.tiktokCreatorInfo(destination.profileId, destination.id);
         const tracks = await publisher.tiktokMusic(destination.profileId, destination.id);
-        if (!approval || approval.previewConfirmed !== true || approval.expressConsentGiven !== true || !creator.privacyLevels.includes(approval.privacyLevel) || !creator.canPostMore ||
+        if (!approval.privacyLevel || !creator.privacyLevels.includes(approval.privacyLevel) || !creator.canPostMore ||
           !tracks.some(track => track.id === approval.musicSoundId) ||
-          (creator.maxVideoDurationSec && Number(current.checkpoints?.videoDuration) > creator.maxVideoDurationSec) ||
+          (creator.maxVideoDurationSec && (!prepared.videoDuration || prepared.videoDuration > creator.maxVideoDurationSec)) ||
           (['allowComment', 'allowDuet', 'allowStitch'] as const).some(key => approval[key] && !creator.interactions[key]))
           throw new SocialPublisherError('tiktok_options_changed', 'TikTok publishing options changed. This post needs a new review.');
       }
+      // Uploading a large video and checking platform options can take time.
+      // Honor a pause/revision change that happened during those awaits before
+      // recording a new public request; already-sent outcomes remain uncertain.
+      if (!await this.enabled(current)) { await stopPaused(); return; }
       current = await this.persist(current, { publishAttemptAt: current.publishAttemptAt ?? this.now().toISOString() });
       const result = await publisher.publish(destination.profileId, destination, {
-        title: copy.title, text: [copy.body, copy.hashtags.join(' ')].filter(Boolean).join('\n\n'), media: current.media || [],
+        title: current.content!.title, text: [current.content!.body, current.content!.hashtags.join(' ')].filter(Boolean).join('\n\n'), media: prepared.media,
         ...(destinationOptions ? { platformSpecificData: { ...destinationOptions } } : {}),
         ...(destination.channel === 'instagram' ? { platformSpecificData: { isAiGenerated: true } } : {}),
         ...(destination.channel === 'tiktok' && approval ? {
-          tiktokApproval: { ...approval, previewConfirmed: approval.previewConfirmed as true, expressConsentGiven: approval.expressConsentGiven as true },
+          tiktokApproval: { previewConfirmed: true, expressConsentGiven: true, privacyLevel: approval.privacyLevel!,
+            allowComment: approval.allowComment === true, allowDuet: approval.allowDuet === true, allowStitch: approval.allowStitch === true },
           platformSpecificData: { videoMadeWithAi: true, musicSoundInfo: { musicSoundId: approval.musicSoundId! }, commercialContentType: 'brand_organic' },
         } : {}),
       }, publishKey(current.id));
@@ -210,7 +280,7 @@ export class SocialAutomationEngine {
       await this.recordPublication(current, result);
     } catch (error) {
       if ((error as Error).message === 'social_lease_lost') return;
-      if (error instanceof SocialPublisherError && error.code === 'tiktok_options_changed' && !current.publishAttemptAt) {
+      if (error instanceof SocialPublisherError && ['tiktok_options_changed', 'review_media_invalid'].includes(error.code) && !current.publishAttemptAt) {
         await this.advance(current, 'publish', { status: 'review_required', approval: undefined,
           error: { code: error.code, message: error.message } });
         return;
@@ -226,6 +296,51 @@ export class SocialAutomationEngine {
       await stop(current.publishAttemptAt ? 'uncertain' : 'failed', code,
         error instanceof SocialPublisherError ? error.message : 'Content generation could not finish. No new post was published.');
     }
+  }
+
+  private async preparePublishMedia(post: SocialPublication, publisher: SocialPublisher): Promise<{ media: SocialPublishMedia[]; videoDuration?: number }> {
+    const media: SocialPublishMedia[] = [];
+    let videoDuration: number | undefined;
+    let legacyImages: Map<string, number> | undefined;
+    const sources = (post.checkpoints?.mediaSources ?? {}) as Record<string, SocialUploadedMedia>;
+    for (const [index, asset] of (post.media ?? []).entries()) {
+      let bytes: Uint8Array | undefined;
+      if (asset.id) {
+        const source = sources[asset.id], store = this.uploads();
+        if (!store || !source || source.id !== asset.id || source.type !== asset.type || source.mimeType !== asset.mimeType || source.url !== asset.url ||
+          !source.key.startsWith(`projects/${post.projectId}/social/${post.id}/`))
+          throw new SocialPublisherError('review_media_invalid', 'This media is no longer available. Replace it and approve the post again.');
+        try {
+          bytes = await store.read(source);
+          if (asset.type === 'video') videoDuration = (await this.inspectVideo(bytes)).durationSeconds;
+        } catch {
+          throw new SocialPublisherError('review_media_invalid', 'This image or video could not be validated. Replace it with a valid image or vertical MP4 and approve again.');
+        }
+      } else if (asset.type === 'video') {
+        const upload = await this.runtime.artifacts.get<{ url: string }>(this.key(post, 'video-upload'));
+        const video = upload?.url === asset.url ? await this.runtime.artifacts.get<VideoReceipt>(this.key(post, 'video')) : undefined;
+        if (video?.mime === asset.mimeType) { bytes = Buffer.from(video.base64, 'base64'); videoDuration = video.durationSeconds; }
+      } else {
+        // Legacy/local previews may have no private object id yet; original
+        // generated receipts still allow a fresh delivery URL without a paid call.
+        // Resolve the original asset identity, not its edited carousel position.
+        if (!legacyImages) {
+          const generated = await this.runtime.artifacts.get<{ value: SocialGeneratedCopy }>(this.key(post, 'copy'));
+          const count = Math.max(1, Math.min(10, generated?.value.slides.length ?? 10));
+          const uploads = await Promise.all(Array.from({ length: count }, async (_, originalIndex) => ({ originalIndex,
+            upload: await this.runtime.artifacts.get<{ url: string }>(this.key(post, `upload-${originalIndex}`)) })));
+          legacyImages = new Map(uploads.filter(item => typeof item.upload?.url === 'string').map(item => [item.upload!.url, item.originalIndex]));
+        }
+        const originalIndex = legacyImages.get(asset.url);
+        const image = originalIndex !== undefined ? await this.runtime.artifacts.get<{ value: ImageReceipt }>(this.key(post, `image-${originalIndex}`)) : undefined;
+        if (image?.value.mime === asset.mimeType) bytes = Buffer.from(image.value.base64, 'base64');
+      }
+      if (!bytes) throw new SocialPublisherError('review_media_invalid', 'The original media could not be recovered. Replace it and approve the post again.');
+      const uploaded = await publisher.uploadMedia(`${post.id}-${post.approval!.contentHash}-${index}.${asset.type === 'video' ? 'mp4' : asset.mimeType === 'image/png' ? 'png' : asset.mimeType === 'image/webp' ? 'webp' : 'jpg'}`, bytes, asset.mimeType);
+      media.push({ type: asset.type, url: uploaded.url });
+    }
+    if (!media.length) throw new SocialPublisherError('review_media_invalid', 'Add an image or video and approve this post again.');
+    return { media, ...(videoDuration ? { videoDuration } : {}) };
   }
 
   private async recordPublication(post: SocialPublication, result: SocialPublishResult) {
@@ -259,7 +374,7 @@ export class SocialAutomationEngine {
   }
 
   async reconcile() {
-    const posts = await this.runtime.repository.listActiveSocialPublications(100);
+    const posts = await this.runtime.repository.listActiveSocialPublications(100, this.now().toISOString());
     await this.runtime.queue.send(posts.filter(post => !(Date.parse(post.leaseUntil || '') > this.now().getTime()) &&
       !(Date.parse(post.nextAttemptAt || '') > this.now().getTime())).map(post => ({ kind: 'social-publication' as const,
         projectId: post.projectId, publicationId: post.id })));

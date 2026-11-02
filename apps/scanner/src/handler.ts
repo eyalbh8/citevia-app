@@ -36,6 +36,8 @@ const id = z
   .max(200)
   .regex(/^[a-zA-Z0-9_-]+$/);
 const messageSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('social-reconcile') }).strict(),
+  z.object({ kind: z.literal('social-generation'), projectId: id, revision: z.number().int().positive(), scheduledAt: z.string().datetime({ offset: true }), trigger: z.enum(['scheduled', 'manual']).optional() }).strict(),
   z.object({ kind: z.literal('social-occurrence'), projectId: id, revision: z.number().int().positive(), slotId: id, scheduledAt: z.string().datetime({ offset: true }) }).strict(),
   z.object({ kind: z.literal('social-publication'), projectId: id, publicationId: id }).strict(),
   z.object({ kind: z.literal('website-health'), projectId: id, auditId: id }).strict(),

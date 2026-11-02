@@ -104,8 +104,9 @@ export class MemoryRepository implements Repository {
   getSocialPublication(projectId: string, publicationId: string): Promise<SocialPublication | null> {
     return this.operation(() => copy(this.state.socialPublications?.[key(projectId, publicationId)] || null));
   }
-  listActiveSocialPublications(limit = 100): Promise<SocialPublication[]> {
-    return this.operation(() => copy(Object.values(this.state.socialPublications || {}).filter(publication => ACTIVE_SOCIAL_PUBLICATION_STATUSES.includes(publication.status))
+  listActiveSocialPublications(limit = 100, now = new Date().toISOString()): Promise<SocialPublication[]> {
+    return this.operation(() => copy(Object.values(this.state.socialPublications || {}).filter(publication => ACTIVE_SOCIAL_PUBLICATION_STATUSES.includes(publication.status) &&
+      !(Date.parse(publication.nextAttemptAt ?? '') > Date.parse(now)))
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id)).slice(0, socialPageBounds(0, limit).limit)));
   }
   listSocialPublications(projectId: string, offset: number, limit: number): Promise<{ items: SocialPublication[]; total: number }> {

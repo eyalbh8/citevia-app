@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { access, copyFile, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { ProviderError } from './provider.js';
 import type { SocialGeneratedCopy, SocialGeneratedImage, SocialGeneratedVideo } from './social-media.js';
 
@@ -63,6 +63,31 @@ export async function socialVideoReady(options?: SocialVideoOptions): Promise<bo
       '-vf', 'drawtext=text=Ready:fontsize=10:fontcolor=white', '-frames:v', '1', '-f', 'null', '-'], undefined, 5000);
     return true;
   } catch { return false; }
+}
+
+/** Inspect a replacement upload locally; never trust its filename or browser-reported duration. */
+export async function inspectSocialVideo(bytes: Uint8Array, options: { ffprobePath?: string; timeoutMs?: number } = {}): Promise<{ durationSeconds: number; width: number; height: number }> {
+  if (bytes.byteLength < 100 || bytes.byteLength > 100 * 1024 * 1024 || Buffer.from(bytes).toString('ascii', 4, 8) !== 'ftyp')
+    throw failure('Choose a valid MP4 video up to 100 MB.');
+  const ffmpeg = settings().ffmpegPath;
+  const binary = options.ffprobePath || (ffmpeg.includes('/') ? join(dirname(ffmpeg), 'ffprobe') : 'ffprobe');
+  const directory = await mkdtemp(join(tmpdir(), 'citevia-social-inspect-'));
+  try {
+    const filename = join(directory, 'replacement.mp4');
+    await writeFile(filename, bytes);
+    const output = await run(binary, ['-v', 'error', '-protocol_whitelist', 'file,pipe', '-select_streams', 'v:0',
+      '-show_entries', 'stream=codec_name,width,height,duration:format=duration', '-of', 'json', filename], directory, options.timeoutMs ?? 20_000);
+    const parsed = JSON.parse(output) as { streams?: { codec_name?: string; width?: number; height?: number; duration?: string }[]; format?: { duration?: string } };
+    const stream = parsed.streams?.[0];
+    const durationSeconds = Number(parsed.format?.duration ?? stream?.duration), width = Number(stream?.width), height = Number(stream?.height);
+    if (!stream || !['h264', 'hevc'].includes(stream.codec_name || '') || !Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 600 ||
+      !Number.isInteger(width) || !Number.isInteger(height) || width < 360 || height < 640 || width > 4096 || height > 4096 || width / height < 0.5 || width / height > 0.6)
+      throw failure('Choose a vertical H.264 or H.265 MP4 video, between 360 × 640 and 4096 × 4096 pixels, no longer than 10 minutes.');
+    return { durationSeconds, width, height };
+  } catch (error) {
+    if (error instanceof ProviderError) throw error;
+    throw failure('This video could not be inspected. Replace it with a valid vertical MP4 video.');
+  } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
 export function wrapSocialCaption(value: string, columns = 28): string {

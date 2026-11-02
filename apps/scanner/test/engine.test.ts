@@ -23,6 +23,19 @@ async function setup(options: { repository?: MemoryRepository; artifacts?: Memor
 const promptMessages = (messages: ScanMessage[]) => messages.filter((message): message is Extract<ScanMessage, { kind: 'prompt' }> => message.kind === 'prompt');
 
 describe('scanner engine lifecycle', () => {
+  it('runs the minute social clock without invoking unrelated scan or maintenance work', async () => {
+    const repository = new MemoryRepository(), artifacts = new MemoryArtifacts(), queue = new MemoryQueue();
+    const socialAutomation = { handleGeneration: vi.fn(), handleOccurrence: vi.fn(), handlePublication: vi.fn(), reconcile: vi.fn(), deadLetter: vi.fn() };
+    const maintenance = { reconcile: vi.fn() }, provider = { collect: vi.fn(), extract: vi.fn() };
+    const scans = vi.spyOn(repository, 'listActiveRuns');
+    const scanner = new Scanner({ repository, artifacts, queue, provider, socialAutomation, maintenance });
+    await scanner.handle({ kind: 'social-reconcile' });
+    expect(socialAutomation.reconcile).toHaveBeenCalledTimes(1);
+    expect(maintenance.reconcile).not.toHaveBeenCalled();
+    expect(scans).not.toHaveBeenCalled();
+    expect(provider.collect).not.toHaveBeenCalled();
+    expect(queue.messages).toEqual([]);
+  });
   it('atomically freezes up to 50 prompts and deduplicates the scheduled run', async () => {
     const env = await setup({ promptCount: 50 });
     await env.scanner.handle(kickoff);

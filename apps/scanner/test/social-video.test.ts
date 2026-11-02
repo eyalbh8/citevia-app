@@ -3,17 +3,35 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { renderSocialVideo, socialVideoReady, wrapSocialCaption } from '../src/social-video.js';
+import { inspectSocialVideo, renderSocialVideo, socialVideoReady, wrapSocialCaption } from '../src/social-video.js';
 import type { SocialGeneratedCopy, SocialGeneratedImage } from '../src/social-media.js';
 
 const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg';
 const available = await socialVideoReady();
+const ffprobe = process.env.FFPROBE_PATH || 'ffprobe';
+const inspectionAvailable = (() => {
+  try { execFileSync(ffprobe, ['-version'], { stdio: 'ignore', timeout: 5000 }); execFileSync(ffmpeg, ['-version'], { stdio: 'ignore', timeout: 5000 }); return true; }
+  catch { return false; }
+})();
 const content: SocialGeneratedCopy = {
   title: 'Better reports', body: 'Make the next decision clear.', hashtags: [], format: 'video',
   slides: ['First', 'Then', 'Finally'].map(heading => ({ heading, body: 'Use 100% clear facts.', imagePrompt: 'An educational scene.' })),
 };
 
 describe('social video rendering', () => {
+  it('rejects a replacement that is not an MP4 before spawning a media process', async () => {
+    await expect(inspectSocialVideo(new Uint8Array(128))).rejects.toMatchObject({ code: 'social_video_unavailable' });
+  });
+  it.skipIf(!inspectionAvailable)('measures actual uploaded video metadata and rejects a landscape replacement', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'citevia-video-inspect-test-'));
+    try {
+      const vertical = join(directory, 'vertical.mp4'), horizontal = join(directory, 'horizontal.mp4');
+      for (const [filename, size] of [[vertical, '360x640'], [horizontal, '640x360']])
+        execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `color=c=blue:s=${size}:r=12`, '-t', '1', '-c:v', 'libx264', filename], { timeout: 10000 });
+      expect(await inspectSocialVideo(await readFile(vertical), { ffprobePath: ffprobe })).toEqual({ durationSeconds: 1, width: 360, height: 640 });
+      await expect(inspectSocialVideo(await readFile(horizontal), { ffprobePath: ffprobe })).rejects.toMatchObject({ code: 'social_video_unavailable' });
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   it('reports missing renderer support without pretending a video is available', async () => {
     expect(await socialVideoReady({ ffmpegPath: '/nonexistent/citevia-ffmpeg' })).toBe(false);
   });

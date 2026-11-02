@@ -6,6 +6,7 @@ import { MAX_SOCIAL_AUTOMATION_SLOTS, SOCIAL_CHANNELS, socialAutomationInputSche
 import { request, useApi } from './api';
 import { Badge, Drawer, ErrorNotice, Pagination, safeUrl } from './components';
 import { Skeleton } from './Loading';
+import SocialPublicationReview from './SocialPublicationReview';
 import './social-automation.css';
 
 type Connection = Omit<SocialDestination, 'profileId'>;
@@ -35,17 +36,18 @@ export interface SocialPublicationPreview {
   draftPostId?: string;
   publishedUrl?: string;
   error?: SocialPublication['error'];
+  editable?: boolean;
 }
 const labels: Record<SocialChannel | 'blog', string> = {
   facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn', x: 'X', pinterest: 'Pinterest', reddit: 'Reddit', tiktok: 'TikTok', blog: 'Blog draft',
 };
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const statusLabels: Record<SocialPublication['status'], string> = {
-  queued: 'Queued', generating: 'Creating', review_required: 'Review needed', publishing: 'Publishing', published: 'Published',
+  queued: 'Queued', generating: 'Creating', review_required: 'Review needed', scheduled: 'Scheduled', publishing: 'Publishing', published: 'Published',
   draft_created: 'Draft created', failed: 'Failed', cancelled: 'Cancelled', uncertain: 'Publication unconfirmed',
 };
 const editableSettings = (settings: AutomationSettings): SocialAutomationInput => ({
-  enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, timezone: settings.timezone, slots: settings.slots.map(slot => ({ ...slot })),
+  enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, generationCadence: settings.generationCadence ?? 'daily', generationTime: settings.generationTime ?? '08:00', timezone: settings.timezone, slots: settings.slots.map(slot => ({ ...slot })),
 });
 const connected = (connection: Connection) => connection.active && !connection.requiresReconnect;
 const timestamp = (value: string, timezone?: string) => {
@@ -59,6 +61,8 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
   const [revision, refresh] = useState(0);
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string>();
+  const [generating, setGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState<Error>();
   const state = useApi<SocialSettingsResponse>(`${path}/social`, project.version + revision);
   const history = useApi<{ items: SocialPublicationPreview[]; total: number }>(`${path}/social/publications?offset=${page * 20}`, revision);
   const detail = useApi<SocialPublicationPreview>(selectedId ? `${path}/social/publications/${encodeURIComponent(selectedId)}` : null, revision);
@@ -71,10 +75,19 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
   }, [pending]);
   const saved = () => { refresh(value => value + 1); onSaved(); };
   const post = detail.data?.id === selectedId ? detail.data : undefined;
+  async function generateNow() {
+    if (!owner || generating || !state.data?.settings.enabled) return;
+    setGenerating(true); setGenerationError(undefined);
+    try {
+      await request(`${path}/social/generate`, { method: 'POST', body: JSON.stringify({ version: state.data.version }) });
+      notify('Content preparation started. Posts will wait for your review.'); saved();
+    } catch (error) { setGenerationError(error as Error); }
+    finally { setGenerating(false); }
+  }
   return <section className="card social-automation" aria-labelledby="social-automation-title">
     <div className="card-header">
       <div><h2 id="social-automation-title" className="card-title">Automated social media</h2>
-        <p className="card-description">Turn your prompts into posts for your connected accounts, on your schedule.</p></div>
+        <p className="card-description">Prepare content ahead of time, review and edit it, then approve scheduled publishing.</p></div>
       <CalendarClock size={22} aria-hidden="true" />
     </div>
     <div className="card-content">
@@ -83,7 +96,7 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
       {state.data?.settings && <>
         <AutomationForm key={`${project.id}-${state.data.settings.revision}`} data={state.data} path={path} owner={owner} onSaved={saved} notify={notify} />
         <div className="social-connected-heading"><h3>Publishing destinations</h3><a className="button button-outline" href="#integrations">Manage connections</a></div>
-        <p className="card-description">Each scheduled time creates a post answering one active prompt for every ready account. New connections join the next scheduled time.</p>
+        <p className="card-description">Each publishing time gets a post answering one active prompt for every ready account. Every social post waits for your review and approval.</p>
         <div className="social-connections">
           {SOCIAL_CHANNELS.map(channel => {
             const accounts = state.data!.connections.filter(connection => connection.channel === channel);
@@ -93,7 +106,7 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
                (channel === 'reddit' && !state.data!.destinationOptions?.[account.id]?.subreddit)));
             const label = !state.data!.publishingAvailable ? 'Setup needed' : !accounts.length ? 'Not connected' : !ready ? 'Reconnect' :
               needsDestination ? 'Choose destination' : !state.data!.generationAvailable ? 'Generation setup needed' :
-              channel === 'tiktok' && state.data!.videoAvailable === false ? 'Video setup needed' : channel === 'tiktok' ? 'Review each post' : 'Ready';
+              channel === 'tiktok' && state.data!.videoAvailable === false ? 'Video setup needed' : 'Review before publishing';
             return <div key={channel} className={`social-connection ${ready ? 'is-connected' : ''}`}>
               <div><strong>{labels[channel]}</strong><span>{accounts.map(account => account.username).join(', ') || 'Connect an account to include it'}</span></div>
               <span className="social-connection-status">{ready && <Check size={13} aria-hidden="true" />}{label}</span>
@@ -104,14 +117,17 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
           <DestinationForm key={`${connection.id}-${JSON.stringify(state.data!.destinationOptions?.[connection.id] || {})}`}
             connection={connection} value={state.data!.destinationOptions?.[connection.id]} version={state.data!.version}
             path={path} owner={owner} onSaved={saved} notify={notify} />)}
-        <p className="social-help">TikTok posts are prepared on schedule. Review the video, choose music and privacy, and approve each post before it is published.</p>
+        <p className="social-help">Review the text and media for every social post before approving its publishing time. For TikTok, also choose music, privacy and interaction permissions.</p>
         {state.data.videoAvailable === false && state.data.connections.some(connection => connection.channel === 'tiktok' && connected(connection)) &&
           <p className="social-readiness">TikTok posts will start once video creation is configured. Other connected accounts and blog drafts can still run.</p>}
       </>}
-      <div className="social-connected-heading"><h3>Recent automation</h3><button type="button" className="button button-outline" onClick={() => refresh(value => value + 1)}><RefreshCw size={14} />Refresh</button></div>
+      <div className="social-connected-heading"><div><h3>Review and publishing queue</h3><p className="card-description">Unapproved posts stay here and are never published.</p></div><div className="social-queue-actions">
+        <button type="button" className="button button-outline" disabled={!owner || generating || !state.data?.settings.enabled} onClick={generateNow}>{generating ? 'Preparing…' : 'Generate content now'}</button>
+        <button type="button" className="button button-outline" onClick={() => refresh(value => value + 1)}><RefreshCw size={14} />Refresh</button></div></div>
+      <ErrorNotice error={generationError} />
       <ErrorNotice error={history.error} retry={() => refresh(value => value + 1)} />
       {history.loading && !history.data && <Skeleton variant="table" rows={3} label="Loading automated posts…" />}
-      {history.data && !history.data.items.length && <p className="social-empty">Your scheduled posts and blog drafts will appear here. Choose a schedule and save to get started.</p>}
+      {history.data && !history.data.items.length && <p className="social-empty">Prepared posts and blog drafts will appear here. Choose a preparation cadence and publishing times, then save to get started.</p>}
       <div className="social-history">
         {history.data?.items.map(item => <button type="button" className="social-history-row" key={item.id} onClick={() => setSelectedId(item.id)}>
           <div><span className="social-history-channel">{labels[item.channel]} · {item.destination}</span><strong>{item.content?.title || item.prompt}</strong>
@@ -127,6 +143,10 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
       {post && <div className="social-preview">
         <Badge value={post.status} label={statusLabels[post.status]} />
         <p className="card-description">Answering: {post.prompt}</p>
+        {post.channel !== 'blog' && ['review_required', 'scheduled'].includes(post.status)
+          ? <SocialPublicationReview key={`${post.id}-${post.version}`} post={post} path={path} owner={owner}
+              enabled={state.data?.settings.enabled === true} timezone={state.data?.settings.timezone || 'UTC'} onSaved={saved} notify={notify} />
+          : <>
         <h3>{post.content?.title || 'Post in progress'}</h3>
         <div className="social-preview-media">{post.media?.map((media, index) => {
           const url = safeUrl(media.url); if (!url) return null;
@@ -134,12 +154,11 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
         })}</div>
         <p className="social-preview-copy">{post.content?.body}</p>
         {Boolean(post.content?.hashtags.length) && <p className="social-preview-tags">{post.content!.hashtags.join(' ')}</p>}
+          </>}
         <ErrorNotice error={post.error?.message} />
         {post.status === 'uncertain' && <p className="social-readiness">Publication could not be confirmed. Check the connected account before creating another post with this content.</p>}
         {post.channel === 'blog' && <div className="social-blog-note"><FileText size={19} /><div><strong>Blog draft only</strong><p>This automation creates the article in Agents. It does not publish to your website.</p><a href="#agents" className="button button-outline" onClick={() => setSelectedId(undefined)}>Open blog drafts</a></div></div>}
         {post.publishedUrl && safeUrl(post.publishedUrl) && <a href={safeUrl(post.publishedUrl)} className="button button-outline" target="_blank" rel="noreferrer noopener">View published post</a>}
-        {post.channel === 'tiktok' && post.status === 'review_required' && <TikTokApproval key={`${post.id}-${post.version}`} post={post} path={path} owner={owner}
-          enabled={state.data?.settings.enabled === true} onSaved={saved} notify={notify} />}
       </div>}
     </Drawer>}
   </section>;
@@ -185,7 +204,17 @@ function AutomationForm({ data, path, owner, onSaved, notify }: {
       <p className="social-help">When paused, no new posts are created or published. Existing posts, drafts and account data stay available.</p>
       <label className="social-check"><input type="checkbox" checked={form.createBlogDrafts} onChange={event => setForm({ ...form, createBlogDrafts: event.target.checked })} />
         <span><strong>Also create blog drafts</strong><small>Create an article answering the same prompt in Agents. Blog articles are never published automatically.</small></span></label>
-      <div className="social-schedule-heading"><div><h3>Weekly schedule</h3><p className="card-description">{form.slots.length} {form.slots.length === 1 ? 'time' : 'times'} per week, per connected account{form.createBlogDrafts ? ', plus a blog draft' : ''}.</p></div>
+      <div className="social-preparation-settings">
+        <div><h3>Content preparation</h3><p className="card-description">Choose how much content to create ahead of your publishing times.</p></div>
+        <div className="social-preparation-fields">
+          <label className="field"><span>Prepare content</span><select aria-label="Content preparation frequency" value={form.generationCadence} onChange={event => setForm({ ...form, generationCadence: event.target.value as SocialAutomationInput['generationCadence'] })}>
+            <option value="daily">Every day</option><option value="weekly">Once a week</option><option value="monthly">Once a month</option>
+          </select></label>
+          <label className="field"><span>Preparation time</span><input type="time" aria-label="Content preparation time" value={form.generationTime} required onChange={event => setForm({ ...form, generationTime: event.target.value })} /></label>
+        </div>
+        <p className="social-help">{form.generationCadence === 'monthly' ? 'On the first day of each month, prepare posts for the rest of that calendar month.' : form.generationCadence === 'weekly' ? 'Every Monday, prepare posts for the rest of the week, through Sunday.' : 'Every day, prepare posts for that day’s remaining publishing times.'} Preparation uses your selected timezone. Saving an enabled schedule also prepares the remaining period now.</p>
+      </div>
+      <div className="social-schedule-heading"><div><h3>Publishing times</h3><p className="card-description">{form.slots.length} {form.slots.length === 1 ? 'time' : 'times'} per week, per connected account{form.createBlogDrafts ? ', plus a blog draft' : ''}.</p></div>
         <label className="field social-timezone"><span>Timezone</span><input value={form.timezone} list={`${uniqueId}-zones`} onChange={event => setForm({ ...form, timezone: event.target.value })} required aria-label="Publishing timezone" />
           <datalist id={`${uniqueId}-zones`}>{['UTC', 'Asia/Nicosia', 'Europe/London', 'Europe/Berlin', 'America/New_York', 'America/Los_Angeles', 'Asia/Jerusalem', 'Australia/Sydney'].map(zone => <option key={zone} value={zone} />)}</datalist></label></div>
       <div className="social-slots">{form.slots.map((slot, index) => <div key={slot.id} className="social-slot">
@@ -194,7 +223,7 @@ function AutomationForm({ data, path, owner, onSaved, notify }: {
         <button type="button" className="icon-button" aria-label={`Remove publishing time ${index + 1}`} onClick={() => setForm({ ...form, slots: form.slots.filter(item => item.id !== slot.id) })}><Trash2 size={17} /></button>
       </div>)}</div>
       <button type="button" className="button button-outline" onClick={addSlot} disabled={form.slots.length >= MAX_SOCIAL_AUTOMATION_SLOTS || !owner || saving}><Plus size={15} />Add publishing time</button>
-      <p className="social-help">Times follow your selected timezone. A time skipped by daylight saving is skipped; a repeated time runs once.</p>
+      <p className="social-help">Posts are published at these times only after your approval. Unapproved posts remain drafts; choose a new future time if a publishing time passes. Times follow your selected timezone. A time skipped by daylight saving is skipped; a repeated time runs once.</p>
       {!data.generationAvailable && <p className="social-readiness">Content generation needs setup before automation can be enabled.</p>}
       {!data.publishingAvailable && <p className="social-readiness">Social publishing needs setup. Blog drafts can still run when blog generation is available.</p>}
       {!data.blogAvailable && form.createBlogDrafts && <p className="social-readiness">Blog draft generation needs setup before it can be included.</p>}
@@ -237,55 +266,5 @@ function DestinationForm({ connection, value, version, path, owner, onSaved, not
     </fieldset>
     {!(pinterest ? value?.boardId : value?.subreddit) && <p className="social-help">Choose a {pinterest ? 'board' : 'community'} before automated publishing can start for this account.</p>}
     <ErrorNotice error={error || boards.error} />
-  </form>;
-}
-
-interface TikTokOptions {
-  creator: { privacyLevels: string[]; canPostMore: boolean; interactions: { allowComment: boolean; allowDuet: boolean; allowStitch: boolean } };
-  music: { id: string; name: string; artist: string; previewUrl?: string }[];
-}
-function TikTokApproval({ post, path, owner, enabled, onSaved, notify }: {
-  post: SocialPublicationPreview; path: string; owner: boolean; enabled: boolean; onSaved: () => void; notify: (message: string) => void;
-}) {
-  const options = useApi<TikTokOptions>(`${path}/social/publications/${post.id}/tiktok-options`);
-  const [privacyLevel, setPrivacyLevel] = useState('');
-  const [musicSoundId, setMusicSoundId] = useState('');
-  const [previewConfirmed, setPreviewConfirmed] = useState(false);
-  const [expressConsentGiven, setExpressConsentGiven] = useState(false);
-  const [interactions, setInteractions] = useState({ allowComment: false, allowDuet: false, allowStitch: false });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<Error>();
-  const track = options.data?.music.find(item => item.id === musicSoundId);
-  const interactionsAllowed = options.data && (Object.keys(interactions) as (keyof typeof interactions)[]).every(name => !interactions[name] || options.data!.creator.interactions[name]);
-  const ready = owner && enabled && options.data?.creator.canPostMore && options.data.creator.privacyLevels.includes(privacyLevel) && interactionsAllowed && track && previewConfirmed && expressConsentGiven;
-  async function approve(event: FormEvent) {
-    event.preventDefault(); if (!ready || saving) return; setSaving(true); setError(undefined);
-    try {
-      await request(`${path}/social/publications/${post.id}/approve`, { method: 'POST', body: JSON.stringify({ version: post.version,
-        privacyLevel, musicSoundId, previewConfirmed, expressConsentGiven, ...interactions }) });
-      notify('TikTok post approved for publishing.'); onSaved();
-    } catch (failure) { setError(failure as Error); } finally { setSaving(false); }
-  }
-  return <form className="social-tiktok-review" onSubmit={approve} aria-label="Review TikTok publication">
-    <h3>Review and publish to {post.destination}</h3>
-    <ErrorNotice error={error || options.error} />
-    {options.loading && !options.data && <Skeleton variant="form" label="Loading TikTok publishing choices…" />}
-    {!owner && <p className="social-help">A project owner must approve this post.</p>}
-    {!enabled && <p className="social-help">Automation is paused. Publishing approval is unavailable.</p>}
-    {options.data && <fieldset disabled={!owner || !enabled || saving || !options.data.creator.canPostMore}>
-      {!options.data.creator.canPostMore && <p className="social-readiness">TikTok is not accepting more posts for this account right now.</p>}
-      <label className="field"><span>Who can see this post?</span><select value={privacyLevel} onChange={event => setPrivacyLevel(event.target.value)} required><option value="">Choose privacy</option>
-        {options.data.creator.privacyLevels.map(level => <option key={level} value={level}>{level.replace(/_/g, ' ').toLowerCase()}</option>)}</select></label>
-      <label className="field"><span>Music</span><select value={musicSoundId} onChange={event => setMusicSoundId(event.target.value)} required><option value="">Choose a licensed track</option>
-        {options.data.music.map(item => <option key={item.id} value={item.id}>{item.name}{item.artist ? ` — ${item.artist}` : ''}</option>)}</select></label>
-      {!options.data.music.length && <p className="social-readiness">No licensed tracks are available. This post will stay in review.</p>}
-      {track?.previewUrl && safeUrl(track.previewUrl) && <audio src={safeUrl(track.previewUrl)} controls preload="none" aria-label="Music preview" />}
-      <div className="social-tiktok-interactions">{(['allowComment', 'allowDuet', 'allowStitch'] as const).map(name => <label className="social-check" key={name}>
-        <input type="checkbox" checked={interactions[name]} disabled={!options.data!.creator.interactions[name]} onChange={event => setInteractions({ ...interactions, [name]: event.target.checked })} />
-        <span>{{ allowComment: 'Allow comments', allowDuet: 'Allow Duet', allowStitch: 'Allow Stitch' }[name]}</span></label>)}</div>
-      <label className="social-check"><input type="checkbox" checked={previewConfirmed} onChange={event => setPreviewConfirmed(event.target.checked)} /><span>I reviewed the video and caption above.</span></label>
-      <label className="social-check"><input type="checkbox" checked={expressConsentGiven} onChange={event => setExpressConsentGiven(event.target.checked)} /><span>I authorize Citevia to publish this post to {post.destination} on TikTok.</span></label>
-      <button type="submit" className="button button-primary" disabled={!ready || saving}>{saving ? 'Submitting…' : 'Approve and publish'}</button>
-    </fieldset>}
   </form>;
 }

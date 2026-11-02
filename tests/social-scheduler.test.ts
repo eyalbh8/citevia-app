@@ -10,7 +10,7 @@ function project(): Project { return { ...newProject(), socialAutomation: { enab
   effectiveFrom: '2026-11-02T00:00:00Z', scheduleStatus: 'pending' } }; }
 afterEach(() => vi.unstubAllEnvs());
 describe('social schedules', () => {
-  it('creates exact local weekly slots and removes obsolete bounded schedule names', async () => {
+  it('creates one calendar preparation rule and removes legacy publishing-slot rules', async () => {
     for (const key of ['SCHEDULE_GROUP', 'QUEUE_ARN', 'SCHEDULER_ROLE_ARN']) vi.stubEnv(key, key);
     const calls: (CreateScheduleCommand | UpdateScheduleCommand | DeleteScheduleCommand)[] = [];
     const client = { send: vi.fn(async (command: typeof calls[number]) => {
@@ -22,11 +22,11 @@ describe('social schedules', () => {
     const value = project();
     await syncSocialSchedule(value, { mode: 'aws', client });
     const updates = calls.filter(call => call instanceof UpdateScheduleCommand);
-    expect(updates[0].input).toMatchObject({ Name: socialScheduleName(value.id, 0), ScheduleExpression: 'cron(30 9 ? * MON *)',
+    expect(updates[0].input).toMatchObject({ Name: socialScheduleName(value.id, 0), ScheduleExpression: 'cron(0 8 * * ? *)',
       ScheduleExpressionTimezone: 'Asia/Nicosia', FlexibleTimeWindow: { Mode: 'OFF' }, State: 'ENABLED' });
-    expect(JSON.parse(updates[0].input.Target!.Input!)).toEqual({ kind: 'social-occurrence', projectId: value.id,
-      revision: 1, slotId: 'monday', scheduledAt: '<aws.scheduler.scheduled-time>' });
-    expect(calls.filter(call => call instanceof DeleteScheduleCommand)).toHaveLength(26);
+    expect(JSON.parse(updates[0].input.Target!.Input!)).toEqual({ kind: 'social-generation', projectId: value.id,
+      revision: 1, trigger: 'scheduled', scheduledAt: '<aws.scheduler.scheduled-time>' });
+    expect(calls.filter(call => call instanceof DeleteScheduleCommand)).toHaveLength(27);
   });
   it('disables all slots on pause without creating new schedules', async () => {
     vi.stubEnv('SCHEDULE_GROUP', 'group');

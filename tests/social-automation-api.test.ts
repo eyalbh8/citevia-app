@@ -71,7 +71,7 @@ describe('social automation API', () => {
     const saved = await response.json();
     expect(saved.settings).toMatchObject({ enabled: true, createBlogDrafts: true, revision: 1, effectiveFrom: now, scheduleStatus: 'synced' });
     expect(f.options.social.publisher).not.toHaveBeenCalled();
-    expect(f.queue.messages).toHaveLength(0);
+    expect(f.queue.messages).toEqual([{ kind: 'social-generation', projectId: f.project.id, revision: 1, scheduledAt: now, trigger: 'manual' }]);
     expect(f.publisher.publish).not.toHaveBeenCalled();
   });
   it('pauses without deleting drafts and keeps scans independent', async () => {
@@ -109,11 +109,14 @@ describe('social automation API', () => {
   });
   it('requires consent for the current TikTok preview and exposes no private checkpoint data', async () => {
     const f = await fixture();
+    f.publisher.accounts.mockResolvedValue([{ ...account, channel: 'tiktok' }]);
+    f.publisher.tiktokCreatorInfo.mockResolvedValue({ privacyLevels: ['PUBLIC_TO_EVERYONE'], canPostMore: true, interactions: { allowComment: true, allowDuet: false, allowStitch: false } });
+    f.publisher.tiktokMusic.mockResolvedValue([{ id: 'track-one', name: 'Track', artist: 'Artist' }]);
     const project = { ...f.project, version: 2, socialAutomation: { ...settings, revision: 1, effectiveFrom: '2026-11-01T00:00:00Z', scheduleStatus: 'synced' as const, slots: [{ id: 'monday', dayOfWeek: 1, time: '10:00' }] } };
     await f.repository.saveProject(project, 1);
     const reserved = await f.repository.reserveSocialOccurrence({ projectId: project.id, revision: 1, slotId: 'monday', scheduledAt: now, now, destinations: [{ ...account, channel: 'tiktok' }] });
     if (reserved.status !== 'created') throw new Error('missing occurrence');
-    const post: SocialPublication = { ...reserved.publications[0], version: 2, status: 'review_required', stage: 'publish', checkpoints: { internal: 'private' }, media: [{ type: 'video', url: 'https://media.zernio.com/test.mp4', mimeType: 'video/mp4' }] };
+    const post: SocialPublication = { ...reserved.publications[0], version: 2, status: 'review_required', stage: 'publish', scheduledAt: '2026-11-02T11:00:00Z', content: { title: 'Visibility', body: 'Measure visibility across channels.', hashtags: [] }, checkpoints: { internal: 'private' }, media: [{ type: 'video', url: 'https://media.zernio.com/test.mp4', mimeType: 'video/mp4' }] };
     await f.repository.saveSocialPublication(post, 1);
     const preview = await (await f.call(`/publications/${post.id}`)).json();
     expect(preview).not.toHaveProperty('checkpoints');
@@ -124,6 +127,7 @@ describe('social automation API', () => {
     expect((await f.call(`/publications/${post.id}/approve`, 'POST', approval)).status).toBe(202);
     expect((await f.call(`/publications/${post.id}/approve`, 'POST', approval)).status).toBe(409);
     expect(f.queue.messages).toEqual([{ kind: 'social-publication', projectId: project.id, publicationId: post.id }]);
+    expect((await f.repository.getSocialPublication(project.id, post.id))?.status).toBe('scheduled');
     expect(f.publisher.publish).not.toHaveBeenCalled();
   });
 });

@@ -20,7 +20,7 @@ import { providerAvailability } from '../apps/scanner/src/provider-http.js';
 import { OnboardingEngine } from '../apps/scanner/src/onboarding-engine.js';
 import { OpenAIOnboardingProvider } from '../apps/scanner/src/onboarding-provider.js';
 import { assertRealLocalData } from './local-data.js';
-import { socialOccurrenceLocalDate, type Project } from '@citevia/core';
+import { socialGenerationOccurrences, type Project } from '@citevia/core';
 
 if (
   process.env.AWS_LAMBDA_FUNCTION_NAME ||
@@ -129,9 +129,9 @@ const socialSchedule = setInterval(async () => {
   try {
     const now = new Date(), scheduledAt = new Date(Math.floor(now.getTime() / 60000) * 60000).toISOString();
     const projects = await db.query<{ data: Project }>(`SELECT data FROM citevia_projects WHERE data->'socialAutomation'->>'enabled'='true'`);
-    for (const { data: project } of projects.rows) for (const slot of project.socialAutomation!.slots) {
-      const message = { kind: 'social-occurrence' as const, projectId: project.id, revision: project.socialAutomation!.revision, slotId: slot.id, scheduledAt };
-      if (socialOccurrenceLocalDate(project, message, now)) await scanner.handle(message);
+    for (const { data: project } of projects.rows) {
+      const message = { kind: 'social-generation' as const, projectId: project.id, revision: project.socialAutomation!.revision, trigger: 'scheduled' as const, scheduledAt };
+      if (socialGenerationOccurrences(project, message, now)) await scanner.handle(message);
     }
   } catch { console.error('Local social schedule could not run; it will retry.'); }
   finally { schedulingSocial = false; }
