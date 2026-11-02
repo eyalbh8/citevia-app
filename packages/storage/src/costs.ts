@@ -27,7 +27,7 @@ export interface ProviderCallOutcome {
   errorCode?: string;
 }
 export interface CallLedger {
-  reserve(intent: ProviderCallIntent, monthlyBudgetUsd?: number): Promise<void>;
+  reserve(intent: ProviderCallIntent, monthlyBudgetUsd?: number, globalMonthlyBudgetUsd?: number): Promise<void>;
   settle(callId: string, outcome: ProviderCallOutcome): Promise<void>;
 }
 export class CostBudgetError extends Error {
@@ -39,13 +39,34 @@ export class CostBudgetError extends Error {
 export class PostgresCallLedger implements CallLedger {
   private readonly staged = new Set<string>();
   constructor(private readonly db: SqlDatabase, private readonly fallbackArtifacts?: ArtifactStore) {}
-  async reserve(intent: ProviderCallIntent, monthlyBudgetUsd = 0): Promise<void> {
+  async reserve(intent: ProviderCallIntent, monthlyBudgetUsd = 0, globalMonthlyBudgetUsd = 0): Promise<void> {
+    if (intent.reservedUsd !== null && (!Number.isFinite(intent.reservedUsd) || intent.reservedUsd < 0))
+      throw new CostBudgetError('cost_reservation_invalid', 'Provider cost reservation must be nonnegative.');
     try { await this.db.transaction(async tx => {
+      if (![monthlyBudgetUsd, globalMonthlyBudgetUsd].every(value => Number.isFinite(value) && value >= 0))
+        throw new CostBudgetError('cost_budget_invalid', 'Provider budgets must be nonnegative numbers.');
+      if (globalMonthlyBudgetUsd > 0) {
+        if (intent.reservedUsd === null) throw new CostBudgetError('cost_unpriced_request', 'A priced request is required when a global cost budget is enabled.');
+        // All workers take this lock before account locks, preventing cross-account overspend/deadlocks.
+        await tx.query('SELECT pg_advisory_xact_lock(719340205)');
+        const { rows } = await tx.query(
+          `SELECT coalesce(sum(coalesce((outcome.data->>'estimatedUsd')::numeric,
+                     (reservation.data->>'reservedUsd')::numeric)),0) AS spent
+           FROM citevia_cost_events reservation
+           LEFT JOIN citevia_cost_events outcome ON outcome.call_id=reservation.call_id AND outcome.phase='outcome'
+           WHERE reservation.phase='reservation'
+             AND reservation.created_at >= date_trunc('month',$1::timestamptz AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+             AND reservation.created_at < (date_trunc('month',$1::timestamptz AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC'
+             AND reservation.call_id<>$2`, [intent.createdAt, intent.id]);
+        if (Number(rows[0].spent) + intent.reservedUsd > globalMonthlyBudgetUsd)
+          throw new CostBudgetError('cost_global_budget_exceeded', 'The service has reached its configured monthly estimated provider budget.');
+      }
       if (monthlyBudgetUsd > 0) {
         if (!intent.projectId || intent.reservedUsd === null)
           throw new CostBudgetError('cost_unpriced_request', 'A priced account-scoped request is required when a cost budget is enabled.');
         // All concurrent admissions for this account serialize before summing reservations.
-        await tx.query('SELECT id FROM citevia_projects WHERE id=$1 FOR UPDATE', [intent.projectId]);
+        const account = await tx.query('SELECT id FROM citevia_projects WHERE id=$1 FOR UPDATE', [intent.projectId]);
+        if (!account.rows.length) throw new CostBudgetError('cost_account_missing', 'The provider budget account was not found.');
         const { rows } = await tx.query(
           `SELECT coalesce(sum(coalesce((outcome.data->>'estimatedUsd')::numeric,
                      (reservation.data->>'reservedUsd')::numeric)),0) AS spent
@@ -66,7 +87,7 @@ export class PostgresCallLedger implements CallLedger {
       // During the additive deploy, old workers may still run before013. Preserve
       // attempt metadata in the private evidence store rather than failing scans.
       // Configured budgets require the SQL admission lock and therefore fail closed.
-      if ((error as {code?:string}).code !== '42P01' || !this.fallbackArtifacts || monthlyBudgetUsd>0) throw error;
+      if ((error as {code?:string}).code !== '42P01' || !this.fallbackArtifacts || monthlyBudgetUsd>0 || globalMonthlyBudgetUsd>0) throw error;
       await this.fallbackArtifacts.put(`provider-costs/${intent.id}/reservation.json`,intent);
       this.staged.add(intent.id);
     }
@@ -87,8 +108,19 @@ export class PostgresCallLedger implements CallLedger {
 
 export class MemoryCallLedger implements CallLedger {
   readonly calls = new Map<string, { intent: ProviderCallIntent; outcome?: ProviderCallOutcome }>();
-  async reserve(intent: ProviderCallIntent, monthlyBudgetUsd = 0): Promise<void> {
+  async reserve(intent: ProviderCallIntent, monthlyBudgetUsd = 0, globalMonthlyBudgetUsd = 0): Promise<void> {
+    if (intent.reservedUsd !== null && (!Number.isFinite(intent.reservedUsd) || intent.reservedUsd < 0))
+      throw new CostBudgetError('cost_reservation_invalid', 'Provider cost reservation must be nonnegative.');
     if (this.calls.has(intent.id)) return;
+    if (![monthlyBudgetUsd, globalMonthlyBudgetUsd].every(value => Number.isFinite(value) && value >= 0))
+      throw new CostBudgetError('cost_budget_invalid', 'Provider budgets must be nonnegative numbers.');
+    if (globalMonthlyBudgetUsd > 0) {
+      if (intent.reservedUsd === null) throw new CostBudgetError('cost_unpriced_request', 'A priced request is required when a global cost budget is enabled.');
+      const spent = [...this.calls.values()].filter(c => c.intent.createdAt.startsWith(intent.createdAt.slice(0, 7)))
+        .reduce((sum, c) => sum + (c.outcome?.estimatedUsd ?? c.intent.reservedUsd ?? 0), 0);
+      if (spent + intent.reservedUsd > globalMonthlyBudgetUsd)
+        throw new CostBudgetError('cost_global_budget_exceeded', 'The service has reached its configured monthly estimated provider budget.');
+    }
     if (monthlyBudgetUsd > 0) {
       if (!intent.projectId || intent.reservedUsd === null) throw new CostBudgetError('cost_unpriced_request', 'A priced account-scoped request is required when a cost budget is enabled.');
       const month = intent.createdAt.slice(0, 7);
@@ -120,12 +152,54 @@ export async function summarizeProviderCosts(db: SqlDatabase, options: { start: 
     coalesce(sum((outcome.data->'usage'->>'inputTokens')::bigint),0)::text AS input_tokens,
     coalesce(sum((outcome.data->'usage'->>'outputTokens')::bigint),0)::text AS output_tokens,
     coalesce(sum((outcome.data->'usage'->>'cachedInputTokens')::bigint),0)::text AS cached_input_tokens,
-    coalesce(sum((outcome.data->'usage'->>'reasoningTokens')::bigint),0)::text AS reasoning_tokens
+    coalesce(sum((outcome.data->'usage'->>'reasoningTokens')::bigint),0)::text AS reasoning_tokens,
+    coalesce(sum((outcome.data->'usage'->>'imageInputTokens')::bigint),0)::text AS image_input_tokens
     FROM citevia_cost_events reservation LEFT JOIN citevia_cost_events outcome
       ON outcome.call_id=reservation.call_id AND outcome.phase='outcome'
     WHERE reservation.phase='reservation' AND reservation.created_at >= $1::timestamptz
       AND reservation.created_at < $2::timestamptz AND ($3::text IS NULL OR reservation.project_id=$3)
     GROUP BY 1,2,3,4,5 ORDER BY 1,2,3,4,5`, [options.start,options.end,options.projectId || null]);
-  return {start:options.start,endExclusive:options.end,rows,
+  return {start:options.start,endExclusive:options.end,projectId:options.projectId,rows,
     note:'Estimated completed charges and outstanding reservations are not billed totals. Unpriced or uncertain calls require invoice reconciliation. Google search estimates exclude free credits.'};
+}
+
+
+/** Policy reconciliation only: shared infrastructure allocations must be supplied explicitly. */
+export function accountCostPolicyReport(report: Awaited<ReturnType<typeof summarizeProviderCosts>>, policy: {
+  accountMonthlyBudgetUsd: number; infrastructureReserveUsd: number; aiMonthlyBudgetUsd: number;
+  allocatedNonAiUsd?: Record<string, number>;
+}) {
+  const { accountMonthlyBudgetUsd: total, infrastructureReserveUsd: reserve, aiMonthlyBudgetUsd: ai } = policy;
+  if (![total, reserve, ai].every(n => Number.isFinite(n) && n >= 0) || total <= reserve)
+    throw new Error('Account budget must exceed a nonnegative infrastructure reserve; AI budget must be nonnegative.');
+  for (const value of Object.values(policy.allocatedNonAiUsd ?? {}))
+    if (!Number.isFinite(value) || value < 0) throw new Error('Non-AI allocations must be nonnegative amounts in USD.');
+  const start = new Date(report.start), end = new Date(report.endExclusive);
+  const calendarMonth = start.toISOString() === new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1)).toISOString() &&
+    end.toISOString() === new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1)).toISOString();
+  const effectiveAi = ai > 0 ? Math.min(ai, total - reserve) : total - reserve;
+  const accounts = new Map<string | null, { projectId: string | null; aiCompletedEstimatedUsd: number; aiOutstandingReservedUsd: number; aiUnpricedCalls: number; aiUnresolvedCalls: number }>();
+  for (const row of report.rows) {
+    const projectId = typeof row.project_id === 'string' ? row.project_id : null;
+    const account = accounts.get(projectId) ?? { projectId, aiCompletedEstimatedUsd: 0, aiOutstandingReservedUsd: 0, aiUnpricedCalls: 0, aiUnresolvedCalls: 0 };
+    account.aiCompletedEstimatedUsd += Number(row.estimated_completed_usd);
+    account.aiOutstandingReservedUsd += Number(row.outstanding_reserved_usd);
+    account.aiUnpricedCalls += Number(row.unpriced); account.aiUnresolvedCalls += Number(row.unresolved);
+    accounts.set(projectId, account);
+  }
+  for (const projectId of new Set([...Object.keys(policy.allocatedNonAiUsd ?? {}), ...(report.projectId ? [report.projectId] : [])]))
+    if (!accounts.has(projectId)) accounts.set(projectId, { projectId, aiCompletedEstimatedUsd: 0, aiOutstandingReservedUsd: 0, aiUnpricedCalls: 0, aiUnresolvedCalls: 0 });
+  return { calendarMonth, accountMonthlyBudgetUsd: total, infrastructureReserveUsd: reserve, effectiveAiMonthlyBudgetUsd: effectiveAi,
+    accounts: [...accounts.values()].map(account => {
+      const committed = account.aiCompletedEstimatedUsd + account.aiOutstandingReservedUsd;
+      const allocation = account.projectId === null ? undefined : policy.allocatedNonAiUsd?.[account.projectId];
+      const known = allocation !== undefined && account.aiUnpricedCalls === 0;
+      return { ...account, aiAdmissionCommittedUsd: committed,
+        remainingMonthlyAiAdmissionUsd: calendarMonth && account.projectId !== null ? Math.max(0, effectiveAi - committed) : null,
+        allocatedNonAiUsd: allocation ?? null,
+        estimatedTotalIncludingPendingUsd: known ? committed + allocation : null,
+        estimatedPolicyOverageUsd: known ? Math.max(0, committed + allocation - total) : null,
+        allInInvoiceComplianceVerified: false };
+    }),
+    note: 'AI charges are estimates or provider-reported costs; pending holds are not invoices. The infrastructure reserve is an allocation policy, not measured expenditure. All-in totals require explicit non-AI allocations and remain estimates; reconcile provider, database, storage and API invoices. Remaining monthly admission is shown only for a full UTC calendar month.' };
 }

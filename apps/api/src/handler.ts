@@ -9,6 +9,7 @@ import { createApi, type ApiOptions } from './app.js';
 import { createMcp, type McpConfig } from './mcp.js';
 import { syncProjectSchedule } from './scheduler.js';
 import { providerAvailability } from '../../scanner/src/provider-http.js';
+import { auditRoute, secureResponse } from './api-security.js';
 import {
   authenticationFailure,
   createDescopeIdentityProvider,
@@ -59,7 +60,7 @@ export function createAuthenticatedApi(
     mcpConfig[name] = url.origin;
   }
   const mcp = createMcp(runtime, identity, mcpConfig, app);
-  return async (request: Request, sourceIp?: string): Promise<Response> => {
+  const dispatch = async (request: Request, sourceIp?: string): Promise<Response> => {
     if (process.env.CITEVIA_MAINTENANCE_MODE === 'true')
       return maintenanceResponse(request.headers.get('origin'), mcpConfig.frontendUrl);
     const traffic = await publicTrafficRoute(runtime, request, (options.now || (() => new Date()))(), () => trafficCountry(sourceIp));
@@ -86,15 +87,24 @@ export function createAuthenticatedApi(
       return authenticationFailure(error);
     }
   };
+  return async (request: Request, sourceIp?: string): Promise<Response> => {
+    try { return secureResponse(await dispatch(request, sourceIp), request); }
+    catch (error) {
+      console.error(JSON.stringify({ event: 'api_error', type: error instanceof Error ? error.name : 'unknown' }));
+      return secureResponse(new Response(JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Request failed. Please try again.' } }),
+        { status: 500, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }), request);
+    }
+  };
 }
 let app: ReturnType<typeof createAuthenticatedApi> | undefined;
 export async function handler(
   event: APIGatewayProxyEventV2,
 ): Promise<APIGatewayProxyStructuredResultV2> {
+  const started = Date.now();
   // Stop before constructing runtime/auth clients, including health and public tracker writes.
   if (process.env.CITEVIA_MAINTENANCE_MODE === 'true') {
     const origin = Object.entries(event.headers || {}).find(([name]) => name.toLowerCase() === 'origin')?.[1] || null;
-    const response = maintenanceResponse(origin);
+    const response = secureResponse(maintenanceResponse(origin), new Request('https://citevia.internal'));
     return { statusCode: response.status, headers: Object.fromEntries(response.headers), body: await response.text() };
   }
   app ||= createAuthenticatedApi(
@@ -118,6 +128,12 @@ export async function handler(
     if (value) headers.set(key, value);
   });
   const method = event.requestContext.http.method;
+  // API Gateway already buffered the event; reject before creating another full decoded copy.
+  if (event.body && Buffer.byteLength(event.body, 'utf8') > (event.isBase64Encoded ? 800000 : 600000)) {
+    const rejected = secureResponse(new Response(JSON.stringify({ error: { code: 'BODY_TOO_LARGE', message: 'Request is too large.' } }),
+      { status: 413, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }), new Request('https://citevia.internal'));
+    return { statusCode: rejected.status, headers: Object.fromEntries(rejected.headers), body: await rejected.text() };
+  }
   const request = new Request(
     `https://citevia.internal${event.rawPath}${event.rawQueryString ? `?${event.rawQueryString}` : ''}`,
     {
@@ -133,6 +149,8 @@ export async function handler(
     },
   );
   const result = await app(request, event.requestContext.http.sourceIp);
+  console.info(JSON.stringify({ event: 'HTTP_REQUEST', requestId: event.requestContext.requestId,
+    method, route: auditRoute(event.rawPath), status: result.status, durationMs: Date.now() - started }));
   return {
     statusCode: result.status,
     headers: Object.fromEntries(result.headers),

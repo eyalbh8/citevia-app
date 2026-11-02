@@ -204,9 +204,9 @@ Refresh the workspace. As a system administrator, use **Accounts → New account
 
 Adapt `infra/github-oidc-trust.example.json` for your account, repository, and exact GitHub environment. Bind the role trust to that exact repository/environment and `sts.amazonaws.com` audience. Do not store long-lived AWS keys in GitHub.
 
-The deploy role needs CloudFormation change-set operations limited to the intended stack, upload access to the artifact bucket/prefix, `lambda:InvokeFunction` for the exact scanner function (database migrations), and `iam:PassRole` for the exact CloudFormation execution role. The execution role is trusted by `cloudformation.amazonaws.com` and needs permission to manage the template resources, including EC2 networking, RDS clusters/instances/parameter groups, the RDS-managed secret, Lambda execution roles and their inline policies. Restrict that role to the application's resources using your organization's provisioning policy. These account-level roles are deliberately supplied by the operator rather than created by an application that would then grant itself deployment authority.
+The deploy role needs CloudFormation change-set operations limited to the intended stack, upload access to the artifact bucket/prefix, `lambda:InvokeFunction` for the exact dedicated migration function ARN identified by the `MigrationFunctionName` stack output, and `iam:PassRole` for the exact CloudFormation execution role. Permission to invoke the scanner does not authorize database migrations. When configuring a future GitHub deployment role, grant this migration-function permission before running the workflow. The execution role is trusted by `cloudformation.amazonaws.com` and needs permission to manage the template resources, including EC2 networking, RDS clusters/instances/parameter groups, the RDS-managed secret, Lambda execution roles and their inline policies. Restrict that role to the application's resources using your organization's provisioning policy. These account-level roles are deliberately supplied by the operator rather than created by an application that would then grant itself deployment authority.
 
-After the protected environment is approved, the workflow deploys the backend and invokes the scanner migration operation, checking its result. It does not publish the client; Amplify builds that through its connected repository branch. Keep the protected environment review because the stack includes persistent database and network resources.
+After the protected environment is approved, the workflow deploys the backend and synchronously invokes the dedicated migration function, checking its result. The API and scanner cannot read the migration-only database credential. It does not publish the client; Amplify builds that through its connected repository branch. Keep the protected environment review because the stack includes persistent database and network resources.
 
 ## Reliability, recovery and retention
 
@@ -383,3 +383,17 @@ and resource import or another explicit database migration.
 AWS references: [conditional property removal with AWS::NoValue](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/conditions-section-structure.html),
 [CloudFormation parameter rules](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/rules-section-structure.html),
 [Retain during stack updates](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-attribute-deletionpolicy.html).
+
+### Account audit and threat detection stack
+
+Deploy `infra/security-account.yaml` separately from the application and name it
+`<application-stack-name>-security` (for production, `citevia-production-security`).
+Pass the application's `AlertsTopicArn` output. This name is required because the
+topic and encryption-key policies accept CloudWatch alarm names beginning with
+the application stack name and a hyphen; a differently named security stack
+would retain findings but could not deliver its alarms to that topic. Confirm the
+email subscriptions and verify alarm delivery after deployment.
+
+The audit trail, encrypted audit storage, and delivery permissions are retained
+if the security stack is removed. Removing the stack is therefore not a procedure
+for disabling account auditing or deleting retained audit records.

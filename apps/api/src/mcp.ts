@@ -5,6 +5,7 @@ import { AccessError, type McpConnection, type Repository, type Runtime } from '
 import type { IdentityProvider } from './descope.js';
 import { createMcpOAuth } from './mcp-oauth.js';
 import { mcpTools, callMcpTool, mcpRoutes } from './mcp-tools.js';
+import { readRequestJson } from './request-body.js';
 
 export interface McpConfig {
   /** Public API origin. Never derive OAuth URLs from Host/Forwarded headers. */
@@ -33,26 +34,7 @@ export function mcpMetadata(connection: McpConnection) {
   return metadata;
 }
 export async function mcpBody(request: Request): Promise<unknown> {
-  const reader = request.body?.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  if (reader) {
-    try {
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        length += chunk.value.byteLength;
-        if (length > 150000) {
-          await reader.cancel();
-          throw new AccessError(413, 'BODY_TOO_LARGE', 'Request is too large.');
-        }
-        chunks.push(chunk.value);
-      }
-    } finally { reader.releaseLock(); }
-  }
-  const text = Buffer.concat(chunks).toString('utf8');
-  try { return JSON.parse(text); }
-  catch { throw new AccessError(400, 'INVALID_JSON', 'Expected a JSON request body.'); }
+  return readRequestJson(request, 150000, 150000);
 }
 export async function currentMcpPrincipal(repository: Repository, connection: McpConnection, now: Date): Promise<McpPrincipal> {
   if (connection.revokedAt || (connection.expiresAt && Date.parse(connection.expiresAt) <= now.getTime()))
@@ -76,7 +58,7 @@ const createSchema = z.object({
 }).strict();
 const supportedVersions = ['2025-06-18', '2025-11-25'];
 const initializeSchema = z.object({
-  protocolVersion: z.string().min(1), capabilities: z.record(z.unknown()),
+  protocolVersion: z.string().min(1), capabilities: z.record(z.string(), z.unknown()),
   clientInfo: z.object({ name: z.string().min(1), version: z.string().min(1) }).passthrough(),
 }).passthrough();
 
@@ -221,7 +203,7 @@ export function createMcp(
         if (error instanceof AccessError && error.code === 'INVALID_JSON') { outcome = 400; return mcpJson({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }, 400); }
         throw error;
       }
-      const parsed = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), z.number().finite()]).optional(), method: z.string().min(1), params: z.record(z.unknown()).optional() }).safeParse(value);
+      const parsed = z.object({ jsonrpc: z.literal('2.0'), id: z.union([z.string(), z.number().finite()]).optional(), method: z.string().min(1), params: z.record(z.string(), z.unknown()).optional() }).safeParse(value);
       if (!parsed.success) { outcome = 400; return mcpJson({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid Request' } }, 400); }
       const rpc = parsed.data;
       method = rpc.method;

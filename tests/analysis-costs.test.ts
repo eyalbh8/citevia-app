@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MemoryArtifacts, MemoryCallLedger, PostgresCallLedger, summarizeProviderCosts, type ProviderCallIntent } from '@citevia/storage';
+import { accountCostPolicyReport, MemoryArtifacts, MemoryCallLedger, PostgresCallLedger, summarizeProviderCosts, type ProviderCallIntent } from '@citevia/storage';
 import { localPostgres } from '../packages/storage/src/local-postgres.js';
 import { captured, snapshot, project, target } from '../apps/scanner/test/fixtures.js';
-import { analysisCacheKey, cachedAnalysis, optimizeScanProvider } from '../apps/scanner/src/analysis-costs.js';
+import { analysisCacheKey, cachedAnalysis, observeScanProviderCollections, optimizeScanProvider } from '../apps/scanner/src/analysis-costs.js';
 import { analysisRequest } from '../apps/scanner/src/analysis-request.js';
 import { OpenAIAnswerProvider } from '../apps/scanner/src/openai.js';
-import { estimateProviderCost, observeResponseProvider } from '../apps/scanner/src/cost-observer.js';
+import { budgetFromEnv, providerReportedCost, estimateProviderCost, observeResponseProvider } from '../apps/scanner/src/cost-observer.js';
 import { PostgresRepository } from '@citevia/storage';
 import { extractionBody, ProviderError } from '../apps/scanner/src/provider.js';
 
@@ -214,4 +214,100 @@ describe('provider cost observations and budgets',()=>{
       expect(await artifacts.get('provider-costs/budget-needs-sql/reservation.json')).toBeNull();
     } finally {await db.close();}
   },30000);
+});
+
+
+describe('service and account budget policy', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it('reserves infrastructure headroom and never raises a stricter AI budget', () => {
+    vi.stubEnv('ACCOUNT_MONTHLY_BUDGET_USD', '100');
+    vi.stubEnv('ACCOUNT_MONTHLY_INFRA_RESERVE_USD', '30');
+    vi.stubEnv('LLM_MONTHLY_BUDGET_USD', '90');
+    expect(budgetFromEnv()).toBe(70);
+    vi.stubEnv('LLM_MONTHLY_BUDGET_USD', '20'); expect(budgetFromEnv()).toBe(20);
+    vi.stubEnv('LLM_MONTHLY_BUDGET_USD', '0'); expect(budgetFromEnv()).toBe(70);
+    vi.stubEnv('ACCOUNT_MONTHLY_INFRA_RESERVE_USD', '100'); expect(() => budgetFromEnv()).toThrow();
+  });
+  it('uses official Astra long context rates and rejects unsupported currency/native costs', () => {
+    expect(estimateProviderCost('openai', 'gpt-6-astra', { inputTokens: 1000000, outputTokens: 1000000, totalTokens: 2000000 })).toBe(95);
+    expect(providerReportedCost({ usage: { cost: { currency: 'USD', total_cost: '.5' } } })).toBeUndefined();
+    expect(providerReportedCost({ usage: { cost: { currency: 'USD', total_cost: '0.0123' } } })).toBe(.0123);
+    expect(providerReportedCost({ usage: { cost: { currency: 'EUR', total_cost: .5 } } })).toBeUndefined();
+    expect(providerReportedCost({ usage: { cost: { currency: 'USD', total_cost: -1 } } })).toBeUndefined();
+  });
+  it('holds a known Perplexity preset reservation then uses native billed USD including tools', async () => {
+    vi.stubEnv('LLM_MONTHLY_BUDGET_USD', '70');
+    const ledger = new MemoryCallLedger();
+    const collect = vi.fn(async () => ({ ...captured(), model: 'openai/gpt-6-luna', raw: { response: {
+      model: 'openai/gpt-6-luna', usage: { input_tokens: 100, output_tokens: 10, cost: { currency: 'USD', total_cost: '0.002' } },
+    } } }));
+    const provider = observeScanProviderCollections({ collect, extract: vi.fn() }, { ledger });
+    await provider.collect('Saved prompt', { ...saved, provider: 'perplexity', generationModel: 'fast@2026-10-16.0' });
+    const call = [...ledger.calls.values()][0];
+    expect(call.intent.reservedUsd).toBe(1);
+    expect(call.outcome).toMatchObject({ status: 'succeeded', estimatedUsd: .002 });
+  });
+  it('enforces the global cap across accounts and retains uncertain holds', async () => {
+    const ledger = new MemoryCallLedger();
+    const intent: ProviderCallIntent = { id: 'global-1', projectId: 'account-one', stage: 'social', provider: 'openai', model: 'gpt-6-astra', mode: 'realtime', createdAt: at, reservedUsd: .6, priceVersion: '2026-11-02' };
+    await ledger.reserve(intent, 70, 1);
+    await ledger.settle(intent.id, { status: 'uncertain', estimatedUsd: null, completedAt: at });
+    await expect(ledger.reserve({ ...intent, id: 'global-2', projectId: 'account-two' }, 70, 1)).rejects.toMatchObject({ code: 'cost_global_budget_exceeded' });
+    await expect(ledger.reserve({ ...intent, id: 'unpriced', reservedUsd: null }, 0, 1)).rejects.toMatchObject({ code: 'cost_unpriced_request' });
+  });
+  it('serializes and checks the global cap in PostgreSQL as well as account caps', async () => {
+    const db = await localPostgres();
+    try {
+      await new PostgresRepository(db).saveProject(project, null);
+      const ledger = new PostgresCallLedger(db);
+      const intent: ProviderCallIntent = { id: 'global-sql', projectId: project.id, stage: 'social', provider: 'openai', model: 'gpt-6-astra', mode: 'realtime', createdAt: at, reservedUsd: .6, priceVersion: '2026-11-02' };
+      await ledger.reserve(intent, 70, 1);
+      await expect(ledger.reserve({ ...intent, id: 'global-sql-2' }, 70, 1)).rejects.toMatchObject({ code: 'cost_global_budget_exceeded' });
+      await ledger.settle(intent.id, { status: 'succeeded', estimatedUsd: .1, completedAt: at });
+      await ledger.reserve({ ...intent, id: 'global-sql-2' }, 70, 1);
+    } finally { await db.close(); }
+  }, 30000);
+});
+
+
+describe('all-in account cost reconciliation', () => {
+  const report = { start: '2026-11-01T00:00:00.000Z', endExclusive: '2026-12-01T00:00:00.000Z', projectId: 'account', note: '', rows: [
+    { project_id: 'account', estimated_completed_usd: '60', outstanding_reserved_usd: '4', unpriced: 0, unresolved: 1 },
+  ] };
+  const policy = { accountMonthlyBudgetUsd: 100, infrastructureReserveUsd: 30, aiMonthlyBudgetUsd: 70 };
+  it('shows tracked AI and reserved headroom without claiming a measured all-in cost', () => {
+    expect(accountCostPolicyReport(report, policy).accounts[0]).toMatchObject({
+      aiAdmissionCommittedUsd: 64, remainingMonthlyAiAdmissionUsd: 6, allocatedNonAiUsd: null,
+      estimatedTotalIncludingPendingUsd: null, allInInvoiceComplianceVerified: false,
+    });
+    expect(accountCostPolicyReport({ ...report, rows: [] }, policy).accounts[0].remainingMonthlyAiAdmissionUsd).toBe(70);
+  });
+  it('uses an explicit non-AI allocation for estimated totals and flags overages', () => {
+    expect(accountCostPolicyReport(report, { ...policy, allocatedNonAiUsd: { account: 40 } }).accounts[0]).toMatchObject({
+      allocatedNonAiUsd: 40, estimatedTotalIncludingPendingUsd: 104, estimatedPolicyOverageUsd: 4, allInInvoiceComplianceVerified: false,
+    });
+    expect(accountCostPolicyReport({ ...report, rows: [{ ...report.rows[0], unpriced: 1 }] }, { ...policy, allocatedNonAiUsd: { account: 40 } }).accounts[0].estimatedTotalIncludingPendingUsd).toBeNull();
+  });
+  it('rejects invalid reserves and allocations and does not extrapolate partial periods to monthly admission', () => {
+    expect(() => accountCostPolicyReport(report, { ...policy, infrastructureReserveUsd: 100 })).toThrow();
+    expect(() => accountCostPolicyReport(report, { ...policy, allocatedNonAiUsd: { account: -1 } })).toThrow();
+    expect(accountCostPolicyReport({ ...report, start: '2026-11-03T00:00:00.000Z' }, policy).accounts[0].remainingMonthlyAiAdmissionUsd).toBeNull();
+  });
+});
+
+
+describe('budget denial observability', () => {
+  it('emits safe structured metadata and does not send a blocked request', async () => {
+    vi.stubEnv('LLM_MONTHLY_BUDGET_USD', '0.00001');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const extract = vi.fn(), provider = observeResponseProvider({ extract, answer: vi.fn() }, new MemoryCallLedger());
+      await expect(provider.extract(analysisRequest(captured('Private business input'), saved))).rejects.toMatchObject({ code: 'cost_budget_exceeded' });
+      expect(extract).not.toHaveBeenCalled();
+      const event = JSON.parse(warning.mock.calls[0][0] as string);
+      expect(event).toMatchObject({ event: 'provider_budget_denied', code: 'cost_budget_exceeded', projectId: saved.projectId, provider: 'openai' });
+      expect(Object.keys(event).sort()).toEqual(['code', 'event', 'model', 'projectId', 'provider', 'stage']);
+      expect(JSON.stringify(event)).not.toContain('Private business input');
+    } finally { warning.mockRestore(); vi.unstubAllEnvs(); }
+  });
 });

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { analysisProvider, type Analysis, type CapturedAnswer, type RunSnapshot } from '@citevia/core';
 import type { AnswerProvider, ArtifactStore, CallLedger } from '@citevia/storage';
 import { analysisRequest, parseAnalysisReceipt } from './analysis-request.js';
-import { hasCompleteTokenUsage, observeCall } from './cost-observer.js';
+import { hasCompleteTokenUsage, observeCall, providerReportedCost, reservationFromEnv } from './cost-observer.js';
 import { extractionBody, object, type ProviderReceipt } from './provider.js';
 import { geminiAnalysisBody } from './gemini-analysis.js';
 
@@ -70,10 +70,13 @@ export function observeScanProviderCollections(provider: AnswerProvider, options
       ? provider.collect(prompt, snapshot)
       : observeCall({ ledger: options.ledger, provider: snapshot.provider, model: snapshot.generationModel, stage: 'collection',
         context: { projectId: snapshot.projectId, ...snapshot.execution }, inputBytes: Buffer.byteLength(prompt) + 1000,
-        maxOutputTokens: 8000, search: true, now: options.now },
+        maxOutputTokens: 8000, search: true, now: options.now,
+        ...(snapshot.provider === 'perplexity' && snapshot.generationModel === 'fast@2026-10-16.0' ?
+          { reservationUsd: reservationFromEnv('LLM_PERPLEXITY_FAST_RESERVATION_USD', 1) } : {}) },
       () => provider.collect(prompt, snapshot), answer => ({ usage: answer.usage,
         usageComplete: hasCompleteTokenUsage(object(object(answer.raw)?.response) ?? {}, snapshot.provider),
-        model: answer.model, requestId: answer.requestId })),
+        model: answer.model, requestId: answer.requestId,
+        ...(snapshot.provider === 'perplexity' ? { reportedUsd: providerReportedCost(object(object(answer.raw)?.response) ?? {}) } : {}) })),
     extract: (answer, snapshot) => provider.extract(answer, snapshot),
   };
 }

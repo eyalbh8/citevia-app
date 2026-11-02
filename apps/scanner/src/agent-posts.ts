@@ -391,6 +391,16 @@ export class AgentPostEngine {
         current.version,
       );
     } catch (error) {
+      if (error instanceof ProviderError && error.kind === 'deferred' && error.safeToRetry) {
+        const delay = Math.max(30, Math.min(86400, Math.ceil((error.retryAfterMs ?? 60000) / 1000)));
+        const waiting: AgentPostJob = { ...current, status: 'queued', paidCall: undefined,
+          attempts: Math.max(0, current.attempts - 1), leaseOwner: undefined,
+          leaseExpiresAt: new Date(this.now().getTime() + delay * 1000).toISOString(),
+          version: current.version + 1, updatedAt: this.now().toISOString() };
+        if (await repository.saveAgentPost(waiting, current.version))
+          await this.runtime.queue.send([{ kind: 'agent-post', projectId, postId }], Math.min(900, delay));
+        return;
+      }
       if (error instanceof ProviderError) {
         if (
           ['agent_brand_mention', 'agent_conversational_opening'].includes(

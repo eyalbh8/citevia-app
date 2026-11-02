@@ -38,7 +38,7 @@ const definitions: Tool[] = [
   { name: 'onboard_accounts', description: 'Create new accounts and start research, prompts and scans (billable provider calls). System connection only; use when explicitly requested. body: accounts array of name, region (two-letter uppercase country), language and website (public URL). Reuse idempotencyKey on retry.', method: 'POST', path: '/v1/onboarding/accounts', body: true, idempotent: true, system: true },
 ];
 export const mcpRoutes = ['/v1/projects', ...definitions.filter(d => d.method === 'GET').map(d => `/v1/projects/{accountId}/${d.path}`)];
-const querySchema = z.record(z.union([z.string().max(2000), z.number().finite(), z.boolean()])).refine(value => Object.keys(value).length <= 30);
+const querySchema = z.record(z.string(), z.union([z.string().max(2000), z.number().finite(), z.boolean()])).refine(value => Object.keys(value).length <= 30);
 const queryJson = { type: 'object', description: 'Optional REST query parameters. Most lists use limit and cursor/nextCursor. Monitoring lists (mentions, tracked_urls) use page (zero-based), pageSize (25/50/100), and total.', additionalProperties: { type: ['string', 'number', 'boolean'] } };
 const idJson = { type: 'string', pattern: '^[A-Za-z0-9_-]{1,100}$', minLength: 1, maxLength: 100 };
 const responseId = z.string().regex(/^[A-Za-z0-9_-]{1,100}~[A-Za-z0-9_-]{1,100}$/);
@@ -145,11 +145,11 @@ export async function callMcpTool(
       throw new AccessError(403, 'TOOL_DENIED', 'This tool is unavailable.');
     if (definition.method !== 'GET' && principal.role !== 'owner')
       throw new AccessError(403, 'FORBIDDEN', 'Account owner access is required.');
-    const shape: z.ZodRawShape = {};
+    const shape: Record<string, z.ZodType> = {};
     if (!definition.system) shape.accountId = principal.connection.projectId === null ? identifier : identifier.optional();
     if (definition.id) shape[definition.id] = definition.id === 'responseId' ? responseId : identifier;
     if (definition.method === 'GET') shape.query = querySchema.optional();
-    if (definition.body) shape.body = z.record(z.unknown());
+    if (definition.body) shape.body = z.record(z.string(), z.unknown());
     if (definition.idempotent) shape.idempotencyKey = z.string().regex(/^[A-Za-z0-9_-]{8,100}$/);
     const args = z.object(shape).strict().parse(raw);
     path = definition.system ? definition.path : `/v1/projects/${scoped(String(args.accountId ?? principal.connection.projectId))}/${definition.path}`;

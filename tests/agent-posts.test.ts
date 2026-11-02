@@ -438,6 +438,21 @@ describe.each(['memory', 'postgres'] as const)(
       expect((await f.call('/' + post.id,'PATCH',{title:'Title',body:'界'.repeat(141),hashtags:[],version:current.version})).status).toBe(400);
     });
 
+    it('defers shared capacity without consuming a paid attempt or losing the generation checkpoint', async () => {
+      const f = await setup(), post = await f.create();
+      f.extract.mockRejectedValueOnce(new ProviderError('provider_admission_deferred', 'Waiting for capacity.', true, null,
+        { kind: 'deferred', safeToRetry: true, retryAfterMs: 60000 }));
+      await f.worker.handle(f.project.id, post.id);
+      const waiting = await repository.getAgentPost(f.project.id, post.id);
+      expect(waiting).toMatchObject({ status: 'queued', attempts: 0 });
+      expect(waiting?.paidCall).toBeUndefined();
+      await f.worker.handle(f.project.id, post.id); expect(f.extract).toHaveBeenCalledTimes(1);
+      f.advance();
+      await f.worker.handle(f.project.id, post.id);
+      expect((await repository.getAgentPost(f.project.id, post.id))?.status).toBe('draft');
+      expect(f.extract).toHaveBeenCalledTimes(2);
+    });
+
     it('persists provider failures and only retries on an explicit new request', async () => {
       const f = await setup();
       const post = await f.create();

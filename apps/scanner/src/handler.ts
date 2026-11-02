@@ -2,7 +2,6 @@ import type { SQSEvent, SQSBatchResponse } from 'aws-lambda';
 import { z } from 'zod';
 import {
   createAwsRuntime,
-  migrateDatabase,
   productionDatabase,
   SqlAnalysisBatchStore,
   PostgresCallLedger,
@@ -261,10 +260,9 @@ export const handler = async (
       input.requestId,
     );
   }
-  // SQS payload validation rejects maintenance events. Only direct IAM-authorized invocation can migrate.
+  // Migrations have a dedicated IAM boundary; scanner credentials cannot change the schema.
   if ('kind' in event && event.kind === 'database:migrate') {
-    await migrateDatabase(productionDatabase());
-    return { migrated: true };
+    throw new Error('Invoke the dedicated MigrationFunction for database:migrate');
   }
   if ('kind' in event && event.kind === 'users:bootstrap-admin') {
     const input = z

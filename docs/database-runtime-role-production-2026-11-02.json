@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-02",
+  "phase": "credentials-prepared-before-application-cutover",
+  "runtimeSecretArn": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/neon-postgres-runtime-wkiSIM",
+  "migrationSecretArn": "arn:aws:secretsmanager:us-east-1:935542360668:secret:citevia/neon-postgres-migrations-dSjUzY",
+  "runtimeIdentity": {
+    "role": "citevia_runtime_v1",
+    "superuser": false,
+    "create_database": false,
+    "create_role": false,
+    "replication": false,
+    "bypass_rls": false,
+    "create_in_public": false,
+    "statement_timeout": "15s",
+    "lock_timeout": "5s",
+    "idle_transaction_timeout": "15s"
+  },
+  "representativeReadOnlyCanary": {
+    "projects": 5,
+    "runs": 10,
+    "results": 500,
+    "answerPages": 10,
+    "users": 2
+  },
+  "tablesGranted": 44,
+  "sourceSecretPreserved": true,
+  "existingRolesUnchanged": true,
+  "customerDataChanged": false,
+  "credentialsWrittenToLocalDisk": false,
+  "applicationSwitchedByThisOperation": false
+}

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { MemoryCallLedger, type ProviderAdmissionStore } from '@citevia/storage';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { project } from './fixtures.js';
 import { OpenAISocialMediaGenerator, jpegDimensions, socialReferenceUrl, type SocialBrandStyle, type SocialGeneratedCopy, type SocialMediaDestination } from '../src/social-media.js';
 
@@ -120,5 +121,66 @@ describe('media input boundaries', () => {
     expect(jpegDimensions(jpeg(1024, 1280))).toEqual({ width: 1024, height: 1280 });
     expect(jpegDimensions(Buffer.from('<html>failed</html>'))).toBeNull();
     expect(jpegDimensions(Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0xff, 0xff]))).toBeNull();
+  });
+});
+
+
+describe('social provider spending and shared admission', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it('blocks every paid social stage before HTTP when the account budget is exhausted', async () => {
+    vi.stubEnv('LLM_MONTHLY_BUDGET_USD', '0.00001');
+    const fetcher = vi.fn<typeof fetch>(), ledger = new MemoryCallLedger();
+    const generator = new OpenAISocialMediaGenerator({ apiKey: 'test', fetch: fetcher, ledger });
+    for (const call of [
+      () => generator.analyzeStyle(project, destination, []),
+      () => generator.generateCopy(project, project.prompts[0], destination, style),
+      () => generator.generateImage(project, project.prompts[0], copy, destination, style, 0, 3),
+      () => generator.checkImage(project, project.prompts[0], copy, destination, style, 'https://images.example.com/candidate.jpg', 0),
+    ]) await expect(call()).rejects.toMatchObject({ code: 'cost_budget_exceeded' });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(ledger.calls.size).toBe(0);
+  });
+  it('reserves and settles actual image modalities without storing a prompt or image in the ledger', async () => {
+    vi.stubEnv('LLM_MONTHLY_BUDGET_USD', '70');
+    const ledger = new MemoryCallLedger(), bytes = jpeg(1024, 1280);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: bytes.toString('base64') }],
+      usage: { input_tokens: 300, output_tokens: 1000, total_tokens: 1300, input_tokens_details: { text_tokens: 100, image_tokens: 200 } } }));
+    const generator = new OpenAISocialMediaGenerator({ apiKey: 'test', fetch: fetcher, ledger,
+      context: { runId: 'publication', attempt: 2 } });
+    await generator.generateImage(project, project.prompts[0], copy, destination, style, 0, 3);
+    const call = [...ledger.calls.values()][0];
+    expect(call.intent).toMatchObject({ projectId: project.id, runId: 'publication', attempt: 2, stage: 'social_image_0', reservedUsd: 3 });
+    expect(call.outcome).toMatchObject({ status: 'succeeded', usage: { inputTokens: 300, imageInputTokens: 200 } });
+    expect(call.outcome?.estimatedUsd).toBeCloseTo(.0321);
+    expect(JSON.stringify(call)).not.toContain(copy.body);
+    expect(JSON.stringify(call)).not.toContain(bytes.toString('base64'));
+  });
+  it('keeps unknown image usage outstanding, settles explicit refusal to zero, and never repeats an uncertain HTTP call', async () => {
+    const ledger = new MemoryCallLedger(), bytes = jpeg(1024, 1280);
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ data: [{ b64_json: bytes.toString('base64') }] }))
+      .mockResolvedValueOnce(Response.json({ error: { code: 'rate_limit_exceeded' } }, { status: 429 }))
+      .mockRejectedValueOnce(new Error('Lost response, secret error text'));
+    const generator = new OpenAISocialMediaGenerator({ apiKey: 'test', fetch: fetcher, ledger });
+    await generator.generateImage(project, project.prompts[0], copy, destination, style, 0, 3);
+    await expect(generator.generateCopy(project, project.prompts[0], destination, style)).rejects.toMatchObject({ kind: 'rate_limit' });
+    await expect(generator.generateCopy(project, project.prompts[0], destination, style)).rejects.toMatchObject({ kind: 'uncertain', safeToRetry: false });
+    expect([...ledger.calls.values()].map(call => call.outcome)).toMatchObject([
+      { status: 'uncertain', estimatedUsd: null }, { status: 'failed', estimatedUsd: 0 }, { status: 'uncertain', estimatedUsd: null },
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(JSON.stringify([...ledger.calls.values()])).not.toContain('secret error text');
+  });
+  it('uses shared provider capacity before reserving cost and records quota feedback', async () => {
+    const ledger = new MemoryCallLedger(), fetcher = vi.fn<typeof fetch>();
+    const admission: ProviderAdmissionStore = { acquire: vi.fn().mockResolvedValueOnce({ admitted: false, reason: 'spacing', retryAfterMs: 10000 })
+      .mockResolvedValueOnce({ admitted: true, leaseId: 'lease' }), complete: vi.fn(), status: vi.fn(), reset: vi.fn() } as unknown as ProviderAdmissionStore;
+    const generator = new OpenAISocialMediaGenerator({ apiKey: 'test', fetch: fetcher, ledger, admission });
+    await expect(generator.analyzeStyle(project, destination, [])).rejects.toMatchObject({ kind: 'deferred', safeToRetry: true });
+    expect(fetcher).not.toHaveBeenCalled(); expect(ledger.calls.size).toBe(0);
+    fetcher.mockResolvedValueOnce(Response.json({ error: { code: 'insufficient_quota' } }, { status: 429 }));
+    await expect(generator.analyzeStyle(project, destination, [])).rejects.toMatchObject({ kind: 'quota' });
+    expect(admission.complete).toHaveBeenCalledWith('openai', 'lease', expect.objectContaining({ kind: 'quota' }));
+    expect([...ledger.calls.values()][0].outcome?.estimatedUsd).toBe(0);
   });
 });

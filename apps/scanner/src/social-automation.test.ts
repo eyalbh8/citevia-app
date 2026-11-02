@@ -1,3 +1,4 @@
+import { ProviderError } from './provider.js';
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, socialApprovalSnapshot, type Project, type SocialChannel, type SocialDestination, type SocialPublication } from '@citevia/core';
@@ -517,5 +518,35 @@ describe('scheduled blog drafts', () => {
     expect(f.publisher.publish).not.toHaveBeenCalled();
     expect(f.generatorFactory).not.toHaveBeenCalled();
     expect(f.publisherFactory).toHaveBeenCalledTimes(1); // The initial occurrence discovers social accounts only.
+  });
+});
+
+
+describe('social admission recovery', () => {
+  it('clears an unstarted paid intent, waits without burning attempts, then generates once', async () => {
+    const f = await fixture();
+    f.generator.analyzeStyle.mockRejectedValueOnce(new ProviderError('provider_admission_deferred', 'Waiting for capacity.', true, null,
+      { kind: 'deferred', safeToRetry: true, retryAfterMs: 60000 }));
+    await f.worker.handlePublication(f.project.id, f.publications[0].id);
+    const waiting = await f.read();
+    expect(waiting).toMatchObject({ stage: 'queued', attempts: 0 });
+    expect(waiting.checkpoints?.paidStage).toBeUndefined();
+    expect(waiting.nextAttemptAt).toBe('2026-11-02T09:01:00.000Z');
+    await f.worker.handlePublication(f.project.id, f.publications[0].id);
+    expect(f.generator.analyzeStyle).toHaveBeenCalledTimes(1);
+    f.advanceClock();
+    await f.worker.handlePublication(f.project.id, f.publications[0].id);
+    expect((await f.read()).stage).toBe('copy');
+    expect(f.generator.analyzeStyle).toHaveBeenCalledTimes(2);
+  });
+  it('keeps paid intent after a missing provider result and never automatically buys a replacement', async () => {
+    const f = await fixture();
+    f.generator.analyzeStyle.mockRejectedValueOnce(new ProviderError('openai_timeout', 'Request timed out.', false, null,
+      { kind: 'uncertain', safeToRetry: false }));
+    await f.worker.handlePublication(f.project.id, f.publications[0].id);
+    expect(await f.read()).toMatchObject({ status: 'failed', checkpoints: { paidStage: 'style' } });
+    f.advanceClock();
+    await f.worker.handlePublication(f.project.id, f.publications[0].id);
+    expect(f.generator.analyzeStyle).toHaveBeenCalledTimes(1);
   });
 });

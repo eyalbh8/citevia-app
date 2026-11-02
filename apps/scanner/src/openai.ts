@@ -1,8 +1,9 @@
+import { guardResponseProvider } from './provider-admission.js';
 import {
   GetSecretValueCommand,
   SecretsManagerClient,
 } from '@aws-sdk/client-secrets-manager';
-import { createAwsRuntime, PostgresCallLedger, productionDatabase, type AnswerProvider, type CallLedger } from '@citevia/storage';
+import { createAwsRuntime, PostgresCallLedger, SqlProviderAdmissionStore, productionDatabase, type AnswerProvider, type CallLedger } from '@citevia/storage';
 import type { Analysis, CapturedAnswer, ScanRun } from '@citevia/core';
 import { analysisRequest, parseAnalysisReceipt } from './analysis-request.js';
 import { normalizeAnswer } from './normalize.js';
@@ -98,9 +99,9 @@ export class OpenAIAnswerProvider implements AnswerProvider {
 }
 
 export async function createOpenAIProviderFromEnv(ledger?: CallLedger): Promise<AnswerProvider> {
-  return new OpenAIAnswerProvider(await createResponseProviderFromEnv(ledger));
+  return new OpenAIAnswerProvider(await createResponseProviderFromEnv(ledger, false));
 }
-export async function createResponseProviderFromEnv(ledger?: CallLedger | null): Promise<ResponseProvider> {
+export async function createResponseProviderFromEnv(ledger?: CallLedger | null, admission = true): Promise<ResponseProvider> {
   let apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey && process.env.OPENAI_SECRET_ARN) {
     const secret = await new SecretsManagerClient({}).send(
@@ -128,5 +129,6 @@ export async function createResponseProviderFromEnv(ledger?: CallLedger | null):
   const provider = new OpenAIProvider({ apiKey });
   // Explicit null isolates local evaluation from the application's production cost ledger.
   const costs = ledger === null ? undefined : ledger ?? (process.env.APP_MODE === 'aws' ? new PostgresCallLedger(productionDatabase(),createAwsRuntime().artifacts) : undefined);
-  return costs ? observeResponseProvider(provider, costs) : provider;
+  const observed = costs ? observeResponseProvider(provider, costs) : provider;
+  return admission && ledger !== null && process.env.APP_MODE === 'aws' ? guardResponseProvider(observed, new SqlProviderAdmissionStore(productionDatabase())) : observed;
 }

@@ -136,10 +136,10 @@ describe('production database maintenance freeze', () => {
     expect(await handle({kind:'reconcile'})).toEqual({ok:true});
     expect(engine.handle).toHaveBeenCalledTimes(2);
   });
-  it('keeps the direct IAM migration interface available only after the source freeze has been lifted', async () => {
+  it('directs migration callers to the dedicated function without loading runtime credentials', async () => {
     vi.stubEnv('CITEVIA_MAINTENANCE_MODE','false');
-    expect(await scannerHandler({kind:'database:migrate'})).toEqual({migrated:true});
-    expect(cloud.database).toHaveBeenCalledOnce();
-    expect(cloud.migrate).toHaveBeenCalledOnce();
+    await expect(scannerHandler({kind:'database:migrate'})).rejects.toThrow('dedicated MigrationFunction');
+    expect(cloud.database).not.toHaveBeenCalled();
+    expect(cloud.migrate).not.toHaveBeenCalled();
   });
 });

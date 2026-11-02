@@ -56,6 +56,8 @@ import { AccessError, withDemoRuntime, createSocialPublisher, socialPublisherCon
 import { verifiedIdentitySchema, type VerifiedIdentity } from '@citevia/core';
 import { AuthenticationError } from './descope.js';
 import { adminRoute } from './admin.js';
+import { readRequestJson } from './request-body.js';
+import { actorFingerprint, auditRoute, enforceApiLimit } from './api-security.js';
 import { runIdFor, providerRunIdFor } from '../../scanner/src/engine.js';
 import { brandbookUpdateSchema } from '@citevia/core';
 import { createAccounts } from './onboarding.js';
@@ -101,14 +103,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
   const { repository, artifacts, queue } = runtime;
   const now = options.now || (() => new Date());
   async function body(request: Request): Promise<unknown> {
-    const raw = await request.text();
-    if (raw.length > 150000)
-      throw new HttpError(413, 'BODY_TOO_LARGE', 'Request is too large');
-    try {
-      return JSON.parse(raw);
-    } catch {
-      throw new HttpError(400, 'INVALID_JSON', 'Expected a JSON request body');
-    }
+    return readRequestJson(request);
   }
   async function details(
     result: PromptResult,
@@ -190,7 +185,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         'Settings changed. Refresh and try again.',
       );
   }
-  return async (
+  const handle = async (
     request: Request,
     identity?: VerifiedIdentity,
   ): Promise<Response> => {
@@ -208,6 +203,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           'UNAUTHENTICATED',
           'Sign in through Descope to continue.',
         );
+      await enforceApiLimit(repository, parsedIdentity.data.subject, method, now());
       const user = await repository.syncUser(parsedIdentity.data, true);
       if (user.disabled)
         throw new HttpError(
@@ -330,6 +326,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           'FORBIDDEN',
           'Project owner access is required',
         );
+      await enforceApiLimit(repository, userId, method, now(), projectId);
       const agentAvailable =
         (options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim())) &&
         (options.agentImagesConfigured ?? Boolean(process.env.UNSPLASH_ACCESS_KEY?.trim() || process.env.UNSPLASH_SECRET_ARN?.trim()));
@@ -1310,8 +1307,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             error: {
               code: 'INVALID_INPUT',
               message: error.issues
+                .slice(0, 10)
                 .map((i) => `${i.path.join('.') || 'input'}: ${i.message}`)
-                .join(';'),
+                .join(';').slice(0, 2000),
             },
           },
           400,
@@ -1343,5 +1341,18 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         500,
       );
     }
+  };
+  return async (request: Request, identity?: VerifiedIdentity): Promise<Response> => {
+    const started = Date.now();
+    const result = await handle(request, identity);
+    if (result.status === 429) result.headers.set('Retry-After', '60');
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && typeof identity?.subject === 'string') {
+      const url = new URL(request.url);
+      const projectId = url.pathname.match(/^\/v1\/projects\/([A-Za-z0-9_-]{1,200})(?:\/|$)/)?.[1];
+      console.info(JSON.stringify({ event: 'API_AUDIT', actor: actorFingerprint(identity.subject),
+        projectId, method: request.method, route: auditRoute(url.pathname), status: result.status,
+        durationMs: Date.now() - started }));
+    }
+    return result;
   };
 }

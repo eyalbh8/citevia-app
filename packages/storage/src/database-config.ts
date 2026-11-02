@@ -1,6 +1,37 @@
 import { z } from 'zod';
 import type { PoolConfig } from 'pg';
 
+export type DatabasePurpose = 'runtime' | 'migration';
+export interface DatabaseTimeouts {
+  statement: number;
+  query: number;
+  lock: number;
+  idleTransaction: number;
+}
+
+/** Client deadlines are deliberately longer than server cancellation deadlines. */
+export function databaseTimeouts(purpose: DatabasePurpose = 'runtime'): DatabaseTimeouts {
+  const prefix = purpose === 'migration' ? 'DATABASE_MIGRATION_' : 'DATABASE_';
+  const read = (suffix: string, fallback: number, maximum: number) => {
+    const name = `${prefix}${suffix}_TIMEOUT_MS`;
+    const value = process.env[name];
+    if (value === undefined || value === '') return fallback;
+    if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) > maximum)
+      throw new Error(`${name} must be a positive integer no greater than ${maximum}`);
+    return Number(value);
+  };
+  const migration = purpose === 'migration';
+  const result = {
+    statement: read('STATEMENT', migration ? 240000 : 15000, migration ? 600000 : 60000),
+    query: read('QUERY', migration ? 250000 : 20000, migration ? 610000 : 65000),
+    lock: read('LOCK', migration ? 10000 : 5000, 30000),
+    idleTransaction: read('IDLE_TRANSACTION', migration ? 30000 : 15000, 60000),
+  };
+  if (result.query <= result.statement || result.lock > result.statement)
+    throw new Error(`${prefix}QUERY_TIMEOUT_MS must exceed STATEMENT_TIMEOUT_MS, which must be at least LOCK_TIMEOUT_MS`);
+  return result;
+}
+
 const hostname = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
 const identifier = z.string().min(1).max(63).regex(/^[^\0\r\n]+$/);
 const externalSecret = z.object({

@@ -20,9 +20,9 @@ const sourceSchema = z.object({
   prompts: z.array(z.object({
     text: z.string().min(5).max(2000), stage: z.string().optional(), topic: z.string().optional(), seoKeyword: z.string().optional().nullable(),
   })).min(50),
-  brandbook: z.record(z.unknown()),
-  samples: z.array(z.record(z.unknown())).default([]),
-  traffic: z.record(z.unknown()).optional(),
+  brandbook: z.record(z.string(), z.unknown()),
+  samples: z.array(z.record(z.string(), z.unknown())).default([]),
+  traffic: z.record(z.string(), z.unknown()).optional(),
 }).passthrough();
 
 function shiftedMonth(day: string, amount: number) {

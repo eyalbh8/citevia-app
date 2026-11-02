@@ -16,6 +16,10 @@ type CfnObject = Record<string, any>;
 const template = document.toJS() as CfnObject;
 const workflow = parse(readFileSync('.github/workflows/deploy.yml', 'utf8')) as CfnObject;
 const secret = 'arn:aws:secretsmanager:eu-west-1:123456789012:secret:citevia/neon-ABCDEF';
+const securityDefaults = {
+  LLM_MONTHLY_BUDGET_USD: '70', ACCOUNT_MONTHLY_BUDGET_USD: '100', ACCOUNT_MONTHLY_INFRA_RESERVE_USD: '30',
+  LLM_GLOBAL_MONTHLY_BUDGET_USD: '0', ALERT_EMAIL: '', ALERT_EMAIL_SECONDARY: '', ALERT_EMAIL_TERTIARY: '', DATABASE_MIGRATION_SECRET_ARN: '',
+};
 const noValue = Symbol('NoValue');
 function render(overrides: Record<string, string> = {}) {
   const parameters = { ...Object.fromEntries(Object.entries(template.Parameters as CfnObject).map(([key, value]) => [key, value.Default])), ...overrides };
@@ -102,7 +106,7 @@ function resolveWorkflow(parameters: { ParameterKey: string; ParameterValue: str
   const envFile = join(directory, 'github-env');
   writeFileSync(envFile, '');
   const script = workflow.jobs.deploy.steps.find((step: CfnObject) => step.name === stepName).run;
-  execFileSync('bash', ['-c', script], { env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNNER_TEMP: directory, STACK_NAME: 'test-stack', AWS_REGION: 'eu-west-1', GITHUB_ENV: envFile, FAKE_PARAMETERS: JSON.stringify(parameters), DATABASE_MODE: '', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: '', MAINTENANCE_MODE: '', COMPACT_RUN_STATE: '', RETIRE_LEGACY_DATABASE: '', ANALYSIS_BATCH_ENABLED: '', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '', ZERNIO_SECRET_ARN: '', SOCIAL_VIDEO_LAYER_ARN: '', SOCIAL_IMAGE_MODEL: '', SOCIAL_TEXT_MODEL: '', ...variables }, stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync('bash', ['-c', script], { env: { ...process.env, ...Object.fromEntries(Object.keys(securityDefaults).map(key => [key, ''])), PATH: `${directory}:${process.env.PATH}`, RUNNER_TEMP: directory, STACK_NAME: 'test-stack', AWS_REGION: 'eu-west-1', GITHUB_ENV: envFile, FAKE_PARAMETERS: JSON.stringify(parameters), DATABASE_MODE: '', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: '', MAINTENANCE_MODE: '', COMPACT_RUN_STATE: '', RETIRE_LEGACY_DATABASE: '', ANALYSIS_BATCH_ENABLED: '', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '', ZERNIO_SECRET_ARN: '', SOCIAL_VIDEO_LAYER_ARN: '', SOCIAL_IMAGE_MODEL: '', SOCIAL_TEXT_MODEL: '', ...variables }, stdio: ['ignore', 'pipe', 'pipe'] });
   return Object.fromEntries(readFileSync(envFile, 'utf8').trim().split('\n').map((line) => { const separator = line.indexOf('='); return [line.slice(0, separator), line.slice(separator + 1)]; }));
 }
 
@@ -194,8 +198,25 @@ describe('external PostgreSQL infrastructure stages', () => {
 
 describe('database deployment workflow safeguards', () => {
   it('keeps old stacks on Aurora and inherits an already completed external cutover', () => {
-    expect(resolveWorkflow([])).toEqual({ DATABASE_MODE: 'aurora', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: 'false', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '' });
-    expect(resolveWorkflow([{ ParameterKey: 'DatabaseMode', ParameterValue: 'external' }, { ParameterKey: 'ExternalDatabaseSecretArn', ParameterValue: secret }, { ParameterKey: 'RemoveLegacyNetwork', ParameterValue: 'true' }])).toEqual({ DATABASE_MODE: 'external', EXTERNAL_DATABASE_SECRET_ARN: secret, REMOVE_LEGACY_NETWORK: 'true', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '' });
+    expect(resolveWorkflow([])).toEqual({ ...securityDefaults, DATABASE_MODE: 'aurora', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: 'false', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '' });
+    expect(resolveWorkflow([{ ParameterKey: 'DatabaseMode', ParameterValue: 'external' }, { ParameterKey: 'ExternalDatabaseSecretArn', ParameterValue: secret }, { ParameterKey: 'RemoveLegacyNetwork', ParameterValue: 'true' }])).toEqual({ ...securityDefaults, DATABASE_MODE: 'external', EXTERNAL_DATABASE_SECRET_ARN: secret, REMOVE_LEGACY_NETWORK: 'true', MAINTENANCE_MODE: 'false', COMPACT_RUN_STATE: 'false', RETIRE_LEGACY_DATABASE: 'false', ANALYSIS_BATCH_ENABLED: 'false', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '' });
+  });
+  it('inherits reviewed budgets, alert recipients and migration credentials across later deployments', () => {
+    const values = {
+      LlmMonthlyBudgetUsd: '50', AccountMonthlyBudgetUsd: '80', AccountMonthlyInfraReserveUsd: '25', LlmGlobalMonthlyBudgetUsd: '500',
+      AlertEmail: 'primary@example.com', AlertEmailSecondary: 'secondary@example.com', AlertEmailTertiary: 'tertiary@example.com', DatabaseMigrationSecretArn: secret,
+    };
+    const parameters = Object.entries(values).map(([ParameterKey, ParameterValue]) => ({ ParameterKey, ParameterValue }));
+    expect(resolveWorkflow(parameters)).toMatchObject({
+      LLM_MONTHLY_BUDGET_USD: '50', ACCOUNT_MONTHLY_BUDGET_USD: '80', ACCOUNT_MONTHLY_INFRA_RESERVE_USD: '25', LLM_GLOBAL_MONTHLY_BUDGET_USD: '500',
+      ALERT_EMAIL: 'primary@example.com', ALERT_EMAIL_SECONDARY: 'secondary@example.com', ALERT_EMAIL_TERTIARY: 'tertiary@example.com', DATABASE_MIGRATION_SECRET_ARN: secret,
+    });
+    const overrides = {
+      LLM_MONTHLY_BUDGET_USD: '45', ACCOUNT_MONTHLY_BUDGET_USD: '75', ACCOUNT_MONTHLY_INFRA_RESERVE_USD: '20', LLM_GLOBAL_MONTHLY_BUDGET_USD: '0',
+      ALERT_EMAIL: 'new-primary@example.com', ALERT_EMAIL_SECONDARY: 'new-secondary@example.com', ALERT_EMAIL_TERTIARY: 'new-tertiary@example.com', DATABASE_MIGRATION_SECRET_ARN: secret + '-replacement',
+    };
+    expect(resolveWorkflow(parameters, overrides)).toMatchObject(overrides);
+    expect(resolveWorkflow([], overrides)).toMatchObject(overrides);
   });
   it('keeps Website Health secrets optional, preserves enabled values and validates overrides', () => {
     const configured = [{ ParameterKey: 'GooglePageSpeedSecretArn', ParameterValue: secret }, { ParameterKey: 'GoogleCruxSecretArn', ParameterValue: secret }];
