@@ -15,6 +15,7 @@ import {
   snapshotProvider,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_PERPLEXITY_PRESET,
+  projectScanRunsPerWeek,
 } from '@citevia/core';
 import { idempotentPost, request, useApi } from './api';
 import { Badge, Empty, ErrorNotice, formatDate } from './components';
@@ -68,7 +69,9 @@ export default function SettingsView({
                   <div>
                     <h2 className="card-title">Your scan schedule</h2>
                     <p className="card-description">
-                      {project.scanSchedule ? 'Two snapshots each week, 3½ days apart.' : 'Automatic snapshots on your saved schedule.'}
+                      {project.scanSchedule
+                        ? `${projectScanRunsPerWeek(project)} ${projectScanRunsPerWeek(project) === 1 ? 'snapshot' : 'snapshots'} each week, evenly spaced.`
+                        : 'Automatic snapshots on your saved schedule.'}
                     </p>
                   </div>
                 </div>
@@ -80,13 +83,20 @@ export default function SettingsView({
                     onSaved={onSaved}
                     notify={notify}
                   />
+                  <WeeklyScanFrequency
+                    key={`frequency-${project.id}-${project.version}`}
+                    project={project}
+                    path={path}
+                    onSaved={onSaved}
+                    notify={notify}
+                  />
                   <div className="setting-note">
                     <CalendarClock size={17} />
                     <span>
                       <strong>{scheduleLabel(project)}</strong>
                       <br />
                       {project.demo
-                        ? 'Two scans per week.'
+                        ? `${projectScanRunsPerWeek(project)} scans per week.`
                         : project.enabled
                         ? (project.nextScanAt || nextScanAt)
                           ? `Next scan: ${new Date((project.nextScanAt || nextScanAt)!).toLocaleString('en', { timeZone: project.timezone, dateStyle: 'medium', timeStyle: 'short' })} (${project.timezone})`
@@ -180,6 +190,81 @@ export default function SettingsView({
         )
       )}
     </>
+  );
+}
+
+function WeeklyScanFrequency({ project, path, onSaved, notify }: {
+  project: Project;
+  path: string;
+  onSaved: () => void;
+  notify: (text: string) => void;
+}) {
+  const [savedRuns, setSavedRuns] = useState(projectScanRunsPerWeek(project));
+  const [runsPerWeek, setRunsPerWeek] = useState(String(savedRuns));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<Error>();
+  const owner = project.role === 'owner' && !project.demo;
+  const count = Number(runsPerWeek);
+  const valid = runsPerWeek.trim() !== '' && Number.isInteger(count) && count >= 1 && count <= 7;
+  const unchanged = !!project.scanSchedule && count === savedRuns;
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!owner || saving || unchanged) return;
+    if (!valid) {
+      setError(new Error('Enter a whole number from 1 to 7.'));
+      return;
+    }
+    setSaving(true);
+    setError(undefined);
+    try {
+      const saved = await request<Project>(`${path}/settings`, {
+        method: 'PATCH',
+        body: JSON.stringify({ version: project.version, scanRunsPerWeek: count }),
+      });
+      const savedCount = projectScanRunsPerWeek(saved);
+      setSavedRuns(savedCount);
+      setRunsPerWeek(String(savedCount));
+      notify(`Scan schedule saved: ${savedCount} ${savedCount === 1 ? 'run' : 'runs'} per week.`);
+      onSaved();
+    } catch (error) {
+      setError(error as Error);
+      // A schedule-sync failure can still have persisted the requested frequency.
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form aria-label="Weekly scan frequency" onSubmit={(event) => void submit(event)} style={{ marginBottom: 18 }}>
+      <ErrorNotice error={error} />
+      <label className="field">
+        Runs per week
+        <input
+          type="number"
+          min={1}
+          max={7}
+          step={1}
+          required
+          value={runsPerWeek}
+          onChange={(event) => setRunsPerWeek(event.target.value)}
+          disabled={!owner || saving}
+          aria-describedby="weekly-scan-frequency-help"
+        />
+        <small id="weekly-scan-frequency-help">
+          Choose a whole number from 1 to 7. Each run checks all active prompts on your selected providers.
+          {!project.scanSchedule && ' Save to apply this frequency in place of your current schedule.'}
+          {!project.enabled && ' Scanning stays paused until you enable it.'}
+        </small>
+      </label>
+      {owner && (
+        <button className="button button-outline" type="submit" disabled={saving || !valid || unchanged} style={{ marginTop: 10 }}>
+          {saving ? <LoaderCircle size={13} className="spinner" /> : <Save size={13} />}
+          {saving ? 'Saving…' : 'Save scan frequency'}
+        </button>
+      )}
+    </form>
   );
 }
 
@@ -439,7 +524,7 @@ function ProjectForm({
                 ))}
               </datalist>
               <small>
-                {project.scanSchedule ? 'Used to display scan times. Your two fixed UTC start times stay unchanged.' : 'A valid IANA timezone for your saved schedule.'}
+                {project.scanSchedule ? 'Used to display scan times. Changing the timezone keeps your scheduled start times unchanged.' : 'A valid IANA timezone for your saved schedule.'}
               </small>
             </label>
             <div className="form-stack">

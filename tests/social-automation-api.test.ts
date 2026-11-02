@@ -36,7 +36,7 @@ describe('social automation API', () => {
   it('starts disabled and exposes connected metadata without vendor profile IDs', async () => {
     const f = await fixture();
     const data = await (await f.call()).json();
-    expect(data.settings).toMatchObject({ enabled: false, createBlogDrafts: true, slots: [] });
+    expect(data.settings).toMatchObject({ enabled: false, createBlogDrafts: true, shareFacebookInstagramContent: false, slots: [] });
     expect(data.connections).toHaveLength(1);
     expect(data.connections[0]).not.toHaveProperty('profileId');
     expect(f.publisher.publish).not.toHaveBeenCalled();
@@ -83,6 +83,17 @@ describe('social automation API', () => {
     expect(stored?.enabled).toBe(f.project.enabled);
     expect(stored?.socialAutomation).toMatchObject({ enabled: false, revision: 2 });
     expect(stored?.prompts).toEqual(f.project.prompts);
+  });
+  it('saves explicit sharing changes with new revisions and preserves an older client omission', async () => {
+    const f = await fixture();
+    const enabled = await (await f.call('/settings', 'PATCH', { version: 1, settings: { ...settings, shareFacebookInstagramContent: true } })).json();
+    expect(enabled.settings).toMatchObject({ shareFacebookInstagramContent: true, revision: 1 });
+    expect((await (await f.call()).json()).settings.shareFacebookInstagramContent).toBe(true);
+    const legacy = await (await f.call('/settings', 'PATCH', { version: enabled.version, settings })).json();
+    expect(legacy.settings).toMatchObject({ shareFacebookInstagramContent: true, revision: 2 });
+    expect((await f.call('/settings', 'PATCH', { version: legacy.version, settings: { ...settings, shareFacebookInstagramContent: null } })).status).toBe(400);
+    const disabled = await (await f.call('/settings', 'PATCH', { version: legacy.version, settings: { ...settings, shareFacebookInstagramContent: false } })).json();
+    expect(disabled.settings).toMatchObject({ shareFacebookInstagramContent: false, revision: 3 });
   });
   it('records schedule repair failures while the saved pause remains effective', async () => {
     const f = await fixture();

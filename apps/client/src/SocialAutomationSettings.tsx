@@ -47,7 +47,8 @@ const statusLabels: Record<SocialPublication['status'], string> = {
   draft_created: 'Draft created', failed: 'Failed', cancelled: 'Cancelled', uncertain: 'Publication unconfirmed',
 };
 const editableSettings = (settings: AutomationSettings): SocialAutomationInput => ({
-  enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, generationCadence: settings.generationCadence ?? 'daily', generationTime: settings.generationTime ?? '08:00', timezone: settings.timezone, slots: settings.slots.map(slot => ({ ...slot })),
+  enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, shareFacebookInstagramContent: settings.shareFacebookInstagramContent ?? false,
+  generationCadence: settings.generationCadence ?? 'daily', generationTime: settings.generationTime ?? '08:00', timezone: settings.timezone, slots: settings.slots.map(slot => ({ ...slot })),
 });
 const connected = (connection: Connection) => connection.active && !connection.requiresReconnect;
 const timestamp = (value: string, timezone?: string) => {
@@ -96,7 +97,9 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
       {state.data?.settings && <>
         <AutomationForm key={`${project.id}-${state.data.settings.revision}`} data={state.data} path={path} owner={owner} onSaved={saved} notify={notify} />
         <div className="social-connected-heading"><h3>Publishing destinations</h3><a className="button button-outline" href="#integrations">Manage connections</a></div>
-        <p className="card-description">Each publishing time gets a post answering one active prompt for every ready account. Every social post waits for your review and approval.</p>
+        <p className="card-description">Each publishing time uses one active prompt for every ready account. {state.data.settings.shareFacebookInstagramContent
+          ? 'Facebook and Instagram share the same short caption and single image for new posts.'
+          : 'Posts use each platform’s own format, including Instagram carousels.'} Each destination still needs its own review and approval. Existing prepared posts keep their content.</p>
         <div className="social-connections">
           {SOCIAL_CHANNELS.map(channel => {
             const accounts = state.data!.connections.filter(connection => connection.channel === channel);
@@ -204,6 +207,8 @@ function AutomationForm({ data, path, owner, onSaved, notify }: {
       <p className="social-help">When paused, no new posts are created or published. Existing posts, drafts and account data stay available.</p>
       <label className="social-check"><input type="checkbox" checked={form.createBlogDrafts} onChange={event => setForm({ ...form, createBlogDrafts: event.target.checked })} />
         <span><strong>Also create blog drafts</strong><small>Create an article answering the same prompt in Agents. Blog articles are never published automatically.</small></span></label>
+      <label className="social-check"><input type="checkbox" checked={form.shareFacebookInstagramContent} onChange={event => setForm({ ...form, shareFacebookInstagramContent: event.target.checked })} />
+        <span><strong>Use the same post for Facebook and Instagram</strong><small>Generate one short, general caption and one image for both at each publishing time. Review and approve each destination separately; edits affect only that destination. Off keeps their separate formats.</small></span></label>
       <div className="social-preparation-settings">
         <div><h3>Content preparation</h3><p className="card-description">Choose how much content to create ahead of your publishing times.</p></div>
         <div className="social-preparation-fields">

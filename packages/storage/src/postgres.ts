@@ -6,7 +6,7 @@ import * as agents from './agents-postgres.js';
 import * as social from './social-postgres.js';
 import * as websiteHealth from './website-health-postgres.js';
 import {
-  allocateScanSchedule,
+  allocateProjectScanSchedule,
   WEEKLY_SCHEDULE,
   isTerminal,
   projectProviders,
@@ -410,11 +410,11 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       // Lock the fleet before the account row: concurrent onboardings cannot select the same slot.
       await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['citevia:scan-schedule-allocation:v1']);
       const project = data<Project>((await tx.query('SELECT data FROM citevia_projects WHERE id=$1 FOR UPDATE', [id])).rows);
-      if (!project || project.scanSchedule || (!options.migrateCustom && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project;
+      if (!project || project.scanSchedule || (!options.migrateCustom && project.scanRunsPerWeek === undefined && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project;
       const existing = await tx.query<{ schedule: Project['scanSchedule'] }>(
         `SELECT data->'scanSchedule' AS schedule FROM citevia_projects WHERE data ? 'scanSchedule'`,
       );
-      const next = { ...project, scanSchedule: allocateScanSchedule(existing.rows.map(row => row.schedule)),
+      const next = { ...project, scanSchedule: allocateProjectScanSchedule(project, existing.rows.map(row => row.schedule)),
         scheduleStatus: 'pending' as const, version: project.version + 1, updatedAt: new Date().toISOString() };
       await tx.query('UPDATE citevia_projects SET data=$2::jsonb,version=$3 WHERE id=$1', [id, JSON.stringify(next), next.version]);
       return next;

@@ -53,7 +53,7 @@ const messageSchema = z.discriminatedUnion('kind', [
       scheduledAt: z.string().datetime({ offset: true }),
       requestId: z.string().min(1).max(200).optional(),
       trigger: z.enum(['scheduled', 'manual']).optional(),
-      scheduleVersion: z.literal(1).optional(),
+      scheduleVersion: z.number().int().positive().optional(),
       scheduleSlotUtcMinute: z.number().int().min(0).max(10079).optional(),
     })
     .strict(),

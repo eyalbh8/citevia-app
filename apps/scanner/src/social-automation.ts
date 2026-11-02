@@ -117,10 +117,62 @@ export class SocialAutomationEngine {
         await stop('failed', 'destination_required', 'Choose a publishing board or community in project settings first.'); return;
       }
       const publisher = await this.publisher();
-      if (project.socialProfileId !== destination.profileId || !(await publisher.accounts(destination.profileId))
-        .some(account => account.id === destination.id && account.channel === destination.channel && account.active && !account.requiresReconnect)) {
-        await stop('cancelled', 'account_disconnected', 'The social account was disconnected. Saved content is preserved.'); return;
+      const accounts = project.socialProfileId === destination.profileId ? (await publisher.accounts(destination.profileId))
+        .filter(account => account.profileId === destination.profileId && account.active && !account.requiresReconnect) : [];
+      const shared = current.sharedGeneration;
+      if (shared && (shared.format !== 'facebook-instagram' || !['facebook', 'instagram'].includes(destination.channel) ||
+          !shared.memberPublicationIds.includes(current.id) || !shared.memberPublicationIds.includes(shared.sourcePublicationId)))
+        throw new SocialPublisherError('shared_generation_invalid', 'The shared post could not be verified. Prepare a new post.');
+      let generationDestination = destination;
+      if (!accounts.some(account => account.id === destination.id && account.channel === destination.channel)) {
+        // A disconnected producer can finish already-reserved content for a ready sibling.
+        // It will cancel its own publication before uploading or publishing anything.
+        const members = shared?.sourcePublicationId === current.id && ['queued', 'copy', 'image-0', 'qa-0'].includes(current.stage)
+          ? await Promise.all(shared.memberPublicationIds.filter(id => id !== current.id).map(id => repository.getSocialPublication(projectId, id))) : [];
+        const sibling = members.find(post => post && post.occurrenceId === current.occurrenceId && post.revision === current.revision &&
+          post.sharedGeneration?.sourcePublicationId === current.id && ['facebook', 'instagram'].includes(post.destination.channel) &&
+          post.destination.profileId === destination.profileId &&
+          !['failed', 'cancelled', 'uncertain'].includes(post.status) && accounts.some(account => account.id === post.destination.id && account.channel === post.destination.channel));
+        if (sibling && sibling.destination.channel !== 'blog') generationDestination = sibling.destination;
+        else {
+          await stop('cancelled', 'account_disconnected', 'The social account was disconnected. Saved content is preserved.'); return;
+        }
       }
+      if (shared && shared.sourcePublicationId !== current.id && current.stage === 'queued') {
+        const source = await repository.getSocialPublication(projectId, shared.sourcePublicationId);
+        if (!source || source.occurrenceId !== current.occurrenceId || source.revision !== current.revision ||
+            source.destination.profileId !== destination.profileId || !['facebook', 'instagram'].includes(source.destination.channel) ||
+            source.sharedGeneration?.sourcePublicationId !== source.id || source.sharedGeneration.format !== shared.format ||
+            !source.sharedGeneration.memberPublicationIds.includes(current.id))
+          throw new SocialPublisherError('shared_generation_invalid', 'The shared post could not be verified. Prepare a new post.');
+        const [style, copy, image, qa] = await Promise.all([
+          artifacts.get<{ value: SocialBrandStyle }>(this.key(source, 'style')),
+          artifacts.get<{ value: SocialGeneratedCopy }>(this.key(source, 'copy')),
+          artifacts.get<{ value: ImageReceipt }>(this.key(source, 'image-0')),
+          artifacts.get<{ value: boolean }>(this.key(source, 'qa-0')),
+        ]);
+        if (style && copy && image && qa?.value === true) {
+          if (copy.value.format !== 'image' || copy.value.slides.length !== 1)
+            throw new SocialPublisherError('shared_generation_invalid', 'The shared post has an invalid image format.');
+          // Keep private media, approvals, and publishing receipts in each destination's namespace.
+          try {
+            for (const [stage, receipt] of [['style', style], ['copy', copy], ['image-0', image], ['qa-0', qa]] as const)
+              await artifacts.put(this.key(current, stage), receipt);
+          } catch {
+            throw new SocialPublisherError('shared_content_storage_retry', 'The saved shared content could not be copied yet. Retrying without generating it again.', true);
+          }
+          await this.advance(current, 'upload-0', { status: 'generating', content: { title: copy.value.title, body: copy.value.body, hashtags: copy.value.hashtags } });
+          return;
+        }
+        if (terminal(source)) {
+          await stop('failed', 'shared_generation_incomplete', 'The shared content did not finish. No second generation was started. Prepare a new post to retry.'); return;
+        }
+        // Waiting for another publication is not a failed attempt and never transfers paid-call ownership.
+        await this.advance(current, 'queued', { status: 'generating' }, 30);
+        await queue.send([{ kind: 'social-publication', projectId, publicationId: source.id }]);
+        return;
+      }
+      const mediaDestination = { ...generationDestination, ...(shared ? { contentFormat: shared.format } : {}) };
       const frozenProject = { ...project, ...current.context };
       let mediaGenerator: Promise<SocialMediaGenerator> | undefined;
       const media = () => mediaGenerator ??= this.generator({ projectId, runId: publicationId, promptId: current.prompt.id, attempt: current.attempts });
@@ -148,14 +200,14 @@ export class SocialAutomationEngine {
         }
       };
       if (current.stage === 'queued') {
-        const posts = await publisher.recentPosts(destination.profileId, destination.id);
-        await paid('style', async () => (await media()).analyzeStyle(frozenProject, destination, posts));
+        const posts = await publisher.recentPosts(generationDestination.profileId, generationDestination.id);
+        await paid('style', async () => (await media()).analyzeStyle(frozenProject, mediaDestination, posts));
         await this.advance(current, 'copy'); return;
       }
       const style = (await artifacts.get<{ value: SocialBrandStyle }>(this.key(current, 'style')))?.value;
       if (!style && current.stage !== 'publish') throw new Error('social_style_missing');
       if (current.stage === 'copy') {
-        const copy = await paid('copy', async () => (await media()).generateCopy(frozenProject, current.prompt, destination, style!));
+        const copy = await paid('copy', async () => (await media()).generateCopy(frozenProject, current.prompt, mediaDestination, style!));
         await this.advance(current, 'image-0', { content: { title: copy.title, body: copy.body, hashtags: copy.hashtags } }); return;
       }
       const copy = (await artifacts.get<{ value: SocialGeneratedCopy }>(this.key(current, 'copy')))?.value;
@@ -167,7 +219,7 @@ export class SocialAutomationEngine {
         if (index >= total) throw new Error('social_image_index');
         if (imageStep[1] === 'image') {
           await paid<ImageReceipt>(current.stage, async () => {
-            const { bytes, ...meta } = await (await media()).generateImage(frozenProject, current.prompt, copy!, destination, style!, index, total);
+            const { bytes, ...meta } = await (await media()).generateImage(frozenProject, current.prompt, copy!, mediaDestination, style!, index, total);
             return { ...meta, base64: Buffer.from(bytes).toString('base64') };
           });
           await this.advance(current, `qa-${index}`); return;
@@ -176,7 +228,7 @@ export class SocialAutomationEngine {
         if (!image) throw new Error('social_image_missing');
         const bytes = Buffer.from(image.base64, 'base64');
         if (imageStep[1] === 'qa') {
-          await paid(current.stage, async () => { await (await media()).checkImage(frozenProject, current.prompt, copy!, destination, style!, { ...image, bytes }, index); return true; });
+          await paid(current.stage, async () => { await (await media()).checkImage(frozenProject, current.prompt, copy!, mediaDestination, style!, { ...image, bytes }, index); return true; });
           await this.advance(current, `upload-${index}`); return;
         }
         if (destination.channel !== 'tiktok') {

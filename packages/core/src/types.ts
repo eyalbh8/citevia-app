@@ -45,8 +45,10 @@ export interface Project {
   language: string;
   timezone: string;
   scheduleExpression: string;
-  /** Two stable weekly UTC slots; account timezone is only used for display. */
-  scanSchedule?: { version: 1; slotsUtcMinutes: [number, number]; activatedAt?: string };
+  /** Requested weekly frequency; older projects default to their saved slots or two. */
+  scanRunsPerWeek?: number;
+  /** Stable weekly UTC slots. Version fences events from an obsolete configuration. */
+  scanSchedule?: { version: number; slotsUtcMinutes: number[]; activatedAt?: string };
   /** Enables scheduled and manual scanning; pausing preserves saved data. */
   enabled: boolean;
   /** Monthly GEO planning is an independent, system-admin-managed opt-in. */
@@ -477,7 +479,7 @@ export type ScanMessage =
       scheduledAt: string;
       requestId?: string;
       trigger?: 'scheduled' | 'manual';
-      scheduleVersion?: 1;
+      scheduleVersion?: number;
       scheduleSlotUtcMinute?: number;
     }
   | { kind: 'prompt'; projectId: string; runId: string; promptId: string; dispatchToken?: string }

@@ -21,6 +21,7 @@ import {
   reportingCompanies,
   nextProjectScan,
   markScheduleSynced,
+  resizeScanSchedule,
   promptCreateSchema,
   promptUpdateSchema,
   promptFingerprint,
@@ -576,6 +577,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         const next = {
           ...stored,
           ...input,
+          ...(input.scanRunsPerWeek !== undefined && stored.scanSchedule
+            ? { scanSchedule: resizeScanSchedule(stored.scanSchedule, input.scanRunsPerWeek) }
+            : {}),
           ...(input.geoBacklinks ? { geoBacklinks: { ...input.geoBacklinks,
             enabledAt: input.geoBacklinks.enabled ? (stored.geoBacklinks?.enabledAt || now().toISOString()) : stored.geoBacklinks?.enabledAt,
           } } : {}),

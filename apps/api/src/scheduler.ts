@@ -1,5 +1,5 @@
-import { CreateScheduleCommand, GetScheduleCommand, SchedulerClient, UpdateScheduleCommand, type CreateScheduleCommandInput } from '@aws-sdk/client-scheduler';
-import { markScheduleSynced, scanSlotCron, validScanSchedule, type Project } from '@citevia/core';
+import { CreateScheduleCommand, DeleteScheduleCommand, GetScheduleCommand, SchedulerClient, UpdateScheduleCommand, type CreateScheduleCommandInput } from '@aws-sdk/client-scheduler';
+import { MAX_SCAN_RUNS_PER_WEEK, markScheduleSynced, scanSlotCron, validScanSchedule, type Project } from '@citevia/core';
 import type { Repository } from '@citevia/storage';
 import { createHash } from 'node:crypto';
 
@@ -42,7 +42,13 @@ export async function syncProjectSchedule(project: Project, options: { mode?: 'l
         scheduledAt: '<aws.scheduler.scheduled-time>', trigger: 'scheduled',
         scheduleVersion: project.scanSchedule.version, scheduleSlotUtcMinute: slot }) } });
   }
-  // Never disable the old schedule until both replacements were successfully applied.
+  // Stable names avoid accumulating revisions. Removed slots may have queued events;
+  // their old revision is rejected by the scanner even if cleanup needs a retry.
+  for (let index = project.scanSchedule.slotsUtcMinutes.length; index < MAX_SCAN_RUNS_PER_WEEK; index++) {
+    try { await client.send(new DeleteScheduleCommand({ Name: `${name}-v1-${index}`, GroupName })); }
+    catch (error) { if ((error as Error).name !== 'ResourceNotFoundException') throw error; }
+  }
+  // Never disable the old schedule until all replacements and cleanup succeeded.
   // Scanner occurrence validation also rejects deliveries from the obsolete schedule.
   if (await exists(name)) await client.send(new UpdateScheduleCommand({ ...base, State: 'DISABLED' }));
 }

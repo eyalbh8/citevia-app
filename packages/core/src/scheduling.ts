@@ -3,17 +3,41 @@ import type { Project } from './types.js';
 export type ScanSchedule = NonNullable<Project['scanSchedule']>;
 export const SCAN_WEEK_MINUTES = 7 * 24 * 60;
 export const SCAN_INTERVAL_MINUTES = SCAN_WEEK_MINUTES / 2;
+export const DEFAULT_SCAN_RUNS_PER_WEEK = 2;
+export const MAX_SCAN_RUNS_PER_WEEK = 7;
 const mondayEpoch = Date.UTC(2026, 0, 5);
 const dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
 export function validScanSchedule(schedule: ScanSchedule | undefined): schedule is ScanSchedule {
-  return schedule?.version === 1 && Array.isArray(schedule.slotsUtcMinutes) && schedule.slotsUtcMinutes.length === 2 &&
+  return Boolean(schedule && Number.isSafeInteger(schedule.version) && schedule.version > 0 &&
+    Array.isArray(schedule.slotsUtcMinutes) && validScanFrequency(schedule.slotsUtcMinutes.length) &&
     schedule.slotsUtcMinutes.every(value => Number.isInteger(value) && value >= 0 && value < SCAN_WEEK_MINUTES) &&
-    (schedule.slotsUtcMinutes[0] + SCAN_INTERVAL_MINUTES) % SCAN_WEEK_MINUTES === schedule.slotsUtcMinutes[1];
+    schedule.slotsUtcMinutes.every((slot, index) =>
+      slot === (schedule.slotsUtcMinutes[0] + index * SCAN_WEEK_MINUTES / schedule.slotsUtcMinutes.length) % SCAN_WEEK_MINUTES));
+}
+
+function validScanFrequency(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= MAX_SCAN_RUNS_PER_WEEK;
+}
+
+export function projectScanRunsPerWeek(project: Pick<Project, 'scanSchedule' | 'scanRunsPerWeek'>): number {
+  if (validScanSchedule(project.scanSchedule)) return project.scanSchedule.slotsUtcMinutes.length;
+  return validScanFrequency(project.scanRunsPerWeek!) ? project.scanRunsPerWeek! : DEFAULT_SCAN_RUNS_PER_WEEK;
+}
+
+/** The week divides evenly into minutes for every supported frequency, including seven. */
+export function resizeScanSchedule(schedule: ScanSchedule, runsPerWeek: number): ScanSchedule {
+  if (!validScanSchedule(schedule) || !validScanFrequency(runsPerWeek)) throw new Error('Invalid weekly scan frequency');
+  if (schedule.slotsUtcMinutes.length === runsPerWeek) return schedule;
+  if (schedule.version === Number.MAX_SAFE_INTEGER) throw new Error('Scan schedule version exhausted');
+  return { ...schedule, version: schedule.version + 1,
+    slotsUtcMinutes: Array.from({ length: runsPerWeek }, (_, index) =>
+      (schedule.slotsUtcMinutes[0] + index * SCAN_WEEK_MINUTES / runsPerWeek) % SCAN_WEEK_MINUTES) };
 }
 
 /** Persist the result under a global allocation lock. Existing assignments never move. */
-export function allocateScanSchedule(existing: (ScanSchedule | undefined)[]): ScanSchedule {
+export function allocateScanSchedule(existing: (ScanSchedule | undefined)[], runsPerWeek = DEFAULT_SCAN_RUNS_PER_WEEK): ScanSchedule {
+  if (!validScanFrequency(runsPerWeek)) throw new Error('Invalid weekly scan frequency');
   const occupied = [...new Set(existing.filter(validScanSchedule)
     .map(schedule => schedule.slotsUtcMinutes[0] % SCAN_INTERVAL_MINUTES))].sort((a, b) => a - b);
   let phase: number;
@@ -35,7 +59,18 @@ export function allocateScanSchedule(existing: (ScanSchedule | undefined)[]): Sc
     }
     if (largest < 2) throw new Error('Every weekly scan slot is occupied; increase scheduling resolution before adding accounts.');
   }
-  return { version: 1, slotsUtcMinutes: [phase, phase + SCAN_INTERVAL_MINUTES] };
+  return { version: 1, slotsUtcMinutes: Array.from({ length: runsPerWeek }, (_, index) =>
+    (phase + index * SCAN_WEEK_MINUTES / runsPerWeek) % SCAN_WEEK_MINUTES) };
+}
+
+/** Explicit legacy edits preserve the next saved start; normal onboarding uses fleet allocation. */
+export function allocateProjectScanSchedule(project: Project, existing: (ScanSchedule | undefined)[], from = new Date()): ScanSchedule {
+  const runsPerWeek = projectScanRunsPerWeek(project);
+  const next = project.scanRunsPerWeek === undefined ? null : nextProjectScan({ ...project, enabled: true }, from);
+  if (!next) return allocateScanSchedule(existing, runsPerWeek);
+  const anchor = ((Date.parse(next) - mondayEpoch) / 60000 % SCAN_WEEK_MINUTES + SCAN_WEEK_MINUTES) % SCAN_WEEK_MINUTES;
+  return { version: 1, slotsUtcMinutes: Array.from({ length: runsPerWeek }, (_, index) =>
+    (anchor + index * SCAN_WEEK_MINUTES / runsPerWeek) % SCAN_WEEK_MINUTES) };
 }
 
 export function scanSlotCron(slot: number): string {
@@ -48,7 +83,7 @@ export function isCurrentScheduledOccurrence(
   occurrence: { scheduledAt: string; scheduleVersion?: number; scheduleSlotUtcMinute?: number },
 ): boolean {
   if (!project.scanSchedule) return occurrence.scheduleVersion === undefined;
-  // Until both replacements synchronize, the old weekly schedule is the only effective source.
+  // Until the initial replacements synchronize, the legacy schedule is the effective source.
   // activatedAt survives later settings edits, when the legacy schedule is already disabled.
   if (!project.scanSchedule.activatedAt && ['pending', 'error'].includes(project.scheduleStatus || ''))
     return occurrence.scheduleVersion === undefined;
