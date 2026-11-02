@@ -48,7 +48,7 @@
     "@aws-sdk/s3-presigned-post": "^3.1161.0",
     "@aws-sdk/s3-request-presigner": "^3.1161.0",
     "@descope/node-sdk": "^2.20.0",
-    "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite": "^0.5.13",
     "geoip-country": "^5.0.202610210158",
     "pg": "^8.23.1",
     "tldts": "^7.0.0",
