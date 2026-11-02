@@ -826,6 +826,12 @@ Resources:
             Schedule: rate(1 minute)
             Input: '{"kind":"social-reconcile"}'
             State: !If [MaintenanceEnabled, DISABLED, ENABLED]
+        GeoBacklinksReconcile:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Input: '{"kind":"geo-backlinks-reconcile"}'
+            State: !If [MaintenanceEnabled, DISABLED, ENABLED]
 
   ApiFunctionLogs:
     Type: AWS::Logs::LogGroup

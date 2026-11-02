@@ -17,6 +17,7 @@ import { AgentPostEngine } from './agent-posts.js';
 import { SocialAutomationEngine } from './social-automation.js';
 import { repairSocialSchedule } from '../../api/src/social-scheduler.js';
 import { WebsiteHealthEngine } from './website-health.js';
+import { GeoBacklinkEngine } from './geo-backlinks.js';
 import { createResponseProviderFromEnv } from './openai.js';
 import { createScanProviderFromEnv } from './providers.js';
 import { OpenAIOnboardingProvider } from './onboarding-provider.js';
@@ -36,6 +37,9 @@ const id = z
   .max(200)
   .regex(/^[a-zA-Z0-9_-]+$/);
 const messageSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('geo-backlinks-reconcile') }).strict(),
+  z.object({ kind: z.literal('geo-backlinks'), projectId: id, month: z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/) }).strict(),
+  z.object({ kind: z.literal('geo-backlinks-progress'), projectId: id, date: z.string().regex(/^20\d{2}-\d{2}-\d{2}$/) }).strict(),
   z.object({ kind: z.literal('social-reconcile') }).strict(),
   z.object({ kind: z.literal('social-generation'), projectId: id, revision: z.number().int().positive(), scheduledAt: z.string().datetime({ offset: true }), trigger: z.enum(['scheduled', 'manual']).optional() }).strict(),
   z.object({ kind: z.literal('social-occurrence'), projectId: id, revision: z.number().int().positive(), slotId: id, scheduledAt: z.string().datetime({ offset: true }) }).strict(),
@@ -124,6 +128,7 @@ function awsScanner(): Scanner {
     agents: new AgentPostEngine(runtime, createResponseProviderFromEnv),
     socialAutomation: new SocialAutomationEngine(runtime),
     websiteHealth: new WebsiteHealthEngine(runtime),
+    geoBacklinks: new GeoBacklinkEngine(runtime),
     onboarding,
     provider: createScanProviderFromEnv(runtime),
     // Keep the port available for already-frozen Batch runs even if new batch admission is disabled.

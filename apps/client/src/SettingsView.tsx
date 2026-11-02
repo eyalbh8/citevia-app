@@ -20,6 +20,7 @@ import { idempotentPost, request, useApi } from './api';
 import { Badge, Empty, ErrorNotice, formatDate } from './components';
 import CompetitorSettings from './CompetitorSettings';
 import SocialAutomationSettings from './SocialAutomationSettings';
+import GeoBacklinkSettings from './GeoBacklinkSettings';
 
 function scheduleLabel(project: Project) {
   if (!project.scanSchedule) return `${project.scheduleExpression} (${project.timezone})`;
@@ -32,9 +33,11 @@ export default function SettingsView({
   onSaved,
   notify,
   nextScanAt,
+  systemAdmin = false,
 }: {
   path: string;
   nextScanAt?: string | null;
+  systemAdmin?: boolean;
   onSaved: () => void;
   notify: (text: string) => void;
 }) {
@@ -157,6 +160,7 @@ export default function SettingsView({
                 </div>
               </aside>
             </div>
+            {systemAdmin && <GeoBacklinkSettings key={`${project.id}-${project.version}`} project={project} path={path} onSaved={onSaved} notify={notify} />}
             <SocialAutomationSettings key={project.id} project={project} path={path} onSaved={onSaved} notify={notify} />
             <section className="card">
               <div className="card-header">

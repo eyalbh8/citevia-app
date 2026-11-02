@@ -68,6 +68,7 @@ import { DashboardView } from './DashboardView';
 import MentionsView from './MentionsView';
 import TrackingView from './TrackingView';
 import BlogPerformanceView from './BlogPerformanceView';
+import GeoBacklinksView from './GeoBacklinksView';
 import TrafficView from './TrafficView';
 import WebsiteHealthView from './WebsiteHealthView';
 import SourcesView from './SourcesView';
@@ -91,6 +92,7 @@ type View =
   | 'mentions'
   | 'tracking'
   | 'blog-performance'
+  | 'geo-backlinks'
   | 'traffic'
   | 'website-health'
   | 'sources'
@@ -103,6 +105,7 @@ type View =
   | 'mcp'
   | 'users';
 const views = {
+  'geo-backlinks': { title: 'GEO Backlink Strategy', description: 'Plan monthly outreach and track your AI visibility.', icon: Link2 },
   'blog-performance': { title: 'Blog performance', description: 'Review tracked blogs and prepare the next article.', icon: FileText },
   'website-health': { title: 'Website Health', description: 'Find what to improve on mobile and desktop.', icon: Activity },
   agents: { title: 'Agents', description: 'Create content with your AI agents.', icon: Bot },
@@ -345,7 +348,7 @@ function Workspace() {
     ? `/projects/${encodeURIComponent(currentProject.id)}`
     : null;
   const dashboard = useApi<Dashboard>(
-    path && !['agents', 'blog-performance', 'integrations', 'mcp', 'website-health'].includes(view) ? `${path}/dashboard${query({ runId, provider })}` : null,
+    path && !['agents', 'blog-performance', 'geo-backlinks', 'integrations', 'mcp', 'website-health'].includes(view) ? `${path}/dashboard${query({ runId, provider })}` : null,
   );
   const runs = useApi<Page<ScanRun>>(path ? `${path}/runs` : null);
   const setup = useApi<{ job: OnboardingJob | null }>(
@@ -570,6 +573,7 @@ function Workspace() {
               'mentions',
               'tracking',
               ...(systemAdmin ? ['blog-performance' as const] : []),
+              ...(systemAdmin && currentProject?.geoBacklinks?.enabled ? ['geo-backlinks' as const] : []),
               'sources',
               'traffic',
               'website-health',
@@ -736,9 +740,9 @@ function Workspace() {
         <main
           id="main-content"
           tabIndex={-1}
-          className={`content ${['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'agents', 'integrations'].includes(view) ? 'prompts-content' : ''}`}
+          className={`content ${['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'geo-backlinks', 'agents', 'integrations'].includes(view) ? 'prompts-content' : ''}`}
         >
-          {!['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'agents', 'integrations'].includes(view) && (
+          {!['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'geo-backlinks', 'agents', 'integrations'].includes(view) && (
             <div className="page-heading">
               <div>
                 <div className="eyebrow">AI VISIBILITY INTELLIGENCE</div>
@@ -880,7 +884,7 @@ function Workspace() {
             project && (
               <>
                 <PresentationScenarioNotice demo={project.demo} />
-                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'agents', 'integrations'].includes(view) &&
+                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'geo-backlinks', 'agents', 'integrations'].includes(view) &&
                   run && (
                     <div className="status-strip">
                       <span
@@ -911,10 +915,12 @@ function Workspace() {
                   )}
                 {dashboard.loading &&
                 !dashboard.data &&
-                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'agents', 'integrations'].includes(view) ? (
+                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'geo-backlinks', 'agents', 'integrations'].includes(view) ? (
                   <Skeleton variant="cards" label="Bringing your results together…" />
                 ) : view === 'website-health' ? (
                   <WebsiteHealthView key={project.id} project={project} path={path} notify={setToast} />
+                ) : view === 'geo-backlinks' ? (
+                  <GeoBacklinksView key={project.id} project={project} systemAdmin={systemAdmin} notify={setToast} />
                 ) : view === 'blog-performance' ? (
                   <BlogPerformanceView key={project.id} project={project} systemAdmin={systemAdmin} onTracking={() => navigate('tracking')} />
                 ) : view === 'agents' ? (
@@ -923,6 +929,7 @@ function Workspace() {
                   <SettingsView
                     key={project.id}
                     path={path}
+                    systemAdmin={systemAdmin}
                     nextScanAt={dashboard.data?.nextScanAt}
                     onSaved={settingsSaved}
                     notify={setToast}

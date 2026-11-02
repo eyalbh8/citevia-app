@@ -14,6 +14,7 @@ import { Scanner } from '../apps/scanner/src/engine.js';
 import { AgentPostEngine } from '../apps/scanner/src/agent-posts.js';
 import { SocialAutomationEngine } from '../apps/scanner/src/social-automation.js';
 import { WebsiteHealthEngine } from '../apps/scanner/src/website-health.js';
+import { GeoBacklinkEngine } from '../apps/scanner/src/geo-backlinks.js';
 import { createResponseProviderFromEnv } from '../apps/scanner/src/openai.js';
 import { createScanProviderFromEnv } from '../apps/scanner/src/providers.js';
 import { providerAvailability } from '../apps/scanner/src/provider-http.js';
@@ -86,6 +87,7 @@ const db = await localPostgres(resolve(base, 'postgres')),
 await assertRealLocalData(db);
 const runtime = { repository, artifacts, queue };
 const websiteHealth = new WebsiteHealthEngine(runtime);
+const geoBacklinks = new GeoBacklinkEngine(runtime);
 let scanner: Scanner | undefined;
 if (Object.values(providerAvailability()).some(Boolean)) {
   const provider = createScanProviderFromEnv(runtime);
@@ -94,7 +96,7 @@ if (Object.values(providerAvailability()).some(Boolean)) {
     new OpenAIOnboardingProvider(await createResponseProviderFromEnv()),
     async () => {},
   ) : undefined;
-  scanner = new Scanner({ ...runtime, dispatch: new SqlScanDispatchStore(db), provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv), socialAutomation: new SocialAutomationEngine(runtime), websiteHealth });
+  scanner = new Scanner({ ...runtime, dispatch: new SqlScanDispatchStore(db), provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv), socialAutomation: new SocialAutomationEngine(runtime), websiteHealth, geoBacklinks });
 }
 api = createAuthenticatedApi(runtime, createDescopeIdentityProvider(), {
   mode: 'live',
@@ -110,6 +112,9 @@ const worker = setInterval(async () => {
   try {
     // Website diagnostics have independent Google credentials and work without an AI provider.
     if (message.kind === 'website-health') await websiteHealth.handle(message.projectId, message.auditId);
+    else if (message.kind === 'geo-backlinks') await geoBacklinks.handle(message.projectId, message.month);
+    else if (message.kind === 'geo-backlinks-progress') await geoBacklinks.progress(message.projectId, message.date);
+    else if (message.kind === 'geo-backlinks-reconcile') await geoBacklinks.reconcile();
     else if (scanner) await scanner.handle(message);
   } catch (error) {
     console.error('Scan job will be recovered:', (error as Error).message);
@@ -118,6 +123,7 @@ const worker = setInterval(async () => {
   }
 }, 100);
 const recovery = setInterval(() => {
+  void geoBacklinks.reconcile().catch((error) => console.error('GEO recovery failed:', (error as Error).message));
   const recover = scanner ? scanner.handle({ kind: 'reconcile' }) : websiteHealth.reconcile();
   recover.catch((error) => console.error('Recovery failed:', (error as Error).message));
 }, 60_000);

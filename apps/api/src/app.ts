@@ -3,6 +3,7 @@ import { agentRoute } from './agents.js';
 import { socialRoute, type SocialApiOptions } from './social.js';
 import { blogPerformanceRoute } from './blog-performance.js';
 import { websiteHealthRoute } from './website-health.js';
+import { geoBacklinksRoute } from './geo-backlinks.js';
 import { monitoringPeriod, monitoringRoute } from './monitoring.js';
 import { dashboardOverviewRoute } from './dashboard.js';
 import { competitorSuggestions } from './competitors.js';
@@ -332,6 +333,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       const agentAvailable =
         (options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim())) &&
         (options.agentImagesConfigured ?? Boolean(process.env.UNSPLASH_ACCESS_KEY?.trim() || process.env.UNSPLASH_SECRET_ARN?.trim()));
+      const geoBacklinks = await geoBacklinksRoute(runtime, project, user, tail, request, now(), body);
+      if (geoBacklinks) return geoBacklinks;
       const social = await socialRoute(runtime, project, userId, tail, request, now(), {
         publisher: socialPublisherConfigured() ? createSocialPublisher : undefined,
         generationAvailable: options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim()),
@@ -554,6 +557,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       }
       if (tail === 'settings' && method === 'PATCH') {
         const input = settingsSchema.parse(await body(request));
+        if (input.geoBacklinks !== undefined && !user.isSystemAdmin)
+          throw new HttpError(403, 'FORBIDDEN', 'Only system administrators can configure GEO Backlink Strategy.');
         if (
           input.enabled &&
           stored.onboardingJobId &&
@@ -574,6 +579,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         const next = {
           ...stored,
           ...input,
+          ...(input.geoBacklinks ? { geoBacklinks: { ...input.geoBacklinks,
+            enabledAt: input.geoBacklinks.enabled ? (stored.geoBacklinks?.enabledAt || now().toISOString()) : stored.geoBacklinks?.enabledAt,
+          } } : {}),
           ...(input.competitors !== undefined
             ? { competitorsConfiguredAt: now().toISOString() }
             : {}),

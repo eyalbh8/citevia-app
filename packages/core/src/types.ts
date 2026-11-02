@@ -49,6 +49,8 @@ export interface Project {
   scanSchedule?: { version: 1; slotsUtcMinutes: [number, number]; activatedAt?: string };
   /** Enables scheduled and manual scanning; pausing preserves saved data. */
   enabled: boolean;
+  /** Monthly GEO planning is an independent, system-admin-managed opt-in. */
+  geoBacklinks?: import('./geo-backlinks.js').GeoBacklinkSettings;
   /** Social publishing has a separate opt-in; absent settings are disabled. */
   socialAutomation?: import('./social-automation.js').SocialAutomationSettings;
   /** Private server-owned publishing profile. Never accept this value from client settings. */
@@ -460,6 +462,9 @@ export interface Page<T> {
   total: number;
 }
 export type ScanMessage =
+  | { kind: 'geo-backlinks-reconcile' }
+  | { kind: 'geo-backlinks'; projectId: string; month: string }
+  | { kind: 'geo-backlinks-progress'; projectId: string; date: string }
   | import('./social-automation.js').SocialReconcileMessage
   | import('./social-automation.js').SocialGenerationMessage
   | import('./social-automation.js').SocialOccurrenceMessage

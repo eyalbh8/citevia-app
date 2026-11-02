@@ -30,6 +30,7 @@ import type {
 import type { UserRepository } from './users.js';
 import type { McpRepository } from './mcp.js';
 import type { ScanDispatchStore } from './scan-dispatch.js';
+import type { GeoBacklinkRepository } from './geo-backlinks.js';
 export interface SavedAnalysisRef {
   responseId: string;
   captureKey: string;
@@ -53,7 +54,7 @@ export interface PromptAnswerPage {
   items: { result: PromptResult; run: ScanRun }[];
   total: number;
 }
-export interface Repository extends UserRepository, McpRepository {
+export interface Repository extends UserRepository, McpRepository, GeoBacklinkRepository {
   /** Atomically select a prompt and reserve every eligible connected destination once. */
   reserveSocialOccurrence(input: ReserveSocialOccurrenceInput): Promise<ReserveSocialOccurrenceResult>;
   getSocialPublication(projectId: string, publicationId: string): Promise<SocialPublication | null>;
@@ -199,6 +200,11 @@ export interface AnalysisBatchPort {
   complete(batchId: string): Promise<void>;
 }
 export interface ScannerDependencies extends Runtime {
+  geoBacklinks?: {
+    handle(projectId: string, month: string): Promise<void>;
+    progress(projectId: string, date: string): Promise<void>;
+    reconcile(): Promise<void>;
+  };
   socialAutomation?: {
     handleGeneration(message: SocialGenerationMessage): Promise<void>;
     handleOccurrence(message: SocialOccurrenceMessage): Promise<void>;

@@ -13,3 +13,5 @@ export * from './scan-dispatch.js';
 export * from './demo.js';
 export * from './social-publisher.js';
 export * from './social-uploads.js';
+
+export * from './geo-backlinks.js';

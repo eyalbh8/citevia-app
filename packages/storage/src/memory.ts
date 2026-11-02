@@ -1,3 +1,5 @@
+import * as geoBacklinks from './geo-backlinks-memory.js';
+type GeoTail<T extends unknown[]> = T extends [unknown,...infer R] ? R : never;
 import { aggregateTraffic, type TrafficEvent, type TrafficFilters, type TrafficInstallationReceipt, type TrafficSite } from '@citevia/core';
 import { MAX_ACTIVE_AGENT_POSTS, type AgentPostJob, type AgentImage } from '@citevia/core';
 import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, socialOccurrenceLocalDate,
@@ -38,7 +40,7 @@ import type {
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
-interface State {
+interface State extends geoBacklinks.GeoBacklinkMemoryState {
   socialOccurrences?: Record<string, SocialOccurrence>;
   socialPublications?: Record<string, SocialPublication>;
   websiteHealthAudits?: Record<string, WebsiteHealthJob>;
@@ -81,6 +83,24 @@ const copy = <T>(value: T): T => structuredClone(value);
 
 export class MemoryRepository implements Repository {
   protected state: State = blank();
+  listGeoBacklinkProjects(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkProjects>>) { return this.operation(() => geoBacklinks.listGeoBacklinkProjects(this.state,...args)); }
+  reserveGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.reserveGeoBacklinkReport>>) { return this.operation(() => geoBacklinks.reserveGeoBacklinkReport(this.state,...args), true); }
+  getGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.getGeoBacklinkReport>>) { return this.operation(() => geoBacklinks.getGeoBacklinkReport(this.state,...args)); }
+  claimGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.claimGeoBacklinkReport>>) { return this.operation(() => geoBacklinks.claimGeoBacklinkReport(this.state,...args), true); }
+  commitGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.commitGeoBacklinkReport>>) { return this.operation(() => geoBacklinks.commitGeoBacklinkReport(this.state,...args), true); }
+  failGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.failGeoBacklinkReport>>) { return this.operation(() => geoBacklinks.failGeoBacklinkReport(this.state,...args), true); }
+  listGeoBacklinkReports(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkReports>>) { return this.operation(() => geoBacklinks.listGeoBacklinkReports(this.state,...args)); }
+  listActiveGeoBacklinkReports(...args: GeoTail<Parameters<typeof geoBacklinks.listActiveGeoBacklinkReports>>) { return this.operation(() => geoBacklinks.listActiveGeoBacklinkReports(this.state,...args)); }
+  listGeoBacklinkCandidates(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkCandidates>>) { return this.operation(() => geoBacklinks.listGeoBacklinkCandidates(this.state,...args)); }
+  listGeoBacklinkRecommendations(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkRecommendations>>) { return this.operation(() => geoBacklinks.listGeoBacklinkRecommendations(this.state,...args)); }
+  getGeoBacklinkRecommendation(...args: GeoTail<Parameters<typeof geoBacklinks.getGeoBacklinkRecommendation>>) { return this.operation(() => geoBacklinks.getGeoBacklinkRecommendation(this.state,...args)); }
+  saveGeoBacklinkRecommendation(...args: GeoTail<Parameters<typeof geoBacklinks.saveGeoBacklinkRecommendation>>) { return this.operation(() => geoBacklinks.saveGeoBacklinkRecommendation(this.state,...args), true); }
+  listGeoBacklinkActivities(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkActivities>>) { return this.operation(() => geoBacklinks.listGeoBacklinkActivities(this.state,...args)); }
+  listGeoBacklinkLedger(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkLedger>>) { return this.operation(() => geoBacklinks.listGeoBacklinkLedger(this.state,...args)); }
+  importGeoBacklinkHistory(...args: GeoTail<Parameters<typeof geoBacklinks.importGeoBacklinkHistory>>) { return this.operation(() => geoBacklinks.importGeoBacklinkHistory(this.state,...args), true); }
+  listLegacyGeoBacklinkHistory(...args: GeoTail<Parameters<typeof geoBacklinks.listLegacyGeoBacklinkHistory>>) { return this.operation(() => geoBacklinks.listLegacyGeoBacklinkHistory(this.state,...args)); }
+  putGeoBacklinkPerformance(...args: GeoTail<Parameters<typeof geoBacklinks.putGeoBacklinkPerformance>>) { return this.operation(() => geoBacklinks.putGeoBacklinkPerformance(this.state,...args), true); }
+  listGeoBacklinkPerformance(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkPerformance>>) { return this.operation(() => geoBacklinks.listGeoBacklinkPerformance(this.state,...args)); }
   reserveSocialOccurrence(input: ReserveSocialOccurrenceInput): Promise<ReserveSocialOccurrenceResult> {
     return this.operation(() => {
       const project = this.state.projects[input.projectId];

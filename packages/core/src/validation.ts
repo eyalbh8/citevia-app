@@ -3,6 +3,17 @@ import { normalizeDomain } from './urls.js';
 import { journeyStageSchema } from './onboarding.js';
 import { scanProvidersSchema } from './providers.js';
 import { PROMPT_INTENTS } from './prompt-policy.js';
+import { DEFAULT_GEO_BACKLINK_SETTINGS, geoBacklinkDomain } from './geo-backlinks.js';
+export const geoBacklinkSettingsSchema = z.object({
+  enabled: z.boolean(),
+  target: z.number().int().min(1).max(50).default(10),
+  exclusionDays: z.number().int().min(180).max(3650).default(180),
+  weights: z.object({
+    citationConsistency: z.number().min(0).max(100), competitorGap: z.number().min(0).max(100),
+    relevance: z.number().min(0).max(100), visibilityGap: z.number().min(0).max(100), placement: z.number().min(0).max(100),
+  }).strict().refine(value => Object.values(value).reduce((a,b) => a+b, 0) > 0, 'At least one score weight must be positive').default(DEFAULT_GEO_BACKLINK_SETTINGS.weights),
+  excludedDomains: z.array(z.string().max(253).refine(value => Boolean(geoBacklinkDomain(value)), 'Enter a public domain')).max(500).optional(),
+}).strict();
 export const identifier = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,100}$/, 'Invalid identifier');
@@ -46,6 +57,7 @@ export const settingsSchema = z
       .optional(),
     timezone: timeZoneSchema.optional(),
     enabled: z.boolean().optional(),
+    geoBacklinks: geoBacklinkSettingsSchema.optional(),
     scanProviders: scanProvidersSchema.optional(),
   })
   .strict();

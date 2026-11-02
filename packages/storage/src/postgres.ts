@@ -1,3 +1,5 @@
+import * as geoBacklinks from './geo-backlinks-postgres.js';
+type GeoTail<T extends unknown[]> = T extends [unknown,...infer R] ? R : never;
 import * as traffic from './traffic-postgres.js';
 import { createHash } from 'node:crypto';
 import * as agents from './agents-postgres.js';
@@ -76,6 +78,24 @@ export interface PostgresRepositoryOptions {
 }
 
 export class PostgresRepository extends PostgresUsers implements Repository {
+  listGeoBacklinkProjects(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkProjects>>) { return geoBacklinks.listGeoBacklinkProjects(this.db,...args); }
+  reserveGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.reserveGeoBacklinkReport>>) { return geoBacklinks.reserveGeoBacklinkReport(this.db,...args); }
+  getGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.getGeoBacklinkReport>>) { return geoBacklinks.getGeoBacklinkReport(this.db,...args); }
+  claimGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.claimGeoBacklinkReport>>) { return geoBacklinks.claimGeoBacklinkReport(this.db,...args); }
+  commitGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.commitGeoBacklinkReport>>) { return geoBacklinks.commitGeoBacklinkReport(this.db,...args); }
+  failGeoBacklinkReport(...args: GeoTail<Parameters<typeof geoBacklinks.failGeoBacklinkReport>>) { return geoBacklinks.failGeoBacklinkReport(this.db,...args); }
+  listGeoBacklinkReports(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkReports>>) { return geoBacklinks.listGeoBacklinkReports(this.db,...args); }
+  listActiveGeoBacklinkReports(...args: GeoTail<Parameters<typeof geoBacklinks.listActiveGeoBacklinkReports>>) { return geoBacklinks.listActiveGeoBacklinkReports(this.db,...args); }
+  listGeoBacklinkCandidates(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkCandidates>>) { return geoBacklinks.listGeoBacklinkCandidates(this.db,...args); }
+  listGeoBacklinkRecommendations(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkRecommendations>>) { return geoBacklinks.listGeoBacklinkRecommendations(this.db,...args); }
+  getGeoBacklinkRecommendation(...args: GeoTail<Parameters<typeof geoBacklinks.getGeoBacklinkRecommendation>>) { return geoBacklinks.getGeoBacklinkRecommendation(this.db,...args); }
+  saveGeoBacklinkRecommendation(...args: GeoTail<Parameters<typeof geoBacklinks.saveGeoBacklinkRecommendation>>) { return geoBacklinks.saveGeoBacklinkRecommendation(this.db,...args); }
+  listGeoBacklinkActivities(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkActivities>>) { return geoBacklinks.listGeoBacklinkActivities(this.db,...args); }
+  listGeoBacklinkLedger(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkLedger>>) { return geoBacklinks.listGeoBacklinkLedger(this.db,...args); }
+  importGeoBacklinkHistory(...args: GeoTail<Parameters<typeof geoBacklinks.importGeoBacklinkHistory>>) { return geoBacklinks.importGeoBacklinkHistory(this.db,...args); }
+  listLegacyGeoBacklinkHistory(...args: GeoTail<Parameters<typeof geoBacklinks.listLegacyGeoBacklinkHistory>>) { return geoBacklinks.listLegacyGeoBacklinkHistory(this.db,...args); }
+  putGeoBacklinkPerformance(...args: GeoTail<Parameters<typeof geoBacklinks.putGeoBacklinkPerformance>>) { return geoBacklinks.putGeoBacklinkPerformance(this.db,...args); }
+  listGeoBacklinkPerformance(...args: GeoTail<Parameters<typeof geoBacklinks.listGeoBacklinkPerformance>>) { return geoBacklinks.listGeoBacklinkPerformance(this.db,...args); }
   reserveSocialOccurrence(input: import('@citevia/core').ReserveSocialOccurrenceInput) { return social.reserveSocialOccurrence(this.db, input); }
   getSocialPublication(projectId: string, publicationId: string) { return social.getSocialPublication(this.db, projectId, publicationId); }
   listActiveSocialPublications(limit?: number, now?: string) { return social.listActiveSocialPublications(this.db, limit, now); }

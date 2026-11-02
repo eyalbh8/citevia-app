@@ -106,6 +106,15 @@ export class Scanner {
       return this.dispatch();
     }
     switch (message.kind) {
+      case 'geo-backlinks-reconcile':
+        if (!this.dependencies.geoBacklinks) throw new Error('GEO backlink worker is not configured');
+        return this.dependencies.geoBacklinks.reconcile();
+      case 'geo-backlinks':
+        if (!this.dependencies.geoBacklinks) throw new Error('GEO backlink worker is not configured');
+        return this.dependencies.geoBacklinks.handle(message.projectId, message.month);
+      case 'geo-backlinks-progress':
+        if (!this.dependencies.geoBacklinks) throw new Error('GEO backlink worker is not configured');
+        return this.dependencies.geoBacklinks.progress(message.projectId, message.date);
       case 'social-reconcile':
         if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
         return this.dependencies.socialAutomation.reconcile();
@@ -934,6 +943,8 @@ export class Scanner {
   }
 
   async handleDeadLetter(message: ScanMessage): Promise<void> {
+    if (message.kind === 'geo-backlinks' || message.kind === 'geo-backlinks-progress' || message.kind === 'geo-backlinks-reconcile')
+      return this.handle(message);
     if (message.kind === 'social-reconcile') {
       if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
       return this.dependencies.socialAutomation.reconcile();
