@@ -219,12 +219,15 @@ export function DashboardView({
                     : `${formatNumber(data.analyzed)} analyzed answers`}
               </span>
             </div>
-            {!data.analyzed && (
+            {(data.scanInProgress || !data.analyzed) && (
               <div className="overview-empty-note" role="status">
                 <Info size={16} />
                 <span>
-                  No analyzed answers in this period. Adjust the filters or run
-                  a scan to collect results.
+                  {data.scanInProgress
+                    ? data.analyzed
+                      ? 'Scan in progress. Results update as each answer finishes analysis.'
+                      : 'Scan in progress. Results will appear as soon as the first answer finishes analysis.'
+                    : 'No analyzed answers in this period. Adjust the filters or run a scan to collect results.'}
                 </span>
               </div>
             )}

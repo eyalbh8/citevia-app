@@ -78,6 +78,18 @@ async function dashboard(account = project) {
 const latestQuery = () => new URL(mocks.useApi.mock.calls.at(-1)![0], 'https://citevia.test').searchParams;
 
 describe('dashboard discovery reporting', () => {
+  it.each([0, 12])('explains an active first scan with %s analyzed answers without suggesting another scan', async (analyzed) => {
+    data.analyzed = analyzed;
+    data.scanInProgress = true;
+    await dashboard();
+    const note = container.querySelector('.overview-empty-note')?.textContent;
+    expect(note).toContain('Scan in progress.');
+    expect(note).toContain(analyzed ? 'Results update as each answer finishes analysis.'
+      : 'Results will appear as soon as the first answer finishes analysis.');
+    expect(note).not.toContain('run a scan');
+    expect(container.querySelector('.overview-period-note')?.textContent).toContain(`${analyzed} analyzed answers`);
+  });
+
   it('opens real accounts on all prompts without hiding branded observations', async () => {
     await dashboard();
     expect(latestQuery().has('branded')).toBe(false);

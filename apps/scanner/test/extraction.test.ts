@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { containsAlias, parseExtraction, validateExtraction, verifySpan } from '../src/extraction.js';
+import { aliasOffset, containsAlias, parseExtraction, validateExtraction, verifySpan } from '../src/extraction.js';
 import { normalizeAnswer } from '../src/normalize.js';
 import { absent, captured, competitor, instant, snapshot, target } from './fixtures.js';
 
@@ -8,6 +8,20 @@ const mention = (text: string, overrides: Record<string, unknown> = {}) => ({ br
   evidence: [{ blockId: 'block-1', quote: text, start: 0, end: text.length }], rankEvidence: null, sentimentEvidence: { blockId: 'block-1', quote: text, start: 0, end: text.length }, ...overrides });
 
 describe('evidence extraction', () => {
+  it.each([
+    ['JP\u202fMorgan Self\u2011Directed Investing', 'JP Morgan Self-Directed Investing'],
+    ['E\\*TRADE', 'E*TRADE'],
+  ])('matches visible company spelling in %s while retaining original evidence offsets', (name, canonical) => {
+    const text = `🧭 ${name} is useful.`;
+    const brand = { ...target, name: canonical, aliases: [] };
+    expect(aliasOffset(text, brand)).toBe(3);
+    expect(containsAlias(`${name}ology`, brand)).toBe(false);
+    const evidence = { blockId: 'block-1', quote: name, start: 3, end: 3 + name.length };
+    const rows = validateExtraction({ brands: [{ ...mention(name), evidence: [evidence], sentimentEvidence: evidence }] }, captured(text), [brand]);
+    expect(rows[0].evidence[0]).toEqual(evidence);
+    expect(text.slice(evidence.start, evidence.end)).toBe(name);
+  });
+
   it('treats no mention as a successful observation', () => {
     const values = validateExtraction({ brands: [noMention(target.id), noMention(competitor.id)] }, captured('Neither brand appears.'), [target, competitor]);
     expect(values.map(value => value.mentioned)).toEqual([false, false]);

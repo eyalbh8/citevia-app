@@ -13,6 +13,11 @@ import { JOURNEY_STAGES } from './onboarding.js';
 import { domainForUrl, isOwnedDomain, normalizeUrl, sourceId } from './urls.js';
 import { brandRank, brandSentimentScore } from './scoring.js';
 export const REPORTING_VERSION = 2;
+/** Successful answers are reportable while the rest of a scan is still running. */
+export function isReportableRun(run: ScanRun): boolean {
+  return !run.cancelledAt && !run.reportingExcludedAt &&
+    ['running', 'completed', 'partial'].includes(run.status);
+}
 export function reportingGroups(
   run: ScanRun | null,
   results: PromptResult[],
