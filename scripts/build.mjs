@@ -2,7 +2,7 @@ import { build } from 'esbuild';
 import { mkdir, cp, rm } from 'node:fs/promises';
 // Remove media renderer assets left by builds before the hero-only blog flow.
 await rm('dist/scanner/agent-assets', {recursive:true, force:true});
-for (const app of ['api', 'scanner']) {
+for (const app of ['api', 'scanner', 'migrations']) {
   await mkdir(`dist/${app}`, { recursive: true });
   await build({
     entryPoints: [`apps/${app}/src/handler.ts`],

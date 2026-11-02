@@ -252,6 +252,16 @@ export class OnboardingEngine {
       if (saved && next.status !== 'completed')
         await queue.send([{ kind: 'onboard', projectId, jobId }]);
     } catch (error) {
+      if (error instanceof ProviderError && error.kind === 'deferred' && error.safeToRetry) {
+        const delay = Math.max(30, Math.min(86400, Math.ceil((error.retryAfterMs ?? 60000) / 1000)));
+        const waiting: OnboardingJob = { ...current, status: 'queued', paidCall: undefined,
+          attempts: Math.max(0, current.attempts - 1), leaseOwner: undefined,
+          leaseExpiresAt: new Date(this.now().getTime() + delay * 1000).toISOString(),
+          version: current.version + 1, updatedAt: this.now().toISOString() };
+        if (await repository.saveOnboarding(waiting, current.version))
+          await this.runtime.queue.send([{ kind: 'onboard', projectId, jobId }], Math.min(900, delay));
+        return;
+      }
       if (error instanceof LostLease) {
         await this.pauseFailedSetup(projectId, jobId);
         return;

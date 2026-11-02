@@ -101,8 +101,8 @@ describe('MCP OAuth', () => {
     expect(await f.oauth(new Request(`${BASE}/v1/projects`))).toBeNull();
   });
 
-  it.each(['javascript:alert(1)', 'http://remote.example/callback', 'https://a.test/cb#fragment', 'https://user:pass@a.test/cb'])
-    ('refuses unsafe client redirects %s', async redirect => {
+  it.each(['javascript:alert(1)', 'http://remote.example/callback', 'https://a.test/cb#fragment', 'https://user:pass@a.test/cb'])(
+    'refuses unsafe client redirects %s', async redirect => {
       const f = await setup();
       const response = await f.call('/oauth/register', 'POST', { redirect_uris: [redirect] });
       expect(response.status).toBe(400);

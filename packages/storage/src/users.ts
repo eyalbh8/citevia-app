@@ -41,7 +41,7 @@ export interface UserRepository {
   ): Promise<User>;
   bootstrapAdmin(id: string): Promise<User>;
 }
-const selectUser = `SELECT u.*, i.subject, i.external_user_id, i.disabled, i.access_version, i.last_seen_at FROM users u JOIN citevia_identities i ON i.user_id=u.id WHERE i.provider='descope'`;
+const selectUser = `SELECT u.id, u.email, u.name, u.last_name, u.is_system_admin, u.created_at, u.updated_at, i.subject, i.external_user_id, i.disabled, i.access_version, i.last_seen_at FROM users u JOIN citevia_identities i ON i.user_id=u.id WHERE i.provider='descope'`;
 const iso = (value: unknown) =>
   value instanceof Date ? value.toISOString() : String(value);
 const fromRow = (r: Record<string, unknown>): User => ({

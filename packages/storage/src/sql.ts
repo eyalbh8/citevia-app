@@ -6,7 +6,7 @@ import {
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
-import { externalDatabaseConfig } from './database-config.js';
+import { databaseTimeouts, externalDatabaseConfig, type DatabasePurpose } from './database-config.js';
 
 export interface SqlSession {
   query<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -36,108 +36,109 @@ function session(client: Pool | PoolClient): SqlSession {
     exec: (sql) => client.query(sql),
   };
 }
-let poolPromise: Promise<Pool> | undefined;
-let poolCreatedAt = 0;
-function connectionPool(config:PoolConfig){const pool=new Pool(config);pool.on('error',error=>{console.error(JSON.stringify({event:'database_pool_error',code:(error as {code?:string}).code||'connection_error'}));});return pool;}
-export function productionDatabase(): SqlDatabase {
+interface PoolEntry { promise: Promise<Pool>; createdAt: number }
+const pools = new Map<DatabasePurpose, PoolEntry>();
+function connectionPool(config: PoolConfig) {
+  const pool = new Pool(config);
+  pool.on('error', error => {
+    const code = (error as { code?: string }).code;
+    console.error(JSON.stringify({ event: 'database_pool_error',
+      code: code && /^[A-Z0-9_]{3,40}$/.test(code) ? code : 'connection_error' }));
+  });
+  return pool;
+}
+
+function configuredDatabase(purpose: DatabasePurpose): SqlDatabase {
   const load = () => {
-    if (poolPromise && Date.now() - poolCreatedAt > 300000) {
-      const old = poolPromise;
-      poolPromise = undefined;
-      void old.then((pool) => pool.end()).catch(() => {});
+    const existing = pools.get(purpose);
+    if (existing && Date.now() - existing.createdAt <= 300000) return existing.promise;
+    if (existing) {
+      pools.delete(purpose);
+      void existing.promise.then(pool => pool.end()).catch(() => {});
     }
-    if (poolPromise) return poolPromise;
-    poolCreatedAt = Date.now();
-    return (poolPromise = (async () => {
+    const timeouts = databaseTimeouts(purpose);
+    const entry: PoolEntry = { createdAt: Date.now(), promise: Promise.resolve(undefined as unknown as Pool) };
+    entry.promise = (async () => {
       const mode = process.env.DATABASE_MODE || 'aurora';
       if (mode !== 'aurora' && mode !== 'external')
         throw new Error('DATABASE_MODE must be aurora or external');
+      const migration = purpose === 'migration';
+      const secretId = migration ? process.env.DATABASE_MIGRATION_SECRET_ARN : process.env.DATABASE_SECRET_ARN;
+      const poolOptions: PoolConfig = { query_timeout: timeouts.query,
+        application_name: migration ? 'citevia-migration' : 'citevia', max: migration ? 1 : 2 };
       if (mode === 'external') {
-        const secretId = process.env.DATABASE_SECRET_ARN;
-        if (!secretId) throw new Error('Configure DATABASE_SECRET_ARN for external PostgreSQL');
-        const secret = await new SecretsManagerClient({}).send(
-          new GetSecretValueCommand({ SecretId: secretId }),
-        );
-        return connectionPool(externalDatabaseConfig(secret.SecretString || ''));
+        if (!secretId) throw new Error(`Configure ${migration ? 'DATABASE_MIGRATION_SECRET_ARN' : 'DATABASE_SECRET_ARN'} for external PostgreSQL`);
+        const secret = await new SecretsManagerClient({}).send(new GetSecretValueCommand({ SecretId: secretId }));
+        const config = externalDatabaseConfig(secret.SecretString || '');
+        if (migration && /-pooler\./i.test(config.host || ''))
+          throw new Error('Database migrations require a direct connection, not a transaction-pooler host');
+        // PgBouncer transaction pooling does not support server timeout startup options.
+        // Standalone statements use role defaults; explicit transactions use SET LOCAL.
+        return connectionPool({ ...config, ...poolOptions });
       }
-      if (process.env.DATABASE_URL)
-        return connectionPool({
-          connectionString: process.env.DATABASE_URL,
-          max: 2,
-          connectionTimeoutMillis: 10000,
-          idleTimeoutMillis: 30000,
-        });
-      const secretId = process.env.DATABASE_SECRET_ARN,
-        host = process.env.DATABASE_HOST;
+      const connectionString = migration ? process.env.DATABASE_MIGRATION_URL : process.env.DATABASE_URL;
+      if (connectionString) return connectionPool({ connectionString, connectionTimeoutMillis: 10000,
+        idleTimeoutMillis: 30000, ...poolOptions });
+      const host = migration ? process.env.DATABASE_MIGRATION_HOST || process.env.DATABASE_HOST : process.env.DATABASE_HOST;
       if (!secretId || !host)
-        throw new Error(
-          'Configure DATABASE_HOST and DATABASE_SECRET_ARN, or DATABASE_URL',
-        );
-      const secret = await new SecretsManagerClient({}).send(
-        new GetSecretValueCommand({ SecretId: secretId }),
-      );
-      const credentials = JSON.parse(secret.SecretString || '{}');
-      if (!credentials.username || !credentials.password)
+        throw new Error(migration ? 'Configure DATABASE_MIGRATION_HOST and DATABASE_MIGRATION_SECRET_ARN, or DATABASE_MIGRATION_URL'
+          : 'Configure DATABASE_HOST and DATABASE_SECRET_ARN, or DATABASE_URL');
+      const secret = await new SecretsManagerClient({}).send(new GetSecretValueCommand({ SecretId: secretId }));
+      let credentials: { username?: unknown; password?: unknown };
+      try { credentials = JSON.parse(secret.SecretString || '{}'); }
+      catch { throw new Error('Database secret must be a JSON credential object'); }
+      if (typeof credentials?.username !== 'string' || !credentials.username ||
+          typeof credentials.password !== 'string' || !credentials.password)
         throw new Error('Database secret must contain username and password');
       const { rootCertificates } = await import('node:tls');
-      return connectionPool({
-        host,
-        port: 5432,
-        database: process.env.DATABASE_NAME || 'citevia',
-        user: credentials.username,
-        password: credentials.password,
-        max: 2,
-        connectionTimeoutMillis: 10000,
-        idleTimeoutMillis: 30000,
-        ssl: {
-          rejectUnauthorized: true,
-          ca:
-            process.env.RDS_CA_BUNDLE ||
-            [
-              ...rootCertificates,
-              await readFile(
-                resolve(
-                  process.env.LAMBDA_TASK_ROOT || '.',
-                  'database/rds-ca.pem',
-                ),
-                'utf8',
-              ),
-            ].join('\n'),
-        },
-      });
-    })().catch((error) => {
-      poolPromise = undefined;
+      return connectionPool({ host, port: 5432, database: process.env.DATABASE_NAME || 'citevia',
+        user: credentials.username, password: credentials.password, connectionTimeoutMillis: 10000,
+        idleTimeoutMillis: 30000, ...poolOptions, ssl: { rejectUnauthorized: true,
+          ca: process.env.RDS_CA_BUNDLE || [...rootCertificates,
+            await readFile(resolve(process.env.LAMBDA_TASK_ROOT || '.', 'database/rds-ca.pem'), 'utf8')].join('\n') } });
+    })().catch(error => {
+      if (pools.get(purpose) === entry) pools.delete(purpose);
       throw error;
-    }));
+    });
+    pools.set(purpose, entry);
+    return entry.promise;
   };
   return {
-    query: async <T extends Record<string, unknown>>(
-      sql: string,
-      params?: unknown[],
-    ) => session(await load()).query<T>(sql, params),
-    exec: async (sql) => session(await load()).exec(sql),
-    transaction: async (work) => {
+    query: async <T extends Record<string, unknown>>(sql: string, params?: unknown[]) => session(await load()).query<T>(sql, params),
+    exec: async sql => session(await load()).exec(sql),
+    transaction: async work => {
+      const timeouts = databaseTimeouts(purpose);
       const client = await (await load()).connect();
+      let begun = false, discard = false;
       try {
         await client.query('BEGIN');
+        begun = true;
+        await client.query(`SELECT set_config('statement_timeout',$1,true), set_config('lock_timeout',$2,true),
+          set_config('idle_in_transaction_session_timeout',$3,true)`,
+        [`${timeouts.statement}ms`, `${timeouts.lock}ms`, `${timeouts.idleTransaction}ms`]);
         const result = await work(session(client));
         await client.query('COMMIT');
         return result;
       } catch (error) {
-        await client.query('ROLLBACK');
+        // A client-side deadline does not prove the server stopped or rolled back.
+        // Destroy failed clients, never retry ambiguous writes, and preserve the original error.
+        discard = true;
+        if (begun && !(error instanceof Error && error.message === 'Query read timeout')) {
+          try { await client.query('ROLLBACK'); } catch { /* discard the unusable connection */ }
+        }
         throw error;
-      } finally {
-        client.release();
-      }
+      } finally { client.release(discard || undefined); }
     },
     close: async () => {
-      if (poolPromise) {
-        await (await poolPromise).end();
-        poolPromise = undefined;
-      }
+      const entry = pools.get(purpose);
+      if (entry) { pools.delete(purpose); await (await entry.promise).end(); }
     },
   };
 }
+
+export function productionDatabase(): SqlDatabase { return configuredDatabase('runtime'); }
+/** Dedicated owner credentials/direct endpoint, never a fallback to the runtime login. */
+export function migrationDatabase(): SqlDatabase { return configuredDatabase('migration'); }
 export async function migrateDatabase(
   db: SqlDatabase,
   directory = resolve(

@@ -1,0 +1,34 @@
+{
+  "date": "2026-11-02",
+  "environment": "isolated Neon child branch",
+  "projectId": "square-queen-21517226",
+  "branchId": "br-twilight-fog-b8d1l49b",
+  "parentBranchId": "br-dawn-poetry-b8ikwst1",
+  "branchExpiresAt": "2026-11-03T22:00:00Z",
+  "productionConnected": false,
+  "migrationsVerified": 19,
+  "tablesGranted": 44,
+  "pooledDefaults": {
+    "role": "citevia_runtime_rehearsal",
+    "statement_timeout": "15s",
+    "lock_timeout": "5s",
+    "idle_transaction_timeout": "15s"
+  },
+  "representativeRepositoryReads": {
+    "projects": 5,
+    "runs": 10,
+    "results": 500,
+    "answerPages": 10,
+    "users": 2
+  },
+  "scannerWrites": { "writes": 2, "rolledBack": true, "skipped": false },
+  "permissionDenialsVerified": 7,
+  "statementDeadlineSqlState": "57014",
+  "lockDeadlineSqlState": "55P03",
+  "healthyQueryAfterCancellation": true,
+  "limits": [
+    "Representative flows only; full API end-to-end testing is separate.",
+    "Evidence describes the isolated rehearsal, not the production runtime credential.",
+    "No global PUBLIC permissions or production data were changed."
+  ]
+}

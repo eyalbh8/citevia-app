@@ -1,3 +1,4 @@
+import { ProviderError, type ProviderCallContext } from './provider.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, DEFAULT_AGENT_CONTENT_MODEL, socialOccurrenceLocalDate, socialGenerationOccurrences, socialApprovalSnapshot,
   type AgentPostJob, type Project, type SocialGenerationMessage, type SocialOccurrenceMessage, type SocialPublication } from '@citevia/core';
@@ -17,7 +18,7 @@ const uncertainty = () => new SocialPublisherError('generation_uncertain', 'A ge
 /** One generation/upload/publish stage per delivery, with durable receipts between paid calls. */
 export class SocialAutomationEngine {
   constructor(private runtime: Runtime, private publisher: () => Promise<SocialPublisher> = createSocialPublisher,
-    private generator: () => Promise<SocialMediaGenerator> = createSocialMediaGenerator, private now = () => new Date(),
+    private generator: (context?: ProviderCallContext) => Promise<SocialMediaGenerator> = createSocialMediaGenerator, private now = () => new Date(),
     private publishingConfigured = () => publisher !== createSocialPublisher || socialPublisherConfigured(),
     private uploads: () => SocialMediaUploadStore | undefined = createSocialMediaUploadStore,
     private inspectVideo = inspectSocialVideo) {}
@@ -122,7 +123,7 @@ export class SocialAutomationEngine {
       }
       const frozenProject = { ...project, ...current.context };
       let mediaGenerator: Promise<SocialMediaGenerator> | undefined;
-      const media = () => mediaGenerator ??= this.generator();
+      const media = () => mediaGenerator ??= this.generator({ projectId, runId: publicationId, promptId: current.prompt.id, attempt: current.attempts });
       if (destination.channel === 'tiktok' && current.stage === 'queued' && !await (await media()).videoReady()) {
         await stop('failed', 'video_not_configured', 'Video generation is not configured. No TikTok post was published.'); return;
       }
@@ -133,9 +134,18 @@ export class SocialAutomationEngine {
         if (current.checkpoints?.paidStage === stage) throw uncertainty();
         if (!await this.enabled(current)) throw new SocialPublisherError('automation_paused', 'Automation was paused.');
         current = await this.persist(current, { status: 'generating', checkpoints: { ...current.checkpoints, paidStage: stage } });
-        const value = await execute();
-        await artifacts.put(key, { value });
-        return value;
+        try {
+          const value = await execute();
+          await artifacts.put(key, { value });
+          return value;
+        } catch (error) {
+          // Definite admission/provider rejection did not purchase generation. Only
+          // clear intent for those cases; a lost paid receipt must never replay.
+          if (error instanceof ProviderError && (error.kind === 'deferred' || error.kind === 'quota' ||
+              error.httpStatus === 429 || [400, 401, 403, 404, 422].includes(error.httpStatus ?? 0) || error.code.startsWith('cost_')))
+            current = await this.persist(current, { checkpoints: { ...current.checkpoints, paidStage: undefined } });
+          throw error;
+        }
       };
       if (current.stage === 'queued') {
         const posts = await publisher.recentPosts(destination.profileId, destination.id);
@@ -280,6 +290,15 @@ export class SocialAutomationEngine {
       await this.recordPublication(current, result);
     } catch (error) {
       if ((error as Error).message === 'social_lease_lost') return;
+      if (error instanceof ProviderError && error.safeToRetry && error.retryable &&
+          (error.kind === 'deferred' || (error.kind === 'rate_limit' && (current.attempts || 0) < 5))) {
+        const delay = Math.max(30, Math.min(86400, Math.ceil((error.retryAfterMs ?? 60000) / 1000)));
+        await this.persist(current, { leaseOwner: undefined, leaseUntil: undefined,
+          ...(error.kind === 'deferred' ? { attempts: Math.max(0, (current.attempts || 1) - 1) } : {}),
+          nextAttemptAt: new Date(this.now().getTime() + delay * 1000).toISOString() });
+        await queue.send([{ kind: 'social-publication', projectId, publicationId }], Math.min(900, delay));
+        return;
+      }
       if (error instanceof SocialPublisherError && ['tiktok_options_changed', 'review_media_invalid'].includes(error.code) && !current.publishAttemptAt) {
         await this.advance(current, 'publish', { status: 'review_required', approval: undefined,
           error: { code: error.code, message: error.message } });
@@ -292,9 +311,9 @@ export class SocialAutomationEngine {
         await queue.send([{ kind: 'social-publication', projectId, publicationId }], Math.min(900, delay));
         return;
       }
-      const code = error instanceof SocialPublisherError ? error.code : 'social_generation_failed';
+      const code = error instanceof SocialPublisherError || error instanceof ProviderError ? error.code : 'social_generation_failed';
       await stop(current.publishAttemptAt ? 'uncertain' : 'failed', code,
-        error instanceof SocialPublisherError ? error.message : 'Content generation could not finish. No new post was published.');
+        error instanceof SocialPublisherError || error instanceof ProviderError ? error.message : 'Content generation could not finish. No new post was published.');
     }
   }
 

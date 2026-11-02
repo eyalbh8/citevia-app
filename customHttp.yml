@@ -1,4 +1,22 @@
 customHeaders:
+  - pattern: '**'
+    headers:
+      - key: Strict-Transport-Security
+        value: 'max-age=31536000'
+      - key: X-Content-Type-Options
+        value: 'nosniff'
+      - key: X-Frame-Options
+        value: 'DENY'
+      - key: Referrer-Policy
+        value: 'strict-origin-when-cross-origin'
+      - key: Permissions-Policy
+        value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
+      - key: Content-Security-Policy
+        value: "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
+      # Stage stricter source restrictions without interrupting Descope SSO, CAPTCHA,
+      # signed uploads or customer-hosted media. Review browser violations before enforcing.
+      - key: Content-Security-Policy-Report-Only
+        value: "default-src 'self'; script-src 'self' https://descopecdn.com https://*.descopecdn.com https://static.descope.com https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' https: data: blob:; font-src 'self' https: data:; connect-src 'self' https://api.citevia.io https://*.descope.com https://*.descopecdn.com https://*.amazonaws.com https://www.google.com https://challenges.cloudflare.com; frame-src 'self' https:; media-src 'self' https: blob:; worker-src 'self' blob:; base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
   - pattern: '/'
     headers:
       - key: Cache-Control

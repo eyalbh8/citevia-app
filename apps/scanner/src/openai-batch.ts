@@ -1,3 +1,4 @@
+import { boundedResponseBytes, ResponseBodyLimitError } from './response-body.js';
 import { object, ProviderError, type NativeResponse, type ProviderErrorOptions } from './provider.js';
 import { classifyProviderHttpError } from './provider-errors.js';
 
@@ -47,22 +48,25 @@ export class OpenAIBatchClient implements BatchClient {
     try {
       const response = await (this.options.fetch ?? fetch)(`https://api.openai.com/v1${path}`, {
         ...init,
+        redirect: 'error',
         headers: { Authorization: `Bearer ${this.options.apiKey}`, ...(init.headers ?? {}) },
         signal: controller.signal,
       });
       if (!response.ok) {
         const requestId = response.headers.get('x-request-id');
-        const failure = await classifyProviderHttpError(response, { provider: 'openai', nowMs: this.options.now?.().getTime() });
+        const failure = await classifyProviderHttpError(response, { provider: 'openai', nowMs: this.options.now?.().getTime(), signal: controller.signal });
         if (creating)
           throw new BatchSubmissionError(response.status >= 500 || [408, 409].includes(response.status), `analysis_batch_http_${response.status}`, requestId, failure);
         throw new ProviderError(`analysis_batch_http_${response.status}`, 'Batch API request failed.', failure.retryable, requestId, failure);
       }
       // Keep the timeout active while consuming the body, including output-file downloads.
-      const bytes = await response.arrayBuffer();
-      if (bytes.byteLength > 32 * 1024 * 1024)
-        throw new ProviderError('analysis_batch_file_too_large', 'Batch response exceeded the application limit.', false);
-      return new Response(bytes, { status: response.status, headers: response.headers });
+      const bytes = await boundedResponseBytes(response, 32 * 1024 * 1024, controller.signal);
+      return new Response(Buffer.from(bytes), { status: response.status, headers: response.headers });
     } catch (error) {
+      if (error instanceof ResponseBodyLimitError) {
+        if (creating) throw new BatchSubmissionError(true, 'analysis_batch_submission_uncertain');
+        throw new ProviderError('analysis_batch_file_too_large', error.message, false);
+      }
       if (error instanceof ProviderError) throw error;
       if (creating) throw new BatchSubmissionError(true, 'analysis_batch_submission_uncertain');
       // Retrying a read or file upload never purchases inference.

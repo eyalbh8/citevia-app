@@ -122,8 +122,8 @@ export const agentBlogSchema = blogDraftSchema
       )
       .length(2)
       .optional(),
-    articleSchema: z.record(z.unknown()),
-    faqSchema: z.record(z.unknown()),
+    articleSchema: z.record(z.string(), z.unknown()),
+    faqSchema: z.record(z.string(), z.unknown()),
     checks: z.array(
       z.object({ id: z.string(), label: z.string(), passed: z.boolean() }),
     ),

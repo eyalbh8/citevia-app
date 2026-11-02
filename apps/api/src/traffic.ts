@@ -11,6 +11,7 @@ import {
 import { AccessError, type Runtime } from '@citevia/storage';
 import { monitoringPeriod } from './monitoring.js';
 import { trafficTracker } from './traffic-tracker.js';
+import { readRequestText } from './request-body.js';
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), {
     status,
@@ -65,7 +66,7 @@ export async function publicTrafficRoute(
   if (request.method !== 'POST')
     return json({ error: 'Method not allowed' }, 405);
   try {
-    const raw = await request.text();
+    const raw = await readRequestText(request, 32768);
     if (raw.length > 8192) return json({ error: 'Event is too large' }, 413);
     const parsed = eventSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) return json({ error: 'Invalid traffic event' }, 400);
@@ -125,6 +126,7 @@ export async function publicTrafficRoute(
     });
     return new Response(null, { status: 204 });
   } catch (error) {
+    if (error instanceof AccessError) return json({ error: error.message }, error.status);
     if (error instanceof SyntaxError)
       return json({ error: 'Invalid traffic event' }, 400);
     throw error;

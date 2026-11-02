@@ -131,9 +131,24 @@ Parameters:
     Description: Enable after all pre-optimization scanner workers have drained. First release mirrors run state to JSON for mixed-version safety.
   LlmMonthlyBudgetUsd:
     Type: Number
+    Default: 70
+    MinValue: 0
+    Description: Monthly account AI admission allowance in USD; capped by the total account allowance minus infrastructure reserve.
+  AccountMonthlyBudgetUsd:
+    Type: Number
+    Default: 100
+    MinValue: 1
+    Description: Total monthly account operating-cost target. Shared infrastructure invoices require monthly allocation and reconciliation.
+  AccountMonthlyInfraReserveUsd:
+    Type: Number
+    Default: 30
+    MinValue: 0
+    Description: Reserve for shared database, storage, API and AWS costs; deducted before admitting AI work.
+  LlmGlobalMonthlyBudgetUsd:
+    Type: Number
     Default: 0
     MinValue: 0
-    Description: Optional estimated monthly LLM budget in USD. Zero disables the budget limit.
+    Description: Optional whole-application AI admission ceiling. Zero leaves the per-account controls in force without a global ceiling.
   OnboardingModel:
     Type: String
     Default: gpt-4.1-2025-04-14
@@ -149,6 +164,11 @@ Parameters:
     Type: String
     Default: ''
     Description: Existing same-region Secrets Manager secret using aws/secretsmanager, with host,port,database,username,password JSON fields. Credentials never enter template parameters.
+    AllowedPattern: '^$|arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+'
+  DatabaseMigrationSecretArn:
+    Type: String
+    Default: ''
+    Description: Dedicated migration-only owner credential with a direct PostgreSQL hostname. Never granted to the API or scanner.
     AllowedPattern: '^$|arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+'
   RemoveLegacyNetwork:
     Type: String
@@ -185,6 +205,18 @@ Parameters:
     Type: String
     Default: ''
     Description: Optional operations email; confirm the SNS subscription after deployment.
+  AlertEmailSecondary:
+    Type: String
+    Default: ''
+    Description: Additional security recipient; must confirm the SNS subscription.
+  AlertEmailTertiary:
+    Type: String
+    Default: ''
+    Description: Additional security recipient; must confirm the SNS subscription.
+  LogRetentionDays:
+    Type: Number
+    Default: 90
+    AllowedValues: [30, 60, 90, 180, 365]
   QueueConcurrency:
     Type: Number
     Default: 10
@@ -205,6 +237,13 @@ Parameters:
 Conditions:
   IncludeDevOrigin: !Equals [!Ref EnableDevOrigin, 'true']
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+  HasAlertEmailSecondary: !And
+    - !Not [!Equals [!Ref AlertEmail, '']]
+    - !Not [!Equals [!Ref AlertEmailSecondary, '']]
+  HasAlertEmailTertiary: !And
+    - !Not [!Equals [!Ref AlertEmail, '']]
+    - !Not [!Equals [!Ref AlertEmailTertiary, '']]
+  HasMigrationSecret: !Not [!Equals [!Ref DatabaseMigrationSecretArn, '']]
   UseReservedConcurrency: !Equals [!Ref EnableReservedConcurrency, 'true']
   HasApiDomain: !Not [!Equals [!Ref ApiDomainName, '']]
   HasPerplexitySecret: !Not [!Equals [!Ref PerplexitySecretArn, '']]
@@ -274,6 +313,12 @@ Globals:
         CITEVIA_COMPACT_RUN_STATE: !Ref CompactRunState
         ANALYSIS_FALLBACK_MODEL: !Ref ExtractionFallbackModel
         LLM_MONTHLY_BUDGET_USD: !Ref LlmMonthlyBudgetUsd
+        ACCOUNT_MONTHLY_BUDGET_USD: !Ref AccountMonthlyBudgetUsd
+        ACCOUNT_MONTHLY_INFRA_RESERVE_USD: !Ref AccountMonthlyInfraReserveUsd
+        LLM_GLOBAL_MONTHLY_BUDGET_USD: !Ref LlmGlobalMonthlyBudgetUsd
+        LLM_SOCIAL_IMAGE_RESERVATION_USD: '3'
+        LLM_SOCIAL_VISION_RESERVATION_USD: '3'
+        LLM_PERPLEXITY_FAST_RESERVATION_USD: '1'
 
 Resources:
   Vpc:
@@ -342,15 +387,15 @@ Resources:
     Properties:
       GroupDescription: Citevia Lambda outbound connectivity
       VpcId: !Ref Vpc
-      SecurityGroupEgress: [{IpProtocol: '-1', CidrIp: 0.0.0.0/0}]
+      SecurityGroupEgress: [{IpProtocol: '-1', CidrIp: 0.0.0.0/0, Description: Legacy Aurora-mode outbound provider traffic through NAT}]
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: PostgreSQL accepts Citevia Lambdas only
       VpcId: !Ref Vpc
       SecurityGroupIngress:
-        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref LambdaSecurityGroup}
-        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref DatabaseTunnelSecurityGroup}
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref LambdaSecurityGroup, Description: TLS database access from application functions}
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref DatabaseTunnelSecurityGroup, Description: IAM-authorized Session Manager database maintenance}
   DatabaseSubnets:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
@@ -364,6 +409,11 @@ Resources:
       Parameters: {rds.force_ssl: '1'}
   Database:
     Type: AWS::RDS::DBCluster
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_162
+            comment: Dormant legacy Aurora compatibility resource; production retires it and uses external Neon with a restricted runtime role. Review IAM authentication before re-enabling Aurora.
     Condition: KeepLegacyDatabase
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
@@ -385,6 +435,11 @@ Resources:
         SecondsUntilAutoPause: !If [AuroraAutoPauseEnabled, !Ref AuroraAutoPauseSeconds, !Ref 'AWS::NoValue']
   DatabaseWriter:
     Type: AWS::RDS::DBInstance
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_118
+            comment: Dormant legacy Aurora compatibility resource; production retires it and monitors external Neon. Configure enhanced monitoring before re-enabling this instance.
     Condition: KeepLegacyDatabase
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
@@ -418,8 +473,8 @@ Resources:
       GroupDescription: Outbound Session Manager and PostgreSQL for the Citevia database tunnel
       VpcId: !Ref Vpc
       SecurityGroupEgress:
-        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0}
-        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, CidrIp: 10.48.0.0/16}
+        - {IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: Session Manager HTTPS endpoints}
+        - {IpProtocol: tcp, FromPort: 5432, ToPort: 5432, CidrIp: 10.48.0.0/16, Description: Private TLS PostgreSQL maintenance}
   DatabaseTunnel:
     Type: AWS::EC2::Instance
     Condition: KeepLegacyEgress
@@ -437,6 +492,9 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
+      LoggingConfiguration:
+        DestinationBucketName: !Ref StorageAccessLogs
+        LogFilePrefix: evidence/
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
@@ -487,14 +545,70 @@ Resources:
             Condition:
               Bool: {aws:SecureTransport: 'false'}
 
+  StorageAccessLogs:
+    Type: AWS::S3::Bucket
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: Dedicated access-log destination; logging this bucket into itself creates recursive log delivery. Public access is blocked and transport/encryption/retention are enforced.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      OwnershipControls:
+        Rules: [{ObjectOwnership: BucketOwnerEnforced}]
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: BoundedAccessLogs
+            Status: Enabled
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration: {NoncurrentDays: 30}
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+  StorageAccessLogsPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StorageAccessLogs
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: S3ServerAccessLogging
+            Effect: Allow
+            Principal: {Service: logging.s3.amazonaws.com}
+            Action: s3:PutObject
+            Resource: !Sub '${StorageAccessLogs.Arn}/evidence/*'
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref 'AWS::AccountId'}
+              ArnLike: {aws:SourceArn: !GetAtt EvidenceBucket.Arn}
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt StorageAccessLogs.Arn, !Sub '${StorageAccessLogs.Arn}/*']
+            Condition: {Bool: {aws:SecureTransport: 'false'}}
+
   ScanDeadLetterQueue:
     Type: AWS::SQS::Queue
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_27
+            comment: Explicit SqsManagedSseEnabled enables SSE-SQS encryption; this legacy check only recognizes KmsMasterKeyId. No plaintext queue storage is permitted.
     Properties:
       MessageRetentionPeriod: 1209600
       SqsManagedSseEnabled: true
 
   ScanQueue:
     Type: AWS::SQS::Queue
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_27
+            comment: Explicit SqsManagedSseEnabled enables SSE-SQS encryption; this legacy check only recognizes KmsMasterKeyId. No plaintext queue storage is permitted.
     Properties:
       VisibilityTimeout: 1800
       MessageRetentionPeriod: 345600
@@ -553,7 +667,8 @@ Resources:
   ApiAccessLogs:
     Type: AWS::Logs::LogGroup
     Properties:
-      RetentionInDays: 14
+      RetentionInDays: !Ref LogRetentionDays
+      KmsKeyId: !GetAtt OperationsKey.Arn
 
   ApiCertificate:
     Type: AWS::CertificateManager::Certificate
@@ -613,6 +728,13 @@ Resources:
 
   ApiFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_116
+            comment: API Gateway invokes this function synchronously; Lambda asynchronous DLQs do not capture HTTP request failures. API errors are logged and alarmed.
+          - id: CKV_AWS_173
+            comment: Environment contains nonsecret configuration and Secrets Manager ARNs; credential values are fetched with scoped IAM. Lambda supplies encryption at rest with its AWS managed key.
     Properties:
       CodeUri: ../dist/api/
       ReservedConcurrentExecutions: !If [UseReservedConcurrency, 20, !Ref 'AWS::NoValue']
@@ -650,6 +772,10 @@ Resources:
           SCHEDULER_ROLE_ARN: !GetAtt SchedulerQueueRole.Arn
           SCHEDULE_GROUP: !Ref ProjectScheduleGroup
           DLQ_ARN: !GetAtt ScanDeadLetterQueue.Arn
+          API_USER_READS_PER_MINUTE: '600'
+          API_USER_WRITES_PER_MINUTE: '120'
+          API_ACCOUNT_READS_PER_MINUTE: '1200'
+          API_ACCOUNT_WRITES_PER_MINUTE: '240'
       Policies:
         - Version: '2012-10-17'
           Statement:
@@ -695,12 +821,25 @@ Resources:
 
   ScannerFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_173
+            comment: Environment contains nonsecret configuration and Secrets Manager ARNs; credential values are fetched with scoped IAM. Lambda supplies encryption at rest with its AWS managed key.
     Properties:
       CodeUri: ../dist/scanner/
       # Completing a job intentionally dispatches the next bounded SQS job.
       # Default recursion protection stops this chain after about 16 invocations.
       # Database admission, attempt budgets and deadlines remain authoritative.
       RecursiveLoop: Allow
+      # SQS work uses the source queue redrive policy; these settings cover the
+      # independent asynchronous EventBridge reconciliation invocations.
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt ScanDeadLetterQueue.Arn
+      EventInvokeConfig:
+        MaximumRetryAttempts: 2
+        MaximumEventAgeInSeconds: 3600
       VpcConfig: !If
         - UseAuroraDatabase
         - SecurityGroupIds: [!Ref LambdaSecurityGroup]
@@ -837,21 +976,232 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
-      RetentionInDays: 14
+      RetentionInDays: !Ref LogRetentionDays
+      KmsKeyId: !GetAtt OperationsKey.Arn
 
   ScannerFunctionLogs:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/lambda/${ScannerFunction}'
-      RetentionInDays: 14
+      RetentionInDays: !Ref LogRetentionDays
+      KmsKeyId: !GetAtt OperationsKey.Arn
+
+  MigrationFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_115
+            comment: This account quota cannot reserve concurrency while retaining the AWS-required unreserved capacity. Only deployment IAM can invoke migrations; a PostgreSQL advisory lock serializes execution and the migration pool has one connection.
+          - id: CKV_AWS_116
+            comment: Deployment invokes migrations synchronously and fails on the returned result; asynchronous Lambda DLQs do not apply. The function has no asynchronous event sources.
+          - id: CKV_AWS_173
+            comment: Environment contains nonsecret configuration and a migration-secret ARN; the credential is fetched with scoped IAM. Lambda supplies encryption at rest with its AWS managed key.
+    Properties:
+      CodeUri: ../dist/migrations/
+      MemorySize: 512
+      Timeout: 300
+      VpcConfig: !If
+        - UseAuroraDatabase
+        - SecurityGroupIds: [!Ref LambdaSecurityGroup]
+          SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+        - !Ref 'AWS::NoValue'
+      Environment:
+        Variables:
+          DATABASE_MIGRATION_SECRET_ARN: !If [UseAuroraDatabase, !GetAtt Database.MasterUserSecret.SecretArn, !Ref DatabaseMigrationSecretArn]
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !If [UseAuroraDatabase, !GetAtt Database.MasterUserSecret.SecretArn, !If [HasMigrationSecret, !Ref DatabaseMigrationSecretArn, !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:unconfigured-migration']]
+  MigrationFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${MigrationFunction}'
+      RetentionInDays: !Ref LogRetentionDays
+      KmsKeyId: !GetAtt OperationsKey.Arn
+
+  OperationsKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Citevia operational logs and encrypted alarm delivery
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccountAdministration
+            Effect: Allow
+            Principal: {AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'}
+            Action: kms:*
+            Resource: '*'
+          - Sid: StackLogEncryption
+            Effect: Allow
+            Principal: {Service: !Sub 'logs.${AWS::Region}.amazonaws.com'}
+            Action: [kms:Encrypt, kms:Decrypt, kms:ReEncrypt*, kms:GenerateDataKey*, kms:DescribeKey]
+            Resource: '*'
+            Condition:
+              ArnLike:
+                kms:EncryptionContext:aws:logs:arn:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${AWS::StackName}-*'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-*'
+          - Sid: CloudWatchAlarmDelivery
+            Effect: Allow
+            Principal: {Service: cloudwatch.amazonaws.com}
+            Action: [kms:Decrypt, kms:GenerateDataKey*]
+            Resource: '*'
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref 'AWS::AccountId'}
+              ArnLike: {aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${AWS::StackName}-*'}
 
   Alerts:
     Type: AWS::SNS::Topic
     Condition: HasAlertEmail
     Properties:
+      KmsMasterKeyId: !GetAtt OperationsKey.Arn
       Subscription:
         - Protocol: email
           Endpoint: !Ref AlertEmail
+  AlertSecondarySubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmailSecondary
+    Properties: {TopicArn: !Ref Alerts, Protocol: email, Endpoint: !Ref AlertEmailSecondary}
+  AlertTertiarySubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmailTertiary
+    Properties: {TopicArn: !Ref Alerts, Protocol: email, Endpoint: !Ref AlertEmailTertiary}
+  AlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Condition: HasAlertEmail
+    Properties:
+      Topics: [!Ref Alerts]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccountAdministration
+            Effect: Allow
+            Principal: {AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'}
+            Action: sns:*
+            Resource: !Ref Alerts
+          - Sid: CloudWatchAlarms
+            Effect: Allow
+            Principal: {Service: cloudwatch.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref Alerts
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref 'AWS::AccountId'}
+              ArnLike: {aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${AWS::StackName}-*'}
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: '*'
+            Action: sns:Publish
+            Resource: !Ref Alerts
+            Condition: {Bool: {aws:SecureTransport: 'false'}}
+
+  ApiHttpErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: API returned at least three HTTP 5xx responses, including handled application failures.
+      Namespace: AWS/ApiGateway
+      MetricName: 5xx
+      Dimensions: [{Name: ApiId, Value: !Ref HttpApi}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+  ApiThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: API Lambda concurrency exhaustion; check account quota and scanner load.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions: [{Name: FunctionName, Value: !Ref ApiFunction}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+  ScannerThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Background processing is throttled; check quota, job deadlines and queue age.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions: [{Name: FunctionName, Value: !Ref ScannerFunction}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+  ApiLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: API p95 latency exceeds ten seconds for ten minutes.
+      Namespace: AWS/ApiGateway
+      MetricName: Latency
+      Dimensions: [{Name: ApiId, Value: !Ref HttpApi}]
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+  CostPersistenceFailureMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ScannerFunctionLogs
+      FilterPattern: '{ $.event = "provider_cost_outcome_unsaved" }'
+      MetricTransformations:
+        - MetricNamespace: !Sub 'Citevia/${AWS::StackName}'
+          MetricName: CostPersistenceFailures
+          MetricValue: '1'
+          DefaultValue: 0
+  CostPersistenceFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: A paid provider outcome could not be recorded. Reservation is retained; reconcile billing before retrying.
+      Namespace: !Sub 'Citevia/${AWS::StackName}'
+      MetricName: CostPersistenceFailures
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
+  BudgetDenialMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ScannerFunctionLogs
+      FilterPattern: '{ $.event = "provider_budget_denied" }'
+      MetricTransformations:
+        - MetricNamespace: !Sub 'Citevia/${AWS::StackName}'
+          MetricName: ProviderBudgetDenials
+          MetricValue: '1'
+          DefaultValue: 0
+  BudgetDenialAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Paid work was stopped by a budget or missing price. Review the account cost report and unresolved holds before authorizing more spend.
+      Namespace: !Sub 'Citevia/${AWS::StackName}'
+      MetricName: ProviderBudgetDenials
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlertEmail, [!Ref Alerts], []]
 
   DeadLetterAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -969,3 +1319,8 @@ Outputs:
     Value: !Ref ApiFunction
   ScannerFunctionName:
     Value: !Ref ScannerFunction
+  MigrationFunctionName:
+    Value: !Ref MigrationFunction
+  AlertsTopicArn:
+    Condition: HasAlertEmail
+    Value: !Ref Alerts

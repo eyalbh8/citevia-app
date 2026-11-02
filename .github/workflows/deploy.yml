@@ -58,7 +58,7 @@ jobs:
       ANALYSIS_CACHE_ENABLED: ${{ vars.ANALYSIS_CACHE_ENABLED || 'true' }}
       WRITE_COMPATIBILITY_RESULTS: ${{ vars.CITEVIA_WRITE_COMPATIBILITY_RESULTS || 'true' }}
       COMPACT_RUN_STATE: ${{ vars.CITEVIA_COMPACT_RUN_STATE }}
-      LLM_MONTHLY_BUDGET_USD: ${{ vars.LLM_MONTHLY_BUDGET_USD || '0' }}
+      LLM_MONTHLY_BUDGET_USD: ${{ vars.LLM_MONTHLY_BUDGET_USD }}
       AURORA_MIN_CAPACITY: ${{ vars.AURORA_MIN_CAPACITY || '1' }}
       AURORA_AUTO_PAUSE_SECONDS: ${{ vars.AURORA_AUTO_PAUSE_SECONDS || '900' }}
       # Blank values inherit the current stack selection, preventing later deploys from undoing a cutover.
@@ -69,12 +69,18 @@ jobs:
       RETIRE_LEGACY_DATABASE: ${{ vars.RETIRE_LEGACY_DATABASE }}
       ONBOARDING_MODEL: ${{ vars.OPENAI_ONBOARDING_MODEL || 'gpt-4.1-2025-04-14' }}
       ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+      ALERT_EMAIL_SECONDARY: ${{ vars.ALERT_EMAIL_SECONDARY }}
+      ALERT_EMAIL_TERTIARY: ${{ vars.ALERT_EMAIL_TERTIARY }}
+      ACCOUNT_MONTHLY_BUDGET_USD: ${{ vars.ACCOUNT_MONTHLY_BUDGET_USD }}
+      ACCOUNT_MONTHLY_INFRA_RESERVE_USD: ${{ vars.ACCOUNT_MONTHLY_INFRA_RESERVE_USD }}
+      LLM_GLOBAL_MONTHLY_BUDGET_USD: ${{ vars.LLM_GLOBAL_MONTHLY_BUDGET_USD }}
+      DATABASE_MIGRATION_SECRET_ARN: ${{ vars.DATABASE_MIGRATION_SECRET_ARN }}
       SAM_CLI_TELEMETRY: '0'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '22'
           package-manager-cache: false
@@ -91,16 +97,20 @@ jobs:
             fi
           done
           [[ "$STACK_NAME" =~ ^[A-Za-z][A-Za-z0-9-]{0,79}$ ]]
-      - run: npm ci
+      - run: npm install --global npm@11.21.1 --ignore-scripts --no-audit --no-fund
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run security:audit
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - uses: aws-actions/setup-sam@v3
+      - uses: aws-actions/setup-sam@341eee193f458fa5aae5d52c94b0c5cf3a1c5a52 # v3
         with:
           use-installer: true
+          version: '1.169.0'
       - name: Validate template
         run: sam validate --template-file infra/template.yaml --lint
-      - uses: aws-actions/configure-aws-credentials@v6
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -123,6 +133,13 @@ jobs:
           read_parameter() {
             node -e 'const fs=require("node:fs");const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(p.find(x=>x.ParameterKey===process.argv[2])?.ParameterValue||"")' "$parameter_file" "$1"
           }
+          # Keep deployed security settings unless an operator supplies an explicit replacement.
+          for mapping in 'LLM_MONTHLY_BUDGET_USD:LlmMonthlyBudgetUsd:70' 'ACCOUNT_MONTHLY_BUDGET_USD:AccountMonthlyBudgetUsd:100' 'ACCOUNT_MONTHLY_INFRA_RESERVE_USD:AccountMonthlyInfraReserveUsd:30' 'LLM_GLOBAL_MONTHLY_BUDGET_USD:LlmGlobalMonthlyBudgetUsd:0' 'ALERT_EMAIL:AlertEmail:' 'ALERT_EMAIL_SECONDARY:AlertEmailSecondary:' 'ALERT_EMAIL_TERTIARY:AlertEmailTertiary:' 'DATABASE_MIGRATION_SECRET_ARN:DatabaseMigrationSecretArn:'; do
+            IFS=: read -r name parameter fallback <<< "$mapping"
+            selected="${!name:-$(read_parameter "$parameter")}"
+            selected="${selected:-$fallback}"
+            printf '%s=%s\n' "$name" "$selected" >> "$GITHUB_ENV"
+          done
           deployed_mode="$(read_parameter DatabaseMode)"
           selected_mode="${DATABASE_MODE:-${deployed_mode:-aurora}}"
           selected_secret="${EXTERNAL_DATABASE_SECRET_ARN:-$(read_parameter ExternalDatabaseSecretArn)}"
@@ -255,6 +272,10 @@ jobs:
               "WriteCompatibilityResults=$WRITE_COMPATIBILITY_RESULTS" \
               "CompactRunState=$COMPACT_RUN_STATE" \
               "LlmMonthlyBudgetUsd=$LLM_MONTHLY_BUDGET_USD" \
+              "AccountMonthlyBudgetUsd=$ACCOUNT_MONTHLY_BUDGET_USD" \
+              "AccountMonthlyInfraReserveUsd=$ACCOUNT_MONTHLY_INFRA_RESERVE_USD" \
+              "LlmGlobalMonthlyBudgetUsd=$LLM_GLOBAL_MONTHLY_BUDGET_USD" \
+              "DatabaseMigrationSecretArn=$DATABASE_MIGRATION_SECRET_ARN" \
               "AuroraMinCapacity=$AURORA_MIN_CAPACITY" \
               "AuroraAutoPauseSeconds=$AURORA_AUTO_PAUSE_SECONDS" \
               "DatabaseMode=$DATABASE_MODE" \
@@ -264,13 +285,15 @@ jobs:
               "RetireLegacyDatabase=$RETIRE_LEGACY_DATABASE" \
               "OnboardingModel=$ONBOARDING_MODEL" \
               "AlertEmail=$ALERT_EMAIL" \
+              "AlertEmailSecondary=$ALERT_EMAIL_SECONDARY" \
+              "AlertEmailTertiary=$ALERT_EMAIL_TERTIARY" \
               'EnableDevOrigin=false'
       - name: Migrate the private PostgreSQL schema
         if: env.MAINTENANCE_MODE != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          scanner_name="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ScannerFunctionName'].OutputValue | [0]" --output text)"
+          scanner_name="$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='MigrationFunctionName'].OutputValue | [0]" --output text)"
           aws lambda invoke --function-name "$scanner_name" --cli-binary-format raw-in-base64-out --payload '{"kind":"database:migrate"}' /tmp/citevia-migration-result.json > /tmp/citevia-migration-metadata.json
           node -e 'const fs=require("node:fs");const m=JSON.parse(fs.readFileSync("/tmp/citevia-migration-metadata.json","utf8"));const r=JSON.parse(fs.readFileSync("/tmp/citevia-migration-result.json","utf8"));if(m.FunctionError||!r.migrated)throw new Error("Database migration failed");console.log("PostgreSQL migrations complete");'
       - name: Show public configuration outputs

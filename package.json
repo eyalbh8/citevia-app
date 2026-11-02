@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13"
   },
   "workspaces": [
     "apps/*",
@@ -33,7 +33,10 @@
     "db:cleanup-auth": "node --env-file-if-exists=.env --import tsx scripts/database-maintenance.ts cleanup-auth",
     "db:compact-evidence": "node --env-file-if-exists=.env --import tsx scripts/database-maintenance.ts compact-evidence",
     "db:rehydrate-runs": "node --env-file-if-exists=.env --import tsx scripts/database-maintenance.ts rehydrate-run-manifests",
-    "db:neon-migration": "node --env-file-if-exists=.env --import tsx scripts/neon-migration.ts"
+    "db:neon-migration": "node --env-file-if-exists=.env --import tsx scripts/neon-migration.ts",
+    "lint": "eslint . --max-warnings=0",
+    "security:audit": "npm audit --audit-level=moderate",
+    "security:secrets": "node scripts/security-secrets.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-cloudformation": "^3.900.0",
@@ -49,7 +52,7 @@
     "geoip-country": "^5.0.202610210158",
     "pg": "^8.23.1",
     "tldts": "^7.0.0",
-    "zod": "^3.25.76"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.150",
@@ -57,15 +60,28 @@
     "@types/node": "^22.15.0",
     "@types/pg": "^8.23.1",
     "esbuild": "^0.25.0",
+    "eslint": "10.14.0",
+    "eslint-plugin-security": "4.2.1",
     "jsdom": "^26.1.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "vitest": "^4.1.11",
+    "typescript-eslint": "8.72.1",
+    "vitest": "4.1.12",
     "yaml": "^2.8.0"
   },
   "overrides": {
     "geoip-country": {
       "ip-address": "^10.7.4"
+    },
+    "eslint": {
+      "minimatch": "11.0.4"
+    },
+    "@eslint/config-array": {
+      "minimatch": "11.0.4"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.4"
     }
-  }
+  },
+  "packageManager": "npm@11.21.1"
 }

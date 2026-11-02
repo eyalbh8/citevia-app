@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Retained Citevia account audit trail and regional threat detection. Deploy as <application-stack-name>-security so its alarms match the application topic and key policies.
+Parameters:
+  AlertsTopicArn:
+    Type: String
+    Description: Confirmed operations SNS topic from the application stack. This security stack name must start with the application stack name followed by a hyphen to satisfy its alarm source-ARN policies.
+    AllowedPattern: 'arn:aws[a-z-]*:sns:[a-z0-9-]+:[0-9]{12}:.+'
+Resources:
+  AuditKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Retained encryption key for Citevia AWS audit records
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'}
+            Action: kms:*
+            Resource: '*'
+          - Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: [kms:GenerateDataKey*, kms:DescribeKey]
+            Resource: '*'
+            Condition:
+              StringEquals: {aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${AWS::StackName}'}
+          - Effect: Allow
+            Principal: {Service: !Sub 'logs.${AWS::Region}.amazonaws.com'}
+            Action: [kms:Encrypt, kms:Decrypt, kms:ReEncrypt*, kms:GenerateDataKey*, kms:DescribeKey]
+            Resource: '*'
+            Condition:
+              ArnLike: {kms:EncryptionContext:aws:logs:arn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${AWS::StackName}-*'}
+  AuditBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: Dedicated retained audit sink; CloudTrail records bucket management access and delivery digests. Avoid recursive server-access-log storage.
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: 'aws:kms', KMSMasterKeyID: !GetAtt AuditKey.Arn}
+      PublicAccessBlockConfiguration: {BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true}
+      OwnershipControls:
+        Rules: [{ObjectOwnership: BucketOwnerEnforced}]
+      VersioningConfiguration: {Status: Enabled}
+      LifecycleConfiguration:
+        Rules:
+          - Id: AuditRetention
+            Status: Enabled
+            ExpirationInDays: 365
+            NoncurrentVersionExpiration: {NoncurrentDays: 365}
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+  AuditBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Bucket: !Ref AuditBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudTrailBucketCheck
+            Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt AuditBucket.Arn
+            Condition:
+              StringEquals: {aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${AWS::StackName}'}
+          - Sid: CloudTrailDelivery
+            Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: s3:PutObject
+            Resource: !Sub '${AuditBucket.Arn}/AWSLogs/${AWS::AccountId}/*'
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${AWS::StackName}'
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt AuditBucket.Arn, !Sub '${AuditBucket.Arn}/*']
+            Condition: {Bool: {aws:SecureTransport: 'false'}}
+  AuditLogs:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RetentionInDays: 90
+      KmsKeyId: !GetAtt AuditKey.Arn
+  TrailLogsRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition: {StringEquals: {aws:SourceArn: !Sub 'arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/${AWS::StackName}'}}
+      Policies:
+        - PolicyName: DeliverAuditLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt AuditLogs.Arn
+  Trail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: AuditBucketPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TrailName: !Ref 'AWS::StackName'
+      IsLogging: true
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
+      EnableLogFileValidation: true
+      S3BucketName: !Ref AuditBucket
+      KMSKeyId: !GetAtt AuditKey.Arn
+      CloudWatchLogsLogGroupArn: !GetAtt AuditLogs.Arn
+      CloudWatchLogsRoleArn: !GetAtt TrailLogsRole.Arn
+      EventSelectors:
+        - IncludeManagementEvents: true
+          ReadWriteType: All
+  Detector:
+    Type: AWS::GuardDuty::Detector
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: FIFTEEN_MINUTES
+      Features:
+        - {Name: S3_DATA_EVENTS, Status: ENABLED}
+        - {Name: LAMBDA_NETWORK_LOGS, Status: ENABLED}
+  FindingsLogs:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RetentionInDays: 365
+      KmsKeyId: !GetAtt AuditKey.Arn
+  FindingsLogPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: !Sub '${AWS::StackName}-findings'
+      PolicyDocument: !Sub
+        - '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":["events.amazonaws.com","delivery.logs.amazonaws.com"]},"Action":["logs:CreateLogStream","logs:PutLogEvents"],"Resource":"${LogArn}","Condition":{"StringEquals":{"aws:SourceAccount":"${AWS::AccountId}"},"ArnEquals":{"aws:SourceArn":"${RuleArn}"}}}]}'
+        - LogArn: !GetAtt FindingsLogs.Arn
+          RuleArn: !GetAtt FindingsRule.Arn
+  FindingsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Retain medium and higher GuardDuty findings for operator investigation.
+      State: ENABLED
+      EventPattern:
+        source: [aws.guardduty]
+        detail-type: [GuardDuty Finding]
+        detail:
+          severity: [{numeric: ['>=', 4]}]
+      Targets:
+        - Id: FindingsLogs
+          Arn: !GetAtt FindingsLogs.Arn
+          RetryPolicy: {MaximumRetryAttempts: 10, MaximumEventAgeInSeconds: 3600}
+  FindingsMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref FindingsLogs
+      FilterPattern: '{ $.source = "aws.guardduty" }'
+      MetricTransformations:
+        - MetricNamespace: !Sub 'Citevia/${AWS::StackName}'
+          MetricName: ThreatFindings
+          MetricValue: '1'
+          DefaultValue: 0
+  FindingsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: GuardDuty reports a medium or higher threat. Inspect the retained finding and follow the incident response runbook.
+      Namespace: !Sub 'Citevia/${AWS::StackName}'
+      MetricName: ThreatFindings
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopicArn]
+  PrivilegedEventsMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AuditLogs
+      FilterPattern: '{ ($.userIdentity.type = "Root") || ($.eventName = "StopLogging") || ($.eventName = "DeleteTrail") || ($.eventName = "DeleteDetector") || ($.eventName = "PutRolePolicy") || ($.eventName = "AttachUserPolicy") || ($.eventName = "CreateAccessKey") }'
+      MetricTransformations:
+        - MetricNamespace: !Sub 'Citevia/${AWS::StackName}'
+          MetricName: PrivilegedSecurityChanges
+          MetricValue: '1'
+          DefaultValue: 0
+  PrivilegedEventsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Root activity or a sensitive logging/IAM change was recorded. Correlate with an authorized deployment or investigate.
+      Namespace: !Sub 'Citevia/${AWS::StackName}'
+      MetricName: PrivilegedSecurityChanges
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertsTopicArn]
+Outputs:
+  AuditTrailArn: {Value: !GetAtt Trail.Arn}
+  AuditBucketName: {Value: !Ref AuditBucket}
+  DetectorId: {Value: !Ref Detector}
+  FindingsLogGroup: {Value: !Ref FindingsLogs}

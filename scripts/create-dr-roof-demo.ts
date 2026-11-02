@@ -25,8 +25,8 @@ const blogSchema = z.object({
 const sourceSchema = z.object({
   sourceAccountId: z.literal(DR_ROOF_SOURCE_ACCOUNT_ID), brand: brandSchema, competitors: z.array(brandSchema).min(5).max(30),
   prompts: z.array(z.object({ text: z.string().min(5).max(2000), stage: z.string().optional(), topic: z.string().optional(), seoKeyword: z.string().nullable().optional() })).min(50),
-  brandbook: z.record(z.unknown()), samples: z.array(z.record(z.unknown())).min(1),
-  traffic: z.record(z.unknown()).optional(), blogs: z.array(blogSchema).max(200).default([]),
+  brandbook: z.record(z.string(), z.unknown()), samples: z.array(z.record(z.string(), z.unknown())).min(1),
+  traffic: z.record(z.string(), z.unknown()).optional(), blogs: z.array(blogSchema).max(200).default([]),
 });
 const strings = (value: unknown) => Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string').slice(0, 30) : [];
 function shiftedMonth(day: string, amount: number) {

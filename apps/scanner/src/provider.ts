@@ -1,3 +1,4 @@
+import { boundedResponseBytes, ResponseBodyLimitError } from './response-body.js';
 import { classifyProviderHttpError, providerFailureMessage } from './provider-errors.js';
 
 /** The native API response is deliberately retained, including fields we do not interpret. */
@@ -100,6 +101,12 @@ export class ProviderError extends Error {
   }
 }
 
+export function maximumSearchCalls(): number {
+  const count = Number(process.env.OPENAI_MAX_TOOL_CALLS ?? 16);
+  if (!Number.isSafeInteger(count) || count < 1 || count > 32) throw new Error('OPENAI_MAX_TOOL_CALLS must be between 1 and 32.');
+  return count;
+}
+
 export function answerBody(input: AnswerRequest): Record<string, unknown> {
   return {
     model: input.model,
@@ -115,6 +122,7 @@ export function answerBody(input: AnswerRequest): Record<string, unknown> {
       user_location: { type: 'approximate', country: input.country, timezone: input.timezone },
     }],
     tool_choice: 'required',
+    max_tool_calls: maximumSearchCalls(),
     include: ['web_search_call.action.sources'],
     max_output_tokens: input.maxOutputTokens ?? 8000,
   };
@@ -162,6 +170,7 @@ export class OpenAIProvider implements ResponseProvider {
     try {
       const response = await (this.options.fetch ?? fetch)('https://api.openai.com/v1/responses', {
         method: 'POST',
+        redirect: 'error',
         headers: { Authorization: `Bearer ${this.options.apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         signal: controller.signal,
@@ -169,11 +178,13 @@ export class OpenAIProvider implements ResponseProvider {
       const requestId = response.headers.get('x-request-id');
       const context = { provider: 'openai', model: typeof body.model === 'string' ? body.model : undefined };
       if (!response.ok) {
-        const failure = await classifyProviderHttpError(response, { ...context, nowMs: this.options.now?.().getTime() });
+        const failure = await classifyProviderHttpError(response, { ...context, nowMs: this.options.now?.().getTime(), signal: controller.signal });
         throw new ProviderError(`openai_http_${response.status}`, providerFailureMessage('openai', response.status, failure.kind), failure.retryable, requestId, failure);
       }
       let data: unknown;
-      try { data = await response.json(); } catch {
+      try { data = JSON.parse(new TextDecoder().decode(await boundedResponseBytes(response, 4 * 1024 * 1024, controller.signal))); } catch (error) {
+        if (controller.signal.aborted) throw error;
+        if (error instanceof ResponseBodyLimitError) throw new ProviderError('openai_response_too_large', error.message, false, requestId, { ...context, kind: 'uncertain', safeToRetry: false });
         throw new ProviderError('openai_invalid_json', 'OpenAI returned invalid JSON.', false, requestId, { ...context, kind: 'uncertain', safeToRetry: false });
       }
       if (!data || typeof data !== 'object' || Array.isArray(data)) {

@@ -624,3 +624,25 @@ describe('portfolio response schema allocation', () => {
     });
   });
 });
+
+
+describe('onboarding shared provider admission', () => {
+  it('reschedules a definite scheduling deferral without leaving a paid intent', async () => {
+    const runtime = await environment(), provider = new FixtureOnboardingProvider();
+    let now = new Date('2026-11-02T10:00:00Z');
+    const original = provider.research.bind(provider);
+    const research = vi.spyOn(provider, 'research').mockRejectedValueOnce(new ProviderError('provider_admission_deferred', 'Waiting for capacity.', true, null,
+      { kind: 'deferred', safeToRetry: true, retryAfterMs: 60000 })).mockImplementation(original);
+    const created = await createAccounts(runtime, 'owner', 'admission-test', { accounts: [input] }, now, 100), item = created.items[0];
+    const worker = new OnboardingEngine(runtime, provider, async () => {}, () => now);
+    await worker.handle(item.project.id, item.job.id);
+    const waiting = await runtime.repository.getOnboarding(item.project.id, item.job.id);
+    expect(waiting).toMatchObject({ status: 'queued', step: 'research', attempts: 0 });
+    expect(waiting?.paidCall).toBeUndefined();
+    await worker.handle(item.project.id, item.job.id); expect(research).toHaveBeenCalledTimes(1);
+    now = new Date(now.getTime() + 60000);
+    await worker.handle(item.project.id, item.job.id);
+    expect((await runtime.repository.getOnboarding(item.project.id, item.job.id))?.step).toBe('brandbook');
+    expect(research).toHaveBeenCalledTimes(2);
+  });
+});

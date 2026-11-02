@@ -189,7 +189,7 @@ export function parseScoredExtraction(
             .strict(),
         )
         .max(100),
-      brands: z.record(rowSchema),
+      brands: z.record(z.string(), rowSchema),
     })
     .strict()
     .safeParse(raw);

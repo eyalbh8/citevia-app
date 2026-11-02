@@ -1,3 +1,4 @@
+import { boundedResponseBytes } from './response-body.js';
 import type { ProviderErrorOptions } from './provider.js';
 
 // Keep only documented machine identifiers. Error messages can contain a prompt,
@@ -28,31 +29,14 @@ function safeCode(value: unknown): string | undefined {
   return typeof value === 'string' && SAFE_CODES.has(value) ? value : undefined;
 }
 
-async function rejectionCodes(response: Response): Promise<{providerCode?: string; providerType?: string}> {
-  // A bounded read also handles HTML/proxy errors without retaining their body.
-  const reader = response.body?.getReader();
-  if (!reader) return {};
-  let bytes = 0;
-  const chunks: Uint8Array[] = [];
+async function rejectionCodes(response: Response, signal?: AbortSignal): Promise<{providerCode?: string; providerType?: string}> {
   try {
-    for (;;) {
-      const item = await reader.read();
-      if (item.done) break;
-      bytes += item.value.byteLength;
-      if (bytes > MAX_ERROR_BYTES) return {};
-      chunks.push(item.value);
-    }
-    const body = new Uint8Array(bytes);
-    let offset = 0;
-    for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+    const body = await boundedResponseBytes(response, MAX_ERROR_BYTES, signal);
     const error = record(record(JSON.parse(new TextDecoder().decode(body)))?.error);
     return { providerCode: safeCode(error?.code), providerType: safeCode(error?.type) };
   } catch {
-    // We still received a definite HTTP rejection even if its body is unreadable.
+    // A bounded or timed-out error body does not erase the definite HTTP rejection.
     return {};
-  } finally {
-    await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
   }
 }
 
@@ -101,9 +85,9 @@ export function providerFailureMessage(provider: string, status: number, kind: P
 /** Classifies a received rejection; never retries or starts another paid call. */
 export async function classifyProviderHttpError(
   response: Response,
-  context: { provider: string; model?: string; nowMs?: number },
+  context: { provider: string; model?: string; nowMs?: number; signal?: AbortSignal },
 ): Promise<ProviderHttpFailure> {
-  const codes = await rejectionCodes(response);
+  const codes = await rejectionCodes(response, context.signal);
   const common = {
     ...codes, provider: context.provider, model: context.model,
     httpStatus: response.status,

@@ -1,9 +1,15 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { answerBody, extractionBody, OpenAIProvider, ProviderError, responseFailure, responseText } from '../src/provider.js';
 
 const answer = { prompt: 'Which analytics products should I compare?', model: 'answer-snapshot', language: 'en', country: 'US', timezone: 'America/New_York' };
 
 describe('OpenAI REST contract', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it('bounds built-in tool calls and rejects invalid limits before HTTP', () => {
+    expect(answerBody(answer).max_tool_calls).toBe(16);
+    vi.stubEnv('OPENAI_MAX_TOOL_CALLS', '4'); expect(answerBody(answer).max_tool_calls).toBe(4);
+    vi.stubEnv('OPENAI_MAX_TOOL_CALLS', '0'); expect(() => answerBody(answer)).toThrow();
+  });
   it('restricts domain-specific blog searches without narrowing ordinary scan searches', () => {
     const restricted = answerBody({...answer,allowedDomains:['northstar.example','northstar.co.uk']});
     expect(restricted.tools).toEqual([expect.objectContaining({type:'web_search',filters:{allowed_domains:['northstar.example','northstar.co.uk']}})]);

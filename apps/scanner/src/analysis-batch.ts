@@ -6,7 +6,7 @@ import { analysisRequest, parseAnalysisReceipt } from './analysis-request.js';
 import { extractionBody, object, ProviderError, type ProviderReceipt } from './provider.js';
 import { BatchSubmissionError, parseBatchResultLines, type BatchClient, type NativeBatch } from './openai-batch.js';
 import { usage } from './normalize.js';
-import { budgetFromEnv, estimateProviderCost, hasCompleteTokenUsage, PRICE_VERSION, settleCall } from './cost-observer.js';
+import { budgetFromEnv, estimateProviderCost, hasCompleteTokenUsage, logBudgetDenial, PRICE_VERSION, settleCall } from './cost-observer.js';
 import { cachedAnalysis, cacheAnalysis } from './analysis-costs.js';
 import { classifyProviderHttpError, providerFailureMessage } from './provider-errors.js';
 import { providerAdmissionPolicy } from './provider-admission.js';
@@ -102,8 +102,12 @@ export class AnalysisBatchCoordinator implements AnalysisBatchPort {
     if (!this.options.ledger) return;
     for (const item of items) {
       const at = this.now().toISOString();
+      const reservedUsd = estimateProviderCost('openai', run.snapshot.extractionModel, { inputTokens: Buffer.byteLength(JSON.stringify(item.body)), outputTokens: Number(item.body.max_output_tokens ?? 12000), totalTokens: 0 }, 'batch', at);
+      const requestBudget = budgetFromEnv('LLM_MAX_REQUEST_USD');
+      if (requestBudget > 0 && (reservedUsd === null || reservedUsd > requestBudget))
+        throw new CostBudgetError('cost_request_budget_exceeded', 'This request exceeds the configured estimated provider cost limit.');
       await this.options.ledger.reserve({ id: this.callId(record, item), projectId: run.projectId, runId: run.id, promptId: item.promptId, attempt: item.attempt, stage: 'analysis', provider: 'openai', model: run.snapshot.extractionModel, mode: 'batch', createdAt: at, priceVersion: PRICE_VERSION,
-        reservedUsd: estimateProviderCost('openai', run.snapshot.extractionModel, { inputTokens: Buffer.byteLength(JSON.stringify(item.body)), outputTokens: Number(item.body.max_output_tokens ?? 12000), totalTokens: 0 }, 'batch', at) }, budgetFromEnv());
+        reservedUsd }, budgetFromEnv(), budgetFromEnv('LLM_GLOBAL_MONTHLY_BUDGET_USD'));
     }
   }
   private async settle(record: AnalysisBatchRecord, item: BatchItem, receipt?: ProviderReceipt, code?: string, definitelyUnprocessed = false) {
@@ -229,6 +233,7 @@ export class AnalysisBatchCoordinator implements AnalysisBatchPort {
       try { await this.reserve(record, run, items); }
       catch (error) {
         if (!(error instanceof CostBudgetError)) throw error;
+        logBudgetDenial(error.code, { projectId: run.projectId, provider: 'openai', model: run.snapshot.extractionModel, stage: 'analysis_batch' });
         for (const item of items) await this.settle(record, item, undefined, error.code, true);
         const updates = this.failed(items, error.code, error.message);
         const resolved = await this.resolve(record, updates);

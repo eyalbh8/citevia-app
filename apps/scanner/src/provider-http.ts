@@ -1,3 +1,4 @@
+import { boundedResponseBytes, ResponseBodyLimitError } from './response-body.js';
 import {
   GetSecretValueCommand,
   SecretsManagerClient,
@@ -11,6 +12,7 @@ export interface HttpOptions {
   fetch?: typeof fetch;
   now?: () => Date;
   timeoutMs?: number;
+  maxResponseBytes?: number;
 }
 export async function providerPost(
   provider: ScanProvider,
@@ -27,6 +29,7 @@ export async function providerPost(
   try {
     const response = await (options.fetch ?? fetch)(url, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         'Content-Type': 'application/json',
         ...(provider === 'gemini'
@@ -40,7 +43,7 @@ export async function providerPost(
       response.headers.get('x-request-id') ||
       response.headers.get('x-goog-request-id');
     if (!response.ok) {
-      const failure = await classifyProviderHttpError(response, { provider, model, nowMs: options.now?.().getTime() });
+      const failure = await classifyProviderHttpError(response, { provider, model, nowMs: options.now?.().getTime(), signal: controller.signal });
       throw new ProviderError(
         `${provider}_http_${response.status}`,
         providerFailureMessage(provider, response.status, failure.kind),
@@ -51,8 +54,10 @@ export async function providerPost(
     }
     let native: unknown;
     try {
-      native = await response.json();
-    } catch {
+      native = JSON.parse(new TextDecoder().decode(await boundedResponseBytes(response, options.maxResponseBytes ?? 4 * 1024 * 1024, controller.signal)));
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      if (error instanceof ResponseBodyLimitError) throw new ProviderError(`${provider}_response_too_large`, error.message, false, requestId, { provider, model, kind: 'uncertain', safeToRetry: false });
       throw new ProviderError(
         `${provider}_invalid_json`,
         `${provider} returned invalid JSON.`,
