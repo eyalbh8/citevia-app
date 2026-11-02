@@ -51,7 +51,7 @@
     "@electric-sql/pglite": "^0.5.10",
     "geoip-country": "^5.0.202610210158",
     "pg": "^8.23.1",
-    "tldts": "^7.0.0",
+    "tldts": "^7.4.19",
     "zod": "4.6.7"
   },
   "devDependencies": {
