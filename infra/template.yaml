@@ -1083,7 +1083,7 @@ Resources:
           - Sid: AccountAdministration
             Effect: Allow
             Principal: {AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'}
-            Action: sns:*
+            Action: [sns:GetTopicAttributes, sns:SetTopicAttributes, sns:AddPermission, sns:RemovePermission, sns:DeleteTopic, sns:Subscribe, sns:ListSubscriptionsByTopic, sns:Publish]
             Resource: !Ref Alerts
           - Sid: CloudWatchAlarms
             Effect: Allow
