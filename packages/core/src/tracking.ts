@@ -61,6 +61,8 @@ export interface TrackedUrl {
   title: string;
   imageUrl?: string;
   contentType: 'BLOG' | 'WEBSITE' | 'SOCIAL';
+  /** Explicit editorial target; citations alone cannot establish author intent. */
+  promptId?: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;

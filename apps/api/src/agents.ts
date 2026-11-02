@@ -9,8 +9,10 @@ import {
   DEFAULT_AGENT_CONTENT_MODEL,
   type AgentPostJob,
   type Project,
+  type BlogRefreshContext,
 } from '@citevia/core';
 import { AccessError, type Runtime } from '@citevia/storage';
+import { blogPerformance, requireBlogAdmin } from './blog-performance.js';
 const contentModel = () =>
   process.env.OPENAI_CONTENT_MODEL?.trim() || DEFAULT_AGENT_CONTENT_MODEL;
 const json = (value: unknown, status = 200) =>
@@ -102,6 +104,10 @@ export async function agentRoute(
   if (collection && method === 'POST') {
     const key = requestKey(request);
     const input = agentInputSchema.parse(await body(request));
+    if (input.blogRefresh) {
+      requireBlogAdmin(await repository.getUser(userId));
+      if (input.channel !== 'blog') return fail(400, 'INVALID_CHANNEL', 'Blog recommendations only generate blog drafts.');
+    }
     const id = `post_${hash(JSON.stringify([project.id, userId, key])).slice(0, 40)}`;
     const fingerprint = hash(JSON.stringify(input));
     let post = await repository.getAgentPost(project.id, id);
@@ -129,8 +135,26 @@ export async function agentRoute(
         'PROMPT_MISMATCH',
         'Choose an active prompt from this account.',
       );
+    let refresh: BlogRefreshContext | undefined;
+    if (input.blogRefresh) {
+      const review = (await blogPerformance(runtime, project, now, input.blogRefresh.trackedUrlId))[0];
+      if (!review) return fail(404, 'NOT_FOUND', 'Tracked blog not found.');
+      if (review.prompt?.id !== selectedPrompt.id)
+        return fail(400, 'PROMPT_MISMATCH', 'Use the prompt linked to this blog.');
+      if (review.action !== input.blogRefresh.action)
+        return fail(409, 'RECOMMENDATION_CHANGED', 'The recommendation changed. Refresh the blog review before generating.');
+      if (review.action === 'adjust' && !input.blogRefresh.originalBody)
+        return fail(400, 'ARTICLE_REQUIRED', 'Supply the current article text to create an adjustment draft.');
+      refresh = {
+        ...input.blogRefresh, url: review.url.url, evaluatedAt: now.toISOString(),
+        reason: review.reason, changes: review.changes,
+        metrics: { current: review.current, previous: review.previous },
+      };
+    }
     post = {
-      ...input,
+      channel: input.channel,
+      promptId: input.promptId,
+      ...(refresh ? { blogRefresh: { trackedUrlId: refresh.trackedUrlId, url: refresh.url, action: refresh.action } } : {}),
       prompt: selectedPrompt.text,
       topic: selectedPrompt.topic || 'General',
       id,
@@ -151,6 +175,7 @@ export async function agentRoute(
         brandbook: project.brandbook,
         language: project.language,
         country: project.country,
+        ...(refresh ? { blogRefresh: refresh } : {}),
       },
     };
     const reserved = await repository.reserveAgentPost(post, null);

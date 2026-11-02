@@ -1,6 +1,8 @@
 import {
   aggregateDashboardOverview,
   dashboardObservations,
+  isReportableRun,
+  matchesMonitoringFilters,
   snapshotProvider,
   type CapturedAnswer,
   type Project,
@@ -30,9 +32,17 @@ export async function dashboardOverviewRoute(
     period.start,
     period.end,
   );
-  history.runs = history.runs.filter((run) =>
-    ['completed', 'partial'].includes(run.status),
+  const scanInProgress = history.runs.some(
+    (run) =>
+      !run.cancelledAt && !run.reportingExcludedAt &&
+      ['queued', 'running'].includes(run.status) &&
+      run.snapshot.prompts.some(
+        (prompt) =>
+          matchesMonitoringFilters(prompt, snapshotProvider(run.snapshot), run.snapshot.country, filters) &&
+          (!filters.topic || prompt.topic === filters.topic),
+      ),
   );
+  history.runs = history.runs.filter(isReportableRun);
   const observations = dashboardObservations(
     project,
     period,
@@ -73,14 +83,15 @@ export async function dashboardOverviewRoute(
     );
   }
   return new Response(
-    JSON.stringify(
-      aggregateDashboardOverview(
+    JSON.stringify({
+      ...aggregateDashboardOverview(
         project,
         period,
         filters,
         await historicalCompetitorMentions(runtime, project, observations),
       ),
-    ),
+      scanInProgress,
+    }),
     {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',

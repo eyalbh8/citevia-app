@@ -62,6 +62,13 @@ export function blogResearchRequest(
       accountDomains: accountSearchDomains(post),
       asOf: now.toISOString().slice(0, 10),
       language: post.context.language,
+      ...(post.context.blogRefresh ? {
+        refresh: {
+          originalUrl: post.context.blogRefresh.url,
+          action: post.context.blogRefresh.action,
+          changesToResearch: post.context.blogRefresh.changes,
+        },
+      } : {}),
     }),
   };
 }

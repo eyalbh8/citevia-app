@@ -2,6 +2,7 @@ import { refreshAgentBlog } from './agent-blog.js';
 import { blogBodyText } from './agent-editorial.js';
 import { z } from 'zod';
 import type { Brand, Brandbook } from './types.js';
+import type { BlogRefreshContext } from './blog-performance.js';
 
 /** Content creation is independent of each account's visibility-scan model. */
 export const DEFAULT_AGENT_CONTENT_MODEL = 'gpt-6-astra';
@@ -19,6 +20,11 @@ export const agentInputSchema = z
   .object({
     channel: z.enum(AGENT_CHANNELS),
     promptId: z.string().trim().min(1).max(200),
+    blogRefresh: z.object({
+      trackedUrlId: z.string().uuid(),
+      action: z.enum(['adjust', 'create']),
+      originalBody: z.string().trim().min(1).max(30000).optional(),
+    }).strict().optional(),
   })
   .strict();
 export type AgentInput = z.infer<typeof agentInputSchema>;
@@ -203,6 +209,7 @@ export type AgentPost = {
   channel: AgentChannel;
   /** Older drafts may predate required tracked-prompt selection. */
   promptId?: string;
+  blogRefresh?: Pick<BlogRefreshContext, 'trackedUrlId' | 'url' | 'action'>;
   prompt: string;
   topic: string;
   id: string;
@@ -227,6 +234,7 @@ export type AgentPostJob = AgentPost & {
     brandbook?: Brandbook;
     language: string;
     country: string;
+    blogRefresh?: BlogRefreshContext;
   };
   leaseOwner?: string;
   leaseExpiresAt?: string;
@@ -249,6 +257,7 @@ export function publicAgentPost(job: AgentPostJob): AgentPost {
     topic,
     prompt,
     promptId,
+    blogRefresh,
     status,
     content,
     createdAt,
@@ -264,6 +273,7 @@ export function publicAgentPost(job: AgentPostJob): AgentPost {
     topic,
     prompt,
     ...(promptId ? { promptId } : {}),
+    ...(blogRefresh ? { blogRefresh } : {}),
     status,
     content: content?.blog ? refreshAgentBlog(job, content) : content,
     createdAt,

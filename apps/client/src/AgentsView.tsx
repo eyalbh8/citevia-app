@@ -438,7 +438,7 @@ export default function AgentsView({
   );
 }
 
-function PostDetail({
+export function PostDetail({
   post,
   owner,
   available,
@@ -527,6 +527,7 @@ function PostDetail({
       <dl className="agent-post-context">
         <dt>Prompt</dt>
         <dd>{post.prompt}</dd>
+        {post.blogRefresh && <><dt>{post.blogRefresh.action === 'adjust' ? 'Adjustment for' : 'New article for'}</dt><dd><a href={post.blogRefresh.url} target="_blank" rel="noreferrer">{post.blogRefresh.url}</a></dd></>}
       </dl>
       <ErrorNotice error={error} />
       {active(post) ? (

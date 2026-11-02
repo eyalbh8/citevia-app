@@ -14,6 +14,29 @@ export const authConfigured = Boolean(
 export async function getAccessToken(): Promise<string | undefined> {
   return getSessionToken() || undefined;
 }
+const sessionRecoveryKey = 'citevia.session-recovery';
+
+export function clearSessionRecovery() {
+  try {
+    sessionStorage.removeItem(sessionRecoveryKey);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function reloadExpiredSession(): boolean {
+  try {
+    // Survives the reload so a persistently invalid session cannot loop.
+    if (sessionStorage.getItem(sessionRecoveryKey)) return false;
+    sessionStorage.setItem(sessionRecoveryKey, 'pending');
+  } catch {
+    // Without a durable guard, go straight to sign-in.
+    return false;
+  }
+  signIn();
+  return true;
+}
+
 // The provider refreshes sessions. Reloading returns expired sessions to its sign-in flow.
 export function signIn() {
   window.location.reload();

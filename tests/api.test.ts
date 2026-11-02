@@ -829,6 +829,33 @@ describe('API results, sources and comparisons', () => {
 });
 
 describe('API concurrent writes and scan admission', () => {
+  it('pauses all new scan requests while retaining saved data and allows scanning again after enabling', async () => {
+    const syncSchedule = vi.fn().mockResolvedValue(undefined);
+    const f = await fixture(undefined, { syncSchedule });
+    const runId = await f.scan();
+    const runsBefore = await f.repository.listRuns(f.project.id);
+    const resultsBefore = await f.repository.listResults(f.project.id, runId);
+    const pausedResponse = await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: 1, enabled: false }));
+    expect(pausedResponse.status).toBe(200);
+    const paused = await read<Project>(pausedResponse);
+    expect(paused.enabled).toBe(false);
+    expect(syncSchedule).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }));
+    for (const path of ['runs', `runs/${runId}/retry-failed`]) {
+      const response = await f.call(`${BASE}/${path}`, jsonRequest('POST', undefined, { 'Idempotency-Key': 'paused-request' }));
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ error: { code: 'SCANNING_PAUSED' } });
+    }
+    expect(f.queue.messages).toHaveLength(0);
+    expect(await f.repository.listRuns(f.project.id)).toEqual(runsBefore);
+    expect(await f.repository.listResults(f.project.id, runId)).toEqual(resultsBefore);
+    expect((await f.call(`${BASE}/dashboard`)).status).toBe(200);
+    expect((await f.call(`${BASE}/settings`)).status).toBe(200);
+    const enabled = await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: paused.version, enabled: true }));
+    expect(enabled.status).toBe(200);
+    const scan = await f.call(`${BASE}/runs`, jsonRequest('POST', undefined, { 'Idempotency-Key': 'resumed-request' }));
+    expect(scan.status).toBe(202);
+    expect(f.queue.messages).toHaveLength(1);
+  });
   it('rejects stale settings versions without overwriting a newer edit', async () => {
     const f = await fixture();
     const saved = await f.call(

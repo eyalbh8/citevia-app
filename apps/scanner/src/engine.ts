@@ -93,7 +93,18 @@ export class Scanner {
     return this.dependencies.now?.() ?? new Date();
   }
 
+  private async scanningEnabled(projectId: string): Promise<boolean> {
+    const project = await this.dependencies.repository.getProject(projectId);
+    return Boolean(project?.enabled && !project.demo);
+  }
+
   async handle(message: ScanMessage): Promise<void> {
+    if (['kickoff', 'prompt', 'retry', 'reconcile-run'].includes(message.kind) &&
+        'projectId' in message && !await this.scanningEnabled(message.projectId)) {
+      if ('runId' in message)
+        await this.dependencies.dispatch?.discardRun(message.projectId, message.runId);
+      return this.dispatch();
+    }
     switch (message.kind) {
       case 'website-health':
         if (!this.dependencies.websiteHealth) throw new Error('Website health worker is not configured');
@@ -213,7 +224,7 @@ export class Scanner {
     if (primary?.cancelledAt) return;
     if (!primary) {
       const project = await repository.getProject(message.projectId);
-      if (!project || project.demo || (!project.enabled && message.trigger !== 'manual'))
+      if (!project || project.demo || !project.enabled)
         return;
       if (message.trigger !== 'manual' && !isCurrentScheduledOccurrence(project, message)) return;
       if (project.onboardingJobId) {
@@ -497,6 +508,13 @@ export class Scanner {
     let answer: CapturedAnswer | null = null;
     let stage: 'collection' | 'analysis' = existing.captureKey ? 'analysis' : 'collection';
     const beginCall = async (nextStage: 'collection' | 'analysis'): Promise<boolean> => {
+      // Pausing during a provider call keeps its saved capture, but starts no next call.
+      if (!await this.scanningEnabled(message.projectId)) {
+        await repository.commitResult({ ...withoutLease(current), version: current.version + 1,
+          status: current.captureKey ? 'captured' : 'queued' }, current);
+        await this.dependencies.dispatch?.discardRun(message.projectId, message.runId);
+        return false;
+      }
       stage = nextStage;
       const attempts = this.stageAttempts(current, nextStage);
       if (attempts >= MAX_ATTEMPTS)
@@ -674,6 +692,7 @@ export class Scanner {
   private async processAnalysisBatch(run: ScanRun): Promise<void> {
     const { repository, analysisBatch } = this.dependencies;
     if (run.cancelledAt || !analysisBatch || run.snapshot.analysisMode !== 'batch') return;
+    if (!await this.scanningEnabled(run.projectId)) return;
     const results = await repository.listResults(run.projectId, run.id);
     if (results.some((result) => !isTerminal(result.status) && result.status !== 'analysis_pending')) return;
     const { batchId, updates, deadlineAt } = await analysisBatch.process(run, results);
@@ -858,7 +877,7 @@ export class Scanner {
 
   private async reconcileRun(run: ScanRun): Promise<void> {
       const { repository, queue } = this.dependencies;
-      if (run.cancelledAt) {
+      if (run.cancelledAt || !await this.scanningEnabled(run.projectId)) {
         await this.dependencies.dispatch?.discardRun(run.projectId, run.id);
         return;
       }

@@ -42,7 +42,7 @@ describe('Gemini analysis transport', () => {
     expect(body).toEqual({
       systemInstruction: { parts: [{ text: request.instructions }] },
       contents: [{ role: 'user', parts: [{ text: JSON.stringify(request.input) }] }],
-      generationConfig: { candidateCount: 1, maxOutputTokens: 12000, responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema: expectedSchema } } },
+      generationConfig: { candidateCount: 1, maxOutputTokens: 12000, thinkingConfig: { thinkingLevel: 'low' }, responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema: expectedSchema } } },
     });
     expect(body).not.toHaveProperty('tools');
     expect(body).not.toHaveProperty('costContext');
@@ -50,6 +50,13 @@ describe('Gemini analysis transport', () => {
     expect(result).toEqual(receipt(response));
     expect(fetcher).toHaveBeenCalledOnce();
     expect(geminiAnalysisBody({ ...request, maxOutputTokens: 456 })).toHaveProperty('generationConfig.maxOutputTokens', 456);
+  });
+
+  it('bounds reasoning for the configured Gemini 3.8 analysis model without applying its settings to other models', () => {
+    const request = analysisRequest(answer, saved);
+    expect(geminiAnalysisBody(request)).toHaveProperty('generationConfig.thinkingConfig.thinkingLevel', 'low');
+    expect(geminiAnalysisBody({ ...request, model: 'gemini-2.5-flash' }))
+      .not.toHaveProperty('generationConfig.thinkingConfig');
   });
 
   it('adapts only the costly company-array bound while preserving the canonical validation schema', () => {

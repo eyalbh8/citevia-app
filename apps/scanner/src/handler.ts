@@ -123,7 +123,7 @@ function awsScanner(): Scanner {
     analysisBatch: new AnalysisBatchCoordinator({ store: new SqlAnalysisBatchStore(productionDatabase()), artifacts: runtime.artifacts, client: lazyBatchClient, ledger: new PostgresCallLedger(productionDatabase(), runtime.artifacts), admission: new SqlProviderAdmissionStore(productionDatabase()) }),
     maintenance: { reconcile: async () => {
       const pending = await productionDatabase().query<{ data: Project }>(`SELECT data FROM citevia_projects
-        WHERE data->>'scheduleStatus' IN ('pending','error') AND data->>'enabled'='true'
+        WHERE data->>'scheduleStatus' IN ('pending','error')
         ORDER BY data->>'updatedAt',id LIMIT 5`);
       const repairs = await repairProjectSchedules(runtime.repository, pending.rows.map(row => row.data));
       for (const repair of repairs) if (repair.status === 'error')

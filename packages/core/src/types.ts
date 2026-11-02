@@ -47,6 +47,7 @@ export interface Project {
   scheduleExpression: string;
   /** Two stable weekly UTC slots; account timezone is only used for display. */
   scanSchedule?: { version: 1; slotsUtcMinutes: [number, number]; activatedAt?: string };
+  /** Enables scheduled and manual scanning; pausing preserves saved data. */
   enabled: boolean;
   generationModel: string;
   extractionModel: string;

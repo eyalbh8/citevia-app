@@ -67,3 +67,23 @@ Deploy both API and scanner bundles and the client together. Configure SAM `Cont
 `tests/agent-posts.test.ts` covers memory and embedded PostgreSQL: ownership, isolation, admission, prompt resolution, immutable snapshots, idempotency, edits, queue repair, uncertain paid calls and receipt recovery. `tests/agent-platforms.test.ts` covers separate prompts, copy/CTA limits, Unsplash auth/orientations/attribution/tracking, photo reservation races and historical reuse prevention, human copy formatting, supplied blog links, blog stages and matching schema. Client tests cover generation, read-only behavior, failed edits, polling and account switching. Test fixtures are never loaded by application startup.
 
 `tests/agent-research.test.ts` covers separate external/internal web search, domain isolation, native-source provenance, missing-index fallback, checkpoint recovery, brand/alias/hashtag rejection and bounded social rewrites. The provider contract test verifies domain filters do not change neutral scan requests.
+
+## System-admin blog performance review
+
+**Blog performance** appears beside Tracking for system administrators on each account. Its read and prompt-link APIs enforce the saved database system-admin role, including direct requests from account owners. Select the saved prompt the article was written to answer with **Link prompt**. This association is versioned in the tracked URL's existing JSON metadata; no migration is needed. Other tracked content types are excluded. Demo accounts remain read-only.
+
+The review uses up to 90 days of completed/partial scan history. It counts distinct analyzed original answers to the linked prompt's current wording, after publication and enrollment; resuming tracking starts a fresh review period. Failed/excluded scans, repeated captures, future answers and unrelated prompts cannot improve the outcome. Native citations determine citation pickup, including citations without a brand mention. This is an observed citation outcome, not causal lift, traffic or sales.
+
+- **Successful / keep monitoring:** at least one answer in the last 30 days cites the article.
+- **Declining / adjust:** both 30-day periods have at least three answers on two days and the current citation rate is less than half the previous rate.
+- **Needs improvement / adjust:** at least 14 days of tracking and three recent answers on two days, with no recent citations.
+- **Needs improvement / create:** at least 30 days of tracking and six recent answers on three days, with no citations anywhere in the review evidence.
+- Otherwise, collect more evidence, link an intended prompt, activate the prompt or resume tracking as appropriate.
+
+**Prepare adjustment draft** requires the current article text. **Prepare new article** accepts it as optional context. Both use the exact linked active prompt, current brandbook and language/region, and a server-computed change brief. The same staged Blog agent researches current external and internal sources and applies the brief during writing, formatting and repair. Recommendations are revalidated on submission; changed recommendations return 409. Draft creation retains existing idempotency, concurrency limits, image selection and SEO checks. The source article and change brief are private worker context; public draft metadata only identifies the original tracked URL and action. Drafts appear in Agents and can be reviewed/exported; generating a draft does not publish or change the live article.
+
+API additions:
+
+- `GET /v1/projects/:id/blog-performance`: admin-only review; `page` (25 items), `q`, and `outcome` filters. Returns current/previous citation rates, evidence counts, recommendations, change briefs and linkable account prompts.
+- `PATCH /v1/projects/:id/blog-performance/:trackedUrlId`: `{ version, promptId }`; `promptId: null` unlinks a blog. Non-null IDs must identify an active prompt in the same account.
+- `POST /v1/projects/:id/agents/posts`: optional admin-only `blogRefresh: { trackedUrlId, action: "adjust" | "create", originalBody? }` for the blog channel; the selected prompt must match the tracked blog's association.

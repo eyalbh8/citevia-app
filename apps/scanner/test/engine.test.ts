@@ -39,7 +39,7 @@ describe('scanner engine lifecycle', () => {
     await env.repository.saveProject(changed!, 1);
     expect((await env.repository.getRun(project.id, runs[0].id))!.snapshot.prompts[0].text).toBe(project.prompts[0].text);
   });
-  it('pauses scheduled scans while allowing an explicitly requested manual scan', async () => {
+  it('pauses scheduled and manual scans without deleting the account, then resumes', async () => {
     const env = await setup({ promptCount: 1 });
     const paused = (await env.repository.getProject(project.id))!;
     paused.enabled = false; paused.version++;
@@ -47,9 +47,55 @@ describe('scanner engine lifecycle', () => {
     await env.scanner.handle(kickoff);
     expect(env.queue.messages).toHaveLength(0);
     await env.scanner.handle({ ...kickoff, trigger: 'manual', requestId: 'explicit-manual' });
+    expect(env.queue.messages).toHaveLength(0);
+    expect(await env.repository.listRuns(project.id)).toHaveLength(0);
+    expect((await env.repository.getProject(project.id))?.prompts).toEqual(paused.prompts);
+    await env.repository.saveProject({ ...paused, enabled: true, version: paused.version + 1 }, paused.version);
+    await env.scanner.handle({ ...kickoff, trigger: 'manual', requestId: 'resumed-manual' });
     expect(env.queue.messages).toHaveLength(1);
     const run = (await env.repository.listRuns(project.id))[0];
     expect(Date.parse(run.deadlineAt) - Date.parse(run.createdAt)).toBe(3 * 60 * 60_000);
+  });
+  it('keeps queued work and saved results unchanged while paused, including retries and reconciliation', async () => {
+    const env = await setup({ promptCount: 1 });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    const runs = await env.repository.listRuns(project.id);
+    const results = await env.repository.listResults(project.id, job.runId);
+    const saved = (await env.repository.getProject(project.id))!;
+    await env.repository.saveProject({ ...saved, enabled: false, version: saved.version + 1 }, saved.version);
+    env.queue.messages.length = 0;
+    await env.scanner.handle(job);
+    await env.scanner.handle(kickoff);
+    await env.scanner.handle({ kind: 'retry', projectId: project.id, runId: job.runId, requestId: 'paused-retry' });
+    await env.scanner.handle({ kind: 'reconcile' });
+    expect(env.provider.collect).not.toHaveBeenCalled();
+    expect(env.provider.extract).not.toHaveBeenCalled();
+    expect(await env.repository.listRuns(project.id)).toEqual(runs);
+    expect(await env.repository.listResults(project.id, job.runId)).toEqual(results);
+    expect(promptMessages(env.queue.messages)).toHaveLength(0);
+    const paused = (await env.repository.getProject(project.id))!;
+    await env.repository.saveProject({ ...paused, enabled: true, version: paused.version + 1 }, paused.version);
+    await env.scanner.handle(job);
+    expect(env.provider.collect).toHaveBeenCalledOnce();
+    expect(env.provider.extract).toHaveBeenCalledOnce();
+  });
+  it('preserves an in-flight capture and starts no analysis call after pausing', async () => {
+    const env = await setup({ promptCount: 1 });
+    vi.mocked(env.provider.collect).mockImplementation(async () => {
+      const saved = (await env.repository.getProject(project.id))!;
+      await env.repository.saveProject({ ...saved, enabled: false, version: saved.version + 1 }, saved.version);
+      return captured();
+    });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await env.scanner.handle(job);
+    expect(env.provider.collect).toHaveBeenCalledOnce();
+    expect(env.provider.extract).not.toHaveBeenCalled();
+    const saved = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
+    expect(saved.status).toBe('captured');
+    expect(saved.leaseOwner).toBeUndefined();
+    expect(await env.artifacts.get(saved.captureKey!)).toBeTruthy();
   });
   it('rejects more than 50 active prompts before creating a run', async () => {
     const env = await setup({ promptCount: 51 });

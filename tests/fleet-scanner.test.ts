@@ -96,6 +96,27 @@ async function environment(options: {
 }
 
 describe('fleet scanner dispatch integration', () => {
+  it('pauses queued account work without changing results or holding up other accounts, then resumes', async () => {
+    const env = await environment({ accounts: 2, prompts: 3, providers: ['openai'] });
+    await Promise.all(env.accounts.map(account => env.scanner.handle(env.kickoff(account))));
+    const account = env.accounts[0];
+    const runs = await env.repository.listRuns(account.id);
+    const results = await env.repository.listResults(account.id, runs[0].id);
+    await env.repository.saveProject({ ...account, enabled: false, version: account.version + 1 }, account.version);
+    await env.drain(true);
+    expect([...env.calls.keys()].some(key => key.startsWith(`${account.id}:`))).toBe(false);
+    expect(env.calls.size).toBe(3);
+    expect(await env.repository.listRuns(account.id)).toEqual(runs);
+    expect(await env.repository.listResults(account.id, runs[0].id)).toEqual(results);
+    expect(await env.dispatch.claim({ globalLimit: 12, accountLimit: 3, providerLimit: 4, leaseMs: LEASE_MS })).toEqual([]);
+    const paused = (await env.repository.getProject(account.id))!;
+    await env.repository.saveProject({ ...paused, enabled: true, version: paused.version + 1 }, paused.version);
+    await env.scanner.handle({ kind: 'reconcile' });
+    await env.drain(true);
+    expect(env.calls.size).toBe(6);
+    expect([...env.calls.values()].every(count => count === 1)).toBe(true);
+    expect((await env.repository.listRuns(account.id))[0].status).toBe('completed');
+  });
   it('completes three accounts across all providers and batch analysis with bounded work and duplicate deliveries', async () => {
     const env = await environment({ accounts: 3, prompts: 5, batch: true });
     await Promise.all(env.accounts.map(account => env.scanner.handle(env.kickoff(account))));

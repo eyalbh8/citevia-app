@@ -15,6 +15,7 @@ import {
   Clock3,
   Cloud,
   Globe2,
+  FileText,
   Info,
   LayoutDashboard,
   ListChecks,
@@ -48,7 +49,7 @@ import {
   SCAN_PROVIDERS,
   snapshotProvider,
 } from '@citevia/core';
-import { idempotentPost, query, useApi } from './api';
+import { ApiError, idempotentPost, query, useApi } from './api';
 import ApiSessionProvider from './ApiSessionProvider';
 import { invalidateApiQueries } from './query-cache';
 import {
@@ -56,6 +57,9 @@ import {
   descopeProjectId,
   descopeBaseUrl,
   descopeFlowId,
+  clearSessionRecovery,
+  reloadExpiredSession,
+  signIn,
 } from './auth';
 import UsersView from './UsersView';
 import { Empty, ErrorNotice, formatDate, Logo } from './components';
@@ -63,6 +67,7 @@ import { Skeleton } from './Loading';
 import { DashboardView } from './DashboardView';
 import MentionsView from './MentionsView';
 import TrackingView from './TrackingView';
+import BlogPerformanceView from './BlogPerformanceView';
 import TrafficView from './TrafficView';
 import WebsiteHealthView from './WebsiteHealthView';
 import SourcesView from './SourcesView';
@@ -85,6 +90,7 @@ type View =
   | 'dashboard'
   | 'mentions'
   | 'tracking'
+  | 'blog-performance'
   | 'traffic'
   | 'website-health'
   | 'sources'
@@ -97,6 +103,7 @@ type View =
   | 'mcp'
   | 'users';
 const views = {
+  'blog-performance': { title: 'Blog performance', description: 'Review tracked blogs and prepare the next article.', icon: FileText },
   'website-health': { title: 'Website Health', description: 'Find what to improve on mobile and desktop.', icon: Activity },
   agents: { title: 'Agents', description: 'Create content with your AI agents.', icon: Bot },
   integrations: { title: 'Integrations', description: 'Connect your analytics, social agents and workflow tools.', icon: Plug },
@@ -205,7 +212,28 @@ function SessionGate() {
     <Login />
   );
 }
-function Login() {
+function SessionRecovery() {
+  const { logout } = useDescope();
+  const started = useRef(false);
+  const [showLogin, setShowLogin] = useState(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    if (reloadExpiredSession()) return;
+    // The reload could not recover the session. Clear it before opening sign-in.
+    void logout().then(
+      () => setShowLogin(true),
+      () => setShowLogin(true),
+    );
+  }, [logout]);
+  return showLogin ? <Login onSuccess={() => { clearSessionRecovery(); signIn(); }} /> : (
+    <div className="workspace-loading">
+      <Logo />
+      <Skeleton variant="workspace" label="Opening your workspace…" />
+    </div>
+  );
+}
+function Login({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [error, setError] = useState<Error>();
   return (
     <div className="login-page login-layout">
@@ -233,6 +261,7 @@ function Login() {
         {authConfigured ? (
           <Descope
             flowId={descopeFlowId}
+            onSuccess={onSuccess}
             onError={() =>
               setError(
                 new Error('Sign-in could not be completed. Please try again.'),
@@ -274,6 +303,9 @@ function Workspace() {
     [actionError, setActionError] = useState<Error>();
   const me = useApi<User>('/me');
   useEffect(() => {
+    if (me.data && !me.error) clearSessionRecovery();
+  }, [me.data, me.error]);
+  useEffect(() => {
     if (!mobileOpen) return;
     if (me.error) { setMobileOpen(false); return; }
     const previousOverflow = document.body.style.overflow;
@@ -313,7 +345,7 @@ function Workspace() {
     ? `/projects/${encodeURIComponent(currentProject.id)}`
     : null;
   const dashboard = useApi<Dashboard>(
-    path && !['agents', 'integrations', 'mcp', 'website-health'].includes(view) ? `${path}/dashboard${query({ runId, provider })}` : null,
+    path && !['agents', 'blog-performance', 'integrations', 'mcp', 'website-health'].includes(view) ? `${path}/dashboard${query({ runId, provider })}` : null,
   );
   const runs = useApi<Page<ScanRun>>(path ? `${path}/runs` : null);
   const setup = useApi<{ job: OnboardingJob | null }>(
@@ -430,7 +462,7 @@ function Workspace() {
     refresh();
   }
   async function startScan() {
-    if (!path || starting || project?.demo) return;
+    if (!path || starting || project?.demo || !project?.enabled) return;
     setStarting(true);
     setActionError(undefined);
     try {
@@ -463,10 +495,12 @@ function Workspace() {
       className="button button-primary"
       onClick={() => void startScan()}
       disabled={
-        !providerReady || starting || hasActiveRun || !activePrompts
+        !project?.enabled || !providerReady || starting || hasActiveRun || !activePrompts
       }
       title={
-        !providerReady
+        !project?.enabled
+          ? 'Enable scanning in project settings to run a scan'
+          : !providerReady
           ? 'Configure API credentials for all enabled providers to enable scans'
           : !activePrompts
             ? 'Add an active prompt in Prompts first'
@@ -483,6 +517,8 @@ function Workspace() {
       {starting ? 'Starting…' : hasActiveRun ? 'Scanning…' : 'Run scan'}
     </button>
   ) : null;
+  if (me.error instanceof ApiError && me.error.status === 401)
+    return <SessionRecovery />;
   if (me.loading && !me.data)
     return (
       <div className="workspace-loading">
@@ -533,6 +569,7 @@ function Workspace() {
               'prompts',
               'mentions',
               'tracking',
+              ...(systemAdmin ? ['blog-performance' as const] : []),
               'sources',
               'traffic',
               'website-health',
@@ -699,9 +736,9 @@ function Workspace() {
         <main
           id="main-content"
           tabIndex={-1}
-          className={`content ${['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'agents', 'integrations'].includes(view) ? 'prompts-content' : ''}`}
+          className={`content ${['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'agents', 'integrations'].includes(view) ? 'prompts-content' : ''}`}
         >
-          {!['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'agents', 'integrations'].includes(view) && (
+          {!['dashboard', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'agents', 'integrations'].includes(view) && (
             <div className="page-heading">
               <div>
                 <div className="eyebrow">AI VISIBILITY INTELLIGENCE</div>
@@ -737,7 +774,7 @@ function Workspace() {
               </div>
             </div>
           )}
-          {!project?.demo && !['mcp', 'agents', 'integrations', 'website-health'].includes(view) && missingProviders.length > 0 && (
+          {!project?.demo && !['mcp', 'agents', 'blog-performance', 'integrations', 'website-health'].includes(view) && missingProviders.length > 0 && (
             <div className="provider-banner" role="status">
               <Info size={16} />
               <span>
@@ -762,12 +799,12 @@ function Workspace() {
               </span>
             </div>
           )}
-          {!['mcp', 'agents', 'integrations', 'website-health'].includes(view) && <ErrorNotice error={runtime.error} retry={refresh} />}
+          {!['mcp', 'agents', 'blog-performance', 'integrations', 'website-health'].includes(view) && <ErrorNotice error={runtime.error} retry={refresh} />}
           <ErrorNotice
             error={projects.error}
             retry={() => void invalidateApiQueries('/projects')}
           />
-          {!['dashboard', 'mcp', 'agents', 'integrations', 'website-health'].includes(view) && <ErrorNotice error={dashboard.error} retry={refresh} />}
+          {!['dashboard', 'mcp', 'agents', 'blog-performance', 'integrations', 'website-health'].includes(view) && <ErrorNotice error={dashboard.error} retry={refresh} />}
           <ErrorNotice error={actionError} />
           {view === 'mcp' ? (
             !systemAdmin && projects.loading && !projects.data ? (
@@ -843,7 +880,7 @@ function Workspace() {
             project && (
               <>
                 <PresentationScenarioNotice demo={project.demo} />
-                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'agents', 'integrations'].includes(view) &&
+                {!['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'agents', 'integrations'].includes(view) &&
                   run && (
                     <div className="status-strip">
                       <span
@@ -874,10 +911,12 @@ function Workspace() {
                   )}
                 {dashboard.loading &&
                 !dashboard.data &&
-                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'agents', 'integrations'].includes(view) ? (
+                !['dashboard', 'settings', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'blog-performance', 'agents', 'integrations'].includes(view) ? (
                   <Skeleton variant="cards" label="Bringing your results together…" />
                 ) : view === 'website-health' ? (
                   <WebsiteHealthView key={project.id} project={project} path={path} notify={setToast} />
+                ) : view === 'blog-performance' ? (
+                  <BlogPerformanceView key={project.id} project={project} systemAdmin={systemAdmin} onTracking={() => navigate('tracking')} />
                 ) : view === 'agents' ? (
                   <AgentsView key={project.id} project={project} onIntegrations={(highlight) => navigate('integrations', highlight)} />
                 ) : view === 'settings' ? (
@@ -926,7 +965,7 @@ function Workspace() {
                     />
                   )
                 )}
-                {!['agents', 'website-health'].includes(view) && <footer className="page-footer">
+                {!['agents', 'blog-performance', 'website-health'].includes(view) && <footer className="page-footer">
                   <span>
                     <Cloud size={11} />
                     {project.demo?.presentation

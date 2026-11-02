@@ -5,7 +5,7 @@ import type {
   ScanProvider,
   ScanRun,
 } from './types.js';
-import { sameTargetMethod } from './metrics.js';
+import { isReportableRun, sameTargetMethod } from './metrics.js';
 import { brandRank, brandSentimentScore } from './scoring.js';
 import { projectProviders, snapshotProvider } from './providers.js';
 
@@ -54,7 +54,7 @@ export interface PromptMetricsResponse {
 export function matchesPromptMethod(project: Project, run: ScanRun) {
   return (
     run.projectId === project.id &&
-    !run.reportingExcludedAt &&
+    !run.cancelledAt && !run.reportingExcludedAt &&
     sameTargetMethod(run.snapshot, {
       ...run.snapshot,
       brand: project.brand,
@@ -282,6 +282,7 @@ export function promptPeriodMetrics(
     history.runs
       .filter(
         (run) =>
+          isReportableRun(run) &&
           // Changing future analysis settings must not erase saved measurements.
           // All other target, collection-model, parser and locale checks still apply.
           matchesPromptMethod(

@@ -20,3 +20,4 @@ export * from './agent-blog.js';
 
 export * from './agent-editorial.js';
 export * from './website-health.js';
+export * from './blog-performance.js';

@@ -46,6 +46,8 @@ The model settings are `OPENAI_ONBOARDING_MODEL`, `OPENAI_GENERATION_MODEL`, `AN
 
 The local worker automatically runs onboarding, its first scan and recovery of existing jobs. New accounts use Monday 06:00 UTC. Change the timezone later in Settings if needed; AWS EventBridge Scheduler follows that setting. Local development does not register AWS schedules or simulate elapsed weeks; use **Run scan** for additional local snapshots. Keep the process running while work completes; persisted work resumes through recovery after restart with credentials configured.
 
+In **Settings → Your scan schedule**, **Scanning enabled** saves immediately. Turning it off pauses scheduled scans, manual scans, retries and queued scan work while preserving the account, prompts and saved results. A provider request already in flight can still save its response; no subsequent collection or analysis call starts while paused. Turning it back on restores the saved schedule and lets unfinished work resume through normal recovery, subject to its existing deadlines. Viewers and demo accounts cannot change this control.
+
 ## Validate real responses later
 
 Prepare a UTF-8 text file with actual questions, one per line. The validation command makes up to ten real collection calls plus analysis calls, never substitutes fixtures and saves a report/native evidence beneath `.local-data/spike/`.

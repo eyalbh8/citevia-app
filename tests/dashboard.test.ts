@@ -166,6 +166,37 @@ function capture(urls: string[]): CapturedAnswer {
 }
 
 describe('dashboard overview measurement semantics', () => {
+  it.each(['running', 'completed', 'partial'] as const)(
+    'reports successful answers from a %s scan without counting unfinished or cancelled answers',
+    (status) => {
+      const value = project();
+      const included = observation(value, 'included');
+      included.run.status = status;
+      included.answer = capture(['https://included.example/page']);
+      const pending = observation(value, 'pending');
+      pending.run.status = 'running';
+      pending.result.status = 'captured';
+      const failed = observation(value, 'failed-answer');
+      failed.run.status = 'running';
+      failed.result.status = 'failed_extraction';
+      const cancelled = observation(value, 'cancelled');
+      cancelled.run.status = 'running';
+      cancelled.run.cancelledAt = period.end;
+      const failedRun = observation(value, 'failed-run');
+      failedRun.run.status = 'failed';
+      const queued = observation(value, 'queued');
+      queued.run.status = 'queued';
+      const data = aggregateDashboardOverview(value, period, filters,
+        [included, pending, failed, cancelled, failedRun, queued]);
+      expect(data.analyzed).toBe(1);
+      expect(data.providers[0].count).toBe(1);
+      expect(data.ranking[0].mentions).toBe(1);
+      expect(data.stages.find(row => row.key === 'understand'))
+        .toMatchObject({ measuredPromptCount: 1, visibility: 50 });
+      expect(data.sources).toEqual([{ domain: 'included.example', pageCount: 1, citationCount: 1, owned: false }]);
+    },
+  );
+
   it('omits excluded scan rounds and their reanalyses from every aggregate without mutating evidence', () => {
     const value = project();
     const earlier = observation(value, 'earlier', '2026-10-20');
@@ -709,8 +740,47 @@ describe('authorized period dashboard API', () => {
       if (item.answer)
         await artifacts.put(item.result.captureKey!, item.answer);
     };
-    return { repository, artifacts, value, call, save };
+    return { repository, artifacts, value, call, save, api };
   }
+
+  it('shows the first successful analysis in every dashboard card before a scan finishes, matching Prompts', async () => {
+    const { repository, artifacts, value, call, api } = await setup();
+    const first = observation(value, 'first-scan');
+    first.run.status = 'running';
+    first.run.totalCount = 3;
+    first.run.terminalCount = 2;
+    first.run.capturedCount = 3;
+    first.result.citationCount = 1;
+    const pending = { ...structuredClone(first.result), promptId: value.prompts[1].id,
+      prompt: value.prompts[1], responseId: 'first-scan~pending', status: 'captured' as const };
+    const failed = { ...structuredClone(first.result), promptId: value.prompts[2].id,
+      prompt: value.prompts[2], responseId: 'first-scan~failed', status: 'failed_extraction' as const };
+    await repository.createRun(first.run, [first.result, pending, failed]);
+    await artifacts.put(first.result.captureKey!, capture(['https://first.example/guide']));
+    const data = await call().then(r => r.json()) as DashboardOverview;
+    const prompts = await api(new Request(`https://citevia.test/v1/projects/${value.id}/prompt-metrics?days=7`),
+      testIdentity('viewer')).then(r => r.json());
+    expect(data).toMatchObject({ analyzed: 1, scanInProgress: true,
+      providers: [{ provider: 'openai', count: 1 }, { provider: 'gemini', count: 0 }],
+      ranking: [{ isTarget: true, mentions: 1 }],
+      sources: [{ domain: 'first.example', pageCount: 1, citationCount: 1 }],
+    });
+    expect(data.stages.find(row => row.key === 'understand'))
+      .toMatchObject({ measuredPromptCount: 1, visibility: 50 });
+    expect(data.analyzed).toBe(prompts.items.reduce((sum: number, p: { measurementCount: number }) => sum + p.measurementCount, 0));
+  });
+
+  it('identifies an initial scan awaiting its first analysis and respects the selected filters', async () => {
+    const { value, call, save } = await setup();
+    const pending = observation(value, 'pending-first-scan');
+    pending.run.status = 'running';
+    pending.run.succeededCount = pending.run.terminalCount = 0;
+    pending.result.status = 'captured';
+    await save(pending);
+    expect(await call().then(r => r.json())).toMatchObject({ analyzed: 0, scanInProgress: true });
+    expect(await call('?providers=gemini').then(r => r.json())).toMatchObject({ analyzed: 0, scanInProgress: false });
+    expect(await call('?region=GB').then(r => r.json())).toMatchObject({ analyzed: 0, scanInProgress: false });
+  });
 
   it('deduplicates reanalysis receipts, filters by captured date and avoids extraction artifact reads', async () => {
     const { artifacts, value, call, save } = await setup();

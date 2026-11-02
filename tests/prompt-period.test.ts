@@ -109,6 +109,17 @@ function fixture() {
 }
 
 describe('iGEO prompt period metrics', () => {
+  it('includes successful answers from a running scan while excluding cancelled and failed scans', () => {
+    const f = fixture();
+    f.observation('2026-10-16T09:00:00Z').run.status = 'running';
+    const cancelled = f.observation('2026-10-16T10:00:00Z', { mentioned: false });
+    cancelled.run.status = 'running';
+    cancelled.run.cancelledAt = '2026-10-16T10:05:00Z';
+    f.observation('2026-10-16T11:00:00Z', { mentioned: false }).run.status = 'failed';
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0])
+      .toMatchObject({ measurementCount: 1, avgVisibility: 100 });
+  });
+
   it('compares first and latest scan days with equal matched-provider weights when the previous period is empty', () => {
     const f = fixture();
     f.observation('2026-10-16T09:00:00Z'); // An extra early scan cannot overweight OpenAI.

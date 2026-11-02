@@ -1,5 +1,6 @@
 import { trafficRoute } from './traffic.js';
 import { agentRoute } from './agents.js';
+import { blogPerformanceRoute } from './blog-performance.js';
 import { websiteHealthRoute } from './website-health.js';
 import { monitoringPeriod, monitoringRoute } from './monitoring.js';
 import { dashboardOverviewRoute } from './dashboard.js';
@@ -326,9 +327,12 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           'FORBIDDEN',
           'Project owner access is required',
         );
-      const agent = await agentRoute(runtime, project, userId, tail, request, now(),
+      const agentAvailable =
         (options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim())) &&
-        (options.agentImagesConfigured ?? Boolean(process.env.UNSPLASH_ACCESS_KEY?.trim() || process.env.UNSPLASH_SECRET_ARN?.trim())), body);
+        (options.agentImagesConfigured ?? Boolean(process.env.UNSPLASH_ACCESS_KEY?.trim() || process.env.UNSPLASH_SECRET_ARN?.trim()));
+      const blogReview = await blogPerformanceRoute(runtime, project, user, tail, request, now(), agentAvailable, body);
+      if (blogReview) return blogReview;
+      const agent = await agentRoute(runtime, project, userId, tail, request, now(), agentAvailable, body);
       if (agent) return agent;
       const websiteHealth = await websiteHealthRoute(runtime, project, userId, tail, request, now(), {
         auditingAvailable: options.websiteHealthConfigured ?? Boolean(process.env.GOOGLE_PAGESPEED_API_KEY?.trim() || process.env.GOOGLE_PAGESPEED_SECRET_ARN?.trim()),
@@ -372,6 +376,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           tail === 'onboarding/retry' ||
           /^runs\/[^/]+\/retry-failed$/.test(tail))
       ) {
+        if (tail !== 'onboarding/retry' && !stored.enabled)
+          throw new HttpError(409, 'SCANNING_PAUSED', 'Scanning is paused. Enable scanning in project settings to run or retry a scan.');
         const retryRun = /^runs\/[^/]+\/retry-failed$/.test(tail)
           ? await selectedRun(tail.split('/')[1]) : undefined;
         requireProvider(

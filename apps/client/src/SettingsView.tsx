@@ -69,6 +69,13 @@ export default function SettingsView({
                   </div>
                 </div>
                 <div className="card-content">
+                  <ScanningToggle
+                    key={`${project.id}-${project.version}`}
+                    project={project}
+                    path={path}
+                    onSaved={onSaved}
+                    notify={notify}
+                  />
                   <div className="setting-note">
                     <CalendarClock size={17} />
                     <span>
@@ -121,7 +128,7 @@ export default function SettingsView({
                         key={run.id}
                         run={run}
                         path={path}
-                        owner={project.role === 'owner' && !project.demo}
+                        owner={project.role === 'owner' && !project.demo && project.enabled}
                         onSaved={onSaved}
                         notify={notify}
                       />
@@ -170,6 +177,64 @@ export default function SettingsView({
   );
 }
 
+function ScanningToggle({ project, path, onSaved, notify }: {
+  project: Project;
+  path: string;
+  onSaved: () => void;
+  notify: (text: string) => void;
+}) {
+  const [enabled, setEnabled] = useState(project.enabled);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<Error>();
+  const owner = project.role === 'owner' && !project.demo;
+  async function toggle() {
+    if (!owner || saving) return;
+    setSaving(true);
+    setError(undefined);
+    try {
+      const saved = await request<Project>(`${path}/settings`, {
+        method: 'PATCH',
+        body: JSON.stringify({ version: project.version, enabled: !enabled }),
+      });
+      setEnabled(saved.enabled);
+      notify(saved.enabled ? 'Scanning enabled.' : 'Scanning paused. Your saved data is preserved.');
+      onSaved();
+    } catch (error) {
+      setError(error as Error);
+      // A schedule-sync failure can still have saved the new scanning state.
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div className="scanning-control">
+      <div className="scanning-control-heading">
+        <div>
+          <strong id="scanning-toggle-label">Scanning enabled</strong>
+          <p className="card-description" role="status">{saving ? 'Saving…' : enabled ? 'On' : 'Paused'}</p>
+        </div>
+        <button
+          type="button"
+          className="scanning-switch"
+          role="switch"
+          aria-checked={enabled}
+          aria-labelledby="scanning-toggle-label"
+          aria-describedby="scanning-toggle-description"
+          disabled={!owner || saving}
+          onClick={() => void toggle()}
+        >
+          <span />
+        </button>
+      </div>
+      <p id="scanning-toggle-description" className="card-description">
+        Pause scheduled scans, manual scans and retries. Your account and all saved results stay available.
+      </p>
+      <ErrorNotice error={error} />
+    </div>
+  );
+}
+
 function ProjectForm({
   project,
   path,
@@ -187,8 +252,7 @@ function ProjectForm({
     [domains, setDomains] = useState(project.brand.domains.join(', '));
   const [country, setCountry] = useState(project.country),
     [language, setLanguage] = useState(project.language),
-    [timezone, setTimezone] = useState(project.timezone),
-    [enabled, setEnabled] = useState(project.enabled);
+    [timezone, setTimezone] = useState(project.timezone);
   const [competitors, setCompetitors] = useState<Brand[]>(project.competitors);
   const [competitorsEdited, setCompetitorsEdited] = useState(false);
   const [scanProviders, setScanProviders] = useState(projectProviders(project));
@@ -233,7 +297,6 @@ function ProjectForm({
           country: country.toUpperCase(),
           language,
           timezone,
-          enabled,
           scanProviders,
         }),
       });
@@ -372,14 +435,6 @@ function ProjectForm({
               <small>
                 {project.scanSchedule ? 'Used to display scan times. Your two fixed UTC start times stay unchanged.' : 'A valid IANA timezone for your saved schedule.'}
               </small>
-            </label>
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={(event) => setEnabled(event.target.checked)}
-              />
-              Scheduled scanning enabled
             </label>
             <div className="form-stack">
               <strong>Scan providers</strong>
