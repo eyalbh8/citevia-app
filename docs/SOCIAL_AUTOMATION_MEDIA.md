@@ -12,11 +12,14 @@ Style analysis sends actual image blocks to the Responses API. It samples up to 
 
 Copy generation answers the exact saved prompt. Facebook, Instagram, X, Pinterest and Reddit retain the existing editorial length limits. LinkedIn has a 3,000-character complete-post limit. Instagram receives three coherent carousel slides and a caption ending in “Link in bio.” TikTok receives three connected scenes with short on-screen text. Each remaining social channel receives one image. Brand names and aliases remain excluded from Facebook, Instagram and X captions under the existing editorial rules; verified website links are appended to Facebook copy by the server.
 
+When **Use the same post for Facebook and Instagram** is enabled, newly reserved destinations carry `contentFormat: 'facebook-instagram'` into generation. This opt-in format overrides the two channel-specific packages: one general caption of one or two sentences, at most 400 characters including up to two hashtags, and one square image. It omits URLs, handles and platform-specific instructions such as “Link in bio.” One producing publication purchases style, copy, image and QA; its siblings reuse those completed receipts. With sharing off or absent, the original formats above are unchanged.
+
 OpenAI image calls use `/v1/images/edits` when verified references exist, otherwise `/v1/images/generations`. Reference-image calls use the current JSON `images: [{image_url}]` format. Each call creates one image for one storyboard scene. Carousel images share the same observed style and complete storyboard. Input references are HTTPS URLs with no credentials, local hostnames, literal IP addresses or custom ports. References must come from the tenant-scoped connected-account feed, never arbitrary request input.
 
 The generator requests JPEG output at these explicit dimensions:
 
 - Instagram: 1024 × 1280 (4:5).
+- Shared Facebook/Instagram format, only when enabled: 1024 × 1024 (1:1), at most 8 MiB.
 - TikTok storyboard: 1008 × 1792 (9:16).
 - Pinterest: 1024 × 1536 (2:3).
 - Other social channels: 1536 × 864 (16:9).

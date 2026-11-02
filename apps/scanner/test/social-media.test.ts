@@ -55,6 +55,39 @@ describe('social media generation', () => {
     expect(result.body).not.toContain('https://');
     expect(fetcher).toHaveBeenCalledOnce();
   });
+  it.each(['facebook', 'instagram'] as const)('creates the same short generic one-image format for opted-in %s without platform suffixes', async channel => {
+    const value = { ...copyValue, slides: slides.slice(0, 1) };
+    const { generator, fetcher } = transport(value);
+    const result = await generator.generateCopy(project, project.prompts[0], { ...destination, channel, contentFormat: 'facebook-instagram' }, style);
+    expect(result).toMatchObject({ body: value.body, hashtags: value.hashtags, format: 'image', slides: value.slides });
+    expect(body(fetcher).instructions).toContain('one short, general caption');
+    expect(body(fetcher).instructions).not.toContain('answering the exact saved prompt');
+    expect(JSON.parse(body(fetcher).input[0].content[0].text).channel).toBe('facebook-and-instagram');
+    expect(result.body).not.toMatch(/https?:\/\/|Link in bio/);
+  });
+  it.each([
+    { body: 'a'.repeat(401) },
+    { body: 'Read more at https://example.com' },
+    { body: 'Read more. Link in bio.' },
+    { hashtags: ['#One', '#Two', '#Three'] },
+    { slides },
+  ])('rejects invalid shared copy without a second paid call: %j', async patch => {
+    const { generator, fetcher } = transport({ ...copyValue, slides: slides.slice(0, 1), ...patch });
+    await expect(generator.generateCopy(project, project.prompts[0], { ...destination, contentFormat: 'facebook-instagram' }, style)).rejects.toMatchObject({ code: expect.stringMatching(/^social_(copy|storyboard)_invalid$/) });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it('uses one square JPEG for shared Facebook/Instagram content and enforces the Instagram byte ceiling', async () => {
+    const sharedDestination = { ...destination, contentFormat: 'facebook-instagram' as const };
+    const sharedCopy = { ...copy, format: 'image' as const, slides: slides.slice(0, 1) };
+    const bytes = jpeg(1024, 1024);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ data: [{ b64_json: bytes.toString('base64') }] }));
+    const generator = new OpenAISocialMediaGenerator({ apiKey: 'test-only', fetch: fetcher });
+    expect(await generator.generateImage(project, project.prompts[0], sharedCopy, sharedDestination, style, 0, 1)).toMatchObject({ width: 1024, height: 1024 });
+    expect(body(fetcher)).toMatchObject({ size: '1024x1024', n: 1, output_format: 'jpeg', quality: 'high' });
+    const oversized = Buffer.concat([bytes, Buffer.alloc(8 * 1024 * 1024)]);
+    fetcher.mockResolvedValueOnce(Response.json({ data: [{ b64_json: oversized.toString('base64') }] }));
+    await expect(generator.generateImage(project, project.prompts[0], sharedCopy, sharedDestination, style, 0, 1)).rejects.toMatchObject({ code: 'social_image_invalid' });
+  });
   it('rejects broken carousel output instead of inventing missing slides or retrying a paid call', async () => {
     const { generator, fetcher } = transport({ ...copyValue, slides: slides.slice(0, 2) });
     await expect(generator.generateCopy(project, project.prompts[0], destination, style)).rejects.toMatchObject({ code: 'social_storyboard_invalid' });

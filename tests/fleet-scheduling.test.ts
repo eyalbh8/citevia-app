@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CreateScheduleCommand, GetScheduleCommand, SchedulerClient, UpdateScheduleCommand } from '@aws-sdk/client-scheduler';
-import { allocateScanSchedule, isCurrentScheduledOccurrence, markScheduleSynced, nextProjectScan, scanSlotCron, type Project, type ScanSchedule } from '@citevia/core';
+import { CreateScheduleCommand, DeleteScheduleCommand, GetScheduleCommand, SchedulerClient, UpdateScheduleCommand } from '@aws-sdk/client-scheduler';
+import { allocateScanSchedule, isCurrentScheduledOccurrence, markScheduleSynced, nextProjectScan, projectScanRunsPerWeek, resizeScanSchedule, scanSlotCron, validScanSchedule, type Project, type ScanSchedule } from '@citevia/core';
 import { MemoryRepository, PostgresRepository } from '@citevia/storage';
 import { localPostgres } from '../packages/storage/src/local-postgres.js';
 import { projectScheduleName, repairProjectSchedules, syncProjectSchedule } from '../apps/api/src/scheduler.js';
@@ -10,6 +10,28 @@ import { newProject } from './fixtures/scanner.js';
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 describe('stable twice-weekly fleet scheduling', () => {
+  it('supports every weekly frequency with a stable anchor, even spacing and revision fencing', () => {
+    const original = { version: 1, slotsUtcMinutes: [9900, 4860], activatedAt: '2026-10-20T12:00:00Z' };
+    expect(projectScanRunsPerWeek(newProject())).toBe(2);
+    for (let runsPerWeek = 1; runsPerWeek <= 7; runsPerWeek++) {
+      const schedule = resizeScanSchedule(original, runsPerWeek);
+      expect(validScanSchedule(schedule)).toBe(true);
+      expect(schedule.slotsUtcMinutes).toHaveLength(runsPerWeek);
+      expect(schedule.slotsUtcMinutes[0]).toBe(9900);
+      expect(schedule.activatedAt).toBe(original.activatedAt);
+      expect(projectScanRunsPerWeek({ scanSchedule: schedule })).toBe(runsPerWeek);
+      expect(schedule.version).toBe(runsPerWeek === 2 ? 1 : 2);
+      const ordered = [...schedule.slotsUtcMinutes].sort((a, b) => a - b);
+      expect(ordered.map((slot, i) => (ordered[(i + 1) % runsPerWeek] - slot + 10080) % 10080 || 10080))
+        .toEqual(Array(runsPerWeek).fill(10080 / runsPerWeek));
+      const current = { scheduleVersion: schedule.version, scheduleSlotUtcMinute: 9900, scheduledAt: '2026-10-25T21:00:00Z' };
+      expect(isCurrentScheduledOccurrence({ scanSchedule: schedule, scheduleStatus: 'error' }, current)).toBe(true);
+      if (runsPerWeek !== 2) expect(isCurrentScheduledOccurrence({ scanSchedule: schedule }, { ...current, scheduleVersion: 1 })).toBe(false);
+    }
+    for (const invalid of [0, 8, 1.5, NaN]) expect(() => resizeScanSchedule(original, invalid)).toThrow();
+    expect(validScanSchedule({ version: 2, slotsUtcMinutes: [0, 360, 720] })).toBe(false);
+  });
+
   it('gives a small fleet two scan days with 30-minute starts, then spreads 100 accounts without moving anyone', () => {
     const schedules: ScanSchedule[] = [];
     for (let account = 0; account < 100; account++) schedules.push(allocateScanSchedule(schedules));
@@ -89,6 +111,13 @@ describe('stable twice-weekly fleet scheduling', () => {
       await repository.saveProject(custom, null);
       expect(await repository.ensureProjectScanSchedule(custom.id)).toEqual(custom);
       expect((await repository.ensureProjectScanSchedule(custom.id, { migrateCustom: true }))?.scanSchedule).toBeDefined();
+      const chosen = { ...newProject({ id: 'custom-frequency' }), timezone: 'UTC', enabled: false,
+        scheduleExpression: 'cron(30 8 ? * TUE *)', scanRunsPerWeek: 7 };
+      await repository.saveProject(chosen, null);
+      const daily = await repository.ensureProjectScanSchedule(chosen.id);
+      expect(daily?.enabled).toBe(false);
+      expect(daily?.scanSchedule?.slotsUtcMinutes).toEqual([1950, 3390, 4830, 6270, 7710, 9150, 510]);
+      expect(await repository.ensureProjectScanSchedule(chosen.id)).toEqual(daily);
     } finally { await db?.close(); }
   }, 30000);
 
@@ -205,5 +234,37 @@ describe('EventBridge schedule synchronization', () => {
     const updates = send.mock.calls.filter(([command]) => command instanceof UpdateScheduleCommand).map(([command]) => (command as UpdateScheduleCommand).input);
     expect(updates).toHaveLength(3);
     expect(updates.every(input => input.State === 'DISABLED')).toBe(true);
+  });
+
+  it('removes all obsolete slots when frequency shrinks and retries missing cleanup safely', async () => {
+    environment();
+    const original = markScheduleSynced({ ...newProject(), scanSchedule: allocateScanSchedule([], 7) });
+    const project = { ...original, scanSchedule: resizeScanSchedule(original.scanSchedule!, 1), enabled: false };
+    const name = projectScheduleName(project.id);
+    const send = vi.spyOn(SchedulerClient.prototype, 'send').mockImplementation(async (command: any) => {
+      if (command instanceof DeleteScheduleCommand) throw Object.assign(new Error(), { name: 'ResourceNotFoundException' });
+      return {};
+    });
+    await syncProjectSchedule(project);
+    const deleted = send.mock.calls.map(([command]) => command).filter(command => command instanceof DeleteScheduleCommand);
+    expect(deleted.map(command => command.input.Name)).toEqual(Array.from({ length: 6 }, (_, i) => `${name}-v1-${i + 1}`));
+    const update = send.mock.calls.find(([command]) => command instanceof UpdateScheduleCommand && command.input.Name === `${name}-v1-0`)![0] as UpdateScheduleCommand;
+    expect(update.input.State).toBe('DISABLED');
+    expect(JSON.parse(update.input.Target!.Input!)).toMatchObject({ scheduleVersion: 2, scheduleSlotUtcMinute: 360 });
+  });
+
+  it('reports cleanup failure without retiring legacy and repairs it on the next attempt', async () => {
+    environment();
+    const project = { ...newProject(), scanSchedule: allocateScanSchedule([], 1) };
+    const name = projectScheduleName(project.id);
+    const send = vi.spyOn(SchedulerClient.prototype, 'send').mockImplementation(async (command: any) => {
+      if (command instanceof DeleteScheduleCommand && command.input.Name === `${name}-v1-3`) throw new Error('cleanup unavailable');
+      return {};
+    });
+    await expect(syncProjectSchedule(project)).rejects.toThrow('cleanup unavailable');
+    expect(send.mock.calls.some(([command]) => command instanceof UpdateScheduleCommand && command.input.Name === name)).toBe(false);
+    send.mockResolvedValue({} as never);
+    await syncProjectSchedule(project);
+    expect(send.mock.calls.some(([command]) => command instanceof UpdateScheduleCommand && command.input.Name === name && command.input.State === 'DISABLED')).toBe(true);
   });
 });

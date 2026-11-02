@@ -85,9 +85,21 @@ describe('social automation settings', () => {
     expect(mocks.request).toHaveBeenCalledOnce();
     const [endpoint, options] = mocks.request.mock.calls[0];
     expect(endpoint).toBe(`${path}/social/settings`); expect(options.method).toBe('PATCH');
-    expect(JSON.parse(options.body)).toEqual({ version: 3, settings: { enabled: true, createBlogDrafts: true, generationCadence: 'daily', generationTime: '08:00', timezone: 'UTC',
+    expect(JSON.parse(options.body)).toEqual({ version: 3, settings: { enabled: true, createBlogDrafts: true, shareFacebookInstagramContent: false, generationCadence: 'daily', generationTime: '08:00', timezone: 'UTC',
       slots: [{ id: expect.stringMatching(/^slot_/), dayOfWeek: 1, time: '09:00' }] } });
     expect(mocks.notify).toHaveBeenCalledWith('Automation schedule saved.');
+  });
+  it('keeps shared Facebook/Instagram content opt-in and saves the toggle explicitly', async () => {
+    data.settings.shareFacebookInstagramContent = undefined;
+    await render();
+    const shared = checkbox('Use the same post for Facebook and Instagram');
+    expect(shared.checked).toBe(false);
+    expect(container.textContent).toContain('including Instagram carousels');
+    await click(shared);
+    expect(mocks.request).not.toHaveBeenCalled();
+    expect(schedule().textContent).toContain('edits affect only that destination');
+    await click(button('Save automation settings'));
+    expect(JSON.parse(mocks.request.mock.calls[0][1].body).settings.shareFacebookInstagramContent).toBe(true);
   });
   it('pauses without deleting existing data or changing the scan toggle', async () => {
     data.settings.enabled = true; data.settings.slots = [{ id: 'monday', dayOfWeek: 1, time: '09:00' }];

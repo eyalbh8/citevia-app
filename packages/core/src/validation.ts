@@ -57,6 +57,7 @@ export const settingsSchema = z
       .optional(),
     timezone: timeZoneSchema.optional(),
     enabled: z.boolean().optional(),
+    scanRunsPerWeek: z.number().int().min(1).max(7).optional(),
     geoBacklinks: geoBacklinkSettingsSchema.optional(),
     scanProviders: scanProvidersSchema.optional(),
   })

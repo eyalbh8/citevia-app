@@ -17,14 +17,14 @@ const copy = (channel: SocialChannel): SocialGeneratedCopy => ({
   format: channel === 'instagram' ? 'carousel' : channel === 'tiktok' ? 'video' : 'image',
 });
 
-async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDrafts = false, usePrivateMedia = true) {
+async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDrafts = false, usePrivateMedia = true, shareFacebookInstagramContent = false) {
   let clock = new Date(initialTime);
   const repository = new MemoryRepository(), artifacts = new MemoryArtifacts(), queue = new MemoryQueue();
   const destinationOptions: NonNullable<Project['socialDestinationOptions']> = {};
   if (channels.includes('pinterest')) destinationOptions['pinterest-account'] = { boardId: 'board-one' };
   if (channels.includes('reddit')) destinationOptions['reddit-account'] = { subreddit: 'analytics', flairId: 'flair-one' };
   const project: Project = { ...newProject({ id: 'social-project', prompts: [prompt], now: clock }), socialProfileId: 'profile-one',
-    socialAutomation: { enabled: true, createBlogDrafts, revision: 1, timezone: 'UTC', slots: [{ id: 'monday', dayOfWeek: 1, time: '09:00' }], effectiveFrom: '2026-11-01T00:00:00.000Z', scheduleStatus: 'synced' },
+    socialAutomation: { enabled: true, createBlogDrafts, shareFacebookInstagramContent, revision: 1, timezone: 'UTC', slots: [{ id: 'monday', dayOfWeek: 1, time: '09:00' }], effectiveFrom: '2026-11-01T00:00:00.000Z', scheduleStatus: 'synced' },
     socialDestinationOptions: destinationOptions };
   await repository.saveProject(project, null);
   const destinations: SocialDestination[] = channels.map(channel => ({ id: `${channel}-account`, channel, username: `acme-${channel}`, profileId: 'profile-one', active: true, requiresReconnect: false }));
@@ -42,7 +42,7 @@ async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDraft
   };
   const generator = {
     analyzeStyle: vi.fn<SocialMediaGenerator['analyzeStyle']>().mockResolvedValue(style),
-    generateCopy: vi.fn<SocialMediaGenerator['generateCopy']>().mockImplementation(async (_project, _prompt, destination) => copy(destination.channel)),
+    generateCopy: vi.fn<SocialMediaGenerator['generateCopy']>().mockImplementation(async (_project, _prompt, destination) => copy(destination.contentFormat ? 'facebook' : destination.channel)),
     generateImage: vi.fn<SocialMediaGenerator['generateImage']>().mockImplementation(async () => ({ ...image, bytes: new Uint8Array(image.bytes) })),
     checkImage: vi.fn<SocialMediaGenerator['checkImage']>().mockResolvedValue(undefined),
     videoReady: vi.fn<SocialMediaGenerator['videoReady']>().mockResolvedValue(true),
@@ -97,8 +97,130 @@ async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDraft
     throw new Error('Publication did not reach the requested stage');
   };
   const finish = (id = publications[0].id) => runTo(post => !ACTIVE_SOCIAL_PUBLICATION_STATUSES.includes(post.status), id);
-  return { runtime, project, publications, publisher, generator, publisherFactory, generatorFactory, worker, message, read, update, updateProject, advanceClock, runTo, finish, approve, uploadStore, inspectVideo };
+  return { runtime, project, publications, destinations, publisher, generator, publisherFactory, generatorFactory, worker, message, read, update, updateProject, advanceClock, runTo, finish, approve, uploadStore, inspectVideo };
 }
+
+describe('opt-in shared Facebook and Instagram generation', () => {
+  const members = (f: Awaited<ReturnType<typeof fixture>>) => {
+    const source = f.publications.find(post => post.sharedGeneration?.sourcePublicationId === post.id)!;
+    const follower = f.publications.find(post => post.sharedGeneration && post.id !== source.id)!;
+    return { source, follower };
+  };
+
+  it('produces once under concurrent deliveries and publishes identical reviewed copy and image bytes with separate receipts', async () => {
+    const f = await fixture(['instagram', 'facebook'], false, true, true);
+    const { source, follower } = members(f);
+    let release!: () => void;
+    f.generator.analyzeStyle.mockImplementationOnce(async () => { await new Promise<void>(resolve => { release = resolve; }); return style; });
+    const producing = f.worker.handlePublication(f.project.id, source.id);
+    await vi.waitFor(() => expect(f.generator.analyzeStyle).toHaveBeenCalledOnce());
+    await Promise.all([source.id, follower.id, follower.id].map(id => f.worker.handlePublication(f.project.id, id)));
+    expect(f.generator.analyzeStyle).toHaveBeenCalledOnce();
+    expect((await f.read(follower.id)).attempts).toBe(0);
+    release(); await producing;
+    await f.finish(source.id); f.advanceClock(); await f.finish(follower.id);
+    const a = await f.read(source.id), b = await f.read(follower.id);
+    expect(a.content).toEqual(b.content);
+    for (const post of [a, b]) {
+      expect(post.status).toBe('review_required'); expect(post.media).toHaveLength(1);
+      expect((post.checkpoints?.mediaSources as Record<string, { key: string }>)['image-0'].key).toContain(`/social/${post.id}/`);
+    }
+    expect(f.uploadStore.put.mock.calls.map(call => [...call[1]])).toEqual([[...image.bytes], [...image.bytes]]);
+    expect(f.generator.analyzeStyle).toHaveBeenCalledOnce(); expect(f.generator.generateCopy).toHaveBeenCalledOnce();
+    expect(f.generator.generateImage).toHaveBeenCalledOnce(); expect(f.generator.checkImage).toHaveBeenCalledOnce();
+    expect(f.generator.generateCopy.mock.calls[0][2]).toMatchObject({ contentFormat: 'facebook-instagram' });
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+    await f.approve(a.id); await f.finish(a.id); await f.approve(b.id); await f.finish(b.id);
+    const calls = f.publisher.publish.mock.calls;
+    expect(calls).toHaveLength(2); expect(calls[0][2].text).toBe(calls[1][2].text);
+    expect(calls.map(call => call[2].media.length)).toEqual([1, 1]); expect(calls[0][3]).not.toBe(calls[1][3]);
+  });
+
+  it('waits without exhausting retries and reuses immutable generation rather than an edited source preview', async () => {
+    const f = await fixture(['facebook', 'instagram'], false, true, true);
+    const { source, follower } = members(f);
+    for (let i = 0; i < 8; i++) { await f.worker.handlePublication(f.project.id, follower.id); f.advanceClock(); }
+    expect((await f.read(follower.id)).attempts).toBe(0); expect(f.generator.analyzeStyle).not.toHaveBeenCalled();
+    const prepared = await f.finish(source.id);
+    await f.update({ content: { ...prepared.content!, body: 'An owner edited only the Facebook preview.' } }, source.id);
+    await f.finish(follower.id);
+    expect((await f.read(follower.id)).content).toEqual(prepared.content);
+    expect(f.generator.generateCopy).toHaveBeenCalledOnce();
+  });
+
+  it('recovers a saved image after a lost producer transition without charging either destination again', async () => {
+    const f = await fixture(['facebook', 'instagram'], false, true, true);
+    const { source, follower } = members(f);
+    await f.runTo(post => post.stage === 'image-0', source.id);
+    const save = f.runtime.repository.saveSocialPublication.bind(f.runtime.repository);
+    let interrupted = false;
+    vi.spyOn(f.runtime.repository, 'saveSocialPublication').mockImplementation(async (post, version) => {
+      if (!interrupted && post.id === source.id && post.stage === 'qa-0') { interrupted = true; return false; }
+      return save(post, version);
+    });
+    await f.worker.handlePublication(f.project.id, source.id);
+    await f.worker.handlePublication(f.project.id, follower.id);
+    expect(f.generator.generateImage).toHaveBeenCalledOnce(); expect(f.generator.checkImage).not.toHaveBeenCalled();
+    f.advanceClock(7 * 60); await f.finish(source.id); await f.finish(follower.id);
+    expect(f.generator.generateImage).toHaveBeenCalledOnce(); expect(f.generator.checkImage).toHaveBeenCalledOnce();
+  });
+
+  it('never transfers generation ownership after a producer paid-call outcome becomes uncertain', async () => {
+    const f = await fixture(['facebook', 'instagram'], false, true, true);
+    const { source, follower } = members(f);
+    await f.runTo(post => post.stage === 'image-0', source.id);
+    f.generator.generateImage.mockRejectedValueOnce(new SocialPublisherError('provider_timeout', 'The response was lost.', true, true));
+    await f.worker.handlePublication(f.project.id, source.id); f.advanceClock();
+    expect((await f.finish(source.id)).error?.code).toBe('generation_uncertain');
+    expect(await f.finish(follower.id)).toMatchObject({ status: 'failed', error: { code: 'shared_generation_incomplete' } });
+    expect(f.generator.generateImage).toHaveBeenCalledOnce(); expect(f.publisher.publish).not.toHaveBeenCalled();
+  });
+
+  it('retries a follower storage-copy failure without generating again', async () => {
+    const f = await fixture(['facebook', 'instagram'], false, true, true);
+    const { source, follower } = members(f);
+    await f.finish(source.id);
+    const put = f.runtime.artifacts.put.bind(f.runtime.artifacts);
+    let interrupted = false;
+    vi.spyOn(f.runtime.artifacts, 'put').mockImplementation(async (key, value) => {
+      if (!interrupted && key.endsWith(`/social/${follower.id}/image-0.json`)) { interrupted = true; throw new Error('Temporary object storage error'); }
+      return put(key, value);
+    });
+    expect((await f.finish(follower.id)).status).toBe('review_required');
+    expect(interrupted).toBe(true);
+    expect(f.generator.generateCopy).toHaveBeenCalledOnce(); expect(f.generator.generateImage).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a source that does not authorize this destination before adopting content', async () => {
+    const f = await fixture(['facebook', 'instagram'], false, true, true);
+    const { source, follower } = members(f);
+    await f.update({ sharedGeneration: { ...source.sharedGeneration!, memberPublicationIds: [source.id] } }, source.id);
+    expect(await f.finish(follower.id)).toMatchObject({ status: 'failed', error: { code: 'shared_generation_invalid' } });
+    expect(f.generator.analyzeStyle).not.toHaveBeenCalled(); expect(f.uploadStore.put).not.toHaveBeenCalled();
+  });
+
+  it('finishes content for a connected sibling when the producer account disconnects, without publishing to it', async () => {
+    const f = await fixture(['facebook', 'instagram'], false, true, true);
+    const { source, follower } = members(f);
+    f.destinations.find(account => account.id === source.destination.id)!.active = false;
+    expect((await f.finish(source.id)).status).toBe('cancelled');
+    expect((await f.finish(follower.id)).status).toBe('review_required');
+    expect(f.publisher.recentPosts).toHaveBeenCalledWith('profile-one', follower.destination.id);
+    expect(f.generator.generateImage).toHaveBeenCalledOnce(); expect(f.generator.checkImage).toHaveBeenCalledOnce();
+    await f.approve(follower.id); await f.finish(follower.id);
+    expect(f.publisher.publish).toHaveBeenCalledOnce(); expect(f.publisher.publish.mock.calls[0][1].id).toBe(follower.destination.id);
+  });
+
+  it('keeps legacy and toggle-off publications independent and stops obsolete shared jobs after a revision change', async () => {
+    const separate = await fixture(['facebook', 'instagram']);
+    for (const post of separate.publications) { expect(post.sharedGeneration).toBeUndefined(); await separate.finish(post.id); }
+    expect(separate.generator.generateCopy).toHaveBeenCalledTimes(2); expect(separate.generator.generateImage).toHaveBeenCalledTimes(4);
+    const shared = await fixture(['facebook', 'instagram'], false, true, true);
+    await shared.updateProject({ socialAutomation: { ...shared.project.socialAutomation!, shareFacebookInstagramContent: false, revision: 2 } });
+    for (const post of shared.publications) expect((await shared.finish(post.id)).status).toBe('cancelled');
+    expect(shared.generator.analyzeStyle).not.toHaveBeenCalled();
+  });
+});
 
 describe('scheduled social generation', () => {
   it('requires review of every connected image platform before publishing its own copy and assets', async () => {

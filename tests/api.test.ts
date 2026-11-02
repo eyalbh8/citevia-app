@@ -13,6 +13,7 @@ import {
   DEFAULT_GEMINI_MODEL,
   DEFAULT_PERPLEXITY_PRESET,
   snapshotProvider,
+  resizeScanSchedule,
 } from '@citevia/core';
 import {
   MemoryArtifacts,
@@ -103,6 +104,68 @@ async function fixture(
   }
   return { ...runtime, project, call, scan };
 }
+
+describe('weekly scan frequency settings', () => {
+  it('requires owner access, validates integer bounds and fences stale settings writes', async () => {
+    const syncSchedule = vi.fn();
+    const f = await fixture(undefined, { syncSchedule });
+    expect((await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: 1, scanRunsPerWeek: 7 }), VIEWER)).status).toBe(403);
+    for (const scanRunsPerWeek of [0, 8, 1.5, '3', null])
+      expect((await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: 1, scanRunsPerWeek }))).status).toBe(400);
+    expect(syncSchedule).not.toHaveBeenCalled();
+    const firstResponse = await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: 1, scanRunsPerWeek: 7 }));
+    expect(firstResponse.status).toBe(200);
+    const first = await read<Project>(firstResponse);
+    expect(first.scanSchedule?.slotsUtcMinutes).toHaveLength(7);
+    expect(first.scanRunsPerWeek).toBe(7);
+    const reducedResponse = await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: first.version, scanRunsPerWeek: 1, enabled: false }));
+    expect(reducedResponse.status).toBe(200);
+    const reduced = await read<Project>(reducedResponse);
+    expect(reduced.scanSchedule).toMatchObject({ version: 2, slotsUtcMinutes: [first.scanSchedule!.slotsUtcMinutes[0]], activatedAt: first.scanSchedule!.activatedAt });
+    expect(reduced.enabled).toBe(false);
+    expect(reduced.nextScanAt).toBeNull();
+    expect(f.queue.messages).toHaveLength(0);
+    expect((await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: first.version, scanRunsPerWeek: 5 }))).status).toBe(409);
+    expect((await f.repository.getProject(f.project.id))?.scanRunsPerWeek).toBe(1);
+    const resumed = await read<Project>(await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: reduced.version, enabled: true })));
+    expect(resumed.scanSchedule).toEqual(reduced.scanSchedule);
+    expect(resumed.nextScanAt).toBeTruthy();
+    const scanner = new Scanner({ repository: f.repository, artifacts: f.artifacts, queue: f.queue, provider: new FixtureProvider(() => DATE), now: () => DATE });
+    const kickoff = { kind: 'kickoff' as const, projectId: first.id, trigger: 'scheduled' as const,
+      scheduledAt: resumed.nextScanAt!, scheduleSlotUtcMinute: first.scanSchedule!.slotsUtcMinutes[0] };
+    await scanner.handle({ ...kickoff, scheduleVersion: 1 });
+    expect(await f.repository.listRuns(f.project.id)).toHaveLength(0);
+    await scanner.handle({ ...kickoff, scheduleVersion: 2 });
+    expect(await f.repository.listRuns(f.project.id)).toHaveLength(1);
+  });
+
+  it('reapplies a concurrent frequency edit before marking cloud synchronization successful', async () => {
+    let repository: MemoryRepository;
+    const synced: Project[] = [];
+    const f = await fixture(undefined, { syncSchedule: async project => {
+      synced.push(structuredClone(project));
+      if (synced.length === 1) await repository.saveProject({ ...project, scanRunsPerWeek: 3,
+        scanSchedule: resizeScanSchedule(project.scanSchedule!, 3), version: project.version + 1 }, project.version);
+    } });
+    repository = f.repository;
+    const result = await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: 1, scanRunsPerWeek: 7 }));
+    expect(result.status).toBe(200);
+    expect(synced.map(project => project.scanSchedule!.slotsUtcMinutes.length)).toEqual([7, 3]);
+    expect(await result.json()).toMatchObject({ scanRunsPerWeek: 3, scheduleStatus: 'synced', scanSchedule: { version: 2 } });
+  });
+
+  it('keeps a changed frequency after cloud failure so saving again repairs the same revision', async () => {
+    const syncSchedule = vi.fn().mockRejectedValueOnce(new Error('AWS unavailable')).mockResolvedValue(undefined);
+    const f = await fixture(undefined, { syncSchedule });
+    const result = await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: 1, scanRunsPerWeek: 4 }));
+    expect(result.status).toBe(503);
+    const saved = (await f.repository.getProject(f.project.id))!;
+    expect(saved).toMatchObject({ scanRunsPerWeek: 4, scheduleStatus: 'error' });
+    const retry = await f.call(`${BASE}/settings`, jsonRequest('PATCH', { version: saved.version, scanRunsPerWeek: 4 }));
+    expect(retry.status).toBe(200);
+    expect((await retry.json()).scanSchedule).toMatchObject(saved.scanSchedule!);
+  });
+});
 
 describe('competitor settings', () => {
   it('saves normalized competitor websites, preserves explicit empty choices, and requires owner access', async () => {

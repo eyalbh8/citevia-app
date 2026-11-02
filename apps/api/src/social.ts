@@ -54,7 +54,8 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
   const { repository, queue } = runtime;
   if (request.method !== 'GET' && (project.role !== 'owner' || project.demo))
     fail(403, 'FORBIDDEN', 'Project owner access is required.');
-  const settings = project.socialAutomation ?? defaultSocialAutomationSettings(project.timezone);
+  const settings = { ...(project.socialAutomation ?? defaultSocialAutomationSettings(project.timezone)),
+    shareFacebookInstagramContent: project.socialAutomation?.shareFacebookInstagramContent ?? false };
   const uploadStore = () => (options.uploads ?? createSocialMediaUploadStore)();
   const preview = async (post: SocialPublication) => {
     const sources = (post.checkpoints?.mediaSources ?? {}) as Record<string, SocialUploadedMedia>;
@@ -100,7 +101,10 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
     return json({ version: saved.version, destinationOptions: saved.socialDestinationOptions });
   }
   if (tail === 'social/settings' && request.method === 'PATCH') {
-    const input = z.object({ version: z.number().int().positive(), settings: socialAutomationInputSchema }).strict().parse(await body(request));
+    const raw = z.object({ version: z.number().int().positive(), settings: z.record(z.string(), z.unknown()) }).strict().parse(await body(request));
+    const input = { version: raw.version, settings: socialAutomationInputSchema.parse({ ...raw.settings,
+      shareFacebookInstagramContent: Object.hasOwn(raw.settings, 'shareFacebookInstagramContent')
+        ? raw.settings.shareFacebookInstagramContent : settings.shareFacebookInstagramContent ?? false }) };
     if (input.version !== project.version) fail(409, 'VERSION_CONFLICT', 'Settings changed. Refresh and try again.');
     if (input.settings.enabled) {
       if (!options.generationAvailable) fail(503, 'GENERATION_UNAVAILABLE', 'Content generation is not configured yet.');

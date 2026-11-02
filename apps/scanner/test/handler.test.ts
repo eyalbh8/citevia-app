@@ -16,6 +16,12 @@ const record = (id: string, body: unknown, arn = 'queue-arn') => ({
   eventSourceARN: arn,
 });
 describe('Lambda event adapter', () => {
+  it('accepts changed scan schedule revisions while rejecting invalid revisions', () => {
+    const kickoff = { kind: 'kickoff', projectId: 'project-1', scheduledAt: instant, scheduleSlotUtcMinute: 360 };
+    expect(parseScanMessage({ ...kickoff, scheduleVersion: 3 })).toMatchObject({ scheduleVersion: 3 });
+    for (const scheduleVersion of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])
+      expect(() => parseScanMessage({ ...kickoff, scheduleVersion })).toThrow();
+  });
   it('rejects malformed or unsafe internal messages', () => {
     expect(() =>
       parseScanMessage({

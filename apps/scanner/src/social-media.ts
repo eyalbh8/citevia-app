@@ -13,7 +13,11 @@ import { assertStandalonePost } from './agent-generation.js';
 
 export type SocialMediaChannel = 'facebook' | 'instagram' | 'linkedin' | 'x' | 'pinterest' | 'reddit' | 'tiktok';
 /** A structural subset of the tenant-scoped destination returned by the publisher. */
-export interface SocialMediaDestination { id: string; channel: SocialMediaChannel; username?: string; }
+export interface SocialMediaDestination {
+  id: string; channel: SocialMediaChannel; username?: string;
+  /** Only set for an occurrence explicitly opted into shared Facebook/Instagram content. */
+  contentFormat?: 'facebook-instagram';
+}
 export interface SocialRecentPost { id: string; text: string; imageUrls: string[]; publishedAt?: string; }
 export interface SocialBrandStyle {
   summary: string;
@@ -65,6 +69,10 @@ export const DEFAULT_SOCIAL_IMAGE_MODEL = 'gpt-image-2.5-sunburst';
 export const DEFAULT_SOCIAL_COPY_MODEL = 'gpt-6-astra';
 const MAX_REFERENCE_IMAGES = 4;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const SHARED_IMAGE_BYTES = 8 * 1024 * 1024;
+const sharedFormat = (destination: SocialMediaDestination) => destination.contentFormat === 'facebook-instagram' && ['facebook', 'instagram'].includes(destination.channel);
+const contentChannel = (destination: SocialMediaDestination) => sharedFormat(destination) ? 'facebook-and-instagram' : destination.channel;
+const sharedCaptionRules = 'Write one short, general caption of 1–2 useful sentences about the saved topic for a broad audience, not a detailed answer or a platform-specific adaptation. The complete caption including at most 2 hashtags must be at most 400 characters. The same exact caption and one square image will be used on Facebook and Instagram. Do not include URLs, social handles, a link-in-bio instruction, platform-specific calls to action, or brand names and aliases. Plan exactly one square image with a simple useful visual.';
 const styleSchema = z.object({
   summary: z.string().trim().min(1).max(1500),
   palette: z.array(z.string().trim().min(1).max(80)).max(8),
@@ -152,9 +160,11 @@ function visualStyle(style: SocialBrandStyle) {
   return { summary: style.summary, palette: style.palette, typography: style.typography, composition: style.composition, voice: style.voice };
 }
 function expectedFormat(destination: SocialMediaDestination): SocialGeneratedCopy['format'] {
+  if (sharedFormat(destination)) return 'image';
   return destination.channel === 'instagram' ? 'carousel' : destination.channel === 'tiktok' ? 'video' : 'image';
 }
 function imageSize(destination: SocialMediaDestination): [number, number] {
+  if (sharedFormat(destination)) return [1024, 1024];
   if (destination.channel === 'instagram') return [1024, 1280];
   if (destination.channel === 'tiktok') return [1008, 1792];
   if (destination.channel === 'pinterest') return [1024, 1536];
@@ -240,7 +250,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     const references = [...new Set(posts.flatMap(post => post.imageUrls))].slice(0, MAX_REFERENCE_IMAGES);
     const { value, receipt } = await this.structured('social_brand_style', project,
       'Extract a reusable brand style from the supplied connected account posts and their actual images. Describe palette, typography, composition, visual tone and caption voice. Give concrete design guidance that can produce a new post. Distinguish observed design from proposed defaults. If no image references exist, do not claim to have observed a visual design: propose a restrained design from the verified brandbook and label it as a proposed default. Never infer factual business claims from the imagery.',
-      { project: projectContext(project), channel: destination.channel, posts, referenceImageOrder: references }, styleJson, styleSchema, references);
+      { project: projectContext(project), channel: contentChannel(destination), posts, referenceImageOrder: references }, styleJson, styleSchema, references);
     return { ...value, referenceImageUrls: references,
       evidence: posts.map(post => ({ postId: post.id, ...(post.publishedAt ? { publishedAt: post.publishedAt } : {}) })),
       source: references.length ? 'connected-feed' : 'brandbook', capturedAt: (this.options.now?.() ?? new Date()).toISOString(), requestId: receipt.requestId };
@@ -249,27 +259,32 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
   async generateCopy(project: Project, prompt: Prompt, destination: SocialMediaDestination, style: SocialBrandStyle): Promise<SocialGeneratedCopy> {
     if (!prompt.active) return invalid('social_prompt_inactive', 'Automated posts require an active saved prompt.');
     const { value, receipt } = await this.structured('social_post_copy', project,
-      'You are an expert social editor. Create a complete standalone post answering the exact saved prompt. Answer immediately, do not begin with Yes, No, Sure, Great question or other chat acknowledgements. Be specific and useful, without hype or invented claims. Follow the observed brand voice. Return title, body, hashtags (separately), and a media storyboard. Slide headings must be at most 65 characters, body at most 160 characters, and imagePrompt at most 1800 characters. Image prompts describe a new business-appropriate image, not a stock photo search. ' + channelRules[destination.channel],
-      { project: projectContext(project), prompt: prompt.text, channel: destination.channel, style: visualStyle(style) }, copyJson, copySchema);
+      'You are an expert social editor. ' + (sharedFormat(destination) ? sharedCaptionRules :
+        'Create a complete standalone post answering the exact saved prompt. Answer immediately. ' + channelRules[destination.channel]) +
+        ' Do not begin with Yes, No, Sure, Great question or other chat acknowledgements. Be useful, without hype or invented claims. Follow the observed brand voice. Return title, body, hashtags (separately), and a media storyboard. Slide headings must be at most 65 characters, body at most 160 characters, and imagePrompt at most 1800 characters. Image prompts describe a new business-appropriate image, not a stock photo search.',
+      { project: projectContext(project), prompt: prompt.text, channel: contentChannel(destination), style: visualStyle(style) }, copyJson, copySchema);
     const format = expectedFormat(destination);
     if (value.slides.length !== (format === 'image' ? 1 : 3)) return invalid('social_storyboard_invalid', 'The generated post has an invalid number of media scenes.');
     let body = value.body;
-    if (destination.channel === 'instagram') {
+    if (!sharedFormat(destination) && destination.channel === 'instagram') {
       body = body.replace(/https?:\/\/\S+/gi, '').trim();
       if (!/link in bio\.?\s*$/i.test(body)) body += '\n\nLink in bio.';
     }
-    if (destination.channel === 'facebook') {
+    if (!sharedFormat(destination) && destination.channel === 'facebook') {
       const site = project.brand.domains.map(domain => socialReferenceUrl(domain.includes('://') ? domain : 'https://' + domain)).find(Boolean);
       body = body.replace(/https?:\/\/\S+/gi, '').trim();
       if (site) body += '\n\n' + site;
     }
     const content = { ...value, body, format, requestId: receipt.requestId };
     assertStandalonePost(content);
-    const maxTags = { facebook: 2, instagram: 5, linkedin: 3, x: 2, pinterest: 2, reddit: 0, tiktok: 5 }[destination.channel];
-    const validLength = destination.channel === 'linkedin' ? [...copyText(content)].length <= 3000
+    const maxTags = sharedFormat(destination) ? 2 : { facebook: 2, instagram: 5, linkedin: 3, x: 2, pinterest: 2, reddit: 0, tiktok: 5 }[destination.channel];
+    const validLength = sharedFormat(destination) ? [...copyText(content)].length <= 400
+      : destination.channel === 'linkedin' ? [...copyText(content)].length <= 3000
       : destination.channel === 'tiktok' ? [...copyText(content)].length <= 2200
       : agentCopyValid(destination.channel, content);
     if (!validLength || content.hashtags.length > maxTags) return invalid('social_copy_invalid', 'Generated copy exceeds the destination limits.');
+    if (sharedFormat(destination) && /https?:\/\/|\blink\s+in\s+bio\b|(?:^|\s)@[\p{L}\p{N}_]/iu.test(content.body))
+      return invalid('social_copy_invalid', 'Shared copy must be a short general caption without links or platform-specific instructions.');
     if (destination.channel === 'tiktok' && content.slides.some(slide => [...slide.heading].length > 50 || [...slide.body].length > 110 || wrapSocialCaption(slide.heading + ' ' + slide.body).split('\n').length > 8)) return invalid('social_video_caption_long', 'Generated video captions are too long to read comfortably.');
     if (['facebook', 'instagram', 'x'].includes(destination.channel)) {
       const copy = value.body.normalize('NFKC');
@@ -297,7 +312,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     const instructions = [
       'Create one original, polished social media image suitable for this business. Continue the visual style of the supplied account references while depicting the new answer. References are style examples, not images to copy literally. Avoid unrelated products, fake logos, invented UI, distorted objects or unsupported business claims. ' + referenceRules,
       destination.channel === 'tiktok' ? 'Vertical video background: leave the lower 45% visually quiet for captions. Do not generate lettering, captions or watermarks; the renderer adds the approved text.' : 'Render only the supplied slide heading and body as concise, correctly spelled text. Use generous margins, strong contrast and large, readable mobile typography. Do not add other text or logos unless present in the verified supplied references.',
-      JSON.stringify({ project: projectContext(project), question: prompt.text, channel: destination.channel, style: visualStyle(style),
+      JSON.stringify({ project: projectContext(project), question: prompt.text, channel: contentChannel(destination), style: visualStyle(style),
         storyboard: content.slides.map(slide => ({ heading: slide.heading, body: slide.body })), slideNumber: index + 1, totalSlides: total, slide: content.slides[index] }),
     ].join('\n\n');
     if (instructions.length > 32000) return invalid('social_image_brief_long', 'The image brief exceeds the provider limit. Shorten the saved prompt or account guidance.');
@@ -307,12 +322,13 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
       size: `${width}x${height}`, quality: 'high', output_format: 'jpeg', background: 'opaque', n: 1,
     }, references.length, true);
     const data = receipt.response.data;
+    const maxImageBytes = sharedFormat(destination) ? SHARED_IMAGE_BYTES : MAX_IMAGE_BYTES;
     const encoded = Array.isArray(data) && data.length === 1 && typeof data[0]?.b64_json === 'string' ? data[0].b64_json as string : '';
-    if (!encoded || encoded.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4 !== 0)
+    if (!encoded || encoded.length > Math.ceil(maxImageBytes / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4 !== 0)
       return invalid('social_image_invalid', 'Image generation did not return a valid image.');
     const bytes = Buffer.from(encoded, 'base64');
     const dimensions = jpegDimensions(bytes);
-    if (!dimensions || bytes.length > MAX_IMAGE_BYTES || dimensions.width !== width || dimensions.height !== height)
+    if (!dimensions || bytes.length > maxImageBytes || dimensions.width !== width || dimensions.height !== height)
       return invalid('social_image_invalid', 'The generated image has an unexpected format or size.');
     return { bytes, mime: 'image/jpeg', width, height, requestId: receipt.requestId };
   }
@@ -329,7 +345,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     const references = style.referenceImageUrls.map(socialReferenceUrl).filter((url): url is string => !!url).slice(0, 2);
     const { value } = await this.structured('social_image_review', project,
       'Review the FIRST image as the newly generated candidate; later images are brand-style references only. Assess business relevance, useful connection to the exact prompt, visual consistency, readable and accurate text, unsupported claims, and visual defects. Never mark a check true solely because instructions request it. For video background scenes, no text is expected; assess whether the scene leaves a clean caption area. Reject any extra or misspelled text, misleading product representation or unrelated marks. The image only needs to support its own storyboard scene, not repeat the entire caption.',
-      { project: projectContext(project), question: prompt.text, channel: destination.channel, style: visualStyle(style), copy: content.body, slide: content.slides[index], videoBackground: destination.channel === 'tiktok' }, qaJson, qaSchema, [target, ...references]);
+      { project: projectContext(project), question: prompt.text, channel: contentChannel(destination), style: visualStyle(style), copy: content.body, slide: content.slides[index], videoBackground: destination.channel === 'tiktok' }, qaJson, qaSchema, [target, ...references]);
     if (qaKeys.some(key => !value[key])) return invalid('social_media_review_failed', 'Generated media did not pass the business, brand and quality checks.');
   }
   videoReady() { return socialVideoReady(this.options.video); }

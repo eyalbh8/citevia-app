@@ -31,6 +31,9 @@ describe('social automation schedule validation', () => {
     expect(defaultSocialAutomationSettings().enabled).toBe(false);
     const settings = { enabled: true, timezone: 'UTC', slots: [{ id: 'mon', dayOfWeek: 1, time: '09:00' }] };
     expect(socialAutomationInputSchema.parse(settings).createBlogDrafts).toBe(true);
+    expect(socialAutomationInputSchema.parse(settings).shareFacebookInstagramContent).toBe(false);
+    expect(defaultSocialAutomationSettings().shareFacebookInstagramContent).toBe(false);
+    expect(socialAutomationInputSchema.safeParse({ ...settings, shareFacebookInstagramContent: 'true' }).success).toBe(false);
     expect(socialAutomationInputSchema.safeParse({ ...settings, socialProfileId: 'another-account' }).success).toBe(false);
     expect(socialAutomationInputSchema.safeParse({ ...settings, revision: 3 }).success).toBe(false);
     expect(socialAutomationInputSchema.safeParse({ ...settings, timezone: 'Not/AZone' }).success).toBe(false);
@@ -171,6 +174,25 @@ describe.each(['memory', 'postgres'] as const)('social automation storage (%s)',
     project.prompts[0].text = 'Edited after reservation'; project.version++;
     await repository.saveProject(project, project.version - 1);
     expect((await repository.getSocialPublication(project.id, first.publications[0].id))?.prompt.text).toBe('First useful question?');
+  });
+  it('freezes one deterministic shared producer only when enabled, independently of destination order', async () => {
+    const project = account(); project.socialAutomation!.shareFacebookInstagramContent = true; await save(project);
+    const request = input(project, { destinations: ['instagram', 'facebook', 'x'].map(channel => destination(project, channel as 'instagram' | 'facebook' | 'x')) });
+    const [first, replay] = await Promise.all([repository.reserveSocialOccurrence(request), repository.reserveSocialOccurrence({ ...request, destinations: [...request.destinations].reverse() })]);
+    if (!('publications' in first) || !('publications' in replay)) throw new Error('Expected reserved publications');
+    const facebook = first.publications.find(post => post.destination.channel === 'facebook')!;
+    const instagram = first.publications.find(post => post.destination.channel === 'instagram')!;
+    expect(facebook.sharedGeneration).toEqual(instagram.sharedGeneration);
+    expect(facebook.sharedGeneration?.sourcePublicationId).toBe(facebook.id);
+    expect(facebook.sharedGeneration?.memberPublicationIds).toHaveLength(2);
+    expect(first.publications.find(post => post.destination.channel === 'x')?.sharedGeneration).toBeUndefined();
+    expect(replay.publications.find(post => post.id === instagram.id)?.sharedGeneration).toEqual(instagram.sharedGeneration);
+    const updated = { ...project, version: project.version + 1, socialAutomation: { ...project.socialAutomation!, shareFacebookInstagramContent: false } };
+    await repository.saveProject(updated, project.version);
+    expect((await repository.getSocialPublication(project.id, instagram.id))?.sharedGeneration).toEqual(instagram.sharedGeneration);
+    const next = await repository.reserveSocialOccurrence({ ...request, scheduledAt: '2026-11-09T09:00:00Z', now: '2026-11-09T09:00:00Z' });
+    if (!('publications' in next)) throw new Error('Expected next occurrence');
+    expect(next.publications.every(post => !post.sharedGeneration)).toBe(true);
   });
   it('deduplicates the repeated fall hour using the local calendar occurrence', async () => {
     const project = account();

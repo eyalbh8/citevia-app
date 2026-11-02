@@ -6,7 +6,7 @@ import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, socialOccurrenceLocalDate,
   type SocialOccurrence, type SocialPublication, type ReserveSocialOccurrenceInput, type ReserveSocialOccurrenceResult } from '@citevia/core';
 import { createSocialRecords, socialOccurrenceId, socialPageBounds } from './social-records.js';
 import {
-  allocateScanSchedule,
+  allocateProjectScanSchedule,
   WEEKLY_SCHEDULE,
   verifiedIdentitySchema,
   type VerifiedIdentity,
@@ -786,8 +786,8 @@ export class MemoryRepository implements Repository {
   ensureProjectScanSchedule(id: string, options: { migrateCustom?: boolean } = {}) {
     return this.operation(() => {
       const project = this.state.projects[id];
-      if (!project || project.scanSchedule || (!options.migrateCustom && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project || null;
-      const next = { ...project, scanSchedule: allocateScanSchedule(Object.values(this.state.projects).map(item => item.scanSchedule)),
+      if (!project || project.scanSchedule || (!options.migrateCustom && project.scanRunsPerWeek === undefined && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project || null;
+      const next = { ...project, scanSchedule: allocateProjectScanSchedule(project, Object.values(this.state.projects).map(item => item.scanSchedule)),
         scheduleStatus: 'pending' as const, version: project.version + 1, updatedAt: new Date().toISOString() };
       this.state.projects[id] = copy(next);
       return next;

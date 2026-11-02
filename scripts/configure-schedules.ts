@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { allocateScanSchedule, markScheduleSynced, nextProjectScan, WEEKLY_SCHEDULE, type Project } from '@citevia/core';
+import { allocateProjectScanSchedule, markScheduleSynced, nextProjectScan, WEEKLY_SCHEDULE, type Project } from '@citevia/core';
 import { PostgresRepository, type Repository } from '@citevia/storage';
 import { syncProjectSchedule } from '../apps/api/src/scheduler.js';
 import { openConfigurationDatabase } from './configure-analysis.js';
@@ -15,15 +15,15 @@ export async function configureSchedules(
 ) {
   if (options.migrateCustom && !options.project) throw new Error('--migrate-custom requires an explicit --project.');
   const occupied = projects.map(project => project.scanSchedule);
-  const changes: { projectId: string; status: string; slotsUtcMinutes?: [number, number]; nextScanAt?: string | null }[] = [];
+  const changes: { projectId: string; status: string; slotsUtcMinutes?: number[]; nextScanAt?: string | null }[] = [];
   for (const project of projects) {
     if (options.project && project.id !== options.project) continue;
-    if (!project.scanSchedule && project.scheduleExpression !== WEEKLY_SCHEDULE && !options.migrateCustom) {
+    if (!project.scanSchedule && project.scanRunsPerWeek === undefined && project.scheduleExpression !== WEEKLY_SCHEDULE && !options.migrateCustom) {
       changes.push({ projectId: project.id, status: 'custom-preserved' });
       continue;
     }
     if (!options.apply) {
-      const scanSchedule = project.scanSchedule || allocateScanSchedule(occupied);
+      const scanSchedule = project.scanSchedule || allocateProjectScanSchedule(project, occupied, now);
       if (!project.scanSchedule) occupied.push(scanSchedule);
       changes.push({ projectId: project.id, status: project.scanSchedule ? 'assigned' : 'planned',
         slotsUtcMinutes: scanSchedule.slotsUtcMinutes, nextScanAt: nextProjectScan({ ...project, scanSchedule }, now) });
@@ -48,8 +48,8 @@ export async function configureSchedules(
       changes.push({ projectId: project.id, status: 'sync-error', slotsUtcMinutes: latest?.scanSchedule?.slotsUtcMinutes });
     }
   }
-  return { mode: options.apply ? 'apply' : 'preview', scansPerWeek: 2,
-    timing: 'UTC slots 84 hours apart. Existing slots remain stable as accounts join.',
+  return { mode: options.apply ? 'apply' : 'preview', defaultScansPerWeek: 2,
+    timing: 'Evenly spaced UTC slots at the saved weekly frequency; default twice weekly. Existing slots remain stable as accounts join.',
     synced: changes.filter(change => change.status === 'synced').length,
     errors: changes.filter(change => change.status === 'sync-error').length, changes };
 }
@@ -59,7 +59,7 @@ export async function runConfigureSchedulesCli(argv: string[], openDatabase = op
     mode: { type: 'string', default: 'local' }, project: { type: 'string' },
     apply: { type: 'boolean', default: false }, 'migrate-custom': { type: 'boolean', default: false }, help: { type: 'boolean', default: false },
   } });
-  if (values.help) return 'Usage: npm run schedules:configure -- --mode local|aws [--project PROJECT_ID] [--migrate-custom] [--apply]\nDefault is a read-only preview. --apply assigns stable twice-weekly slots and synchronizes EventBridge schedules. Custom cron remains unchanged unless --project and --migrate-custom are both supplied. This creates future schedules; it does not enqueue a scan now. Stop the local app before opening its embedded database.';
+  if (values.help) return 'Usage: npm run schedules:configure -- --mode local|aws [--project PROJECT_ID] [--migrate-custom] [--apply]\nDefault is a read-only preview. --apply assigns stable weekly slots at the saved frequency (default twice weekly) and synchronizes EventBridge schedules. Custom cron remains unchanged unless the owner saved a weekly frequency or --project and --migrate-custom are both supplied. This creates future schedules; it does not enqueue a scan now. Stop the local app before opening its embedded database.';
   if (!['local', 'aws'].includes(values.mode) || (values.project !== undefined && !values.project.trim()) || (values['migrate-custom'] && !values.project))
     throw new Error('Choose --mode local|aws and an optional --project; --migrate-custom requires --project.');
   const db = await openDatabase(values.mode as 'local' | 'aws', resolve(process.env.LOCAL_DATA_DIR || '.local-data/real'));

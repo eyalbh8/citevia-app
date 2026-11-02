@@ -16,6 +16,8 @@ export interface SocialAutomationSlot {
 export interface SocialAutomationSettings {
   enabled: boolean;
   createBlogDrafts: boolean;
+  /** Opt-in; absent legacy settings keep separate platform-specific generation. */
+  shareFacebookInstagramContent?: boolean;
   /** Optional for records saved before batch preparation was introduced. */
   generationCadence?: 'daily' | 'weekly' | 'monthly';
   generationTime?: string;
@@ -37,6 +39,7 @@ export const socialAutomationSlotSchema = z.object({
 export const socialAutomationInputSchema = z.object({
   enabled: z.boolean(),
   createBlogDrafts: z.boolean().default(true),
+  shareFacebookInstagramContent: z.boolean().default(false),
   generationCadence: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
   generationTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).default('08:00'),
   timezone: timezoneSchema,
@@ -49,7 +52,7 @@ export const socialAutomationInputSchema = z.object({
 });
 export type SocialAutomationInput = z.infer<typeof socialAutomationInputSchema>;
 export function defaultSocialAutomationSettings(timezone = 'UTC'): SocialAutomationSettings {
-  return { enabled: false, createBlogDrafts: true, generationCadence: 'daily', generationTime: '08:00', revision: 0, timezone, slots: [], effectiveFrom: new Date(0).toISOString(), scheduleStatus: 'synced' };
+  return { enabled: false, createBlogDrafts: true, shareFacebookInstagramContent: false, generationCadence: 'daily', generationTime: '08:00', revision: 0, timezone, slots: [], effectiveFrom: new Date(0).toISOString(), scheduleStatus: 'synced' };
 }
 export interface SocialDestination {
   id: string;
@@ -99,6 +102,8 @@ export interface SocialPublication {
   destination: AutomationDestination;
   context: SocialGenerationContext;
   status: SocialPublicationStatus;
+  /** Frozen at occurrence reservation. Only this publication's durable lease may produce shared AI receipts. */
+  sharedGeneration?: { sourcePublicationId: string; memberPublicationIds: string[]; format: 'facebook-instagram' };
   stage: string;
   version: number;
   createdAt: string;
@@ -210,7 +215,7 @@ function generationWindow(project: Pick<Project, 'socialAutomation' | 'demo'>,
   message: Pick<SocialGenerationMessage, 'revision' | 'scheduledAt' | 'trigger'>, now: string | Date) {
   const settings = project.socialAutomation;
   if (project.demo || !settings?.enabled || settings.revision !== message.revision || !Number.isInteger(settings.revision) || settings.revision < 1) return null;
-  const parsed = socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts,
+  const parsed = socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, shareFacebookInstagramContent: settings.shareFacebookInstagramContent,
     generationCadence: settings.generationCadence, generationTime: settings.generationTime, timezone: settings.timezone, slots: settings.slots });
   if (!parsed.success) return null;
   const scheduled = Date.parse(message.scheduledAt), current = new Date(now).getTime(), effective = Date.parse(settings.effectiveFrom);
@@ -254,7 +259,7 @@ export function socialOccurrenceLocalDate(
 ): string | null {
   const settings = project.socialAutomation;
   if (project.demo || !settings?.enabled || !Number.isInteger(settings.revision) || settings.revision < 1 || settings.revision !== message.revision ||
-    !socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts,
+    !socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, shareFacebookInstagramContent: settings.shareFacebookInstagramContent,
       generationCadence: settings.generationCadence, generationTime: settings.generationTime, timezone: settings.timezone, slots: settings.slots }).success) return null;
   const scheduled = Date.parse(message.scheduledAt), current = new Date(now).getTime(), effective = Date.parse(settings.effectiveFrom);
   if (![scheduled, current, effective].every(Number.isFinite) || scheduled % 60000 !== 0 || scheduled < effective) return null;

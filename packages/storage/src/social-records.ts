@@ -49,6 +49,13 @@ export function createSocialRecords(
     prompt: structuredClone(prompt), destination, context: structuredClone(context), status: 'queued',
     stage: 'queued', version: 1, createdAt: occurrence.createdAt, updatedAt: occurrence.createdAt, attempts: 0, error: null,
   }));
+  if (project.socialAutomation?.shareFacebookInstagramContent === true) {
+    const shared = publications.filter(post => ['facebook', 'instagram'].includes(post.destination.channel))
+      .sort((a, b) => (a.destination.channel === 'facebook' ? 0 : 1) - (b.destination.channel === 'facebook' ? 0 : 1) || a.id.localeCompare(b.id));
+    if (shared.length) for (const post of shared) post.sharedGeneration = {
+      sourcePublicationId: shared[0].id, memberPublicationIds: shared.map(member => member.id), format: 'facebook-instagram',
+    };
+  }
   return { occurrence, publications };
 }
 
