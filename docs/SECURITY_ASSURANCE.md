@@ -30,11 +30,29 @@ This program aims at a defensible, evidence-backed security baseline. It is not 
 
 The user-selected target is **$100 per customer account per UTC calendar month**, including AI, database, storage and other APIs. The initial admission policy allows at most **$70 of estimated/reserved AI work**, leaving **$30 for infrastructure and other services**. A stricter configured AI allowance wins. An optional global AI allowance exists but remains unset because no whole-application amount has been chosen.
 
-Admission is serialized in the database so concurrent calls cannot all spend the same remaining allowance. Missing prices fail closed; ambiguous or incomplete billing retains a conservative hold rather than being treated as free. Social image and vision calls reserve $3 each; Perplexity fast reserves $1; these are holds, not advertised provider prices or guaranteed maximum charges. Verified native USD totals and valid usage counters settle the reservation. Operators must reconcile unresolved holds before releasing them.
+Admission is serialized in the database so concurrent calls cannot all spend the same remaining allowance. Calls without a price or explicit policy reservation fail closed; ambiguous or incomplete billing retains a conservative hold rather than being treated as free. Social image and vision calls reserve $3 each; Perplexity fast reserves $1; these are holds, not advertised provider prices or guaranteed maximum charges. Verified native USD totals and valid usage counters settle the reservation. Operators must reconcile unresolved holds before releasing them.
 
 The $30 reserve is a planning allocation. AWS/Neon/shared API invoices are delayed and are not divided by customer automatically by those vendors. It would be inaccurate to call this an exact $100 all-in invoice ceiling. Storage, mandatory security logging and in-flight charges cannot safely be stopped by deleting customer data. If measured non-AI allocation exceeds $30, reduce the AI allowance or adjust usage before the next period.
 
 Use `npm run costs:report -- --mode aws --project ACCOUNT_ID` for completed AI estimates, outstanding holds and remaining admission. Add `--non-ai-usd AMOUNT` only after allocating verified non-AI charges for that account and reporting period. Missing allocations keep the all-in total explicitly unknown. Allocate dedicated charges directly; allocate shared compute/API usage by measured requests/duration and storage by bytes; divide fixed platform/security cost using a documented active-account rule. Reconcile with provider, AWS and Neon invoices monthly and investigate any unknown billing rows.
+
+The report's production connection uses `DATABASE_MODE=external` and
+`DATABASE_SECRET_ARN` pointing to the deployed restricted runtime credential,
+with the approved operator AWS profile. It does not need the migration secret.
+[The operator command and policy overrides](COST_OPTIMIZATION.md#cost-visibility-and-budget-semantics)
+keep passwords and secret JSON out of command arguments and logs. The report
+uses the 100/30/70 defaults unless the configured policy is supplied explicitly.
+Setting the standalone AI allowance to zero does not disable a configured
+account policy; a reserve greater than or equal to the account allowance is invalid.
+
+Before enabling a global AI allowance at production scale, profile the global
+monthly reservation query and its transaction lock wait under representative
+concurrency. The existing reservation index begins with `project_id` and serves
+account-scoped admission; it is not proof of efficient all-account month scans.
+Review a partial `created_at` index for reservation rows if the measured plan
+requires it, using an additive migration and normal runtime-grant review. The
+global check serializes admissions, so its query latency is part of fleet
+throughput. This capacity acceptance remains open while the global cap is unset.
 
 ## Database and recovery evidence
 

@@ -148,13 +148,50 @@ and unpriced attempts. They are not invoices. During the brief pre-013 migration
 transition, workers can stage metadata under private `provider-costs/` S3 keys;
 these staged records require reconciliation and are not in the SQL report.
 
-`LLM_MONTHLY_BUDGET_USD=0` disables admission limits. A positive value serializes
-account admissions against UTC calendar-month estimates and outstanding reservations.
-It is an estimated request-admission limit, not a guaranteed invoice ceiling:
-tool use, provider adjustments, free credits and token usage can differ. Unknown
-prices or an unavailable SQL admission ledger fail closed when a limit is enabled.
-Provide missing provider/model rates through server-only `LLM_MODEL_PRICES_JSON`.
-Do not replace unpriced attempts with zero when reconciling costs.
+The current account policy is `ACCOUNT_MONTHLY_BUDGET_USD=100`,
+`ACCOUNT_MONTHLY_INFRA_RESERVE_USD=30` and `LLM_MONTHLY_BUDGET_USD=70`.
+The effective AI allowance is the account limit minus its infrastructure reserve,
+reduced to the standalone AI limit when that limit is positive and lower. Setting `LLM_MONTHLY_BUDGET_USD=0` removes only
+that standalone AI limit; it **does not disable** a configured account policy.
+AI admission is disabled by that flag only when the account-policy variable is
+unset and the AI limit is zero. Invalid account policies, including a reserve
+at least as large as the account limit, fail closed.
+
+Account admissions serialize against UTC calendar-month estimates and outstanding
+reservations. Optional `LLM_GLOBAL_MONTHLY_BUDGET_USD` adds a service-wide limit;
+zero leaves that separate limit disabled. `LLM_MAX_REQUEST_USD` optionally bounds
+a single estimated request. These are request-admission controls, not guaranteed
+invoice ceilings: tool use, provider adjustments, free credits and actual token
+usage can differ. The infrastructure reserve is an allocation policy, not measured
+AWS, database, storage or third-party API spend.
+
+Unpriced calls without an explicit policy reservation, or an unavailable SQL
+admission ledger, fail closed when a budget is enabled. Variable image/vision
+calls use $3 holds and the supported Perplexity fast preset uses a $1 hold;
+valid usage or native USD totals settle those holds. Missing billing evidence
+retains the reservation. Provide missing provider/model rates through server-only
+`LLM_MODEL_PRICES_JSON`; never replace unknown costs with zero. See
+[the current account cost policy and reconciliation process](SECURITY_ASSURANCE.md#monthly-cost-policy).
+
+For a production report, use the operator AWS profile and the **restricted runtime
+secret ARN** from the deployed `ExternalDatabaseSecretArn` parameter. The ARN is
+an identifier, not the secret's credential value. The operator needs permission
+to read that runtime secret; this report does not require migration credentials
+or owner-database access, and it does not apply migrations.
+
+```sh
+AWS_PROFILE=citevia AWS_REGION=us-east-1 DATABASE_MODE=external \
+DATABASE_SECRET_ARN='RUNTIME_SECRET_ARN' \
+npm run costs:report -- --mode aws --project ACCOUNT_ID
+```
+
+Do not paste a password, secret JSON or credential-bearing database URL into the
+command or logs. The report defaults to the 100/30/70 policy when those environment
+variables are absent; pass `--account-budget-usd`, `--infra-reserve-usd` and
+`--ai-budget-usd` if reconciling a different configured policy. Add
+`--non-ai-usd AMOUNT` with `--project` only for an explicitly allocated non-AI cost
+for the same reporting period. Without that allocation, the all-in total remains
+unknown. Remaining monthly AI admission is reported only for a full UTC month.
 
 ## Database maintenance
 
