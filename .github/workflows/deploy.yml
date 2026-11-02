@@ -40,6 +40,10 @@ jobs:
       VITE_LOGO_DEV_API_KEY: ${{ vars.VITE_LOGO_DEV_API_KEY }}
       OPENAI_SECRET_ARN: ${{ vars.OPENAI_SECRET_ARN }}
       UNSPLASH_SECRET_ARN: ${{ vars.UNSPLASH_SECRET_ARN }}
+      ZERNIO_SECRET_ARN: ${{ vars.ZERNIO_SECRET_ARN }}
+      SOCIAL_VIDEO_LAYER_ARN: ${{ vars.SOCIAL_VIDEO_LAYER_ARN }}
+      SOCIAL_IMAGE_MODEL: ${{ vars.OPENAI_SOCIAL_IMAGE_MODEL }}
+      SOCIAL_TEXT_MODEL: ${{ vars.OPENAI_SOCIAL_TEXT_MODEL }}
       PERPLEXITY_SECRET_ARN: ${{ vars.PERPLEXITY_SECRET_ARN }}
       GEMINI_SECRET_ARN: ${{ vars.GEMINI_SECRET_ARN }}
       GOOGLE_PAGESPEED_SECRET_ARN: ${{ vars.GOOGLE_PAGESPEED_SECRET_ARN }}
@@ -162,6 +166,42 @@ jobs:
             fi
           done
           printf '%s\n' "DATABASE_MODE=$selected_mode" "EXTERNAL_DATABASE_SECRET_ARN=$selected_secret" "REMOVE_LEGACY_NETWORK=$selected_cleanup" "MAINTENANCE_MODE=$selected_maintenance" "COMPACT_RUN_STATE=$selected_compact_state" "RETIRE_LEGACY_DATABASE=$selected_retirement" "ANALYSIS_BATCH_ENABLED=$selected_batch" "GOOGLE_PAGESPEED_SECRET_ARN=$selected_pagespeed" "GOOGLE_CRUX_SECRET_ARN=$selected_crux" >> "$GITHUB_ENV"
+      - name: Resolve social automation configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          parameter_file="$(mktemp "${RUNNER_TEMP:-/tmp}/citevia-social-parameters.XXXXXX")"
+          error_file="$(mktemp "${RUNNER_TEMP:-/tmp}/citevia-social-error.XXXXXX")"
+          trap 'rm -f "$parameter_file" "$error_file"' EXIT
+          if ! aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Parameters' --output json > "$parameter_file" 2> "$error_file"; then
+            if node -e 'const fs=require("node:fs");process.exit(/Stack with id .+ does not exist/.test(fs.readFileSync(process.argv[1],"utf8"))?0:1)' "$error_file"; then
+              echo '[]' > "$parameter_file"
+            else
+              cat "$error_file" >&2
+              exit 1
+            fi
+          fi
+          read_parameter() {
+            node -e 'const fs=require("node:fs");const rows=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(rows.find(row=>row.ParameterKey===process.argv[2])?.ParameterValue||"")' "$parameter_file" "$1"
+          }
+          selected_publisher="${ZERNIO_SECRET_ARN:-$(read_parameter ZernioSecretArn)}"
+          selected_layer="${SOCIAL_VIDEO_LAYER_ARN:-$(read_parameter SocialVideoLayerArn)}"
+          selected_image="${SOCIAL_IMAGE_MODEL:-$(read_parameter SocialImageModel)}"
+          selected_image="${selected_image:-gpt-image-2.5-sunburst}"
+          selected_text="${SOCIAL_TEXT_MODEL:-$(read_parameter SocialTextModel)}"
+          if [[ -n "$selected_publisher" && ! "$selected_publisher" =~ ^arn:aws[a-z-]*:secretsmanager:${AWS_REGION}:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$ ]]; then
+            echo 'Social publishing requires a same-region Secrets Manager ARN.' >&2
+            exit 1
+          fi
+          if [[ -n "$selected_layer" && ! "$selected_layer" =~ ^arn:aws[a-z-]*:lambda:${AWS_REGION}:[0-9]{12}:layer:[A-Za-z0-9_-]+:[0-9]+$ ]]; then
+            echo 'Social video requires a same-region Lambda layer version ARN.' >&2
+            exit 1
+          fi
+          if [[ ! "$selected_image" =~ ^[A-Za-z0-9._-]+$ || ( -n "$selected_text" && ! "$selected_text" =~ ^[A-Za-z0-9._-]+$ ) ]]; then
+            echo 'Social model names may contain only letters, numbers, periods, underscores and hyphens.' >&2
+            exit 1
+          fi
+          printf '%s\n' "ZERNIO_SECRET_ARN=$selected_publisher" "SOCIAL_VIDEO_LAYER_ARN=$selected_layer" "SOCIAL_IMAGE_MODEL=$selected_image" "SOCIAL_TEXT_MODEL=$selected_text" >> "$GITHUB_ENV"
       - name: Resolve shared content photo configuration
         shell: bash
         run: |
@@ -196,6 +236,10 @@ jobs:
               "DescopeBaseUrl=$DESCOPE_BASE_URL" \
               "OpenAiSecretArn=$OPENAI_SECRET_ARN" \
               "UnsplashSecretArn=$UNSPLASH_SECRET_ARN" \
+              "ZernioSecretArn=$ZERNIO_SECRET_ARN" \
+              "SocialVideoLayerArn=$SOCIAL_VIDEO_LAYER_ARN" \
+              "SocialImageModel=$SOCIAL_IMAGE_MODEL" \
+              "SocialTextModel=$SOCIAL_TEXT_MODEL" \
               "PerplexitySecretArn=$PERPLEXITY_SECRET_ARN" \
               "GeminiSecretArn=$GEMINI_SECRET_ARN" \
               "GooglePageSpeedSecretArn=$GOOGLE_PAGESPEED_SECRET_ARN" \

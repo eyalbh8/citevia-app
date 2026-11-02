@@ -86,6 +86,13 @@ export class AgentPostEngine {
         Date.parse(post.leaseExpiresAt) > this.now().getTime())
     )
       return;
+    if (post.socialAutomation) {
+      const project = await repository.getProject(projectId);
+      if (!project?.socialAutomation?.enabled || project.socialAutomation.revision !== post.socialAutomation.revision) {
+        await this.fail(post, 'automation_paused', 'Automated blog creation was paused. Saved content is preserved.');
+        return;
+      }
+    }
     if (post.attempts >= 5) {
       await this.fail(
         post,

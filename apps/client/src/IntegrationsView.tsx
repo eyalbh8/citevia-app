@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, Info, Link2, Plug, Search, Settings2, X, Zap } from 'lucide-react';
-import type { Project } from '@citevia/core';
-import { query, useApi } from './api';
+import type { Project, SocialDestination, SocialChannel } from '@citevia/core';
+import { query, request, useApi } from './api';
 import { Drawer, Empty, ErrorNotice } from './components';
 import IntegrationMark from './IntegrationMark';
 import { filterIntegrations, INTEGRATIONS, INTEGRATION_CATEGORIES, type Integration, type IntegrationCategory } from './integration-catalog';
@@ -19,6 +19,20 @@ export default function IntegrationsView({ systemAdmin, project, highlight, onMc
   const [category, setCategory] = useState<IntegrationCategory>('All');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Integration>();
+  const [connecting, setConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState<Error>();
+  const social = useApi<{ publishingAvailable: boolean; connections: Omit<SocialDestination, 'profileId'>[] }>(
+    project ? `/projects/${encodeURIComponent(project.id)}/social` : null);
+  async function connect(channel: string) {
+    if (!project || connecting) return;
+    setConnecting(true); setConnectionError(undefined);
+    try {
+      const result = await request<{ url: string }>(`/projects/${encodeURIComponent(project.id)}/social/connect`, {
+        method: 'POST', body: JSON.stringify({ channel: channel as SocialChannel }),
+      });
+      window.location.assign(result.url);
+    } catch (error) { setConnectionError(error as Error); setConnecting(false); }
+  }
   const highlighted = useRef<HTMLElement>(null);
   const mcp = useApi<McpConnections>(systemAdmin || project
     ? `/mcp/connections${query({ projectId: systemAdmin ? undefined : project!.id })}` : null);
@@ -55,21 +69,26 @@ export default function IntegrationsView({ systemAdmin, project, highlight, onMc
       </div>
       <div className="integration-search"><Search size={17} /><input aria-label="Search integrations" placeholder="Search integrations" value={search} onChange={event => setSearch(event.target.value)} />{search && <button aria-label="Clear search" onClick={() => setSearch('')}><X size={14} /></button>}</div>
     </div>
-    <div className="integration-results-meta" role="status"><span>{items.length} {items.length === 1 ? 'integration' : 'integrations'}{category === 'All' ? ' available to explore' : ` in ${category}`}</span><span><Plug size={13} />MCP connections are available now</span></div>
+    <div className="integration-results-meta" role="status"><span>{items.length} {items.length === 1 ? 'integration' : 'integrations'}{category === 'All' ? ' available to explore' : ` in ${category}`}</span><span><Plug size={13} />Connect social accounts and assistants</span></div>
     <ErrorNotice error={mcp.error} />
+    <ErrorNotice error={social.error} />
     <div className="integrations-grid">
       {items.map(item => {
         const isMcp = item.category === 'MCP';
-        const ready = isMcp && activeConnections > 0;
+        const isSocial = item.category === 'Social Media';
+        const connected = social.data?.connections.filter(account => account.channel === item.id && account.active && !account.requiresReconnect) ?? [];
+        const ready = (isMcp && activeConnections > 0) || connected.length > 0;
         return <article key={item.id} ref={item.id === highlight ? highlighted : undefined} id={`integration-${item.id}`} className={`integration-card${item.id === highlight ? ' is-highlighted' : ''}`} aria-label={item.name}>
           <div className="integration-card-tint" style={{ background: item.tint }}>
-            {ready && <span className="integration-ready"><Check size={13} />MCP ready</span>}
+            {ready && <span className="integration-ready"><Check size={13} />{isMcp ? 'MCP ready' : 'Connected'}</span>}
           </div>
           <span className="integration-card-logo"><IntegrationMark integration={item} /></span>
           <div className="integration-card-body"><h2>{item.name}</h2><p>{item.description}</p>
-            {!isMcp && <span className="integration-availability">Coming soon</span>}
+            {!isMcp && !isSocial && item.id !== 'blog' && <span className="integration-availability">Coming soon</span>}
+            {isSocial && <span className="integration-availability">{connected.length ? connected.map(account => account.username).join(', ') : social.data?.publishingAvailable ? 'Ready to connect' : 'Setup required'}</span>}
+            {item.id === 'blog' && <span className="integration-availability">Draft creation</span>}
             <button className={`integration-card-action${ready ? ' is-ready' : ''}`} onClick={() => isMcp ? onMcp() : setSelected(item)}>
-              {ready ? <Settings2 size={16} /> : isMcp ? <Link2 size={16} /> : <Info size={16} />}{ready ? 'Manage' : isMcp ? 'Connect' : 'View setup'}
+              {ready ? <Settings2 size={16} /> : isMcp || isSocial ? <Link2 size={16} /> : <Info size={16} />}{ready ? 'Manage' : isMcp || isSocial ? 'Connect' : 'View setup'}
             </button>
             {isMcp && <button className="integration-setup-link" onClick={() => setSelected(item)}>View setup guide</button>}
           </div>
@@ -86,8 +105,22 @@ export default function IntegrationsView({ systemAdmin, project, highlight, onMc
         <ol className="integration-setup-steps"><li>Open MCP connections and create a connection for your assistant or workflow.</li><li>Copy the connection URL or the advanced client configuration.</li><li>Add Citevia in your client’s MCP settings. Access follows your Citevia permissions.</li></ol>
         <p className="integration-scope-note">{systemAdmin ? 'System administrators can connect to all accounts.' : project ? `This connection is scoped to ${project.name}.` : 'An assigned account is required before you can connect.'} A ready credential does not confirm that the client has been linked.</p>
         <button className="button button-primary" onClick={onMcp}><Plug size={15} />Open MCP connections<ArrowRight size={15} /></button>
+      </> : selected.category === 'Social Media' ? <>
+        <ErrorNotice error={connectionError} />
+        {(social.data?.connections ?? []).filter(account => account.channel === selected.id).map(account =>
+          <div className="setting-note" key={account.id}><Check size={16} /><span>{account.username} · {account.requiresReconnect ? 'Reconnect required' : account.active ? 'Connected' : 'Disconnected'}</span></div>)}
+        <p className="integration-scope-note">Connect the social account that belongs to {project?.name ?? 'your project'}. Choose publishing days and times in project settings.</p>
+        {selected.id === 'instagram' && <p className="card-description">Instagram requires a Business or Creator account.</p>}
+        {selected.id === 'tiktok' && <p className="card-description">Generated videos are saved for your preview, music selection and publishing consent.</p>}
+        {!social.data?.publishingAvailable && <p className="setting-note">Social publishing needs administrator setup before accounts can be connected.</p>}
+        <button className="button button-primary" disabled={connecting || !social.data?.publishingAvailable || !project || (!systemAdmin && project.role !== 'owner') || !!project.demo} onClick={() => void connect(selected.id)}>{connecting ? 'Opening connection…' : `Connect ${selected.name}`}</button>
+        <a className="button button-outline" href="#settings">Publishing schedule</a>
+      </> : selected.id === 'blog' ? <>
+        <p className="setting-note">Create prompt-based blog drafts on your automation schedule. Blog publishing stays manual.</p>
+        <a className="button button-primary" href="#settings">Set up draft creation</a>
+        <a className="button button-outline" href="#agents">Open blog drafts</a>
       </> : <>
-        <div className="setting-note" role="status"><Info size={17} /><span><strong>Not available in Citevia yet.</strong> {selected.category === 'Social Media' || selected.category === 'Publishing' ? 'Account connection and publishing are not enabled for this provider.' : 'This provider’s connection is not enabled yet.'}</span></div>
+        <div className="setting-note" role="status"><Info size={17} /><span><strong>Not available in Citevia yet.</strong> This provider’s connection is not enabled yet.</span></div>
         <p className="integration-scope-note">When this integration is available, you’ll be able to authorize your account and manage it here.</p>
         {selected.category === 'Analytics' && <button className="button button-primary" onClick={onTraffic}>Set up Citevia website tracking<ArrowRight size={15} /></button>}
         <button className="button button-outline" onClick={() => setSelected(undefined)}>Done</button>

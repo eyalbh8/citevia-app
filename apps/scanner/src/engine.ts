@@ -106,6 +106,12 @@ export class Scanner {
       return this.dispatch();
     }
     switch (message.kind) {
+      case 'social-occurrence':
+        if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
+        return this.dependencies.socialAutomation.handleOccurrence(message);
+      case 'social-publication':
+        if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
+        return this.dependencies.socialAutomation.handlePublication(message.projectId, message.publicationId);
       case 'website-health':
         if (!this.dependencies.websiteHealth) throw new Error('Website health worker is not configured');
         return this.dependencies.websiteHealth.handle(message.projectId, message.auditId);
@@ -144,6 +150,8 @@ export class Scanner {
         catch { console.error(JSON.stringify({ event: 'scanner_maintenance_failed' })); }
         try { await this.dependencies.agents?.reconcile(); }
         catch { console.error(JSON.stringify({ event: 'agent_reconcile_failed' })); }
+        try { await this.dependencies.socialAutomation?.reconcile(); }
+        catch { console.error(JSON.stringify({ event: 'social_reconcile_failed' })); }
         try { await this.dependencies.websiteHealth?.reconcile(); }
         catch { console.error(JSON.stringify({ event: 'website_health_reconcile_failed' })); }
         try { await this.dependencies.onboarding?.reconcile(); }
@@ -920,6 +928,14 @@ export class Scanner {
   }
 
   async handleDeadLetter(message: ScanMessage): Promise<void> {
+    if (message.kind === 'social-publication') {
+      if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
+      return this.dependencies.socialAutomation.deadLetter(message.projectId, message.publicationId);
+    }
+    if (message.kind === 'social-occurrence') {
+      if (!this.dependencies.socialAutomation) throw new Error('Social automation worker is not configured');
+      return this.dependencies.socialAutomation.handleOccurrence(message);
+    }
     if (message.kind === 'website-health') {
       if (!this.dependencies.websiteHealth) throw new Error('Website health worker is not configured');
       await this.dependencies.websiteHealth.deadLetter(message.projectId, message.auditId);

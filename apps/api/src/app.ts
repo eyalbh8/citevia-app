@@ -1,5 +1,6 @@
 import { trafficRoute } from './traffic.js';
 import { agentRoute } from './agents.js';
+import { socialRoute, type SocialApiOptions } from './social.js';
 import { blogPerformanceRoute } from './blog-performance.js';
 import { websiteHealthRoute } from './website-health.js';
 import { monitoringPeriod, monitoringRoute } from './monitoring.js';
@@ -50,7 +51,7 @@ import {
   type ScanRun,
   type SourceRow,
 } from '@citevia/core';
-import { AccessError, withDemoRuntime, type Runtime } from '@citevia/storage';
+import { AccessError, withDemoRuntime, createSocialPublisher, socialPublisherConfigured, SocialPublisherError, type Runtime } from '@citevia/storage';
 import { verifiedIdentitySchema, type VerifiedIdentity } from '@citevia/core';
 import { AuthenticationError } from './descope.js';
 import { adminRoute } from './admin.js';
@@ -73,6 +74,7 @@ class HttpError extends Error {
   }
 }
 export interface ApiOptions {
+  social?: Partial<SocialApiOptions>;
   lookupUser?: (email: string) => Promise<VerifiedIdentity>;
   mode: 'live';
   providerConfigured?: boolean;
@@ -84,7 +86,7 @@ export interface ApiOptions {
   now?: () => Date;
 }
 const response = (data: unknown, status = 200) =>
-  new Response(JSON.stringify(data), {
+  new Response(JSON.stringify(data, (key, value) => key === 'socialProfileId' ? undefined : value), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -330,6 +332,15 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       const agentAvailable =
         (options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim())) &&
         (options.agentImagesConfigured ?? Boolean(process.env.UNSPLASH_ACCESS_KEY?.trim() || process.env.UNSPLASH_SECRET_ARN?.trim()));
+      const social = await socialRoute(runtime, project, userId, tail, request, now(), {
+        publisher: socialPublisherConfigured() ? createSocialPublisher : undefined,
+        generationAvailable: options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim()),
+        blogAvailable: agentAvailable,
+        videoAvailable: process.env.SOCIAL_VIDEO_CONFIGURED === 'true',
+        frontendOrigin: process.env.ALLOWED_ORIGIN || 'http://127.0.0.1:5173',
+        ...options.social,
+      }, body);
+      if (social) return social;
       const blogReview = await blogPerformanceRoute(runtime, project, user, tail, request, now(), agentAvailable, body);
       if (blogReview) return blogReview;
       const agent = await agentRoute(runtime, project, userId, tail, request, now(), agentAvailable, body);
@@ -1273,6 +1284,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       }
       throw new HttpError(404, 'NOT_FOUND', 'Endpoint not found');
     } catch (error) {
+      if (error instanceof SocialPublisherError)
+        // Upstream credentials are unrelated to this user's Descope session.
+        return response({ error: { code: error.code, message: error.message } }, error.status && [400, 404, 409, 422, 429].includes(error.status) ? error.status : 503);
       if (
         error instanceof HttpError ||
         error instanceof AccessError ||

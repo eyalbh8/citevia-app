@@ -79,9 +79,9 @@ describe('agents and integrations interactions', () => {
 
   it('combines category and keyword filtering and clears an empty result', async () => {
     await integrations();
-    expect(container.querySelectorAll('.integration-card')).toHaveLength(17);
+    expect(container.querySelectorAll('.integration-card')).toHaveLength(18);
     await click('Social Media');
-    expect(container.querySelectorAll('.integration-card')).toHaveLength(6);
+    expect(container.querySelectorAll('.integration-card')).toHaveLength(7);
     const search = container.querySelector<HTMLInputElement>(
       '[aria-label="Search integrations"]',
     )!;
@@ -103,7 +103,7 @@ describe('agents and integrations interactions', () => {
       'No integrations match your search',
     );
     await click('Clear filters');
-    expect(container.querySelectorAll('.integration-card')).toHaveLength(17);
+    expect(container.querySelectorAll('.integration-card')).toHaveLength(18);
   });
 
   it('keeps MCP credentials account scoped for viewers and global for system admins', async () => {
@@ -164,7 +164,7 @@ describe('agents and integrations interactions', () => {
     await click('Close details');
     await click('Analytics');
     await integrations({ highlight: 'reddit' });
-    expect(container.querySelectorAll('.integration-card')).toHaveLength(17);
+    expect(container.querySelectorAll('.integration-card')).toHaveLength(18);
     expect(container.querySelector('.is-highlighted')?.id).toBe(
       'integration-reddit',
     );

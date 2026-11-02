@@ -11,3 +11,4 @@ export * from './analysis-batch.js';
 export * from './provider-admission.js';
 export * from './scan-dispatch.js';
 export * from './demo.js';
+export * from './social-publisher.js';

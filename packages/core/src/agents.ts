@@ -224,6 +224,7 @@ export type AgentPost = {
 };
 /** Private worker state, omitted from every API response. */
 export type AgentPostJob = AgentPost & {
+  socialAutomation?: { publicationId: string; revision: number };
   createdBy: string;
   fingerprint: string;
   generation: number;

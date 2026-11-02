@@ -12,6 +12,7 @@ import { createAuthenticatedApi } from '../apps/api/src/handler.js';
 import { createDescopeIdentityProvider } from '../apps/api/src/descope.js';
 import { Scanner } from '../apps/scanner/src/engine.js';
 import { AgentPostEngine } from '../apps/scanner/src/agent-posts.js';
+import { SocialAutomationEngine } from '../apps/scanner/src/social-automation.js';
 import { WebsiteHealthEngine } from '../apps/scanner/src/website-health.js';
 import { createResponseProviderFromEnv } from '../apps/scanner/src/openai.js';
 import { createScanProviderFromEnv } from '../apps/scanner/src/providers.js';
@@ -19,6 +20,7 @@ import { providerAvailability } from '../apps/scanner/src/provider-http.js';
 import { OnboardingEngine } from '../apps/scanner/src/onboarding-engine.js';
 import { OpenAIOnboardingProvider } from '../apps/scanner/src/onboarding-provider.js';
 import { assertRealLocalData } from './local-data.js';
+import { socialOccurrenceLocalDate, type Project } from '@citevia/core';
 
 if (
   process.env.AWS_LAMBDA_FUNCTION_NAME ||
@@ -92,7 +94,7 @@ if (Object.values(providerAvailability()).some(Boolean)) {
     new OpenAIOnboardingProvider(await createResponseProviderFromEnv()),
     async () => {},
   ) : undefined;
-  scanner = new Scanner({ ...runtime, dispatch: new SqlScanDispatchStore(db), provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv), websiteHealth });
+  scanner = new Scanner({ ...runtime, dispatch: new SqlScanDispatchStore(db), provider, onboarding, agents: new AgentPostEngine(runtime, createResponseProviderFromEnv), socialAutomation: new SocialAutomationEngine(runtime), websiteHealth });
 }
 api = createAuthenticatedApi(runtime, createDescopeIdentityProvider(), {
   mode: 'live',
@@ -119,6 +121,21 @@ const recovery = setInterval(() => {
   const recover = scanner ? scanner.handle({ kind: 'reconcile' }) : websiteHealth.reconcile();
   recover.catch((error) => console.error('Recovery failed:', (error as Error).message));
 }, 60_000);
+// Local development follows the same local-time and duplicate-delivery checks as AWS.
+let schedulingSocial = false;
+const socialSchedule = setInterval(async () => {
+  if (!scanner || schedulingSocial) return;
+  schedulingSocial = true;
+  try {
+    const now = new Date(), scheduledAt = new Date(Math.floor(now.getTime() / 60000) * 60000).toISOString();
+    const projects = await db.query<{ data: Project }>(`SELECT data FROM citevia_projects WHERE data->'socialAutomation'->>'enabled'='true'`);
+    for (const { data: project } of projects.rows) for (const slot of project.socialAutomation!.slots) {
+      const message = { kind: 'social-occurrence' as const, projectId: project.id, revision: project.socialAutomation!.revision, slotId: slot.id, scheduledAt };
+      if (socialOccurrenceLocalDate(project, message, now)) await scanner.handle(message);
+    }
+  } catch { console.error('Local social schedule could not run; it will retry.'); }
+  finally { schedulingSocial = false; }
+}, 30_000);
 const vite = spawn(
   process.execPath,
   [
@@ -149,6 +166,7 @@ function stop() {
   stopping = true;
   clearInterval(worker);
   clearInterval(recovery);
+  clearInterval(socialSchedule);
   vite.kill('SIGTERM');
   server.close();
   void db.close().finally(() => process.exit(0));

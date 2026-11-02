@@ -21,6 +21,10 @@ import type {
   AgentImage,
   WebsiteHealthJob,
   ScanProvider,
+  SocialPublication,
+  ReserveSocialOccurrenceInput,
+  ReserveSocialOccurrenceResult,
+  SocialOccurrenceMessage,
 } from '@citevia/core';
 import type { UserRepository } from './users.js';
 import type { McpRepository } from './mcp.js';
@@ -49,6 +53,12 @@ export interface PromptAnswerPage {
   total: number;
 }
 export interface Repository extends UserRepository, McpRepository {
+  /** Atomically select a prompt and reserve every eligible connected destination once. */
+  reserveSocialOccurrence(input: ReserveSocialOccurrenceInput): Promise<ReserveSocialOccurrenceResult>;
+  getSocialPublication(projectId: string, publicationId: string): Promise<SocialPublication | null>;
+  listActiveSocialPublications(limit?: number): Promise<SocialPublication[]>;
+  listSocialPublications(projectId: string, offset: number, limit: number): Promise<{ items: SocialPublication[]; total: number }>;
+  saveSocialPublication(publication: SocialPublication, expectedVersion: number): Promise<boolean>;
   getWebsiteHealthAudit(projectId: string, auditId: string): Promise<WebsiteHealthJob | null>;
   listWebsiteHealthAudits(projectId: string, offset: number, limit: number): Promise<{ items: WebsiteHealthJob[]; total: number }>;
   listActiveWebsiteHealthAudits(): Promise<WebsiteHealthJob[]>;
@@ -188,6 +198,12 @@ export interface AnalysisBatchPort {
   complete(batchId: string): Promise<void>;
 }
 export interface ScannerDependencies extends Runtime {
+  socialAutomation?: {
+    handleOccurrence(message: SocialOccurrenceMessage): Promise<void>;
+    handlePublication(projectId: string, publicationId: string): Promise<void>;
+    reconcile(): Promise<void>;
+    deadLetter(projectId: string, publicationId: string): Promise<void>;
+  };
   websiteHealth?: {
     handle(projectId: string, auditId: string): Promise<void>;
     reconcile(): Promise<void>;

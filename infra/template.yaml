@@ -49,6 +49,24 @@ Parameters:
     Default: ''
     Description: Server-only Unsplash access key, raw or JSON with UNSPLASH_ACCESS_KEY. Required for agent post images.
     AllowedPattern: '^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  ZernioSecretArn:
+    Type: String
+    Default: ''
+    Description: Optional server-only Zernio key, raw or JSON with ZERNIO_API_KEY, using aws/secretsmanager encryption. Enables connected social accounts and publishing.
+    AllowedPattern: '^$|arn:[a-z-]+:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+'
+  SocialImageModel:
+    Type: String
+    Default: gpt-image-2.5-sunburst
+    Description: OpenAI Images API model for automated social imagery; independent from manual blog images.
+  SocialTextModel:
+    Type: String
+    Default: ''
+    Description: Optional Responses model for social copy, visual style and image review. Empty inherits ContentGenerationModel.
+  SocialVideoLayerArn:
+    Type: String
+    Default: ''
+    Description: Optional ARM64 Linux Lambda layer version with /opt/bin/ffmpeg (libx264, drawtext, xfade, zoompan) and /opt/fonts/social.ttf. No video rendering without a compatible layer.
+    AllowedPattern: '^$|arn:aws[a-z-]*:lambda:[a-z0-9-]+:[0-9]{12}:layer:[A-Za-z0-9_-]+:[0-9]+'
   GooglePageSpeedSecretArn:
     Type: String
     Default: ''
@@ -192,6 +210,9 @@ Conditions:
   HasPerplexitySecret: !Not [!Equals [!Ref PerplexitySecretArn, '']]
   HasGeminiSecret: !Not [!Equals [!Ref GeminiSecretArn, '']]
   HasUnsplashSecret: !Not [!Equals [!Ref UnsplashSecretArn, '']]
+  HasZernioSecret: !Not [!Equals [!Ref ZernioSecretArn, '']]
+  HasSocialTextModel: !Not [!Equals [!Ref SocialTextModel, '']]
+  HasSocialVideoLayer: !Not [!Equals [!Ref SocialVideoLayerArn, '']]
   HasGooglePageSpeedSecret: !Not [!Equals [!Ref GooglePageSpeedSecretArn, '']]
   HasGoogleCruxSecret: !Not [!Equals [!Ref GoogleCruxSecretArn, '']]
   AuroraAutoPauseEnabled: !Equals [!Ref AuroraMinCapacity, 0]
@@ -599,6 +620,8 @@ Resources:
           DESCOPE_SECRET_ARN: !Ref DescopeSecretArn
           DESCOPE_BASE_URL: !Ref DescopeBaseUrl
           UNSPLASH_SECRET_ARN: !Ref UnsplashSecretArn
+          ZERNIO_SECRET_ARN: !Ref ZernioSecretArn
+          SOCIAL_VIDEO_CONFIGURED: !If [HasSocialVideoLayer, 'true', 'false']
           GOOGLE_PAGESPEED_SECRET_ARN: !Ref GooglePageSpeedSecretArn
           GOOGLE_CRUX_SECRET_ARN: !Ref GoogleCruxSecretArn
           OPENAI_SECRET_ARN: !Ref OpenAiSecretArn
@@ -626,6 +649,12 @@ Resources:
               Resource:
                 - !If [UseAuroraDatabase, !GetAtt Database.MasterUserSecret.SecretArn, !If [HasExternalDatabaseSecret, !Ref ExternalDatabaseSecretArn, !Ref 'AWS::NoValue']]
                 - !Ref DescopeSecretArn
+            - !If
+              - HasZernioSecret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref ZernioSecretArn
+              - !Ref 'AWS::NoValue'
             - Effect: Allow
               Action: s3:GetObject
               Resource: !Sub '${EvidenceBucket.Arn}/*'
@@ -665,7 +694,10 @@ Resources:
         - SecurityGroupIds: [!Ref LambdaSecurityGroup]
           SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
         - !Ref 'AWS::NoValue'
-      MemorySize: 1024
+      MemorySize: !If [HasSocialVideoLayer, 2048, 1024]
+      EphemeralStorage:
+        Size: !If [HasSocialVideoLayer, 1024, 512]
+      Layers: !If [HasSocialVideoLayer, [!Ref SocialVideoLayerArn], !Ref 'AWS::NoValue']
       Timeout: 300
       ReservedConcurrentExecutions: !If [UseReservedConcurrency, !Ref ScannerReservedConcurrency, !Ref 'AWS::NoValue']
       Environment:
@@ -673,9 +705,14 @@ Resources:
           OPENAI_SECRET_ARN: !Ref OpenAiSecretArn
           OPENAI_GENERATION_MODEL: !Ref GenerationModel
           OPENAI_CONTENT_MODEL: !Ref ContentGenerationModel
+          OPENAI_SOCIAL_TEXT_MODEL: !If [HasSocialTextModel, !Ref SocialTextModel, !Ref ContentGenerationModel]
+          OPENAI_SOCIAL_IMAGE_MODEL: !Ref SocialImageModel
+          FFMPEG_PATH: !If [HasSocialVideoLayer, /opt/bin/ffmpeg, !Ref 'AWS::NoValue']
+          SOCIAL_FONT_PATH: !If [HasSocialVideoLayer, /opt/fonts/social.ttf, !Ref 'AWS::NoValue']
           ANALYSIS_MODEL: !Ref ExtractionModel
           OPENAI_ONBOARDING_MODEL: !Ref OnboardingModel
           UNSPLASH_SECRET_ARN: !Ref UnsplashSecretArn
+          ZERNIO_SECRET_ARN: !Ref ZernioSecretArn
           GOOGLE_PAGESPEED_SECRET_ARN: !Ref GooglePageSpeedSecretArn
           GOOGLE_CRUX_SECRET_ARN: !Ref GoogleCruxSecretArn
           PERPLEXITY_SECRET_ARN: !Ref PerplexitySecretArn
@@ -704,6 +741,12 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref UnsplashSecretArn
+              - !Ref 'AWS::NoValue'
+            - !If
+              - HasZernioSecret
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref ZernioSecretArn
               - !Ref 'AWS::NoValue'
             - !If
               - HasGooglePageSpeedSecret
@@ -737,7 +780,7 @@ Resources:
                   - [!Ref OpenAiSecretArn, !Ref GeminiSecretArn]
                   - [!Ref OpenAiSecretArn]
             - Effect: Allow
-              Action: [scheduler:CreateSchedule, scheduler:UpdateSchedule, scheduler:GetSchedule]
+              Action: [scheduler:CreateSchedule, scheduler:UpdateSchedule, scheduler:DeleteSchedule, scheduler:GetSchedule]
               Resource: !Sub 'arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/${ProjectScheduleGroup}/*'
             - Effect: Allow
               Action: iam:PassRole

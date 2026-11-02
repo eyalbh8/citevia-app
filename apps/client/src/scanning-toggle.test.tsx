@@ -11,6 +11,7 @@ vi.mock('./api', async () => ({
   ApiError: (await import('./api-error')).ApiError,
 }));
 vi.mock('./CompetitorSettings', () => ({ default: () => null }));
+vi.mock('./SocialAutomationSettings', () => ({ default: () => null }));
 import SettingsView from './SettingsView';
 
 let root: Root, container: HTMLDivElement, project: Project;

@@ -14,6 +14,8 @@ import {
 import type { Project, ScanMessage } from '@citevia/core';
 import { Scanner } from './engine.js';
 import { AgentPostEngine } from './agent-posts.js';
+import { SocialAutomationEngine } from './social-automation.js';
+import { repairSocialSchedule } from '../../api/src/social-scheduler.js';
 import { WebsiteHealthEngine } from './website-health.js';
 import { createResponseProviderFromEnv } from './openai.js';
 import { createScanProviderFromEnv } from './providers.js';
@@ -34,6 +36,8 @@ const id = z
   .max(200)
   .regex(/^[a-zA-Z0-9_-]+$/);
 const messageSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('social-occurrence'), projectId: id, revision: z.number().int().positive(), slotId: id, scheduledAt: z.string().datetime({ offset: true }) }).strict(),
+  z.object({ kind: z.literal('social-publication'), projectId: id, publicationId: id }).strict(),
   z.object({ kind: z.literal('website-health'), projectId: id, auditId: id }).strict(),
   z.object({ kind: z.literal('agent-post'), projectId: id, postId: id }).strict(),
   z.object({ kind: z.literal('onboard'), projectId: id, jobId: id }).strict(),
@@ -116,12 +120,20 @@ function awsScanner(): Scanner {
     ...runtime,
     dispatch: new SqlScanDispatchStore(productionDatabase()),
     agents: new AgentPostEngine(runtime, createResponseProviderFromEnv),
+    socialAutomation: new SocialAutomationEngine(runtime),
     websiteHealth: new WebsiteHealthEngine(runtime),
     onboarding,
     provider: createScanProviderFromEnv(runtime),
     // Keep the port available for already-frozen Batch runs even if new batch admission is disabled.
     analysisBatch: new AnalysisBatchCoordinator({ store: new SqlAnalysisBatchStore(productionDatabase()), artifacts: runtime.artifacts, client: lazyBatchClient, ledger: new PostgresCallLedger(productionDatabase(), runtime.artifacts), admission: new SqlProviderAdmissionStore(productionDatabase()) }),
     maintenance: { reconcile: async () => {
+      const socialPending = await productionDatabase().query<{ id: string }>(`SELECT id FROM citevia_projects
+        WHERE data->'socialAutomation'->>'scheduleStatus' IN ('pending','error')
+        ORDER BY data->>'updatedAt',id LIMIT 3`);
+      for (const row of socialPending.rows) {
+        try { await repairSocialSchedule(runtime.repository, row.id); }
+        catch { console.error(JSON.stringify({ event: 'social_schedule_repair_failed', projectId: row.id })); }
+      }
       const pending = await productionDatabase().query<{ data: Project }>(`SELECT data FROM citevia_projects
         WHERE data->>'scheduleStatus' IN ('pending','error')
         ORDER BY data->>'updatedAt',id LIMIT 5`);

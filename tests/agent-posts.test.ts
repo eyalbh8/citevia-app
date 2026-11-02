@@ -694,3 +694,36 @@ describe('agent generation contracts', () => {
     ).toThrow();
   });
 });
+
+describe('automated blog stage cancellation', () => {
+  it('preserves completed research and stops before the next paid stage when automation is paused', async () => {
+    const now = new Date('2026-11-02T09:00:00.000Z');
+    const repository = new MemoryRepository(), artifacts = new MemoryArtifacts(), queue = new MemoryQueue();
+    const project = { ...newProject({ id: 'automated-blog-pause', prompts: [question], now }),
+      socialAutomation: { enabled: true, createBlogDrafts: true, revision: 1, timezone: 'UTC',
+        slots: [{ id: 'monday', dayOfWeek: 1, time: '09:00' }], effectiveFrom: '2026-11-01T00:00:00.000Z', scheduleStatus: 'synced' as const } };
+    await repository.saveProject(project, null);
+    const job: AgentPostJob = {
+      id: 'automatic-blog-post', projectId: project.id, channel: 'blog', createdBy: 'social-automation', fingerprint: 'automatic-blog-fingerprint',
+      prompt: question, promptId: 'p_01', topic: 'Reporting', status: 'generating', stage: 'write', content: null, error: null,
+      version: 1, generation: 1, attempts: 0, model: DEFAULT_AGENT_CONTENT_MODEL, createdAt: now.toISOString(), updatedAt: now.toISOString(),
+      context: { brand: project.brand, country: project.country, language: project.language, brandbook: book },
+      socialAutomation: { publicationId: 'publication-blog-one', revision: 1 },
+    };
+    expect(await repository.reserveAgentPost(job, null)).toBe('saved');
+    const researchKey = `projects/${project.id}/agent-posts/${job.id}/generation-1-links.json`;
+    const completedResearch = receipt({ evidence: 'Completed research from the previous stage.' });
+    await artifacts.put(researchKey, completedResearch);
+    expect(await repository.saveProject({ ...project, version: project.version + 1,
+      socialAutomation: { ...project.socialAutomation, enabled: false, revision: 2 } }, project.version)).toBe(true);
+    const provider = vi.fn(async () => ({ extract: vi.fn(async () => receipt()), answer: vi.fn() }));
+    const images = vi.fn(async () => ({ select: vi.fn(async () => photo), track: vi.fn(async () => {}) }));
+    const engine = new AgentPostEngine({ repository, artifacts, queue }, provider, () => now, images);
+    await engine.handle(project.id, job.id);
+    expect(await repository.getAgentPost(project.id, job.id)).toMatchObject({ status: 'failed', stage: 'write', error: { code: 'automation_paused' } });
+    expect(await artifacts.get(researchKey)).toEqual(completedResearch);
+    expect(provider).not.toHaveBeenCalled();
+    expect(images).not.toHaveBeenCalled();
+    expect(queue.messages).toEqual([]);
+  });
+});

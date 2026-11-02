@@ -38,9 +38,62 @@ function render(overrides: Record<string, string> = {}) {
   return { violations, resources: selected(template.Resources), outputs: selected(template.Outputs), globals: evaluate(template.Globals) };
 }
 
+describe('social automation deployment capabilities', () => {
+  it('keeps publisher credentials and video resources disabled by default', () => {
+    const resources = render().resources;
+    expect(resources.ScannerFunction.Properties).not.toHaveProperty('Layers');
+    expect(resources.ScannerFunction.Properties.MemorySize).toBe(1024);
+    expect(resources.ScannerFunction.Properties.Environment.Variables).not.toHaveProperty('FFMPEG_PATH');
+    expect(resources.ApiFunction.Properties.Environment.Variables.SOCIAL_VIDEO_CONFIGURED).toBe('false');
+    for (const name of ['ApiFunction', 'ScannerFunction']) {
+      expect(resources[name].Properties.Environment.Variables.ZERNIO_SECRET_ARN).toBe('');
+      expect(JSON.stringify(resources[name].Properties.Policies)).not.toContain('ref:ZernioSecretArn');
+    }
+  });
+  it('grants only the configured publisher secret and attaches the ARM64 video layer only to the scanner', () => {
+    const layer = 'arn:aws:lambda:eu-west-1:123456789012:layer:social-video:1';
+    const resources = render({ ZernioSecretArn: secret, SocialVideoLayerArn: layer, SocialTextModel: 'configured-social-model' }).resources;
+    for (const name of ['ApiFunction', 'ScannerFunction']) {
+      expect(resources[name].Properties.Environment.Variables.ZERNIO_SECRET_ARN).toBe(secret);
+      const statements = resources[name].Properties.Policies[0].Statement;
+      expect(statements).toContainEqual({ Effect: 'Allow', Action: 'secretsmanager:GetSecretValue', Resource: secret });
+    }
+    expect(resources.ApiFunction.Properties).not.toHaveProperty('Layers');
+    expect(resources.ApiFunction.Properties.Environment.Variables.SOCIAL_VIDEO_CONFIGURED).toBe('true');
+    expect(resources.ScannerFunction.Properties).toMatchObject({ Layers: [layer], MemorySize: 2048, EphemeralStorage: { Size: 1024 } });
+    expect(resources.ScannerFunction.Properties.Environment.Variables).toMatchObject({ FFMPEG_PATH: '/opt/bin/ffmpeg', SOCIAL_FONT_PATH: '/opt/fonts/social.ttf', OPENAI_SOCIAL_IMAGE_MODEL: 'gpt-image-2.5-sunburst', OPENAI_SOCIAL_TEXT_MODEL: 'configured-social-model' });
+    expect(template.Globals.Function.Architectures).toEqual(['arm64']);
+  });
+  it('allows social schedule cleanup and inherits the existing text model unless overridden', () => {
+    const resources = render().resources;
+    expect(resources.ScannerFunction.Properties.Environment.Variables.OPENAI_SOCIAL_TEXT_MODEL).toBe('gpt-6-astra');
+    const statement = resources.ScannerFunction.Properties.Policies[0].Statement.find((item: CfnObject) => Array.isArray(item.Action) && item.Action.includes('scheduler:CreateSchedule'));
+    expect(statement.Action).toContain('scheduler:DeleteSchedule');
+    expect(JSON.stringify(statement.Resource)).toContain('ProjectScheduleGroup');
+  });
+  it('preserves deployed social credentials, video layer and models across later workflow runs', () => {
+    const layer = 'arn:aws:lambda:eu-west-1:123456789012:layer:social-video:7';
+    const parameters = [
+      { ParameterKey: 'ZernioSecretArn', ParameterValue: secret },
+      { ParameterKey: 'SocialVideoLayerArn', ParameterValue: layer },
+      { ParameterKey: 'SocialImageModel', ParameterValue: 'gpt-image-2.5-flare' },
+      { ParameterKey: 'SocialTextModel', ParameterValue: 'gpt-6-astra' },
+    ];
+    const step = 'Resolve social automation configuration';
+    expect(resolveWorkflow(parameters, {}, step)).toEqual({ ZERNIO_SECRET_ARN: secret, SOCIAL_VIDEO_LAYER_ARN: layer, SOCIAL_IMAGE_MODEL: 'gpt-image-2.5-flare', SOCIAL_TEXT_MODEL: 'gpt-6-astra' });
+    expect(resolveWorkflow([], {}, step)).toEqual({ ZERNIO_SECRET_ARN: '', SOCIAL_VIDEO_LAYER_ARN: '', SOCIAL_IMAGE_MODEL: 'gpt-image-2.5-sunburst', SOCIAL_TEXT_MODEL: '' });
+    expect(resolveWorkflow(parameters, { SOCIAL_IMAGE_MODEL: 'gpt-image-2.5-sunburst' }, step).SOCIAL_IMAGE_MODEL).toBe('gpt-image-2.5-sunburst');
+    expect(() => resolveWorkflow(parameters, { ZERNIO_SECRET_ARN: 'inline-api-key' }, step)).toThrow();
+    expect(() => resolveWorkflow(parameters, { SOCIAL_VIDEO_LAYER_ARN: layer.replace('eu-west-1', 'us-east-1') }, step)).toThrow();
+    expect(() => resolveWorkflow(parameters, { SOCIAL_TEXT_MODEL: 'unsafe\nmodel' }, step)).toThrow();
+    const deploy = workflow.jobs.deploy.steps.find((item: CfnObject) => item.run?.includes('--parameter-overrides')).run;
+    for (const parameter of ['ZernioSecretArn', 'SocialVideoLayerArn', 'SocialImageModel', 'SocialTextModel']) expect(deploy).toContain(parameter + '=');
+  });
+});
+
 const directories: string[] = [];
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
-function resolveWorkflow(parameters: { ParameterKey: string; ParameterValue: string }[], variables: Record<string, string> = {}) {
+function resolveWorkflow(parameters: { ParameterKey: string; ParameterValue: string }[], variables: Record<string, string> = {}, stepName = 'Resolve database deployment configuration') {
   const directory = mkdtempSync(join(tmpdir(), 'citevia-db-deploy-test-'));
   directories.push(directory);
   const aws = join(directory, 'aws');
@@ -48,8 +101,8 @@ function resolveWorkflow(parameters: { ParameterKey: string; ParameterValue: str
   chmodSync(aws, 0o700);
   const envFile = join(directory, 'github-env');
   writeFileSync(envFile, '');
-  const script = workflow.jobs.deploy.steps.find((step: CfnObject) => step.name === 'Resolve database deployment configuration').run;
-  execFileSync('bash', ['-c', script], { env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNNER_TEMP: directory, STACK_NAME: 'test-stack', AWS_REGION: 'eu-west-1', GITHUB_ENV: envFile, FAKE_PARAMETERS: JSON.stringify(parameters), DATABASE_MODE: '', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: '', MAINTENANCE_MODE: '', COMPACT_RUN_STATE: '', RETIRE_LEGACY_DATABASE: '', ANALYSIS_BATCH_ENABLED: '', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '', ...variables }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const script = workflow.jobs.deploy.steps.find((step: CfnObject) => step.name === stepName).run;
+  execFileSync('bash', ['-c', script], { env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, RUNNER_TEMP: directory, STACK_NAME: 'test-stack', AWS_REGION: 'eu-west-1', GITHUB_ENV: envFile, FAKE_PARAMETERS: JSON.stringify(parameters), DATABASE_MODE: '', EXTERNAL_DATABASE_SECRET_ARN: '', REMOVE_LEGACY_NETWORK: '', MAINTENANCE_MODE: '', COMPACT_RUN_STATE: '', RETIRE_LEGACY_DATABASE: '', ANALYSIS_BATCH_ENABLED: '', GOOGLE_PAGESPEED_SECRET_ARN: '', GOOGLE_CRUX_SECRET_ARN: '', ZERNIO_SECRET_ARN: '', SOCIAL_VIDEO_LAYER_ARN: '', SOCIAL_IMAGE_MODEL: '', SOCIAL_TEXT_MODEL: '', ...variables }, stdio: ['ignore', 'pipe', 'pipe'] });
   return Object.fromEntries(readFileSync(envFile, 'utf8').trim().split('\n').map((line) => { const separator = line.indexOf('='); return [line.slice(0, separator), line.slice(separator + 1)]; }));
 }
 

@@ -1,6 +1,7 @@
 import * as traffic from './traffic-postgres.js';
 import { createHash } from 'node:crypto';
 import * as agents from './agents-postgres.js';
+import * as social from './social-postgres.js';
 import * as websiteHealth from './website-health-postgres.js';
 import {
   allocateScanSchedule,
@@ -75,6 +76,11 @@ export interface PostgresRepositoryOptions {
 }
 
 export class PostgresRepository extends PostgresUsers implements Repository {
+  reserveSocialOccurrence(input: import('@citevia/core').ReserveSocialOccurrenceInput) { return social.reserveSocialOccurrence(this.db, input); }
+  getSocialPublication(projectId: string, publicationId: string) { return social.getSocialPublication(this.db, projectId, publicationId); }
+  listActiveSocialPublications(limit?: number) { return social.listActiveSocialPublications(this.db, limit); }
+  listSocialPublications(projectId: string, offset: number, limit: number) { return social.listSocialPublications(this.db, projectId, offset, limit); }
+  saveSocialPublication(publication: import('@citevia/core').SocialPublication, expectedVersion: number) { return social.saveSocialPublication(this.db, publication, expectedVersion); }
   getWebsiteHealthAudit(projectId: string, auditId: string) { return websiteHealth.getWebsiteHealthAudit(this.db, projectId, auditId); }
   listWebsiteHealthAudits(projectId: string, offset: number, limit: number) { return websiteHealth.listWebsiteHealthAudits(this.db, projectId, offset, limit); }
   listActiveWebsiteHealthAudits() { return websiteHealth.listActiveWebsiteHealthAudits(this.db); }

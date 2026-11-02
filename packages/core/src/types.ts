@@ -49,6 +49,11 @@ export interface Project {
   scanSchedule?: { version: 1; slotsUtcMinutes: [number, number]; activatedAt?: string };
   /** Enables scheduled and manual scanning; pausing preserves saved data. */
   enabled: boolean;
+  /** Social publishing has a separate opt-in; absent settings are disabled. */
+  socialAutomation?: import('./social-automation.js').SocialAutomationSettings;
+  /** Private server-owned publishing profile. Never accept this value from client settings. */
+  socialProfileId?: string;
+  socialDestinationOptions?: Record<string, { boardId?: string; subreddit?: string; flairId?: string }>;
   generationModel: string;
   extractionModel: string;
   parserVersion: string;
@@ -455,6 +460,8 @@ export interface Page<T> {
   total: number;
 }
 export type ScanMessage =
+  | import('./social-automation.js').SocialOccurrenceMessage
+  | { kind: 'social-publication'; projectId: string; publicationId: string }
   | { kind: 'website-health'; projectId: string; auditId: string }
   | { kind: 'agent-post'; projectId: string; postId: string }
   | {

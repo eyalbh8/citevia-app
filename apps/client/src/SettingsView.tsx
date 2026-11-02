@@ -19,6 +19,7 @@ import {
 import { idempotentPost, request, useApi } from './api';
 import { Badge, Empty, ErrorNotice, formatDate } from './components';
 import CompetitorSettings from './CompetitorSettings';
+import SocialAutomationSettings from './SocialAutomationSettings';
 
 function scheduleLabel(project: Project) {
   if (!project.scanSchedule) return `${project.scheduleExpression} (${project.timezone})`;
@@ -156,6 +157,7 @@ export default function SettingsView({
                 </div>
               </aside>
             </div>
+            <SocialAutomationSettings key={project.id} project={project} path={path} onSaved={onSaved} notify={notify} />
             <section className="card">
               <div className="card-header">
                 <div>

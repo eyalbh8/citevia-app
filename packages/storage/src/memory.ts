@@ -1,5 +1,8 @@
 import { aggregateTraffic, type TrafficEvent, type TrafficFilters, type TrafficInstallationReceipt, type TrafficSite } from '@citevia/core';
 import { MAX_ACTIVE_AGENT_POSTS, type AgentPostJob, type AgentImage } from '@citevia/core';
+import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, socialOccurrenceLocalDate,
+  type SocialOccurrence, type SocialPublication, type ReserveSocialOccurrenceInput, type ReserveSocialOccurrenceResult } from '@citevia/core';
+import { createSocialRecords, socialOccurrenceId, socialPageBounds } from './social-records.js';
 import {
   allocateScanSchedule,
   WEEKLY_SCHEDULE,
@@ -36,6 +39,8 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State {
+  socialOccurrences?: Record<string, SocialOccurrence>;
+  socialPublications?: Record<string, SocialPublication>;
   websiteHealthAudits?: Record<string, WebsiteHealthJob>;
   agentImages?: Record<string, {postId: string; generation: number; image: AgentImage}>;
   agentPosts?: Record<string, AgentPostJob>;
@@ -76,6 +81,50 @@ const copy = <T>(value: T): T => structuredClone(value);
 
 export class MemoryRepository implements Repository {
   protected state: State = blank();
+  reserveSocialOccurrence(input: ReserveSocialOccurrenceInput): Promise<ReserveSocialOccurrenceResult> {
+    return this.operation(() => {
+      const project = this.state.projects[input.projectId];
+      const localDate = project && socialOccurrenceLocalDate(project, input, input.now);
+      if (!project || !localDate) return { status: 'stale' };
+      const occurrenceId = socialOccurrenceId(input, localDate);
+      const existing = this.state.socialOccurrences?.[key(input.projectId, occurrenceId)];
+      if (existing) return copy({ status: 'existing', occurrence: existing,
+        publications: Object.values(this.state.socialPublications || {}).filter(publication => publication.projectId === input.projectId && publication.occurrenceId === occurrenceId).sort((a, b) => a.id.localeCompare(b.id)) });
+      const previous = Object.values(this.state.socialOccurrences || {}).filter(occurrence => occurrence.projectId === input.projectId)
+        .sort((a, b) => b.sequence - a.sequence)[0] || null;
+      const records = createSocialRecords(project, input, localDate, previous);
+      if (!records) return { status: 'empty' };
+      this.state.socialOccurrences ||= {};
+      this.state.socialPublications ||= {};
+      this.state.socialOccurrences[key(input.projectId, occurrenceId)] = copy(records.occurrence);
+      for (const publication of records.publications) this.state.socialPublications[key(input.projectId, publication.id)] = copy(publication);
+      return copy({ status: 'created', ...records });
+    }, true);
+  }
+  getSocialPublication(projectId: string, publicationId: string): Promise<SocialPublication | null> {
+    return this.operation(() => copy(this.state.socialPublications?.[key(projectId, publicationId)] || null));
+  }
+  listActiveSocialPublications(limit = 100): Promise<SocialPublication[]> {
+    return this.operation(() => copy(Object.values(this.state.socialPublications || {}).filter(publication => ACTIVE_SOCIAL_PUBLICATION_STATUSES.includes(publication.status))
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id)).slice(0, socialPageBounds(0, limit).limit)));
+  }
+  listSocialPublications(projectId: string, offset: number, limit: number): Promise<{ items: SocialPublication[]; total: number }> {
+    return this.operation(() => {
+      const items = Object.values(this.state.socialPublications || {}).filter(publication => publication.projectId === projectId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      const bounds = socialPageBounds(offset, limit);
+      return { items: copy(items.slice(bounds.offset, bounds.offset + bounds.limit)), total: items.length };
+    });
+  }
+  saveSocialPublication(publication: SocialPublication, expectedVersion: number): Promise<boolean> {
+    return this.operation(() => {
+      if (publication.version !== expectedVersion + 1) throw new Error('Invalid social publication version');
+      const current = this.state.socialPublications?.[key(publication.projectId, publication.id)];
+      if (current?.version !== expectedVersion || current.occurrenceId !== publication.occurrenceId || current.destination.id !== publication.destination.id) return false;
+      this.state.socialPublications![key(publication.projectId, publication.id)] = copy(publication);
+      return true;
+    }, true);
+  }
   getWebsiteHealthAudit(projectId: string, auditId: string) {
     return this.operation(() => copy(this.state.websiteHealthAudits?.[key(projectId, auditId)] || null));
   }
