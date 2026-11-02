@@ -62,7 +62,7 @@
     "esbuild": "^0.25.0",
     "eslint": "10.14.0",
     "eslint-plugin-security": "4.2.1",
-    "jsdom": "^26.1.0",
+    "jsdom": "^30.1.3",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "8.72.1",
