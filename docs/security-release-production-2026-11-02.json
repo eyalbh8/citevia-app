@@ -16,7 +16,8 @@
     "jobId": "68",
     "status": "SUCCEED",
     "finishedAtUtc": "2026-11-02T22:22:33Z",
-    "browserCheck": "Google sign-in control rendered; no authenticated browser session was available"
+    "browserCheck": "Google sign-in control rendered; no authenticated browser session was available",
+    "browserConsoleErrorsAndWarnings": 0
   },
   "ci": {
     "head": "6d69d7f2e1aac42cea2afeae44bb7de14c5fcaeb",
@@ -174,5 +175,6 @@
     "javascriptAssets": [
       "/assets/index-BBcNy8YF.js"
     ]
-  }
+  },
+  "guardDutyDeliveryEvidence": "security-findings-delivery-production-2026-11-02.json"
 }

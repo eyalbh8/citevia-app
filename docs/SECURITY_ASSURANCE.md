@@ -33,6 +33,8 @@ The privileged-activity notification at 22:19:26 UTC was traced to two read-only
 
 CloudTrail delivered audit objects to S3 and events to CloudWatch, with no reported delivery errors; a digest was also delivered. The current GuardDuty API confirmed the detector, S3 protection and Lambda network protection are enabled. AWS account metadata reported root MFA enabled and no root access keys. See the [security detection verification record](security-detection-production-2026-11-02.json).
 
+A second, distinct AWS-generated `[SAMPLE]` finding reached the configured EventBridge rule and encrypted findings log, produced the threat metric and transitioned the findings alarm. The deployed source-account/source-rule conditions worked and were retained. The [findings-delivery evidence](security-findings-delivery-production-2026-11-02.json) distinguishes this controlled sample from a real threat and records delivery separately from detector enablement.
+
 ## Implemented controls
 
 - Authentication and account membership remain server-side. The existing tenant/owner/disabled-user tests continue to run. New authenticated HTTP limits use durable, atomic counters shared by Lambda instances: per-user read/write defaults 600/120 per minute, and per-account 1,200/240 per minute. A 429 includes `Retry-After`.
