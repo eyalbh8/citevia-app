@@ -157,7 +157,9 @@ export default function TrackingView({
   onResponse: (id: string) => void;
   notify: (s: string) => void;
 }) {
-  const [selection, setSelection] = useState(() => initialSelection('30', project.demo)),
+  const [selection, setSelection] = useState(() => project.demo
+    ? { ...initialSelection('30', project.demo), days: 'custom', start: project.demo.startDate, end: project.demo.endDate }
+    : initialSelection('30')),
     [status, setStatus] = useState('all'),
     [sort, setSort] = useState('newest'),
     [group, setGroup] = useState('status'),
