@@ -573,7 +573,6 @@ function Workspace() {
               'tracking',
               'sources',
               'traffic',
-              'website-health',
               'agents',
               'brandbook',
               'competitors',
@@ -617,7 +616,7 @@ function Workspace() {
             <div className="nav-rule" />
             <div className="nav-caption">SYSTEM ADMIN</div>
             <nav aria-label="System admin" className="nav-list">
-              {(['users', 'settings', ...(currentProject?.geoBacklinks?.enabled ? ['geo-backlinks'] : [])] as View[]).map((key) => {
+              {(['users', 'settings', 'website-health', ...(currentProject?.geoBacklinks?.enabled ? ['geo-backlinks'] : [])] as View[]).map((key) => {
                 const Icon = views[key].icon;
                 return (
                   <button
@@ -929,7 +928,8 @@ function Workspace() {
                 !['dashboard', 'settings', 'competitors', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'geo-backlinks', 'agents', 'integrations'].includes(view) ? (
                   <Skeleton variant="cards" label="Bringing your results together…" />
                 ) : view === 'website-health' ? (
-                  <WebsiteHealthView key={project.id} project={project} path={path} notify={setToast} />
+                  systemAdmin ? <WebsiteHealthView key={project.id} project={project} path={path} notify={setToast} />
+                    : <Empty title="Administrator access required" description="Website Health is managed by your system administrator." />
                 ) : view === 'geo-backlinks' ? (
                   <GeoBacklinksView key={project.id} project={project} systemAdmin={systemAdmin} notify={setToast} />
                 ) : view === 'agents' ? (
