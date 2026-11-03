@@ -5,6 +5,9 @@ import { MemoryArtifacts, MemoryQueue, MemoryRepository, PostgresRepository, typ
 import { localPostgres } from '../packages/storage/src/local-postgres.js';
 import { createApi, type ApiOptions } from '../apps/api/src/app.js';
 import { websiteHealthRoute } from '../apps/api/src/website-health.js';
+import { WebsiteHealthEngine } from '../apps/scanner/src/website-health.js';
+import { WebsiteHealthCrawler } from '../apps/scanner/src/website-health-crawler.js';
+import { WebsiteHealthProviderError } from '../apps/scanner/src/website-health-provider.js';
 import { newProject } from './fixtures/scanner.js';
 import { testIdentity } from './fixtures/users.js';
 
@@ -19,6 +22,7 @@ function job(projectId: string, id: string = randomUUID(), createdAt = at): Webs
 
 describe.each(['memory', 'postgres'] as const)('website health API and storage (%s)', backend => {
   let repository: Repository, db: SqlDatabase | undefined;
+  let fixtureIndex = 0;
   beforeAll(async () => {
     if (backend === 'postgres') {
       db = await localPostgres();
@@ -35,7 +39,8 @@ describe.each(['memory', 'postgres'] as const)('website health API and storage (
     for (const [userId, role] of [['health-owner', 'owner'], ['health-viewer', 'viewer']] as const)
       await repository.putMembership({ projectId: project.id, userId, role });
     const queue = new MemoryQueue(), artifacts = new MemoryArtifacts(), runtime = { repository, queue, artifacts };
-    let clock = new Date(at);
+    // Isolate unrelated fixtures from the global per-user minute bucket.
+    let clock = new Date(Date.parse(at) + fixtureIndex++ * 120_000);
     const options: ApiOptions = { mode: 'live', websiteHealthConfigured: available, cruxConfigured: false, now: () => clock };
     const api = createApi(runtime, options), path = `/v1/projects/${project.id}/website-health/audits`;
     const call = (suffix = '', method = 'GET', body?: unknown, key: string | null = 'health-request-001', user: string | null = 'health-owner') => api(new Request(`https://citevia.test${path}${suffix}`, {
@@ -190,5 +195,70 @@ describe.each(['memory', 'postgres'] as const)('website health API and storage (
     expect(last.nextCursor).toBeNull();
     for (const query of ['?limit=0', '?limit=51', '?cursor=-1', '?cursor=01', '?cursor=1000001', '?cursor=garbage'])
       expect((await f.call(query)).status).toBe(400);
+  });
+
+  it('validates website scope and page limits, preserves idempotency and shares the account admission cap', async () => {
+    const f = await fixture();
+    for (const input of [
+      { scope: 'all' }, { scope: 'site', maxPages: 0 }, { scope: 'site', maxPages: 501 },
+      { scope: 'site', maxPages: 1.5 }, { scope: 'site', maxPages: '100' }, { maxPages: 20 },
+    ]) expect((await f.call('', 'POST', { url: 'https://northstar.com/', ...input })).status).toBe(400);
+    const input = { url: 'https://northstar.com/deep/page?campaign=1#intro', scope: 'site' };
+    const created = await f.call('', 'POST', input);
+    expect(created.status).toBe(202);
+    const { audit } = await created.json();
+    expect(audit).toMatchObject({ scope: 'site', url: 'https://northstar.com/', site: { maxPages: 100, discoveryStatus: 'discovering', pageCount: 0 } });
+    const replay = await f.call('', 'POST', { url: 'https://northstar.com/', scope: 'site', maxPages: 100 });
+    expect((await replay.json()).audit.id).toBe(audit.id);
+    expect((await f.call('', 'POST', { url: 'https://northstar.com/', scope: 'site', maxPages: 20 })).status).toBe(409);
+    expect((await f.call('', 'POST', { url: 'https://northstar.com/' }, 'another-request')).status).toBe(429);
+    expect((await f.call('', 'POST', input, 'viewer-site-request', 'health-viewer')).status).toBe(403);
+  });
+
+  it('runs a website scan end to end, keeps failures independent, and retrieves authorized page artifacts', async () => {
+    const f = await fixture();
+    const { audit: accepted } = await (await f.call('', 'POST', { url: 'https://northstar.com/', scope: 'site', maxPages: 10 })).json();
+    const fetch = vi.fn(async (url: URL) => ({
+      status: url.pathname === '/sitemap.xml' ? 404 : 200,
+      body: url.pathname === '/robots.txt' ? 'User-agent: *\nAllow: /' : url.pathname === '/' ? '<a href="/about">About</a>' : '<h1>About</h1>',
+      contentType: url.pathname === '/robots.txt' ? 'text/plain' : 'text/html',
+    }));
+    const audit = vi.fn(async (url: string, strategy: 'mobile' | 'desktop') => {
+      if (url.endsWith('/about') && strategy === 'desktop') throw new WebsiteHealthProviderError('page_unavailable', 'This page could not be tested.');
+      return { lab: {
+        strategy, requestedUrl: url, finalUrl: url, fetchedAt: at, lighthouseVersion: '13',
+        scores: { performance: 75, accessibility: 92, 'best-practices': 100, seo: 90 },
+        metrics: [{ id: 'lcp', title: 'LCP', value: 2000, unit: 'ms' as const, displayValue: '2 s', rating: 'good' as const }],
+        issues: [{ id: 'fix', category: 'performance' as const, title: 'Reduce scripts', description: 'Load fewer scripts.', priority: 'high' as const, resources: [] }], warnings: [],
+      }, field: { status: 'unavailable' as const, metrics: [] }, raw: { privateProviderResponse: true } };
+    });
+    const engine = new WebsiteHealthEngine(f.runtime, { audit }, () => new Date(accepted.createdAt), new WebsiteHealthCrawler(fetch));
+    for (let i = 0; i < 12; i++) {
+      await engine.handle(f.project.id, accepted.id);
+      const saved = (await repository.getWebsiteHealthAudit(f.project.id, accepted.id))!;
+      if (!['queued', 'running'].includes(saved.status)) break;
+    }
+    const detail = await (await f.call(`/${accepted.id}`)).json();
+    expect(detail.audit).toMatchObject({ status: 'partial', site: { discoveryStatus: 'completed', pageCount: 2, completedPages: 1, partialPages: 1, failedPages: 0, limited: false } });
+    expect(audit).toHaveBeenCalledTimes(4);
+    const about = detail.audit.site.pages.find((page: { url: string }) => page.url.endsWith('/about'));
+    expect(about.results.mobile.lab.issues).toEqual([]);
+    expect(detail.audit).not.toHaveProperty('crawl');
+    expect(detail.audit).not.toHaveProperty('pageAttempts');
+    const history = await (await f.call()).json();
+    expect(history.items[0].site).toMatchObject({ pageCount: 2, pages: [] });
+    const pageResponse = await f.call(`/${accepted.id}/pages/${about.id}`, 'GET', undefined, null, 'health-viewer');
+    expect(pageResponse.status).toBe(200);
+    const page = (await pageResponse.json()).page;
+    expect(page.results.mobile.lab.issues[0].title).toBe('Reduce scripts');
+    expect(page.results.desktop).toMatchObject({ status: 'failed', error: { code: 'page_unavailable' } });
+    expect(page.results.mobile).not.toHaveProperty('raw');
+    expect((await f.call(`/${accepted.id}/pages/missing`)).status).toBe(404);
+    expect((await f.call(`/${accepted.id}/pages/${about.id}`, 'GET', undefined, null, 'health-outsider')).status).toBe(404);
+    // Missing artifacts remain a retryable load error, never a false empty report.
+    vi.spyOn(f.runtime.artifacts, 'get').mockResolvedValueOnce(null);
+    expect((await f.call(`/${accepted.id}/pages/${about.id}`)).status).toBe(503);
+    const other = await fixture();
+    expect((await other.call(`/${accepted.id}/pages/${about.id}`)).status).toBe(404);
   });
 });

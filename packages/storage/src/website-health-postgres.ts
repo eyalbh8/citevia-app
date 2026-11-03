@@ -9,7 +9,7 @@ export async function getWebsiteHealthAudit(db: SqlDatabase, projectId: string, 
 export async function listWebsiteHealthAudits(db: SqlDatabase, projectId: string, offset: number, limit: number) {
   const total = Number((await db.query('SELECT count(*)::int AS total FROM citevia_website_health_audits WHERE project_id=$1', [projectId])).rows[0].total);
   // History needs scores and timestamps only; large issue/resource lists stay in detail reads.
-  let summary = "data #- '{results,mobile,field}' #- '{results,desktop,field}'";
+  let summary = "data #- '{results,mobile,field}' #- '{results,desktop,field}' #- '{site,pages}' #- '{crawl}' #- '{pageAttempts}'";
   for (const device of ['mobile', 'desktop']) for (const field of ['metrics', 'issues', 'warnings'])
     summary = `jsonb_set(${summary}, '{results,${device},lab,${field}}', '[]'::jsonb)`;
   const { rows } = await db.query(`SELECT ${summary} AS data FROM citevia_website_health_audits WHERE project_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`, [projectId, limit, offset]);

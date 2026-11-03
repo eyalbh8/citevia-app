@@ -35,6 +35,17 @@ async function setup() {
     handle: () => engine.handle(project.id, job.id) };
 }
 
+async function siteSetup(discovering = false) {
+  const s = await setup();
+  const saved = (await s.get())!;
+  await s.runtime.repository.saveWebsiteHealthAudit({ ...saved, version: saved.version + 1, scope: 'site', site: {
+    maxPages: 10, discoveryStatus: discovering ? 'discovering' : 'completed', limited: false, warnings: [],
+    pageCount: discovering ? 0 : 2, completedPages: 0, partialPages: 0, failedPages: 0,
+    pages: discovering ? [] : ['one', 'two'].map(id => ({ id, url: `${url}${id}`, status: 'queued', results: { mobile: { status: 'queued' }, desktop: { status: 'queued' } } })),
+  } }, saved.version);
+  return s;
+}
+
 describe('Website Health worker', () => {
   it('routes and checkpoints one device per delivery, retaining independent mobile/desktop results', async () => {
     const s = await setup();
@@ -134,5 +145,85 @@ describe('Website Health worker', () => {
     await demo.handle();
     expect(demo.audit).not.toHaveBeenCalled();
     expect(await demo.get()).toMatchObject({ status: 'failed' });
+  });
+
+  it('recovers a page-specific checkpoint after interruption and tests every page/device exactly once', async () => {
+    const s = await siteSetup();
+    const save = s.runtime.repository.saveWebsiteHealthAudit.bind(s.runtime.repository);
+    vi.spyOn(s.runtime.repository, 'saveWebsiteHealthAudit').mockImplementationOnce(save).mockRejectedValueOnce(new Error('database interrupted'));
+    await expect(s.handle()).rejects.toThrow('database interrupted');
+    expect(s.audit).toHaveBeenCalledOnce();
+    expect((await s.get())!.site!.pages[0]).toMatchObject({ status: 'running', results: { mobile: { status: 'running' } } });
+    s.advance(6 * 60_000);
+    await s.engine.reconcile();
+    await s.handle();
+    expect(s.audit).toHaveBeenCalledOnce();
+    for (let i = 0; i < 4; i++) await s.handle();
+    expect(s.audit.mock.calls).toEqual([[url + 'one', 'mobile'], [url + 'one', 'desktop'], [url + 'two', 'mobile'], [url + 'two', 'desktop']]);
+    expect(await s.get()).toMatchObject({ status: 'completed', site: { pageCount: 2, completedPages: 2, partialPages: 0, failedPages: 0 } });
+    expect(await s.runtime.artifacts.get(`projects/${s.project.id}/website-health/${s.job.id}/one/mobile.json`)).toMatchObject({ raw: { device: 'mobile' } });
+  });
+
+  it('budgets retries per page/device and continues after a failed test', async () => {
+    const s = await siteSetup();
+    s.audit.mockImplementation(async (page, device) => {
+      if (page.endsWith('one') && device === 'mobile') throw new WebsiteHealthProviderError('rate_limited', 'Try again later.', true);
+      return report(device);
+    });
+    await s.handle();
+    await s.handle();
+    expect(s.audit).toHaveBeenCalledOnce();
+    s.advance(30000); await s.handle();
+    s.advance(60000); await s.handle();
+    for (let i = 0; i < 4; i++) await s.handle();
+    expect(s.audit.mock.calls.filter(([page, device]) => page.endsWith('one') && device === 'mobile')).toHaveLength(3);
+    expect(s.audit.mock.calls.filter(([page]) => page.endsWith('two'))).toHaveLength(2);
+    expect(await s.get()).toMatchObject({ status: 'partial', site: { completedPages: 1, partialPages: 1, failedPages: 0 } });
+  });
+
+  it('leases discovery, persists its frontier, and recovers interrupted discovery with a bounded attempt budget', async () => {
+    const s = await siteSetup(true);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const step = vi.fn(async (job: WebsiteHealthJob) => {
+      await gate;
+      return { site: { ...job.site!, pageCount: 0 }, crawl: { queue: [{ url, kind: 'page' as const }], seen: ['root'], robots: {}, requests: 1, sitemaps: 0 } };
+    });
+    const engine = new WebsiteHealthEngine(s.runtime, { audit: s.audit }, () => new Date(instant), { step });
+    const running = engine.handle(s.project.id, s.job.id);
+    await vi.waitFor(() => expect(step).toHaveBeenCalledOnce());
+    await engine.handle(s.project.id, s.job.id);
+    expect(step).toHaveBeenCalledOnce();
+    release(); await running;
+    expect(await s.get()).toMatchObject({ status: 'queued', crawlAttempts: 0, crawl: { seen: ['root'], requests: 1 } });
+    expect(s.audit).not.toHaveBeenCalled();
+
+    const interrupted = await siteSetup(true);
+    let clock = Date.parse(instant);
+    const failedStep = vi.fn(async () => { throw new Error('interrupted'); });
+    const recovery = new WebsiteHealthEngine(interrupted.runtime, { audit: interrupted.audit }, () => new Date(clock), { step: failedStep });
+    for (let i = 0; i < 3; i++) {
+      await expect(recovery.handle(interrupted.project.id, interrupted.job.id)).rejects.toThrow('interrupted');
+      clock += 6 * 60_000;
+    }
+    await recovery.handle(interrupted.project.id, interrupted.job.id);
+    expect(failedStep).toHaveBeenCalledTimes(3);
+    expect(await interrupted.get()).toMatchObject({ status: 'failed', site: { discoveryStatus: 'failed' } });
+  });
+
+  it('retains completed pages when a site scan reaches its deadline and marks limited coverage partial', async () => {
+    const s = await siteSetup();
+    await s.handle();
+    await s.handle();
+    s.advance(24 * 60 * 60_000);
+    await s.handle();
+    expect(await s.get()).toMatchObject({ status: 'partial', site: { completedPages: 1, failedPages: 1 } });
+    expect((await s.get())!.site!.pages[1].results.mobile.error?.code).toBe('audit_deadline');
+
+    const limited = await siteSetup();
+    const saved = (await limited.get())!;
+    await limited.runtime.repository.saveWebsiteHealthAudit({ ...saved, version: saved.version + 1, site: { ...saved.site!, limited: true } }, saved.version);
+    for (let i = 0; i < 4; i++) await limited.handle();
+    expect(await limited.get()).toMatchObject({ status: 'partial', site: { completedPages: 2, limited: true } });
   });
 });

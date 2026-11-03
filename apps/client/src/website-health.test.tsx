@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Project, WebsiteHealthAudit, WebsiteHealthDevice, WebsiteHealthPage } from '@citevia/core';
+import type { Project, WebsiteHealthAudit, WebsiteHealthDevice, WebsiteHealthPage, WebsiteHealthSitePage } from '@citevia/core';
 
 const mocks = vi.hoisted(() => ({ useApi: vi.fn(), idempotentPost: vi.fn(), invalidateApiQueries: vi.fn() }));
 vi.mock('./api', () => ({ ...mocks, ApiError: class extends Error {} }));
@@ -33,12 +33,14 @@ let root: Root, container: HTMLDivElement, page: WebsiteHealthPage;
 let failures: Record<string, Error>;
 let extras: WebsiteHealthAudit[];
 let detailPending: boolean;
+let pageReports: Record<string, WebsiteHealthSitePage>;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   page = { items: [report()], total: 1, nextCursor: null, auditingAvailable: true, cruxAvailable: true, defaultUrl: 'https://example.com/' };
   failures = {};
   extras = [];
   detailPending = false;
+  pageReports = {};
   mocks.useApi.mockReset();
   mocks.idempotentPost.mockReset();
   mocks.invalidateApiQueries.mockReset();
@@ -46,6 +48,7 @@ beforeEach(() => {
     if (!requested) return { data: undefined, loading: false };
     if (requested.includes('?cursor=')) return { data: page, loading: false, error: failures[requested] };
     if (detailPending) return { data: undefined, loading: true, error: failures[requested] };
+    if (requested.includes('/pages/')) return { data: pageReports[requested] ? { page: pageReports[requested] } : undefined, loading: false, error: failures[requested] };
     const audit = [...extras, ...page.items].find(item => requested.endsWith(`/${item.id}`));
     return { data: audit ? { audit } : undefined, loading: false, error: failures[requested] };
   });
@@ -66,6 +69,15 @@ function button(label: string) {
   return [...container.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === label)!;
 }
 function score(label: string) { return container.querySelector(`[aria-label="${label} score"]`)!; }
+function siteReport(): WebsiteHealthAudit {
+  const audit = report('site');
+  const first = report('home'), second = report('about', audit.createdAt, 'https://example.com/about');
+  second.results.mobile.lab!.scores.performance = 42;
+  return { ...audit, scope: 'site', results: { mobile: { status: 'completed' }, desktop: { status: 'completed' } }, site: {
+    maxPages: 100, discoveryStatus: 'completed', limited: false, warnings: [], pageCount: 2, completedPages: 2, partialPages: 0, failedPages: 0,
+    pages: [first, second].map(item => ({ id: item.id, url: item.url, status: item.status, results: item.results })),
+  } };
+}
 
 describe('Website Health reports', () => {
   it('renders initial history loading before any report has been selected', async () => {
@@ -269,6 +281,92 @@ describe('Website Health reports', () => {
     await act(async () => button('Copy for developer').click());
     expect(container.querySelector<HTMLTextAreaElement>('#health-checklist-copy')?.value).toContain('Developer checklist');
     expect(container.querySelector<HTMLTextAreaElement>('#health-checklist-copy')?.value).toContain('https://example.com/main.js');
+  });
+
+  it('offers an entire website scan with an explicit configurable page limit', async () => {
+    await render();
+    await act(async () => container.querySelector<HTMLInputElement>('input[name="health-scope"][value="site"]')!.click());
+    expect(button('Scan website').disabled).toBe(false);
+    expect(container.textContent).toContain('Large websites can take hours');
+    const limit = container.querySelector<HTMLInputElement>('#health-max-pages')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(limit, '25');
+      limit.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const queued = siteReport();
+    queued.status = 'queued';
+    queued.site!.discoveryStatus = 'discovering';
+    extras.push(queued);
+    mocks.idempotentPost.mockResolvedValue({ audit: queued });
+    await act(async () => container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    expect(mocks.idempotentPost).toHaveBeenCalledWith(`${path}/website-health/audits`, { url: 'https://example.com/', scope: 'site', maxPages: 25 });
+    expect(container.textContent).toContain('Discovering website pages');
+    expect(button('Audit in progress').disabled).toBe(true);
+    expect(container.querySelector<HTMLInputElement>('#health-max-pages')!.matches(':disabled')).toBe(true);
+  });
+
+  it('shows site coverage and device averages, and opens full page recommendations without mixing reports', async () => {
+    const site = siteReport();
+    page.items = [site, report()];
+    await render();
+    expect(container.textContent).toContain('2 pages discovered');
+    expect(score('Average Performance').textContent).toContain('52');
+    expect(container.querySelector('.health-field')).toBeNull();
+    await act(async () => button('Desktop').click());
+    expect(score('Average Performance').textContent).toContain('96');
+    const selected = site.site!.pages[1];
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('.health-page-row')[1].click());
+    expect(container.textContent).toContain('Loading this audit’s measurements');
+    expect(container.textContent).not.toContain('No actionable issues');
+    pageReports[`${path}/website-health/audits/site/pages/about`] = selected;
+    await render();
+    expect(container.querySelector('.health-selected-page')!.textContent).toContain(selected.url);
+    expect(container.textContent).toContain('Reduce render-blocking resources');
+    await act(async () => button('Copy for developer').click());
+    expect(container.querySelector<HTMLTextAreaElement>('#health-checklist-copy')!.value).toContain(selected.url);
+    await act(async () => button('Site overview').click());
+    expect(container.querySelector('.health-selected-page')).toBeNull();
+    expect(score('Average Performance')).toBeTruthy();
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('.health-page-row')[1].click());
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('.health-history-item')[1].click());
+    expect(container.querySelector('.health-site-overview')).toBeNull();
+    expect(container.querySelector('#health-checklist-copy')).toBeNull();
+    expect(score('Performance')).toBeTruthy();
+  });
+
+  it('shows incomplete coverage and retryable page detail failures without empty recommendations', async () => {
+    const site = siteReport();
+    site.status = 'partial';
+    site.site!.limited = true;
+    site.site!.warnings = ['Discovery reached the page limit. Additional pages may exist.'];
+    page.items = [site];
+    await render();
+    expect(container.textContent).toContain('Additional pages may exist');
+    const detailPath = `${path}/website-health/audits/site/pages/home`;
+    failures[detailPath] = new Error('This page report could not be loaded.');
+    await act(async () => container.querySelector<HTMLButtonElement>('.health-page-row')!.click());
+    expect(container.textContent).toContain('Report details could not be loaded');
+    expect(container.textContent).not.toContain('No actionable issues');
+    await act(async () => button('Try again').click());
+    expect(mocks.invalidateApiQueries).toHaveBeenCalledWith(`${path}/website-health`);
+    mocks.idempotentPost.mockResolvedValue({ audit: site });
+    await act(async () => button('Rescan website').click());
+    expect(mocks.idempotentPost).toHaveBeenCalledWith(`${path}/website-health/audits`, { url: site.url, scope: 'site', maxPages: 100 });
+  });
+
+  it('continues refreshing a completed site when selected page details are still stale', async () => {
+    const site = siteReport();
+    page.items = [site];
+    const stale = { ...site.site!.pages[0], results: { mobile: { status: 'queued' as const }, desktop: { status: 'queued' as const } } };
+    const detailPath = `${path}/website-health/audits/site/pages/home`;
+    pageReports[detailPath] = stale;
+    await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('.health-page-row')!.click());
+    expect(mocks.invalidateApiQueries).toHaveBeenCalledWith(detailPath);
+    expect(container.textContent).toContain('Loading this audit’s measurements');
+    pageReports[detailPath] = site.site!.pages[0];
+    await render();
+    expect(container.textContent).toContain('Reduce render-blocking resources');
   });
 });
 

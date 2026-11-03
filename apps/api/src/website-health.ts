@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import { getDomain } from 'tldts';
 import { z } from 'zod';
-import { identifier, publicWebsiteHealthAudit, type Project, type WebsiteHealthJob, type WebsiteHealthPage } from '@citevia/core';
+import { identifier, publicWebsiteHealthAudit, websiteHealthArtifactKey, WEBSITE_HEALTH_DEFAULT_PAGES, WEBSITE_HEALTH_MAX_PAGES, type Project, type WebsiteHealthDeviceResult, type WebsiteHealthJob, type WebsiteHealthPage } from '@citevia/core';
 import { AccessError, type Runtime } from '@citevia/storage';
 
 const fail = (status: number, code: string, message: string): never => { throw new AccessError(status, code, message); };
@@ -23,7 +23,9 @@ const publicUrl = z.string().trim().max(2048).url().refine(raw => {
   url.hostname = url.hostname.replace(/\.$/, '');
   return url.toString();
 });
-const auditInput = z.object({ url: publicUrl }).strict();
+const auditInput = z.object({ url: publicUrl, scope: z.enum(['page', 'site']).optional(), maxPages: z.number().int().min(1).max(WEBSITE_HEALTH_MAX_PAGES).optional() }).strict()
+  .refine(input => input.scope === 'site' || input.maxPages === undefined, 'A page limit is only supported for an entire website scan.')
+  .transform(input => input.scope === 'site' ? { ...input, url: new URL(input.url).origin + '/', maxPages: input.maxPages ?? WEBSITE_HEALTH_DEFAULT_PAGES } : input);
 function domains(project: Project) { return [...(project.brandbook?.domains || []), ...project.brand.domains]; }
 function hostname(raw: string): string | null {
   try { return new URL(raw.includes('://') ? raw : `https://${raw}`).hostname.toLowerCase().replace(/\.$/, '').replace(/^www\./, ''); }
@@ -51,7 +53,7 @@ function summaryAudit(job: WebsiteHealthJob) {
     const { field: _field, ...result } = audit.results[device];
     return [device, { ...result, ...(result.lab ? { lab: { ...result.lab, metrics: [], issues: [], warnings: [] } } : {}) }];
   })) as WebsiteHealthJob['results'];
-  return { ...audit, summaryOnly: true, results };
+  return { ...audit, ...(audit.site ? { site: { ...audit.site, pages: [] } } : {}), summaryOnly: true, results };
 }
 
 export async function websiteHealthRoute(
@@ -59,7 +61,7 @@ export async function websiteHealthRoute(
   availability: { auditingAvailable: boolean; cruxAvailable: boolean },
   body: (request: Request) => Promise<unknown>,
 ): Promise<Response | null> {
-  const collection = tail === 'website-health/audits', match = tail.match(/^website-health\/audits\/([^/]+)$/);
+  const collection = tail === 'website-health/audits', match = tail.match(/^website-health\/audits\/([^/]+)(?:\/pages\/([^/]+))?$/);
   if (!collection && !match) return null;
   const method = request.method;
   if (!['GET', 'HEAD'].includes(method) && (project.demo || project.role !== 'owner'))
@@ -101,6 +103,11 @@ export async function websiteHealthRoute(
     const at = now.toISOString();
     const audit: WebsiteHealthJob = {
       id, projectId: project.id, createdBy: userId, fingerprint, url: input.url,
+      ...(input.scope ? { scope: input.scope } : {}),
+      ...(input.scope === 'site' ? { site: {
+        maxPages: input.maxPages!, discoveryStatus: 'discovering' as const, limited: false, warnings: [],
+        pageCount: 0, completedPages: 0, partialPages: 0, failedPages: 0, pages: [],
+      } } : {}),
       status: 'queued', createdAt: at, updatedAt: at, version: 1, attempts: 0,
       results: { mobile: { status: 'queued' }, desktop: { status: 'queued' } },
     };
@@ -112,6 +119,20 @@ export async function websiteHealthRoute(
   if (match && method === 'GET') {
     const audit = await repository.getWebsiteHealthAudit(project.id, identifier.parse(decodeURIComponent(match[1])));
     if (!audit) return fail(404, 'WEBSITE_HEALTH_NOT_FOUND', 'Website audit not found.');
+    if (match[2]) {
+      const pageId = identifier.parse(decodeURIComponent(match[2]));
+      const page = audit.site?.pages.find(item => item.id === pageId);
+      if (!page) return fail(404, 'WEBSITE_HEALTH_PAGE_NOT_FOUND', 'Page audit not found.');
+      const results = { ...page.results };
+      // The page must belong to this authorized project and audit before any artifact is read.
+      for (const device of ['mobile', 'desktop'] as const) {
+        if (results[device].status !== 'completed') continue;
+        const saved = await runtime.artifacts.get<Pick<WebsiteHealthDeviceResult, 'lab' | 'field'>>(websiteHealthArtifactKey(project.id, audit.id, device, page.id));
+        if (!saved?.lab) return fail(503, 'WEBSITE_HEALTH_REPORT_UNAVAILABLE', 'This page report could not be loaded. Please try again.');
+        results[device] = { status: 'completed', lab: saved.lab, field: saved.field };
+      }
+      return json({ page: { ...page, results } });
+    }
     return json({ audit: publicWebsiteHealthAudit(audit) });
   }
   return null;
