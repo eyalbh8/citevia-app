@@ -31,6 +31,8 @@ describe('social automation schedule validation', () => {
     expect(defaultSocialAutomationSettings().enabled).toBe(false);
     const settings = { enabled: true, timezone: 'UTC', slots: [{ id: 'mon', dayOfWeek: 1, time: '09:00' }] };
     expect(socialAutomationInputSchema.parse(settings).createBlogDrafts).toBe(true);
+    expect(socialAutomationInputSchema.parse(settings).imageSource).toBe('openai');
+    expect(socialAutomationInputSchema.safeParse({ ...settings, imageSource: 'random' }).success).toBe(false);
     expect(socialAutomationInputSchema.parse(settings).shareFacebookInstagramContent).toBe(false);
     expect(defaultSocialAutomationSettings().shareFacebookInstagramContent).toBe(false);
     expect(socialAutomationInputSchema.safeParse({ ...settings, shareFacebookInstagramContent: 'true' }).success).toBe(false);
@@ -148,6 +150,19 @@ describe.each(['memory', 'postgres'] as const)('social automation storage (%s)',
     expect(await repository.reserveSocialOccurrence({ ...input(account()), projectId: project.id })).toEqual({ status: 'stale' });
     const enabled = await save(account({ enabled: false }));
     expect((await repository.reserveSocialOccurrence(input(enabled))).status).toBe('created');
+  });
+  it('freezes the image source at reservation and defaults legacy publications to OpenAI', async () => {
+    const project = account(); project.socialAutomation!.imageSource = 'unsplash'; await save(project);
+    const reserved = await repository.reserveSocialOccurrence(input(project));
+    if (reserved.status !== 'created') throw new Error('Expected occurrence');
+    expect(reserved.occurrence.context.imageSource).toBe('unsplash');
+    const next = { ...project, version: project.version + 1, socialAutomation: { ...project.socialAutomation!, imageSource: 'openai' as const } };
+    await repository.saveProject(next, project.version);
+    expect((await repository.getSocialPublication(project.id, reserved.publications[0].id))?.context.imageSource).toBe('unsplash');
+    const legacy = account(); delete legacy.socialAutomation!.imageSource; await save(legacy);
+    const old = await repository.reserveSocialOccurrence(input(legacy));
+    if (old.status !== 'created') throw new Error('Expected occurrence');
+    expect(old.publications[0].context.imageSource).toBe('openai');
   });
   it('atomically reserves all channels plus one blog draft once under concurrent delivery', async () => {
     const project = account(); project.socialAutomation!.createBlogDrafts = true; await save(project);

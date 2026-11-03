@@ -4,6 +4,7 @@ import { request, useApi } from './api';
 import { ErrorNotice, safeUrl } from './components';
 import { Skeleton } from './Loading';
 import type { SocialPublicationPreview } from './SocialAutomationSettings';
+import SocialPhotoCredit from './SocialPhotoCredit';
 
 export function socialLocalDateTime(value: string, timezone: string): string {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
@@ -43,9 +44,9 @@ function refreshedMedia(current: ReviewMedia, incoming: ReviewMedia): ReviewMedi
 }
 const mediaPreview = (media: NonNullable<SocialPublicationPreview['media']>[number], index: number) => {
   const url = safeUrl(media.url);
-  return !url ? null : media.type === 'video'
+  return !url ? null : <>{media.type === 'video'
     ? <video src={url} controls preload="metadata" aria-label="Post video preview" />
-    : <img src={url} alt={`Post image ${index + 1}`} />;
+    : <img src={url} alt={`Post image ${index + 1}`} />}<SocialPhotoCredit photos={media.attribution} /></>;
 };
 
 export default function SocialPublicationReview({ post, path, owner, enabled, timezone, onSaved, notify }: {

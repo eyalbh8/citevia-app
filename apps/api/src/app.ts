@@ -353,6 +353,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         publisher: socialPublisherConfigured() ? createSocialPublisher : undefined,
         generationAvailable: options.providerAvailability?.openai ?? options.providerConfigured ?? Boolean(process.env.OPENAI_API_KEY?.trim() || process.env.OPENAI_SECRET_ARN?.trim()),
         blogAvailable: agentAvailable,
+        unsplashAvailable: options.agentImagesConfigured ?? Boolean(process.env.UNSPLASH_ACCESS_KEY?.trim() || process.env.UNSPLASH_SECRET_ARN?.trim()),
         videoAvailable: process.env.SOCIAL_VIDEO_CONFIGURED === 'true',
         frontendOrigin: process.env.ALLOWED_ORIGIN || 'http://127.0.0.1:5173',
         ...options.social,

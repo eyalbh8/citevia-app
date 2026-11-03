@@ -85,9 +85,38 @@ describe('social automation settings', () => {
     expect(mocks.request).toHaveBeenCalledOnce();
     const [endpoint, options] = mocks.request.mock.calls[0];
     expect(endpoint).toBe(`${path}/social/settings`); expect(options.method).toBe('PATCH');
-    expect(JSON.parse(options.body)).toEqual({ version: 3, settings: { enabled: true, createBlogDrafts: true, shareFacebookInstagramContent: false, generationCadence: 'daily', generationTime: '08:00', timezone: 'UTC',
+    expect(JSON.parse(options.body)).toEqual({ version: 3, settings: { enabled: true, createBlogDrafts: true, imageSource: 'openai', shareFacebookInstagramContent: false, generationCadence: 'daily', generationTime: '08:00', timezone: 'UTC',
       slots: [{ id: expect.stringMatching(/^slot_/), dayOfWeek: 1, time: '09:00' }] } });
     expect(mocks.notify).toHaveBeenCalledWith('Automation schedule saved.');
+  });
+  it('defaults legacy projects to OpenAI and saves the Unsplash choice explicitly', async () => {
+    data.settings.imageSource = undefined;
+    data.unsplashAvailable = true;
+    await render();
+    expect(container.querySelector<HTMLInputElement>('input[value="openai"]')!.checked).toBe(true);
+    await click(container.querySelector<HTMLInputElement>('input[value="unsplash"]')!);
+    expect(mocks.request).not.toHaveBeenCalled();
+    await click(button('Save automation settings'));
+    expect(JSON.parse(mocks.request.mock.calls[0][1].body).settings.imageSource).toBe('unsplash');
+  });
+  it('shows Unsplash photographer credit and source links next to reviewed photos', async () => {
+    const prepared = post('facebook');
+    const photo = { url: 'https://images.unsplash.com/photo-test', alt: 'A relevant photo', photoId: 'photo-test', photographer: 'Photo Author',
+      photographerUrl: 'https://unsplash.com/@author', photoUrl: 'https://unsplash.com/photos/photo-test', downloadLocation: 'https://api.unsplash.com/photos/photo-test/download' };
+    prepared.media = [{ type: 'image', url: photo.url, mimeType: 'image/jpeg', attribution: [photo] }];
+    posts = [prepared];
+    await render(); await click(container.querySelector<HTMLButtonElement>('.social-history-row')!);
+    const credit = container.querySelector('.social-photo-credit')!;
+    expect(credit.textContent).toContain('Photo by Photo Author on Unsplash');
+    expect([...credit.querySelectorAll('a')].map(link => link.href)).toEqual([photo.photographerUrl, photo.photoUrl]);
+  });
+  it('blocks enabling Unsplash for connected accounts until configured', async () => {
+    data.connections = [{ id: 'fb', channel: 'facebook', username: 'Page', active: true, requiresReconnect: false }];
+    await render();
+    await click(container.querySelector<HTMLInputElement>('input[value="unsplash"]')!);
+    await click(toggle()); await click(button('Add publishing time')); await click(button('Save automation settings'));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Unsplash images are not configured');
+    expect(mocks.request).not.toHaveBeenCalled();
   });
   it('keeps shared Facebook/Instagram content opt-in and saves the toggle explicitly', async () => {
     data.settings.shareFacebookInstagramContent = undefined;

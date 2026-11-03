@@ -17,14 +17,14 @@ const copy = (channel: SocialChannel): SocialGeneratedCopy => ({
   format: channel === 'instagram' ? 'carousel' : channel === 'tiktok' ? 'video' : 'image',
 });
 
-async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDrafts = false, usePrivateMedia = true, shareFacebookInstagramContent = false) {
+async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDrafts = false, usePrivateMedia = true, shareFacebookInstagramContent = false, imageSource?: 'openai' | 'unsplash') {
   let clock = new Date(initialTime);
   const repository = new MemoryRepository(), artifacts = new MemoryArtifacts(), queue = new MemoryQueue();
   const destinationOptions: NonNullable<Project['socialDestinationOptions']> = {};
   if (channels.includes('pinterest')) destinationOptions['pinterest-account'] = { boardId: 'board-one' };
   if (channels.includes('reddit')) destinationOptions['reddit-account'] = { subreddit: 'analytics', flairId: 'flair-one' };
   const project: Project = { ...newProject({ id: 'social-project', prompts: [prompt], now: clock }), socialProfileId: 'profile-one',
-    socialAutomation: { enabled: true, createBlogDrafts, shareFacebookInstagramContent, revision: 1, timezone: 'UTC', slots: [{ id: 'monday', dayOfWeek: 1, time: '09:00' }], effectiveFrom: '2026-11-01T00:00:00.000Z', scheduleStatus: 'synced' },
+    socialAutomation: { enabled: true, createBlogDrafts, shareFacebookInstagramContent, ...(imageSource ? { imageSource } : {}), revision: 1, timezone: 'UTC', slots: [{ id: 'monday', dayOfWeek: 1, time: '09:00' }], effectiveFrom: '2026-11-01T00:00:00.000Z', scheduleStatus: 'synced' },
     socialDestinationOptions: destinationOptions };
   await repository.saveProject(project, null);
   const destinations: SocialDestination[] = channels.map(channel => ({ id: `${channel}-account`, channel, username: `acme-${channel}`, profileId: 'profile-one', active: true, requiresReconnect: false }));
@@ -99,6 +99,50 @@ async function fixture(channels: SocialChannel[] = ['facebook'], createBlogDraft
   const finish = (id = publications[0].id) => runTo(post => !ACTIVE_SOCIAL_PUBLICATION_STATUSES.includes(post.status), id);
   return { runtime, project, publications, destinations, publisher, generator, publisherFactory, generatorFactory, worker, message, read, update, updateProject, advanceClock, runTo, finish, approve, uploadStore, inspectVideo };
 }
+
+describe('project image source in social automation', () => {
+  const photo = (index: number) => ({ url: `https://images.unsplash.com/photo-${index}?ixid=retained`, alt: 'A relevant stock photograph', photoId: `photo-${index}`,
+    photographer: 'Photo Author', photographerUrl: 'https://unsplash.com/@author', photoUrl: `https://unsplash.com/photos/photo-${index}`, downloadLocation: `https://api.unsplash.com/photos/photo-${index}/download` });
+  it('keeps the frozen source, distinct carousel photos, attribution and hotlinked media through review and publishing', async () => {
+    const f = await fixture(['instagram'], false, true, false, 'unsplash');
+    f.generator.generateImage.mockImplementation(async (_project, _prompt, _copy, _destination, _style, index) => ({ ...image, stockPhoto: photo(index) }));
+    await f.updateProject({ socialAutomation: { ...f.project.socialAutomation!, imageSource: 'openai' } });
+    const prepared = await f.finish();
+    expect(prepared.status).toBe('review_required');
+    expect(prepared.media?.map(asset => asset.url)).toEqual([0, 1, 2].map(index => photo(index).url));
+    expect(prepared.media?.[0].attribution).toEqual([photo(0)]);
+    expect(f.generator.generateCopy.mock.calls[0][2].imageSource).toBe('unsplash');
+    expect(f.generator.generateImage.mock.calls.map(call => call[7])).toEqual([[], ['photo-0'], ['photo-0', 'photo-1']]);
+    expect(f.generator.checkImage.mock.calls.every(call => call[3].imageSource === 'unsplash')).toBe(true);
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+    expect(f.uploadStore.put).not.toHaveBeenCalled();
+    await f.approve();
+    const published = await f.finish();
+    expect(published.status).toBe('published');
+    expect(f.publisher.publish.mock.calls[0][2]).toMatchObject({ media: [0, 1, 2].map(index => ({ type: 'image', url: photo(index).url })), platformSpecificData: { isAiGenerated: false } });
+    expect(f.publisher.uploadMedia).not.toHaveBeenCalled();
+    expect(f.generator.generateImage).toHaveBeenCalledTimes(3);
+  });
+  it('shares the saved Unsplash photo and attribution across Facebook and Instagram', async () => {
+    const f = await fixture(['facebook', 'instagram'], false, true, true, 'unsplash');
+    f.generator.generateImage.mockResolvedValue({ ...image, stockPhoto: photo(0) });
+    const source = f.publications.find(post => post.sharedGeneration?.sourcePublicationId === post.id)!;
+    const follower = f.publications.find(post => post.id !== source.id)!;
+    await f.finish(source.id); await f.finish(follower.id);
+    expect((await f.read(source.id)).media).toEqual((await f.read(follower.id)).media);
+    expect((await f.read(follower.id)).media?.[0].attribution).toEqual([photo(0)]);
+    expect(f.generator.generateImage).toHaveBeenCalledOnce();
+    expect(f.generator.checkImage).toHaveBeenCalledOnce();
+  });
+  it('stops an unrelated stock photo before upload, review approval or publishing', async () => {
+    const f = await fixture(['facebook'], false, true, false, 'unsplash');
+    f.generator.generateImage.mockResolvedValue({ ...image, stockPhoto: photo(0) });
+    f.generator.checkImage.mockRejectedValue(new ProviderError('social_media_review_failed', 'Photo is unrelated to this post.', false));
+    expect((await f.finish()).status).toBe('failed');
+    expect(f.uploadStore.put).not.toHaveBeenCalled(); expect(f.publisher.publish).not.toHaveBeenCalled();
+    expect(f.generator.generateImage).toHaveBeenCalledOnce();
+  });
+});
 
 describe('opt-in shared Facebook and Instagram generation', () => {
   const members = (f: Awaited<ReturnType<typeof fixture>>) => {

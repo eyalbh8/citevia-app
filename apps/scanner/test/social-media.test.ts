@@ -2,6 +2,7 @@ import { MemoryCallLedger, type ProviderAdmissionStore } from '@citevia/storage'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { project } from './fixtures.js';
 import { OpenAISocialMediaGenerator, jpegDimensions, socialReferenceUrl, type SocialBrandStyle, type SocialGeneratedCopy, type SocialMediaDestination } from '../src/social-media.js';
+import { UnsplashImages, type AgentImages } from '../src/agent-images.js';
 
 const destination: SocialMediaDestination = { id: 'connected-account', channel: 'instagram' };
 const styleValue = { summary: 'Clean educational cards', palette: ['#123456', '#FFFFFF'], typography: 'Large sans serif', composition: 'Wide margins with a small visual', voice: 'Clear and practical' };
@@ -25,6 +26,74 @@ function transport(value: unknown) {
   return { fetcher, generator: new OpenAISocialMediaGenerator({ apiKey: 'test-only', fetch: fetcher }) };
 }
 function body(fetcher: ReturnType<typeof vi.fn<typeof fetch>>) { return JSON.parse(fetcher.mock.calls[0][1]?.body as string); }
+
+const stockPhoto = { url: 'https://images.unsplash.com/photo-report?ixid=keep-me', alt: 'A team reviewing a report', photoId: 'report',
+  photographer: 'Photo Author', photographerUrl: 'https://unsplash.com/@author?utm_source=citevia&utm_medium=referral',
+  photoUrl: 'https://unsplash.com/photos/report?utm_source=citevia&utm_medium=referral', downloadLocation: 'https://api.unsplash.com/photos/report/download?ixid=keep-me' };
+
+describe('Unsplash social images', () => {
+  const stockDestination = { ...destination, imageSource: 'unsplash' as const };
+  const stockCopy = { ...copy, slides: slides.map(slide => ({ ...slide, imagePrompt: 'team reviewing analytics report' })) };
+  it('plans concrete topic-related photo queries in the existing copy call', async () => {
+    const { generator, fetcher } = transport({ ...copyValue, slides: stockCopy.slides });
+    await generator.generateCopy(project, project.prompts[0], stockDestination, style);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(body(fetcher).instructions).toContain('directly related to the exact saved question');
+    expect(body(fetcher).instructions).toContain('2–6 concrete visual keywords');
+  });
+  it('uses relevant search, excludes prior carousel photos, preserves CDN tracking, and tracks the selection without image generation', async () => {
+    const photo = (id: string) => ({ id, urls: { regular: `https://images.unsplash.com/photo-${id}?ixid=keep-me` },
+      user: { name: 'Photo Author', username: 'author' }, links: { html: `https://unsplash.com/photos/${id}`, download_location: `https://api.unsplash.com/photos/${id}/download?ixid=keep-me` } });
+    const bytes = jpeg(1024, 1280);
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ results: [photo('already-used'), photo('report')], total_pages: 1 }))
+      .mockResolvedValueOnce(new Response(bytes, { headers: { 'Content-Type': 'image/jpeg' } }))
+      .mockResolvedValueOnce(Response.json({ url: 'https://images.unsplash.com/photo-report' }));
+    const generator = new OpenAISocialMediaGenerator({ apiKey: 'test-only', fetch: fetcher, photos: async () => new UnsplashImages('photo-key', fetcher) });
+    const result = await generator.generateImage(project, project.prompts[0], stockCopy, stockDestination, style, 1, 3, ['already-used']);
+    const search = new URL(String(fetcher.mock.calls[0][0]));
+    expect(search.pathname).toBe('/search/photos');
+    expect(Object.fromEntries(search.searchParams)).toMatchObject({ query: stockCopy.slides[1].imagePrompt, orientation: 'portrait', content_filter: 'high', order_by: 'relevant' });
+    const cdn = new URL(result.stockPhoto!.url);
+    expect(cdn.hostname).toBe('images.unsplash.com');
+    expect(Object.fromEntries(cdn.searchParams)).toMatchObject({ ixid: 'keep-me', w: '1024', h: '1280', fm: 'jpg', fit: 'crop' });
+    expect(result.stockPhoto).toMatchObject({ photoId: 'report', photographer: 'Photo Author' });
+    expect(Buffer.from(result.bytes)).toEqual(bytes);
+    expect(fetcher.mock.calls[2][0]).toBe(stockPhoto.downloadLocation);
+    expect(fetcher.mock.calls.every(([url]) => !String(url).includes('api.openai.com'))).toBe(true);
+  });
+  it('fails when no related photo is available without silently generating an image', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ results: [], total_pages: 0 }));
+    const generator = new OpenAISocialMediaGenerator({ apiKey: 'test-only', fetch: fetcher, photos: async () => new UnsplashImages('photo-key', fetcher) });
+    await expect(generator.generateImage(project, project.prompts[0], stockCopy, stockDestination, style, 0, 3)).rejects.toMatchObject({ code: 'unsplash_no_photo' });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it.each(['https://example.com/private', 'https://images.unsplash.com:8443/photo', 'https://user:pass@images.unsplash.com/photo'])('rejects unexpected photo origins before downloading %s', async url => {
+    const photos: AgentImages = { select: vi.fn(async () => ({ ...stockPhoto, url })), track: vi.fn() };
+    const fetcher = vi.fn<typeof fetch>();
+    const generator = new OpenAISocialMediaGenerator({ apiKey: 'test-only', fetch: fetcher, photos: async () => photos });
+    await expect(generator.generateImage(project, project.prompts[0], stockCopy, stockDestination, style, 0, 3)).rejects.toMatchObject({ code: 'social_photo_invalid' });
+    expect(fetcher).not.toHaveBeenCalled(); expect(photos.track).not.toHaveBeenCalled();
+  });
+  it.each(['format', 'dimensions', 'oversize', 'redirect'])('rejects invalid photo %s responses', async kind => {
+    const photos: AgentImages = { select: vi.fn(async () => stockPhoto), track: vi.fn() };
+    const response = kind === 'redirect' ? Response.redirect('https://example.com/untrusted') : new Response(jpeg(kind === 'dimensions' ? 1 : 1024, 1280), {
+      headers: { 'Content-Type': kind === 'format' ? 'text/html' : 'image/jpeg', ...(kind === 'oversize' ? { 'Content-Length': String(16 * 1024 * 1024) } : {}) },
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response);
+    const generator = new OpenAISocialMediaGenerator({ apiKey: 'test-only', fetch: fetcher, photos: async () => photos });
+    await expect(generator.generateImage(project, project.prompts[0], stockCopy, stockDestination, style, 0, 3)).rejects.toMatchObject({ code: expect.stringMatching(/^social_photo_/) });
+    expect(photos.track).not.toHaveBeenCalled();
+  });
+  it('rejects a photo that is unrelated to the exact post in the separate visual review', async () => {
+    const { generator, fetcher } = transport({ businessAppropriate: true, answersPrompt: false, matchesBrandStyle: true, textAccurateAndReadable: true, noUnsupportedClaims: true, noVisualDefects: true, reasons: ['Unrelated subject.'] });
+    await expect(generator.checkImage(project, project.prompts[0], stockCopy, stockDestination, style,
+      { bytes: jpeg(1024, 1280), width: 1024, height: 1280, mime: 'image/jpeg', requestId: null, stockPhoto }, 0)).rejects.toMatchObject({ code: 'social_media_review_failed', message: expect.stringContaining('relevance') });
+    const review = JSON.parse(body(fetcher).input[0].content[0].text);
+    expect(review).toMatchObject({ question: project.prompts[0].text, copy: copy.body });
+    expect(body(fetcher).instructions).toContain('No slide text or brand typography is required');
+  });
+});
 
 describe('social media generation', () => {
   it('uses true image inputs for observed style and derives provenance only from actual connected posts', async () => {

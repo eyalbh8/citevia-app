@@ -31,7 +31,7 @@ One EventBridge Scheduler cron prepares daily, weekly or monthly batches indepen
 All paths are under `/v1/projects/:projectId`; existing project memberships govern access. Viewers can read history; owners manage connections, schedules and approvals.
 
 - `GET /social`: settings, configuration readiness and public connection metadata.
-- `PATCH /social/settings`: `{version, settings:{enabled, createBlogDrafts, shareFacebookInstagramContent, generationCadence, generationTime, timezone, slots}}`. The sharing flag is boolean; omitting it from an older client preserves the saved value, or defaults to false when unset.
+- `PATCH /social/settings`: `{version, settings:{enabled, createBlogDrafts, imageSource, shareFacebookInstagramContent, generationCadence, generationTime, timezone, slots}}`. `imageSource` is `openai` (default) or `unsplash`; Unsplash requires server credentials for connected social accounts. The sharing flag is boolean. Older clients omitting either field preserve its saved value.
 - `POST /social/generate`: owner-requested preparation of the remaining current period.
 - `POST /social/connect`: `{channel}`; returns the hosted OAuth URL.
 - `GET /social/accounts/:id/boards`: owned Pinterest boards.

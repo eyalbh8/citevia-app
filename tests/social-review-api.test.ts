@@ -64,6 +64,18 @@ async function fixture(channel: SocialChannel = 'facebook', override: Partial<So
 }
 
 describe('social publication approval and editing API', () => {
+  it('retains canonical Unsplash attribution when owners edit the post', async () => {
+    const photo = { url: 'https://images.unsplash.com/photo-test?ixid=retained', alt: 'A team reviewing results', photoId: 'photo-test',
+      photographer: 'Photo Author', photographerUrl: 'https://unsplash.com/@author', photoUrl: 'https://unsplash.com/photos/photo-test', downloadLocation: 'https://api.unsplash.com/photos/photo-test/download' };
+    const media = [{ type: 'image' as const, url: photo.url, mimeType: 'image/jpeg', attribution: [photo] }];
+    const f = await fixture('facebook', { media });
+    expect((await (await f.call()).json()).media).toEqual(media);
+    const response = await f.call('', 'PATCH', { version: 2, content: { ...f.post.content, body: 'Compare results to a useful baseline.' },
+      media: [{ ...media[0], attribution: [{ ...photo, photographer: 'Forged credit' }] }] });
+    expect(response.status).toBe(200);
+    expect((await response.json()).media).toEqual(media);
+    expect((await f.current())?.media).toEqual(media);
+  });
   it.each(SOCIAL_CHANNELS)('schedules approved %s content without publishing ahead of time', async channel => {
     const f = await fixture(channel);
     const response = await f.call('/approve', 'POST', { ...consent, ...(channel === 'tiktok' ? tiktokChoices : {}) });

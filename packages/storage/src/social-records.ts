@@ -37,7 +37,8 @@ export function createSocialRecords(
   const sequence = (previous?.sequence ?? 0) + 1;
   const lastIndex = prompts.findIndex(prompt => prompt.id === previous?.prompt.id);
   const prompt = structuredClone(prompts[lastIndex >= 0 ? (lastIndex + 1) % prompts.length : (sequence - 1) % prompts.length]);
-  const context = structuredClone({ brand: project.brand, ...(project.brandbook ? { brandbook: project.brandbook } : {}), country: project.country, language: project.language });
+  const context = structuredClone({ brand: project.brand, ...(project.brandbook ? { brandbook: project.brandbook } : {}), country: project.country, language: project.language,
+    imageSource: project.socialAutomation?.imageSource ?? 'openai' });
   const occurrence: SocialOccurrence = {
     id: socialOccurrenceId(input, localDate), projectId: project.id, revision: input.revision,
     slotId: input.slotId, localDate, scheduledAt: new Date(input.scheduledAt).toISOString(),

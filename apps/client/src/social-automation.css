@@ -3,6 +3,15 @@
 .social-automation h3 { margin: 0 0 6px; font-size: 16px; }
 .social-toggle-row, .social-save-row, .social-schedule-heading, .social-connected-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .social-toggle-row { padding-bottom: 6px; }
+.social-automation .social-image-source { margin: 22px 0; }
+.social-image-source legend { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.social-image-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.social-image-option { display: flex; gap: 10px; padding: 16px; border: 1px solid var(--border, #e8e9f2); border-radius: 12px; cursor: pointer; }
+.social-image-option.is-selected { border-color: var(--primary, #4f3ef0); background: var(--background, #f7f8fc); }
+.social-image-option input { margin: 3px 0 0; accent-color: var(--primary, #4f3ef0); }
+.social-image-option strong { font-size: 14px; }
+.social-image-option small { display: block; margin-top: 5px; font-size: 13px; line-height: 1.6; color: var(--text-secondary, #71758c); }
+.social-photo-credit { font-size: 12px; line-height: 1.6; color: var(--text-secondary, #71758c); margin: 6px 0 12px; }
 .social-help { font-size: 13px; line-height: 1.65; color: var(--text-secondary, #71758c); margin: 12px 0 18px; }
 .social-check { display: flex; align-items: flex-start; gap: 11px; cursor: pointer; line-height: 1.55; font-size: 14px; }
 .social-check input { margin: 4px 0 0; width: 17px; height: 17px; flex-shrink: 0; accent-color: var(--primary, #4f3ef0); }
@@ -71,6 +80,7 @@
 .social-approved-note { background: #eaf7f1; color: #287c61; border-radius: 9px; padding: 12px 14px; font-size: 13px; line-height: 1.65; }
 @media (max-width: 1000px) { .social-slots, .social-connections { grid-template-columns: 1fr; } }
 @media (max-width: 600px) {
+  .social-image-options { grid-template-columns: 1fr; }
   .social-preparation-fields { grid-template-columns: 1fr; }
   .social-queue-actions { width: 100%; }
   .social-schedule-heading { align-items: stretch; flex-direction: column; }

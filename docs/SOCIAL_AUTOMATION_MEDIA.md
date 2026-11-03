@@ -2,6 +2,12 @@
 
 Automated social content uses the account's active saved prompt, verified brandbook and connected social feed. Manual agent drafts and their Unsplash images are unchanged. Automated blog drafts use the existing blog engine; this media module does not publish or generate blog articles.
 
+In **Project settings → Publishing → Post image source**, owners can choose **OpenAI** artwork or **Unsplash** photos for connected social accounts. New and legacy projects default to OpenAI. The saved setting is `socialAutomation.imageSource`; each occurrence freezes it in its generation context. Older clients that omit the field preserve the project's saved choice. Settings use the existing project JSON storage and require no database migration.
+
+With Unsplash selected, the existing copy call plans a short English photo search tied to the exact prompt, answer and slide. Searches use relevant ordering, the high content filter and the platform's orientation, and exclude photos already selected for the same carousel/video. The worker checks JPEG size/dimensions and runs the existing separate visual review against the exact post, without requiring text overlays or brand typography on a photograph. Missing credentials, no matching photo, or a failed relevance review stops the post; there is no automatic switch to OpenAI artwork. Copy, style analysis and visual review still use OpenAI.
+
+Unsplash images retain their official CDN URL and tracking parameters for previews and image publishing. Selecting a photo calls its download-tracking endpoint. Photographer attribution and links appear with the media in the review panel, including credits for video backgrounds. TikTok renders its video from the selected photos using the existing renderer. Unsplash image posts are not labeled as AI-generated images. Existing prepared posts keep their saved media and all posts still require review and approval.
+
 ## Generation contract
 
 `apps/scanner/src/social-media.ts` exports `SocialMediaGenerator` and `createSocialMediaGenerator()`. Destination objects are structural subsets of connected accounts (`id`, `channel`, optional `username`). Recent posts contain `id`, `text`, `imageUrls` and optional `publishedAt`.
@@ -41,6 +47,7 @@ All keys are server-only. Never put them in `VITE_*` variables.
 - `OPENAI_API_KEY` or `OPENAI_SECRET_ARN`: existing OpenAI key/Secrets Manager mechanism.
 - `OPENAI_SOCIAL_TEXT_MODEL`: defaults to `OPENAI_CONTENT_MODEL`, then `gpt-6-astra`.
 - `OPENAI_SOCIAL_IMAGE_MODEL`: defaults to `gpt-image-2.5-sunburst`.
+- `UNSPLASH_ACCESS_KEY` or `UNSPLASH_SECRET_ARN`: existing server-only Unsplash credentials, required for the Unsplash image option. The API exposes availability, never the key, and prevents enabling this option for connected accounts until configured.
 - `ZERNIO_API_KEY` or `ZERNIO_SECRET_ARN`: publisher configuration; raw key or JSON containing `ZERNIO_API_KEY`.
 - `FFMPEG_PATH`: executable path; defaults to `ffmpeg` on PATH.
 - `SOCIAL_FONT_PATH`: optional font file with coverage for account languages.
@@ -54,13 +61,14 @@ The deployment workflow reads `ZERNIO_SECRET_ARN`, `SOCIAL_VIDEO_LAYER_ARN`, `OP
 
 The layer must target **Linux ARM64 on the Node.js 22 Lambda runtime**, with executables `bin/ffmpeg`, `bin/ffprobe`, and `fonts/social.ttf` inside the ZIP (mounted as `/opt/bin/ffmpeg` and `/opt/fonts/social.ttf`). Include FFmpeg's linked libraries or a compatible static build. Required features: `libx264`, JPEG decoding, `drawtext` with FreeType and HarfBuzz, `zoompan`, `xfade`, `scale`, `crop`, and AAC encoding when adding music. Include FriBidi/text shaping and suitable fonts for RTL scripts. Test the actual layer under Lambda before enabling video destinations; a macOS or x86-only FFmpeg binary cannot serve this ARM64 deployment. Font files and the FFmpeg build must be distributable under their applicable licenses.
 
-Generated and edited media are retained in private versioned S3 storage. Owners review freshly signed previews and approve an immutable content/media/time snapshot; the publishing worker uploads those exact bytes to the publisher only when due. Replaced videos are probed with FFprobe before publishing. Browser uploads use signed POST policies and project-origin CORS, with no Citevia credential sent to storage. Private generation checkpoints belong in the evidence store, not in public post content or database rows containing image bytes. Keep credentials, signed reference URLs and raw provider receipts out of client-visible error text.
+Generated and edited media are retained in private versioned S3 storage. Owners review freshly signed previews and approve an immutable content/media/time snapshot; the publishing worker uploads those exact bytes to the publisher only when due. Unsplash photos instead use their official CDN URLs, verified against the saved image receipt before publishing. Replaced videos are probed with FFprobe before publishing. Browser uploads use signed POST policies and project-origin CORS, with no Citevia credential sent to storage. Private generation checkpoints belong in the evidence store, not in public post content or database rows containing image bytes. Keep credentials, signed reference URLs and raw provider receipts out of client-visible error text.
 
 ## Verified API sources
 
 Documentation was checked November 2, 2026 through Context7 and official documentation; no paid generation was performed during implementation.
 
 - [OpenAI image generation](https://developers.openai.com/api/docs/guides/image-generation)
+- [Unsplash API search, image URLs, attribution and download tracking](https://unsplash.com/documentation)
 - [Images edit request and response reference](https://developers.openai.com/api/reference/resources/images/methods/edit)
 - [OpenAI multimodal image inputs](https://developers.openai.com/api/docs/guides/images-vision)
 - [Sora/Videos API shutdown notice](https://developers.openai.com/api/docs/guides/video-generation)

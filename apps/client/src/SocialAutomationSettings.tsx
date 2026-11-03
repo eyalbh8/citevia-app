@@ -7,6 +7,7 @@ import { request, useApi } from './api';
 import { Badge, Drawer, ErrorNotice, Pagination, safeUrl } from './components';
 import { Skeleton } from './Loading';
 import SocialPublicationReview from './SocialPublicationReview';
+import SocialPhotoCredit from './SocialPhotoCredit';
 import './social-automation.css';
 
 type Connection = Omit<SocialDestination, 'profileId'>;
@@ -17,6 +18,7 @@ export interface SocialSettingsResponse {
   destinationOptions?: Project['socialDestinationOptions'];
   publishingAvailable: boolean;
   generationAvailable: boolean;
+  unsplashAvailable?: boolean;
   blogAvailable: boolean;
   videoAvailable?: boolean;
 }
@@ -48,6 +50,7 @@ const statusLabels: Record<SocialPublication['status'], string> = {
 };
 const editableSettings = (settings: AutomationSettings): SocialAutomationInput => ({
   enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, shareFacebookInstagramContent: settings.shareFacebookInstagramContent ?? false,
+  imageSource: settings.imageSource ?? 'openai',
   generationCadence: settings.generationCadence ?? 'daily', generationTime: settings.generationTime ?? '08:00', timezone: settings.timezone, slots: settings.slots.map(slot => ({ ...slot })),
 });
 const connected = (connection: Connection) => connection.active && !connection.requiresReconnect;
@@ -153,7 +156,7 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
         <h3>{post.content?.title || 'Post in progress'}</h3>
         <div className="social-preview-media">{post.media?.map((media, index) => {
           const url = safeUrl(media.url); if (!url) return null;
-          return media.type === 'video' ? <video key={url} src={url} controls preload="metadata" aria-label="Generated post video" /> : <img key={url} src={url} alt={`Generated post image ${index + 1}`} />;
+          return <div key={url}>{media.type === 'video' ? <video src={url} controls preload="metadata" aria-label="Post video" /> : <img src={url} alt={`Post image ${index + 1}`} />}<SocialPhotoCredit photos={media.attribution} /></div>;
         })}</div>
         <p className="social-preview-copy">{post.content?.body}</p>
         {Boolean(post.content?.hashtags.length) && <p className="social-preview-tags">{post.content!.hashtags.join(' ')}</p>}
@@ -187,6 +190,7 @@ function AutomationForm({ data, path, owner, onSaved, notify }: {
     const parsed = socialAutomationInputSchema.safeParse(form);
     if (!parsed.success) { setError(new Error(parsed.error.issues[0].message)); return; }
     if (form.enabled && !data.generationAvailable) { setError(new Error('Content generation is not configured yet.')); return; }
+    if (form.enabled && form.imageSource === 'unsplash' && !data.unsplashAvailable && data.connections.some(connected)) { setError(new Error('Unsplash images are not configured yet. Choose OpenAI or contact your administrator.')); return; }
     if (form.enabled && form.createBlogDrafts && !data.blogAvailable) { setError(new Error('Blog draft generation is not configured yet.')); return; }
     if (form.enabled && !form.createBlogDrafts && !data.connections.some(connected)) { setError(new Error('Connect a social account or include blog drafts before enabling automation.')); return; }
     setSaving(true);
@@ -205,6 +209,21 @@ function AutomationForm({ data, path, owner, onSaved, notify }: {
         <button type="button" className="scanning-switch" role="switch" aria-checked={form.enabled} aria-labelledby={`${uniqueId}-toggle`}
           disabled={!owner || saving} onClick={() => setForm({ ...form, enabled: !form.enabled })}><span /></button></div>
       <p className="social-help">When paused, no new posts are created or published. Existing posts, drafts and account data stay available.</p>
+      <fieldset className="social-image-source" aria-describedby={`${uniqueId}-image-help`}>
+        <legend>Post image source</legend>
+        <div className="social-image-options">
+          <label className={`social-image-option ${form.imageSource === 'unsplash' ? 'is-selected' : ''}`}>
+            <input type="radio" name={`${uniqueId}-image-source`} value="unsplash" checked={form.imageSource === 'unsplash'} onChange={() => setForm({ ...form, imageSource: 'unsplash' })} />
+            <span><strong>Unsplash</strong><small>Find a photo related to the post topic.</small></span>
+          </label>
+          <label className={`social-image-option ${form.imageSource === 'openai' ? 'is-selected' : ''}`}>
+            <input type="radio" name={`${uniqueId}-image-source`} value="openai" checked={form.imageSource === 'openai'} onChange={() => setForm({ ...form, imageSource: 'openai' })} />
+            <span><strong>OpenAI</strong><small>Generate an original image for the post.</small></span>
+          </label>
+        </div>
+        <p className="social-help" id={`${uniqueId}-image-help`}>Applies to new posts for connected social accounts, including carousel photos and video backgrounds. Unsplash photos are checked for relevance to the post. Blog drafts keep their own images.</p>
+        {form.imageSource === 'unsplash' && !data.unsplashAvailable && <p className="social-readiness">Unsplash needs setup before it can create images for connected accounts. Choose OpenAI or contact your administrator.</p>}
+      </fieldset>
       <label className="social-check"><input type="checkbox" checked={form.createBlogDrafts} onChange={event => setForm({ ...form, createBlogDrafts: event.target.checked })} />
         <span><strong>Also create blog drafts</strong><small>Create an article answering the same prompt in Agents. Blog articles are never published automatically.</small></span></label>
       <label className="social-check"><input type="checkbox" checked={form.shareFacebookInstagramContent} onChange={event => setForm({ ...form, shareFacebookInstagramContent: event.target.checked })} />

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Brand, Brandbook, Project, Prompt } from './types.js';
+import type { AgentImage } from './agents.js';
 
 /** Public social destinations; blogs are generated as internal drafts only. */
 export const SOCIAL_CHANNELS = ['facebook', 'instagram', 'linkedin', 'x', 'pinterest', 'reddit', 'tiktok'] as const;
@@ -16,6 +17,8 @@ export interface SocialAutomationSlot {
 export interface SocialAutomationSettings {
   enabled: boolean;
   createBlogDrafts: boolean;
+  /** Absent legacy settings retain OpenAI artwork. Applies to connected social accounts. */
+  imageSource?: 'openai' | 'unsplash';
   /** Opt-in; absent legacy settings keep separate platform-specific generation. */
   shareFacebookInstagramContent?: boolean;
   /** Optional for records saved before batch preparation was introduced. */
@@ -39,6 +42,7 @@ export const socialAutomationSlotSchema = z.object({
 export const socialAutomationInputSchema = z.object({
   enabled: z.boolean(),
   createBlogDrafts: z.boolean().default(true),
+  imageSource: z.enum(['openai', 'unsplash']).default('openai'),
   shareFacebookInstagramContent: z.boolean().default(false),
   generationCadence: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
   generationTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).default('08:00'),
@@ -52,7 +56,7 @@ export const socialAutomationInputSchema = z.object({
 });
 export type SocialAutomationInput = z.infer<typeof socialAutomationInputSchema>;
 export function defaultSocialAutomationSettings(timezone = 'UTC'): SocialAutomationSettings {
-  return { enabled: false, createBlogDrafts: true, shareFacebookInstagramContent: false, generationCadence: 'daily', generationTime: '08:00', revision: 0, timezone, slots: [], effectiveFrom: new Date(0).toISOString(), scheduleStatus: 'synced' };
+  return { enabled: false, createBlogDrafts: true, imageSource: 'openai', shareFacebookInstagramContent: false, generationCadence: 'daily', generationTime: '08:00', revision: 0, timezone, slots: [], effectiveFrom: new Date(0).toISOString(), scheduleStatus: 'synced' };
 }
 export interface SocialDestination {
   id: string;
@@ -74,8 +78,8 @@ export interface BlogDraftDestination {
 }
 export type AutomationDestination = SocialDestination | BlogDraftDestination;
 export interface SocialContent { title: string; body: string; hashtags: string[] }
-export interface SocialMediaAsset { id?: string; type: 'image' | 'video'; url: string; mimeType: string }
-export interface SocialGenerationContext { brand: Brand; brandbook?: Brandbook; country: string; language: string }
+export interface SocialMediaAsset { id?: string; type: 'image' | 'video'; url: string; mimeType: string; attribution?: AgentImage[] }
+export interface SocialGenerationContext { brand: Brand; brandbook?: Brandbook; country: string; language: string; imageSource?: 'openai' | 'unsplash' }
 export interface SocialOccurrence {
   id: string;
   projectId: string;
@@ -215,7 +219,7 @@ function generationWindow(project: Pick<Project, 'socialAutomation' | 'demo'>,
   message: Pick<SocialGenerationMessage, 'revision' | 'scheduledAt' | 'trigger'>, now: string | Date) {
   const settings = project.socialAutomation;
   if (project.demo || !settings?.enabled || settings.revision !== message.revision || !Number.isInteger(settings.revision) || settings.revision < 1) return null;
-  const parsed = socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, shareFacebookInstagramContent: settings.shareFacebookInstagramContent,
+  const parsed = socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, imageSource: settings.imageSource, shareFacebookInstagramContent: settings.shareFacebookInstagramContent,
     generationCadence: settings.generationCadence, generationTime: settings.generationTime, timezone: settings.timezone, slots: settings.slots });
   if (!parsed.success) return null;
   const scheduled = Date.parse(message.scheduledAt), current = new Date(now).getTime(), effective = Date.parse(settings.effectiveFrom);
@@ -259,7 +263,7 @@ export function socialOccurrenceLocalDate(
 ): string | null {
   const settings = project.socialAutomation;
   if (project.demo || !settings?.enabled || !Number.isInteger(settings.revision) || settings.revision < 1 || settings.revision !== message.revision ||
-    !socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, shareFacebookInstagramContent: settings.shareFacebookInstagramContent,
+    !socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, imageSource: settings.imageSource, shareFacebookInstagramContent: settings.shareFacebookInstagramContent,
       generationCadence: settings.generationCadence, generationTime: settings.generationTime, timezone: settings.timezone, slots: settings.slots }).success) return null;
   const scheduled = Date.parse(message.scheduledAt), current = new Date(now).getTime(), effective = Date.parse(settings.effectiveFrom);
   if (![scheduled, current, effective].every(Number.isFinite) || scheduled % 60000 !== 0 || scheduled < effective) return null;

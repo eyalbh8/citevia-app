@@ -23,7 +23,7 @@ async function fixture(withProfile = true) {
   } satisfies SocialPublisher;
   const sync = vi.fn(async () => {});
   const options = { mode: 'live' as const, now: () => new Date(now), social: {
-    publisher: vi.fn(async () => publisher), sync, generationAvailable: true, blogAvailable: true, frontendOrigin: 'https://app.citevia.io',
+    publisher: vi.fn(async () => publisher), sync, generationAvailable: true, blogAvailable: true, unsplashAvailable: true, frontendOrigin: 'https://app.citevia.io',
   } };
   const api = createApi({ repository, queue, artifacts }, options);
   const call = (suffix = '', method = 'GET', data?: unknown, user = 'social-owner') => api(new Request(`https://api.citevia.io/v1/projects/${project.id}/social${suffix}`, {
@@ -36,10 +36,36 @@ describe('social automation API', () => {
   it('starts disabled and exposes connected metadata without vendor profile IDs', async () => {
     const f = await fixture();
     const data = await (await f.call()).json();
-    expect(data.settings).toMatchObject({ enabled: false, createBlogDrafts: true, shareFacebookInstagramContent: false, slots: [] });
+    expect(data.settings).toMatchObject({ enabled: false, createBlogDrafts: true, imageSource: 'openai', shareFacebookInstagramContent: false, slots: [] });
     expect(data.connections).toHaveLength(1);
     expect(data.connections[0]).not.toHaveProperty('profileId');
     expect(f.publisher.publish).not.toHaveBeenCalled();
+  });
+  it('persists image sources, preserves older client omissions, and validates changes', async () => {
+    const f = await fixture();
+    const saved = await (await f.call('/settings', 'PATCH', { version: 1, settings: { ...settings, imageSource: 'unsplash' } })).json();
+    expect(saved.settings.imageSource).toBe('unsplash');
+    const get = await (await f.call()).json();
+    expect(get.settings.imageSource).toBe('unsplash');
+    expect(get.unsplashAvailable).toBe(true);
+    const legacy = await (await f.call('/settings', 'PATCH', { version: saved.version, settings })).json();
+    expect(legacy.settings.imageSource).toBe('unsplash');
+    for (const imageSource of ['random', null, false])
+      expect((await f.call('/settings', 'PATCH', { version: legacy.version, settings: { ...settings, imageSource } })).status).toBe(400);
+    const changed = await (await f.call('/settings', 'PATCH', { version: legacy.version, settings: { ...settings, imageSource: 'openai' } })).json();
+    expect(changed.settings.imageSource).toBe('openai');
+  });
+  it('requires Unsplash configuration for social generation but allows saving a paused choice', async () => {
+    const f = await fixture();
+    f.options.social.unsplashAvailable = false;
+    const input = { ...settings, imageSource: 'unsplash' };
+    expect((await f.call('/settings', 'PATCH', { version: 1, settings: input })).status).toBe(503);
+    const paused = await (await f.call('/settings', 'PATCH', { version: 1, settings: { ...input, enabled: false } })).json();
+    expect(paused.settings.imageSource).toBe('unsplash');
+    f.options.social.unsplashAvailable = true;
+    const enabled = await (await f.call('/settings', 'PATCH', { version: paused.version, settings: input })).json();
+    f.options.social.unsplashAvailable = false;
+    expect((await f.call('/generate', 'POST', { version: enabled.version })).status).toBe(503);
   });
   it('enforces project membership and owner-only changes', async () => {
     const f = await fixture();

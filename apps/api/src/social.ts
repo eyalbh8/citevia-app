@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import { createHash, randomUUID } from 'node:crypto';
-import { SOCIAL_CHANNELS, defaultSocialAutomationSettings, socialAutomationInputSchema, socialApprovalSnapshot, agentCopyValid, type Project, type SocialPublication, type SocialContent } from '@citevia/core';
+import { SOCIAL_CHANNELS, defaultSocialAutomationSettings, socialAutomationInputSchema, socialApprovalSnapshot, agentCopyValid, agentImageSchema, type Project, type SocialPublication, type SocialContent } from '@citevia/core';
 import { AccessError, createSocialMediaUploadStore, validateSocialUpload, type SocialMediaUploadStore, type SocialUploadedMedia, type Runtime, type SocialPublisher } from '@citevia/storage';
 import { repairSocialSchedule, syncSocialSchedule } from './social-scheduler.js';
 
 export interface SocialApiOptions {
   publisher?: () => Promise<SocialPublisher>;
   generationAvailable: boolean;
+  unsplashAvailable?: boolean;
   blogAvailable: boolean;
   videoAvailable?: boolean;
   frontendOrigin: string;
@@ -19,7 +20,7 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const fail = (status: number, code: string, message: string): never => { throw new AccessError(status, code, message); };
 const contentSchema = z.object({ title: z.string().trim().min(1).max(300), body: z.string().trim().min(1).max(30000),
   hashtags: z.array(z.string().trim().regex(/^#[^\s#]+$/).max(100)).max(30) }).strict();
-const mediaSchema = z.object({ id: z.string().min(1).max(200).optional(), type: z.enum(['image', 'video']), url: z.string().url().max(8192), mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4']) }).strict();
+const mediaSchema = z.object({ id: z.string().min(1).max(200).optional(), type: z.enum(['image', 'video']), url: z.string().url().max(8192), mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4']), attribution: z.array(agentImageSchema).max(3).optional() }).strict();
 function editable(post: SocialPublication, now: Date) {
   return post.destination.channel !== 'blog' && ['review_required', 'scheduled'].includes(post.status) &&
     !post.publishAttemptAt && !post.providerPostId && !(Date.parse(post.leaseUntil || '') > now.getTime());
@@ -55,6 +56,7 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
   if (request.method !== 'GET' && (project.role !== 'owner' || project.demo))
     fail(403, 'FORBIDDEN', 'Project owner access is required.');
   const settings = { ...(project.socialAutomation ?? defaultSocialAutomationSettings(project.timezone)),
+    imageSource: project.socialAutomation?.imageSource ?? 'openai',
     shareFacebookInstagramContent: project.socialAutomation?.shareFacebookInstagramContent ?? false };
   const uploadStore = () => (options.uploads ?? createSocialMediaUploadStore)();
   const preview = async (post: SocialPublication) => {
@@ -76,7 +78,7 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
   if (tail === 'social' && request.method === 'GET') {
     const accounts = await connections();
     return json({ settings, version: project.version, destinationOptions: project.socialDestinationOptions ?? {}, connections: accounts.map(({ profileId: _profile, ...account }) => account),
-      publishingAvailable: !!options.publisher, generationAvailable: options.generationAvailable, blogAvailable: options.blogAvailable, videoAvailable: !!options.videoAvailable });
+      publishingAvailable: !!options.publisher, generationAvailable: options.generationAvailable, unsplashAvailable: !!options.unsplashAvailable, blogAvailable: options.blogAvailable, videoAvailable: !!options.videoAvailable });
   }
   const boards = tail.match(/^social\/accounts\/([^/]+)\/boards$/);
   if (boards && request.method === 'GET') {
@@ -103,6 +105,7 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
   if (tail === 'social/settings' && request.method === 'PATCH') {
     const raw = z.object({ version: z.number().int().positive(), settings: z.record(z.string(), z.unknown()) }).strict().parse(await body(request));
     const input = { version: raw.version, settings: socialAutomationInputSchema.parse({ ...raw.settings,
+      imageSource: Object.hasOwn(raw.settings, 'imageSource') ? raw.settings.imageSource : settings.imageSource,
       shareFacebookInstagramContent: Object.hasOwn(raw.settings, 'shareFacebookInstagramContent')
         ? raw.settings.shareFacebookInstagramContent : settings.shareFacebookInstagramContent ?? false }) };
     if (input.version !== project.version) fail(409, 'VERSION_CONFLICT', 'Settings changed. Refresh and try again.');
@@ -111,6 +114,8 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
       if (!project.prompts.some(prompt => prompt.active)) fail(400, 'NO_PROMPTS', 'Add an active prompt before enabling automation.');
       if (input.settings.createBlogDrafts && !options.blogAvailable) fail(503, 'BLOG_UNAVAILABLE', 'Blog draft generation is not configured yet.');
       const accounts = await connections();
+      if (input.settings.imageSource === 'unsplash' && !options.unsplashAvailable && accounts.some(account => account.active && !account.requiresReconnect))
+        fail(503, 'UNSPLASH_UNAVAILABLE', 'Unsplash images are not configured yet. Choose OpenAI or contact your administrator.');
       if (!input.settings.createBlogDrafts && !accounts.some(account => account.active && !account.requiresReconnect))
         fail(400, 'NO_SOCIAL_CONNECTIONS', 'Connect at least one social account before enabling automation.');
     }
@@ -131,6 +136,8 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
     if (input.version !== project.version) return fail(409, 'VERSION_CONFLICT', 'Settings changed. Refresh and try again.');
     if (!settings.enabled) return fail(409, 'AUTOMATION_PAUSED', 'Enable automation before preparing content.');
     if (!options.generationAvailable) return fail(503, 'GENERATION_UNAVAILABLE', 'Content generation is not configured yet.');
+    if (settings.imageSource === 'unsplash' && !options.unsplashAvailable && (await connections()).some(account => account.active && !account.requiresReconnect))
+      return fail(503, 'UNSPLASH_UNAVAILABLE', 'Unsplash images are not configured yet. Choose OpenAI or contact your administrator.');
     await generate();
     return json({ queued: true }, 202);
   }

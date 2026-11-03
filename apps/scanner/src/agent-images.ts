@@ -5,16 +5,16 @@ import {
 import {
   agentImageSchema,
   type AgentImage,
-  type AgentPostJob,
 } from '@citevia/core';
 import { ProviderError } from './provider.js';
 
 export interface AgentImages {
   select(
-    post: AgentPostJob,
+    post: { channel: string },
     query: string,
     alt: string,
     claim?: (image: AgentImage) => Promise<boolean>,
+    orientation?: 'landscape' | 'portrait' | 'squarish',
   ): Promise<AgentImage>;
   track(image: AgentImage): Promise<void>;
 }
@@ -80,22 +80,24 @@ export class UnsplashImages implements AgentImages {
     }
   }
   async select(
-    post: AgentPostJob,
+    post: { channel: string },
     query: string,
     alt: string,
     claim: (image: AgentImage) => Promise<boolean> = async () => true,
+    preferredOrientation?: 'landscape' | 'portrait' | 'squarish',
   ): Promise<AgentImage> {
-    const orientation =
+    const orientation = preferredOrientation ?? (
       post.channel === 'instagram'
         ? 'squarish'
         : post.channel === 'pinterest'
           ? 'portrait'
-          : 'landscape';
+          : 'landscape');
     const params = new URLSearchParams({
       query: query.slice(0, 100),
       per_page: '30',
       orientation,
       content_filter: 'high',
+      order_by: 'relevant',
     });
     for (let page = 1; page <= 5; page++) {
       params.set('page', String(page));

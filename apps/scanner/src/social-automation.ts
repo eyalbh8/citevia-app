@@ -172,7 +172,7 @@ export class SocialAutomationEngine {
         await queue.send([{ kind: 'social-publication', projectId, publicationId: source.id }]);
         return;
       }
-      const mediaDestination = { ...generationDestination, ...(shared ? { contentFormat: shared.format } : {}) };
+      const mediaDestination = { ...generationDestination, imageSource: current.context.imageSource ?? 'openai', ...(shared ? { contentFormat: shared.format } : {}) };
       const frozenProject = { ...project, ...current.context };
       let mediaGenerator: Promise<SocialMediaGenerator> | undefined;
       const media = () => mediaGenerator ??= this.generator({ projectId, runId: publicationId, promptId: current.prompt.id, attempt: current.attempts });
@@ -219,7 +219,9 @@ export class SocialAutomationEngine {
         if (index >= total) throw new Error('social_image_index');
         if (imageStep[1] === 'image') {
           await paid<ImageReceipt>(current.stage, async () => {
-            const { bytes, ...meta } = await (await media()).generateImage(frozenProject, current.prompt, copy!, mediaDestination, style!, index, total);
+            const previous = await Promise.all(Array.from({ length: index }, (_, position) => artifacts.get<{ value: ImageReceipt }>(this.key(current, `image-${position}`))));
+            const excludedPhotoIds = previous.flatMap(receipt => receipt?.value.stockPhoto ? [receipt.value.stockPhoto.photoId] : []);
+            const { bytes, ...meta } = await (await media()).generateImage(frozenProject, current.prompt, copy!, mediaDestination, style!, index, total, excludedPhotoIds);
             return { ...meta, base64: Buffer.from(bytes).toString('base64') };
           });
           await this.advance(current, `qa-${index}`); return;
@@ -236,14 +238,15 @@ export class SocialAutomationEngine {
           let uploaded = await artifacts.get<{ url: string; source?: SocialUploadedMedia }>(key);
           if (!uploaded) {
             const store = this.uploads(), id = `image-${index}`;
-            if (store) {
+            if (image.stockPhoto) uploaded = { url: image.stockPhoto.url };
+            else if (store) {
               const source = await store.put(`projects/${current.projectId}/social/${current.id}/media/${id}`, bytes, image.mime, id);
               uploaded = { url: source.url, source };
             } else uploaded = await publisher.uploadMedia(`${current.id}-${index}.jpg`, bytes, image.mime);
           }
           await artifacts.put(key, uploaded);
           current = await this.persist(current, { media: [...(current.media || []).slice(0, index), { type: 'image', mimeType: image.mime, url: uploaded.url,
-            ...(uploaded.source ? { id: uploaded.source.id } : {}) }],
+            ...(uploaded.source ? { id: uploaded.source.id } : {}), ...(image.stockPhoto ? { attribution: [image.stockPhoto] } : {}) }],
             ...(uploaded.source ? { checkpoints: { ...current.checkpoints, mediaSources: {
               ...(current.checkpoints?.mediaSources as Record<string, SocialUploadedMedia> | undefined), [uploaded.source.id]: uploaded.source } } } : {}) });
         }
@@ -276,7 +279,9 @@ export class SocialAutomationEngine {
           } else uploaded = await publisher.uploadMedia(`${current.id}.mp4`, Buffer.from(video.base64, 'base64'), video.mime);
         }
         await artifacts.put(key, uploaded);
-        await this.advance(current, 'publish', { media: [{ type: 'video', url: uploaded.url, mimeType: video.mime, ...(uploaded.source ? { id: uploaded.source.id } : {}) }],
+        const images = await Promise.all(Array.from({ length: total }, (_, index) => artifacts.get<{ value: ImageReceipt }>(this.key(current, `image-${index}`))));
+        const attribution = images.flatMap(image => image?.value.stockPhoto ? [image.value.stockPhoto] : []);
+        await this.advance(current, 'publish', { media: [{ type: 'video', url: uploaded.url, mimeType: video.mime, ...(uploaded.source ? { id: uploaded.source.id } : {}), ...(attribution.length ? { attribution } : {}) }],
           checkpoints: { ...current.checkpoints, videoDuration: video.durationSeconds,
             ...(uploaded.source ? { mediaSources: { ...(current.checkpoints?.mediaSources as Record<string, SocialUploadedMedia> | undefined), [uploaded.source.id]: uploaded.source } } : {}) } }); return;
       }
@@ -331,7 +336,7 @@ export class SocialAutomationEngine {
       const result = await publisher.publish(destination.profileId, destination, {
         title: current.content!.title, text: [current.content!.body, current.content!.hashtags.join(' ')].filter(Boolean).join('\n\n'), media: prepared.media,
         ...(destinationOptions ? { platformSpecificData: { ...destinationOptions } } : {}),
-        ...(destination.channel === 'instagram' ? { platformSpecificData: { isAiGenerated: true } } : {}),
+        ...(destination.channel === 'instagram' ? { platformSpecificData: { isAiGenerated: current.media!.some(asset => !asset.attribution?.length) } } : {}),
         ...(destination.channel === 'tiktok' && approval ? {
           tiktokApproval: { previewConfirmed: true, expressConsentGiven: true, privacyLevel: approval.privacyLevel!,
             allowComment: approval.allowComment === true, allowDuet: approval.allowDuet === true, allowStitch: approval.allowStitch === true },
@@ -404,7 +409,13 @@ export class SocialAutomationEngine {
         }
         const originalIndex = legacyImages.get(asset.url);
         const image = originalIndex !== undefined ? await this.runtime.artifacts.get<{ value: ImageReceipt }>(this.key(post, `image-${originalIndex}`)) : undefined;
-        if (image?.value.mime === asset.mimeType) bytes = Buffer.from(image.value.base64, 'base64');
+        if (image?.value.mime === asset.mimeType) {
+          if (image.value.stockPhoto?.url === asset.url) {
+            media.push({ type: 'image', url: asset.url });
+            continue;
+          }
+          bytes = Buffer.from(image.value.base64, 'base64');
+        }
       }
       if (!bytes) throw new SocialPublisherError('review_media_invalid', 'The original media could not be recovered. Replace it and approve the post again.');
       const uploaded = await publisher.uploadMedia(`${post.id}-${post.approval!.contentHash}-${index}.${asset.type === 'video' ? 'mp4' : asset.mimeType === 'image/png' ? 'png' : asset.mimeType === 'image/webp' ? 'webp' : 'jpg'}`, bytes, asset.mimeType);
