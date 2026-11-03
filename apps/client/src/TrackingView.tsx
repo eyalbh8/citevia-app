@@ -345,7 +345,6 @@ export default function TrackingView({
             { value: 'cited', label: 'Most cited' },
             { value: 'fastest', label: 'Fastest pickup' },
             { value: 'az', label: 'A–Z' },
-            { value: 'lift', label: 'Lift · unavailable', disabled: true },
           ]}
         />
         <FilterDropdown
@@ -377,7 +376,6 @@ export default function TrackingView({
                       'Type',
                       'Status',
                       'Citations',
-                      'Lift',
                       'Engines',
                       'Pickup',
                     ].map((v) => (
@@ -390,7 +388,7 @@ export default function TrackingView({
                     ...(key
                       ? [
                           <tr className="tracking-group" key={`group-${key}`}>
-                            <th colSpan={7}>
+                            <th colSpan={6}>
                               {group === 'month'
                                 ? new Date(
                                     `${key}-01T12:00:00Z`,
@@ -446,9 +444,6 @@ export default function TrackingView({
                         <td title="Lifetime source occurrences">
                           <strong>{row.appearances.toLocaleString()}</strong>
                           <Sparkline values={row.series.map((p) => p.count)} />
-                        </td>
-                        <td title="Lift requires linked content baseline data">
-                          —
                         </td>
                         <td>
                           <div className="tracking-engine-list">
