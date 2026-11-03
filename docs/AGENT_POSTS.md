@@ -70,7 +70,7 @@ Deploy both API and scanner bundles and the client together. Configure SAM `Cont
 
 ## System-admin blog performance review
 
-**Blog performance** appears beside Tracking for system administrators on each account. Its read and prompt-link APIs enforce the saved database system-admin role, including direct requests from account owners. Select the saved prompt the article was written to answer with **Link prompt**. This association is versioned in the tracked URL's existing JSON metadata; no migration is needed. Other tracked content types are excluded. Demo accounts remain read-only.
+**Blog performance** has been removed from workspace navigation and page routing. Its existing read and prompt-link APIs enforce the saved database system-admin role, including direct requests from account owners. The prompt association is versioned in the tracked URL's existing JSON metadata; no migration is needed. Other tracked content types are excluded. Demo accounts remain read-only.
 
 The review uses up to 90 days of completed/partial scan history. It counts distinct analyzed original answers to the linked prompt's current wording, after publication and enrollment; resuming tracking starts a fresh review period. Failed/excluded scans, repeated captures, future answers and unrelated prompts cannot improve the outcome. Native citations determine citation pickup, including citations without a brand mention. This is an observed citation outcome, not causal lift, traffic or sales.
 
