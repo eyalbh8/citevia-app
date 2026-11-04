@@ -223,7 +223,7 @@ describe('virtual demo measurements', () => {
     const filters = trafficFilters('2026-10-01T00:00:00.000Z', '2026-10-31T23:59:59.999Z');
     const traffic = await demo.repository.aggregateTraffic(project.id, filters);
     expect(traffic.current).toBeGreaterThan(traffic.previous);
-    expect(traffic.providers.every((item) => item.visits > item.previous)).toBe(true);
+    expect(traffic.providers.every((item) => item.visits >= item.previous)).toBe(true);
     expect(traffic.series.reduce((sum, item) => sum + Object.values(item.values).reduce((total, visits) => total + visits, 0), 0)).toBe(traffic.current);
     for (const dimension of [traffic.sources, traffic.pages, traffic.locations, traffic.devices, traffic.browsers])
       expect(dimension.reduce((sum, item) => sum + item.visits, 0)).toBe(traffic.current);

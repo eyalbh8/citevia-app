@@ -22,6 +22,8 @@ import {
   percent,
 } from './components';
 
+const SOURCE_PAGE_SIZE = 10;
+
 export default function SourcesView({
   path,
   dashboard,
@@ -47,7 +49,7 @@ export default function SourcesView({
   }, [kind, debounced, owned, runId]);
   const { data, error, loading } = useApi<Page<SourceRow>>(
     runId
-      ? `${path}/sources${query({ runId, kind, groupBy: 'domain', q: debounced, owned, cursor: cursors.at(-1) })}`
+      ? `${path}/sources${query({ runId, kind, groupBy: 'domain', q: debounced, owned, limit: SOURCE_PAGE_SIZE, cursor: cursors.at(-1) })}`
       : null,
   );
   return (
@@ -159,29 +161,31 @@ export default function SourcesView({
               />
             ))}
           </div>
-          <div className="pagination" style={{ border: 0 }}>
-            <span>
-              {data.items.length} domains on this page · {data.total} total
+          <div className="pagination source-pagination" style={{ border: 0 }}>
+            <span aria-live="polite">
+              {(cursors.length - 1) * SOURCE_PAGE_SIZE + 1}–{(cursors.length - 1) * SOURCE_PAGE_SIZE + data.items.length} of {data.total} domains
             </span>
-            <div className="page-buttons">
+            {(data.nextCursor || cursors.length > 1) && <div className="page-buttons">
               <button
-                disabled={cursors.length === 1}
+                disabled={loading || cursors.length === 1}
                 onClick={() => setCursors((previous) => previous.slice(0, -1))}
                 aria-label="Previous source page"
+                title={cursors.length === 1 ? 'This is the first page' : 'Previous source page'}
               >
                 <ChevronLeft size={13} />
               </button>
-              <span style={{ padding: '0 8px' }}>Page {cursors.length}</span>
+              <span style={{ padding: '0 8px' }}>Page {cursors.length} of {Math.ceil(data.total / SOURCE_PAGE_SIZE)}</span>
               <button
-                disabled={!data.nextCursor}
+                disabled={loading || !data.nextCursor}
                 onClick={() =>
                   setCursors((previous) => [...previous, data.nextCursor!])
                 }
                 aria-label="Next source page"
+                title={data.nextCursor ? 'Next source page' : 'This is the last page'}
               >
                 <ChevronRight size={13} />
               </button>
-            </div>
+            </div>}
           </div>
         </>
       )}

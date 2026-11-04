@@ -34,12 +34,16 @@ function reconcile(traffic: TrafficAggregate) {
 }
 
 describe('company-size scenario traffic scales', () => {
-  it.each([[10, 20_000], [.6, 1_200]] as const)('supports a scale of %s with %s ChatGPT visits in the anchor month', (scale, expected) => {
+  it.each([[10, 20_000], [.6, 1_200]] as const)('supports a scale of %s near %s ChatGPT visits in the anchor month', (scale, expected) => {
     const project = buildServiceDemo(source(scale), '2026-10-28T12:00:00.000Z');
     const traffic = aggregateScenarioTraffic(project, anchorMonth());
     expect(project.demo!.profile!.trafficScale).toBe(scale);
-    expect(traffic.providers.find(provider => provider.provider === 'openai')!.visits).toBe(expected);
-    expect(traffic.providers.map(provider => provider.visits)).toEqual([2000, 36, 54, 42, 24, 18].map(count => Math.round(count * scale)));
+    expect(Math.abs(traffic.providers.find(provider => provider.provider === 'openai')!.visits - expected)).toBeLessThan(31);
+    const references = [2000, 36, 54, 42, 24, 18];
+    for (let index = 0; index < references.length; index++) {
+      expect(traffic.providers[index].visits).toBeGreaterThanOrEqual(31);
+      expect(Math.abs(traffic.providers[index].visits - Math.max(31, references[index] * scale))).toBeLessThan(32);
+    }
     expect(traffic.current).toBeGreaterThan(traffic.previous);
     expect(project.prompts).toHaveLength(50);
     expect(project.demo!.trackedUrls).toHaveLength(1);
@@ -59,7 +63,7 @@ describe('company-size scenario traffic scales', () => {
     expect(demoNumericProfile(project.demo!).trafficScale).toBe(.01);
     delete project.demo!.profile;
     expect(demoNumericProfile(project.demo!)).toEqual({ visibilityAdjustment: 0, growthCurve: 1, trafficScale: 1, monthlyGrowth: .1 });
-    expect(aggregateScenarioTraffic(project, anchorMonth()).providers.find(provider => provider.provider === 'openai')!.visits).toBe(2000);
+    expect(Math.abs(aggregateScenarioTraffic(project, anchorMonth()).providers.find(provider => provider.provider === 'openai')!.visits - 2000)).toBeLessThan(31);
   });
 
   it('reconciles a large full-year scenario across date subdivisions, providers and countries without mutating its configuration', () => {

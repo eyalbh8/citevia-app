@@ -1,5 +1,6 @@
 import {
   buildSummary,
+  domainForUrl,
   projectProviders,
   trackedUrlKey,
   type Analysis,
@@ -238,18 +239,8 @@ function findRun(project: Project, id: string): ScanRun | null {
 
 const measurementPlans = new WeakMap<Project, Map<ScanProvider, {
   promptOrder: Map<string, number>;
-  scans: Map<number, { phase: number; mentionCount: number; positiveStart: number }>;
+  scans: Map<number, { phase: number; mentionCount: number; positiveStart: number; ranks: Map<string, number> }>;
 }>>();
-
-/** Service scenarios retain annual growth while each pair of weekly scans moves. */
-function weeklyMovement(project: Project, at: number) {
-  if (!['igeo-dr-roof', 'website-demo'].includes(configFor(project)!.source)) return 0;
-  if (configFor(project)!.companyDiscovery) return 0;
-  const date = new Date(at);
-  const minute = ((date.getUTCDay() + 6) % 7) * 1440 + date.getUTCHours() * 60 + date.getUTCMinutes();
-  const first = Math.min(...(project.scanSchedule?.slotsUtcMinutes || [600, 5640]));
-  return minute === first ? -1 : 1;
-}
 
 function measurementPlan(project: Project, provider: ScanProvider) {
   let providers = measurementPlans.get(project);
@@ -257,12 +248,16 @@ function measurementPlan(project: Project, provider: ScanProvider) {
   const cached = providers.get(provider);
   if (cached) return cached;
   const prompts = activePrompts(project);
+  // Providers share nested cohorts, so added provider coverage cannot introduce
+  // an unrelated lower-performing cohort into combined-period comparisons.
   const ordered = [...prompts].sort((a, b) =>
-    hash(`${provider}:${a.id}`) - hash(`${provider}:${b.id}`) || a.id.localeCompare(b.id),
+    hash(`${project.id}:${a.id}`) - hash(`${project.id}:${b.id}`) || a.id.localeCompare(b.id),
   );
   const plan = { promptOrder: new Map(ordered.map((prompt, index) => [prompt.id, index])),
-    scans: new Map<number, { phase: number; mentionCount: number; positiveStart: number }>() };
+    scans: new Map<number, { phase: number; mentionCount: number; positiveStart: number; ranks: Map<string, number> }>() };
   let previousCount = 0, previousPositive = 0, previousPositiveStart = prompts.length;
+  let previousRanks = new Map<string, number>();
+  let initialNeutral: number | undefined;
   const profile = {
     openai: { baseline: 0.42, growth: 0.54, curve: 1 },
     perplexity: { baseline: 0.34, growth: 0.56, curve: 1.08 },
@@ -271,23 +266,37 @@ function measurementPlan(project: Project, provider: ScanProvider) {
   const visibilityAdjustment = demoNumericProfile(configFor(project)!).visibilityAdjustment;
   for (const at of scanTimes(project)) {
     const phase = progress(project, at);
-    const movement = weeklyMovement(project, at);
-    const variation = movement * (1 + hash(`${project.id}:${provider}:weekly-mentions`) % 2);
-    const mentionCount = Math.max(movement ? Math.min(1, prompts.length) : 0, Math.min(prompts.length - (movement ? 1 : 0),
-      Math.floor(prompts.length * (profile.baseline + visibilityAdjustment + profile.growth * phase ** profile.curve)) + variation));
-    // Legacy Nayax retains its original monotonic share. Service demos allow
-    // modest weekly movement around the same improving annual sentiment curve.
-    const positiveCount = movement
-      ? Math.max(0, Math.min(mentionCount - 1, Math.floor(mentionCount * (0.3 + 0.66 * phase + movement * .04))))
-      : Math.min(mentionCount, Math.max(
-          Math.ceil(mentionCount * (0.3 + 0.66 * phase)),
-          previousCount ? Math.ceil(mentionCount * previousPositive / previousCount - 1e-10) : 0,
-        ));
+    // Retain a growing cohort instead of alternating the two weekly scan slots.
+    // A date range can begin on either slot: a weekly sawtooth otherwise turns
+    // a successful scenario into a decline for arbitrary/custom date bounds.
+    const mentionCount = Math.min(prompts.length, Math.max(previousCount,
+      Math.floor(prompts.length * (profile.baseline + visibilityAdjustment + profile.growth * phase ** profile.curve))));
+    const positiveCount = Math.min(mentionCount, Math.max(
+      Math.ceil(mentionCount * (0.3 + 0.66 * phase)),
+      previousCount ? Math.ceil(mentionCount * previousPositive / previousCount - 1e-10) : 0,
+    ));
     // New mention cohorts enter with positive sentiment rather than diluting
     // a prompt's existing provider scores. Existing positive cohorts stay
     // positive as the historical sentiment curve improves.
-    const positiveStart = Math.min(previousPositiveStart, mentionCount - positiveCount);
-    plan.scans.set(at, { phase, mentionCount, positiveStart });
+    initialNeutral ??= mentionCount - positiveCount;
+    const positiveStart = Math.min(previousPositiveStart, mentionCount - positiveCount,
+      Math.ceil(initialNeutral * (1 - phase)));
+    // A newly mentioned prompt must not dilute the average by entering below
+    // established cohorts. Sparse source catalogs can constrain earlier ranks,
+    // so cap entrants at the best established rank. This also keeps filtered
+    // prompt cohorts from regressing when visibility expands.
+    const desiredRank = (prompt: Prompt, index: number) => Math.min(
+      1 + Math.min(...projectProviders(project).map(({ provider }) =>
+        visibleCompetitorsFor(project, provider, prompt, phase).length)) + sourceCompanies(project).length,
+      Math.max(1, 7 - Math.floor(rankImprovement(project, at) + index / Math.max(1, prompts.length))),
+    );
+    const ranks = new Map(ordered.slice(0, previousCount).map((prompt, index) =>
+      [prompt.id, Math.min(previousRanks.get(prompt.id)!, desiredRank(prompt, index))] as const));
+    const entryRank = ranks.size ? Math.min(...ranks.values()) : Infinity;
+    for (let index = previousCount; index < mentionCount; index++)
+      ranks.set(ordered[index].id, Math.min(entryRank, desiredRank(ordered[index], index)));
+    plan.scans.set(at, { phase, mentionCount, positiveStart, ranks });
+    previousRanks = ranks;
     previousCount = mentionCount;
     previousPositive = positiveCount;
     previousPositiveStart = positiveStart;
@@ -340,28 +349,26 @@ function presentationMeasurements(project: Project, run: ScanRun, prompt: Prompt
     ...project.competitors.map((brand, index) => measurement(brand.id, index < presentation.targetRank - 1, index + 1))];
 }
 
-/** Stable prompt thresholds share the same scan movement across every report. */
+function visibleCompetitorsFor(project: Project, provider: ScanProvider, prompt: Prompt, phase: number) {
+  return project.competitors.filter((brand, index) =>
+    (hash(`${prompt.id}:${brand.id}:${provider}`) % 1000) / 1000 < 0.50 - 0.30 * phase - index * 0.025);
+}
+
+/** Stable, cumulative prompt cohorts drive the same growth in every report. */
 function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): BrandAnalysis[] {
   if (configFor(project)!.presentation) return presentationMeasurements(project, run, prompt);
   const plan = measurementPlan(project, run.snapshot.provider!);
-  const { phase, mentionCount, positiveStart } = plan.scans.get(Date.parse(run.scheduledAt))!;
+  const { phase, mentionCount, positiveStart, ranks } = plan.scans.get(Date.parse(run.scheduledAt))!;
   const index = plan.promptOrder.get(prompt.id)!;
   const mentioned = index < mentionCount;
-  const movement = weeklyMovement(project, Date.parse(run.scheduledAt));
-  const visibleCompetitors = project.competitors.filter((brand, competitorIndex) => {
-    const threshold = (hash(`${prompt.id}:${brand.id}:${run.snapshot.provider}`) % 1000) / 1000;
-    const seed = hash(`${project.id}:${brand.id}:${run.snapshot.provider}:weekly-mentions`);
-    const variation = movement * (seed % 2 ? 1 : -1) * (.03 + (seed % 4) * .01);
-    return threshold < 0.50 - 0.30 * phase - competitorIndex * 0.025 + variation;
-  });
+  const visibleCompetitors = visibleCompetitorsFor(project, run.snapshot.provider!, prompt, phase);
   if (configFor(project)!.companyDiscovery && !mentioned && !visibleCompetitors.length && project.competitors.length)
     visibleCompetitors.push(project.competitors[hash(`${project.id}:${run.snapshot.provider}:${prompt.id}:discovery`) % project.competitors.length]);
   // All earlier ordinal positions must have a company in the simulated answer.
   // Sparse fixtures without source alternatives use the highest supportable rank.
   // Later mention cohorts rank at least as well, so growing visibility cannot
   // dilute the improving rank curve by introducing lower-ranked prompt results.
-  const rank = Math.min(1 + visibleCompetitors.length + sourceCompanies(project).length,
-    Math.max(1, 7 - Math.floor(rankImprovement(project, Date.parse(run.scheduledAt)) + index / Math.max(1, activePrompts(project).length))));
+  const rank = ranks.get(prompt.id) ?? 1;
   const target: BrandAnalysis = {
     brandId: project.brand.id,
     mentioned,
@@ -387,8 +394,7 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
       appearanceRank: visible ? position : null,
       mentionOrder: visible ? position : null,
       sentiment: visible
-        ? movement && (hash(`${prompt.id}:${brand.id}:${run.snapshot.provider}:sentiment`) % 1000) / 1000 <
-          .24 + movement * (hash(`${project.id}:${brand.id}:sentiment`) % 2 ? .07 : -.07)
+        ? (hash(`${prompt.id}:${brand.id}:${run.snapshot.provider}:sentiment`) % 1000) / 1000 < .24 + phase * .12
           ? 'positive' : 'neutral'
         : 'not_applicable',
       evidence: [], rankEvidence: null, sentimentEvidence: null,
@@ -457,7 +463,7 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
       try { return ['http:', 'https:'].includes(new URL(citation.url).protocol); } catch { return false; }
     });
     unique = [...new Map(candidates.map((citation) => [citation.url, citation])).values()]
-      .filter(citation => !trackedIndex.keys.has(trackedUrlKey(citation.url)))
+      .filter(citation => !trackedIndex.keys.has(trackedUrlKey(citation.url)) && domainForUrl(citation.url) !== 'reddit.com')
       .map(citation => ({ ...citation, title: citation.title || new URL(citation.url).hostname }));
     pools.set(prompt.id, unique);
   }
@@ -468,7 +474,21 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     eligible = tracked.filter(item => (item.createdAt || item.publishedAt) <= at && item.publishedAt <= at);
     trackedIndex.eligible.set(at, eligible);
   }
-  const base = unique.slice(0, size);
+  // Source tiers are encoded in answer citations, so the Sources rows, answer
+  // drawer and dashboard all reconcile. The owned site leads (every answer),
+  // Reddit appears in 90% of the stable prompt cohort, and the remaining
+  // researched sources rotate within half the cohort. Discovery citations and
+  // tracked-content pickups below remain attached to their actual answers.
+  const index = measurementPlan(project, run.snapshot.provider!).promptOrder.get(prompt.id)!;
+  const count = activePrompts(project).length;
+  const base = index < Math.floor(count / 2) ? unique.slice(0, size) : [];
+  const officialDomain = project.brand.domains[0];
+  if (officialDomain) {
+    const origin = new URL(/^https?:\/\//.test(officialDomain) ? officialDomain : `https://${officialDomain}`).origin;
+    base.push({ url: `${origin}/`, title: project.brand.name });
+  }
+  if (index < Math.max(1, Math.floor(count * .9)))
+    base.push({ url: 'https://www.reddit.com/', title: 'Reddit community discussions' });
   if (configFor(project)!.companyDiscovery) {
     const mentioned = brandMeasurements(project, run, prompt).find(brand => brand.mentioned);
     const brand = [project.brand, ...project.competitors].find(brand => brand.id === mentioned?.brandId);

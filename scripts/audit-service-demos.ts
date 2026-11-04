@@ -89,15 +89,17 @@ try {
       .map(item => item.capturedAt!.slice(0, 10)))].sort();
     const firstDay = share(`${weekDates[0]}T00:00:00.000Z`, `${weekDates[0]}T23:59:59.999Z`);
     const lastDay = share(`${weekDates.at(-1)}T00:00:00.000Z`, `${weekDates.at(-1)}T23:59:59.999Z`);
-    assert(lastDay > firstDay, 'The anchor week default dashboard should show an increase.');
+    assert(lastDay >= firstDay, 'The anchor week default dashboard must not decline.');
     const monthlyTraffic = [];
     for (let offset = -5; offset <= 5; offset++) {
       const range = month(year, anchorMonth + offset);
       const traffic = await runtime.repository.aggregateTraffic(project.id, range);
       assert.equal(traffic.current, traffic.providers.reduce((sum, item) => sum + item.visits, 0));
       assert.equal(traffic.current, traffic.series.reduce((sum, item) => sum + Object.values(item.values).reduce((total, count) => total + count, 0), 0));
-      if (monthlyTraffic.length) assert(traffic.current > monthlyTraffic.at(-1)!.visits, 'Monthly AI referrals should grow.');
-      monthlyTraffic.push({ month: range.period.start.slice(0, 7), visits: traffic.current });
+      const dailyAverage = traffic.current / traffic.series.length;
+      if (monthlyTraffic.length) assert(dailyAverage >= monthlyTraffic.at(-1)!.dailyAverage, 'Daily AI referral rates must not decline across calendar months.');
+      assert(traffic.providers.every(provider => provider.visits >= traffic.series.length), 'Every provider needs its daily demo baseline.');
+      monthlyTraffic.push({ month: range.period.start.slice(0, 7), visits: traffic.current, dailyAverage });
     }
     for (const result of [history.results[0], history.results.at(-1)!]) {
       const answer = await runtime.artifacts.get<CapturedAnswer>(result.captureKey!);

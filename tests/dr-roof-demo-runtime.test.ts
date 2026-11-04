@@ -80,7 +80,7 @@ describe('compact Dr. Roof scenario runtime', () => {
     expect(initial).toEqual([21, 17, 14]);
     expect(aggregateScenarioTraffic(unchanged, trafficMonth(2026, 9)))
       .toEqual(aggregateScenarioTraffic(explicit, trafficMonth(2026, 9)));
-    expect(aggregateScenarioTraffic(unchanged, trafficMonth(2026, 9)).providers[0].visits).toBe(2000);
+    expect(Math.abs(aggregateScenarioTraffic(unchanged, trafficMonth(2026, 9)).providers[0].visits - 2000)).toBeLessThan(31);
   });
 
   it('allows weekly movement while monthly provider visibility, sentiment and rank improve', async () => {
@@ -117,23 +117,24 @@ describe('compact Dr. Roof scenario runtime', () => {
     expect([...weeks.values()].slice(1, -1).every(slots => slots.size === 2)).toBe(true);
   });
 
-  it('anchors ChatGPT at 1,840 and preserves consistent monthly growth and dimensions', () => {
+  it('keeps ChatGPT near 1,840 and preserves growing daily rates and consistent dimensions', () => {
     const saved = project();
     const anchor = aggregateScenarioTraffic(saved, trafficMonth(2026, 9));
-    expect(anchor.providers.map(value => value.visits)).toEqual([1840, 33, 50, 39, 22, 17]);
-    expect(anchor.current).toBe(2001);
+    expect(Math.abs(anchor.providers[0].visits - 1840)).toBeLessThan(31);
+    expect(anchor.providers.slice(1).every(provider => provider.visits >= 31)).toBe(true);
     let previous = 0;
     for (let month = 4; month <= 14; month++) {
       const report = aggregateScenarioTraffic(saved, trafficMonth(2026, month));
-      expect(report.current).toBeGreaterThan(previous);
+      const days = report.series.length;
+      expect(report.current / days).toBeGreaterThan(previous);
       for (const dimension of [report.sources, report.pages, report.locations, report.browsers, report.devices])
         expect(dimension.reduce((n, row) => n + row.visits, 0)).toBe(report.current);
       expect(report.series.reduce((n, row) => n + Object.values(row.values).reduce((sum, visits) => sum + visits, 0), 0))
         .toBe(report.current);
-      previous = report.current;
+      previous = report.current / days;
     }
     const next = aggregateScenarioTraffic(saved, trafficMonth(2026, 10));
-    expect(next.providers[0].visits).toBe(2015);
+    expect(next.providers[0].visits / next.series.length).toBeGreaterThan(anchor.providers[0].visits / anchor.series.length);
     expect(next.previous).toBe(anchor.current);
     const throughApril = weeklyRoofingPosts();
     const march = aggregateScenarioTraffic(throughApril, trafficMonth(2027, 2));
@@ -153,7 +154,7 @@ describe('compact Dr. Roof scenario runtime', () => {
     expect(answer?.text).toContain('local roofing contractors');
     expect(answer?.text).toContain('roof inspections, reliable repairs, and clear warranty coverage');
     expect(answer?.text).not.toMatch(/payment platform|unattended retail|payment acceptance/i);
-    expect((await runtime.repository.aggregateTraffic(saved.id, trafficMonth(2026, 9))).current).toBe(2001);
+    expect((await runtime.repository.aggregateTraffic(saved.id, trafficMonth(2026, 9))).current).toBeGreaterThan(1900);
     expect(await repository.listRuns(saved.id)).toEqual([]);
     expect((await repository.listPromptHistory(saved.id, '2026-01-01T00:00:00Z', now().toISOString())).results).toEqual([]);
     expect((await repository.aggregateTraffic(saved.id, trafficMonth(2026, 9))).current).toBe(0);

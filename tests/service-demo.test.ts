@@ -218,11 +218,15 @@ describe('compact public website service demos', () => {
     for (const competitor of value.competitors) expect(domains.has(new URL(competitor.website).hostname)).toBe(true);
     expect(domains.has('fixture-gutters.com')).toBe(true);
     expect(domains.has('thisoldhouse.com')).toBe(true);
+    expect(domains.has('reddit.com')).toBe(true);
     expect(domains.has('citevia.io')).toBe(false);
-    expect(domains.size).toBe(7);
-    const allowedUrls = new Set([value.website, ...value.blogs.map(blog => blog.url), ...value.sources.map(reference => reference.url),
+    expect(domains.size).toBe(8);
+    const redditPosition = summary!.domains.findIndex(row => row.domain === 'reddit.com') + 1;
+    expect(redditPosition).toBeGreaterThanOrEqual(2);
+    expect(redditPosition).toBeLessThanOrEqual(5);
+    const allowedUrls = new Set([value.website, `https://${project.brand.domains[0]}/`, 'https://www.reddit.com/', ...value.blogs.map(blog => blog.url), ...value.sources.map(reference => reference.url),
       ...value.competitors.map(competitor => competitor.website), ...project.demo!.trackedUrls!.map(article => article.url)]);
-    expect(summary!.urls.every(row => allowedUrls.has(row.url!))).toBe(true);
+    expect(summary!.urls.filter(row => !allowedUrls.has(row.url!)).map(row => row.url)).toEqual([]);
     const results = await runtime.repository.listResults(project.id, run.id);
     const answers = await Promise.all(results.map(result => runtime.artifacts.get<CapturedAnswer>(result.captureKey!)));
     const nativeCitations = answers.reduce((sum, answer) => sum + answer!.citations.length, 0);

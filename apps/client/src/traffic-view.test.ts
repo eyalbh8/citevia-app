@@ -104,8 +104,8 @@ beforeEach(() => {
   mocks.request.mockReset();
   mocks.useApi.mockReset();
   mocks.downloadCsv.mockReset();
-  mocks.useApi.mockImplementation((path: string) => ({
-    data: path.includes('/status') ? report.status : report,
+  mocks.useApi.mockImplementation((path: string | null) => ({
+    data: path ? path.includes('/status') ? report.status : report : undefined,
     loading: false,
     error: undefined,
   }));
@@ -132,7 +132,7 @@ async function render(selectedProject = project) {
 }
 
 describe('AI Traffic screen interactions', () => {
-  it('defaults configured traffic to the last seven days and keeps live tracker setup disabled with ordinary account copy', async () => {
+  it('opens demo settings while keeping live tracker setup unavailable and preserving date filters', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-23T12:00:00Z'));
     await render({
@@ -151,12 +151,19 @@ describe('AI Traffic screen interactions', () => {
     expect(mocks.useApi.mock.calls.at(-1)?.[0]).not.toContain('start=');
     expect(mocks.useApi.mock.calls.at(-1)?.[0]).not.toContain('end=');
     expect(container.querySelector('.date-range-trigger')?.textContent).toContain('Last 7 days');
-    expect(buttons('Settings')[0].disabled).toBe(true);
-    expect(buttons('Settings')[0].title).toBe('Owner access is required to change website tracking.');
+    expect(buttons('Settings')[0].disabled).toBe(false);
     expect(container.textContent).not.toMatch(/\bdemo\b|synthetic|projections/i);
     await click('Settings');
+    expect(buttons('Settings')[0].getAttribute('aria-pressed')).toBe('true');
+    expect(container.textContent).toContain('AI traffic settings');
+    expect(container.textContent).toContain('northstar.example');
+    expect(container.textContent).toContain('2026-04-23 – 2027-04-23');
+    expect(container.textContent).toContain('Website tracking is read-only');
+    expect(buttons('Test connection')).toHaveLength(0);
+    expect(buttons('Copy script')).toHaveLength(0);
     expect(container.textContent).not.toContain('data-project-id');
     expect(mocks.request).not.toHaveBeenCalled();
+    await click('View AI traffic');
     expect(container.querySelectorAll('.traffic-metric')).toHaveLength(7);
     await act(async () => container.querySelector<HTMLButtonElement>('.date-range-trigger')!.click());
     await act(async () => {
@@ -170,6 +177,24 @@ describe('AI Traffic screen interactions', () => {
     expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('days=custom');
     expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('start=2026-04-23');
     expect(mocks.useApi.mock.calls.at(-1)?.[0]).toContain('end=2027-04-23');
+  });
+
+  it('keeps saved-traffic settings separate from a reporting-only visibility scenario date window', async () => {
+    await render({
+      ...project,
+      demo: {
+        version: 1, source: 'website-demo', anchorDate: '2026-10-23',
+        startDate: '2026-04-23', endDate: '2027-04-23',
+        sourceAccountId: 'visibility-example', sourceCopiedAt: '2026-10-23T00:00:00Z',
+        presentation: { label: 'Visibility example', targetRank: 8, mentionCount: 12, reportingOnly: true },
+      },
+    });
+    await click('Settings');
+    expect(container.textContent).toContain('reports its saved traffic');
+    expect(container.textContent).toContain('AI providers');
+    expect(container.textContent).not.toContain('Reporting period');
+    expect(container.textContent).not.toContain('2026-04-23');
+    expect(buttons('Test connection')).toHaveLength(0);
   });
 
   it('renders all providers and breakdowns, pages lists, toggles chart series and exports the filtered report', async () => {

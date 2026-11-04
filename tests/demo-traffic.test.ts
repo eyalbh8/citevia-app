@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TRAFFIC_PROVIDERS, type Project, type TrafficAggregate, type TrafficFilters } from '@citevia/core';
 import { aggregateScenarioTraffic } from '../packages/storage/src/demo-traffic.js';
+import { monitoringPeriod } from '../apps/api/src/monitoring.js';
 import { newProject } from './fixtures/scanner.js';
 
 const project: Project = {
@@ -31,12 +32,13 @@ function reconcile(traffic: TrafficAggregate) {
     expect(dimension.reduce((sum, item) => sum + item.visits, 0)).toBe(traffic.current);
 }
 
-describe('modest virtual AI traffic', () => {
-  it('supports niche businesses with fewer than one hundred monthly AI referrals without losing reconciliation', () => {
+describe('growing virtual AI traffic', () => {
+  it('keeps niche providers visible with a daily baseline without losing reconciliation', () => {
     const niche: Project = { ...project, demo: { ...project.demo!, profile: { trafficScale: .035, monthlyGrowth: .065 } } };
     const traffic = aggregateScenarioTraffic(niche, monthFilters(2026, 9));
-    expect(traffic.current).toBeGreaterThan(60);
-    expect(traffic.current).toBeLessThan(100);
+    expect(traffic.current).toBeGreaterThanOrEqual(31 * TRAFFIC_PROVIDERS.length);
+    expect(traffic.current).toBeLessThan(300);
+    expect(traffic.providers.every(provider => provider.visits >= 31)).toBe(true);
     expect(traffic.current).toBeGreaterThan(traffic.previous);
     reconcile(traffic);
     const splits = [filters('2026-10-01T00:00:00.000Z', '2026-10-15T23:59:59.999Z'),
@@ -44,26 +46,45 @@ describe('modest virtual AI traffic', () => {
     expect(splits.reduce((sum, range) => sum + aggregateScenarioTraffic(niche, range).current, 0)).toBe(traffic.current);
   });
 
-  it('sets ChatGPT to 2,000 and each other provider to a few dozen in the anchor month', () => {
+  it('keeps ChatGPT near its anchor reference and other providers at a modest daily baseline', () => {
     const traffic = aggregateScenarioTraffic(project, monthFilters(2026, 9));
-    expect(traffic.providers.map((item) => [item.provider, item.visits])).toEqual([
-      ['openai', 2000], ['claude', 36], ['perplexity', 54], ['gemini', 42], ['copilot', 24], ['deepseek', 18],
-    ]);
-    expect(traffic.current).toBe(2174);
+    expect(Math.abs(traffic.providers[0].visits - 2000)).toBeLessThan(31);
+    for (const provider of traffic.providers.slice(1)) {
+      expect(provider.visits).toBeGreaterThanOrEqual(31);
+      expect(provider.visits).toBeLessThan(100);
+    }
     expect(traffic.current).toBeGreaterThan(traffic.previous);
     reconcile(traffic);
   });
 
-  it('grows calendar month targets by nominal 10%, independent of 28, 30 or 31 day month length', () => {
-    const bases = [2000, 36, 54, 42, 24, 18];
+  it('keeps equal-length windows and every daily provider series nondecreasing across month boundaries', () => {
     let previous: TrafficAggregate | undefined;
     for (let month = 4; month <= 14; month++) {
-      const traffic = aggregateScenarioTraffic(project, monthFilters(2026, month));
-      expect(traffic.providers.map((item) => item.visits)).toEqual(bases.map((base) => Math.round(base * 1.1 ** (month - 9))));
-      if (previous) for (let provider = 0; provider < bases.length; provider++)
-        expect(traffic.providers[provider].visits).toBeGreaterThan(previous.providers[provider].visits);
+      const traffic = aggregateScenarioTraffic(project, filters(new Date(Date.UTC(2026, month, 1)).toISOString(), new Date(Date.UTC(2026, month, 29) - 1).toISOString()));
+      if (previous) for (let provider = 0; provider < TRAFFIC_PROVIDERS.length; provider++)
+        expect(traffic.providers[provider].visits).toBeGreaterThanOrEqual(previous.providers[provider].visits);
       previous = traffic;
       reconcile(traffic);
+    }
+    const year = aggregateScenarioTraffic(project, filters(`${project.demo!.startDate}T00:00:00.000Z`, `${project.demo!.endDate}T23:59:59.999Z`));
+    for (let index = 1; index < year.series.length; index++) for (const provider of TRAFFIC_PROVIDERS)
+      expect(year.series[index].values[provider] || 0).toBeGreaterThanOrEqual(year.series[index - 1].values[provider] || 0);
+  });
+
+  it.each([.035, 1, 10])('never declines for presets and country slices at scale %s, including partial-day comparisons', scale => {
+    const saved: Project = { ...project, demo: { ...project.demo!, profile: { trafficScale: scale, monthlyGrowth: .055 } } };
+    for (const date of ['2026-11-04', '2027-03-01']) for (const time of ['00:00:00.000', '11:59:59.999', '12:00:00.000', '17:23:45.678', '23:59:59.999']) {
+      for (const days of ['1', '7', '14', '30', '90']) {
+        const period = monitoringPeriod(new URLSearchParams({ days }), new Date(`${date}T${time}Z`));
+        const duration = Date.parse(period.end) - Date.parse(period.start) + 1;
+        const previous = { ...period, start: new Date(Date.parse(period.start) - duration).toISOString(), end: new Date(Date.parse(period.start) - 1).toISOString() };
+        for (const countries of [[], ['US'], ['GB'], ['IL']]) {
+          const traffic = aggregateScenarioTraffic(saved, { period, previous, countries, providers: [] });
+          expect(traffic.current).toBeGreaterThanOrEqual(traffic.previous);
+          expect(traffic.providers.every(provider => provider.visits >= provider.previous)).toBe(true);
+          reconcile(traffic);
+        }
+      }
     }
   });
 

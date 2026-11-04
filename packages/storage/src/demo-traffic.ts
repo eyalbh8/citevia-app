@@ -11,7 +11,7 @@ import {
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-/** October 2026 is the saved scenario's anchor month, not its first month. */
+/** Reference monthly volumes, converted to daily rates in the anchor month. */
 const ANCHOR_VISITS: Record<TrafficProvider, number> = {
   openai: 2_000, claude: 36, perplexity: 54, gemini: 42, copilot: 24, deepseek: 18,
 };
@@ -41,9 +41,7 @@ const HOSTS: Record<TrafficProvider, string> = {
   openai: 'chatgpt.com', claude: 'claude.ai', perplexity: 'perplexity.ai',
   gemini: 'gemini.google.com', copilot: 'copilot.microsoft.com', deepseek: 'deepseek.com',
 };
-const HOURS = [.22, .18, .16, .15, .17, .25, .45, .72, 1.05, 1.35, 1.5, 1.4,
-  1.25, 1.35, 1.45, 1.5, 1.4, 1.25, 1.1, 1.05, .9, .75, .55, .35];
-const WEEKDAYS = [.76, 1.08, 1.12, 1.1, 1.06, .98, .78];
+const MONTH_DAYS = 365.25 / 12;
 const fraction = (value: number) => value - Math.floor(value);
 const iso = (at: number) => new Date(at).toISOString();
 const day = (value: string) => Date.parse(`${value}T00:00:00.000Z`);
@@ -64,6 +62,8 @@ function clean(values: string[] | undefined, fallback: string[]) {
 
 /** Ranked source dimensions retain their order without rounding each tiny hourly cell. */
 function dimension(labels: string[], ordinal: number, seed: number, stride: number) {
+  // Give every saved dimension a stable slot before weighting the extra slots.
+  if (ordinal < labels.length) return labels[ordinal];
   let position = fraction(ordinal * stride + seed) * labels.length * (labels.length + 1) / 2;
   for (let index = 0; index < labels.length; index++) {
     position -= labels.length - index;
@@ -82,11 +82,15 @@ function rows(counts: Map<string, number>): TrafficRow[] {
 }
 
 /**
- * Derive a modest, consistent referral scenario without storing analytics rows.
- * Each full UTC month follows the saved profile's anchor volume and growth.
- * Weighted quantiles spread those visits over the month, including providers
- * with only a few dozen referrals. Stable timestamps and dimensions mean any
- * subdivision of a date range reconciles with the same range's total.
+ * Derive a growing referral scenario without storing analytics rows. Daily
+ * visits are nested: a later day retains every earlier slot and may add pairs.
+ * Every pair has matching dimensions and timestamps mirrored around noon. This
+ * keeps country/provider slices nondecreasing even when a preset ends partway
+ * through today and its equally long comparison starts partway through a day.
+ * A noon visit gives even niche providers a visible, stable daily baseline.
+ * The saved anchor volume is a reference rate; integer daily visits, rather
+ * than an exact monthly quota, avoid artificial drops at month boundaries.
+ * Stable events mean arbitrary subdivisions still reconcile exactly.
  */
 export function aggregateScenarioTraffic(project: Project, filters: TrafficFilters): TrafficAggregate {
   const config = project.demo;
@@ -110,58 +114,47 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
   const to = Math.min(day(config.endDate) + DAY - 1, Math.max(previousEnd, currentEnd));
   const step = filters.period.granularity === 'hourly' ? HOUR : DAY;
   const anchor = new Date(day(config.anchorDate));
-  const anchorMonth = anchor.getUTCFullYear() * 12 + anchor.getUTCMonth();
-  const first = new Date(from);
-  let monthStart = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1);
+  const anchorStart = Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1);
+  const anchorEnd = Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 1);
+  const anchorDays = (anchorEnd - anchorStart) / DAY;
+  const anchorMiddle = (anchorStart + anchorEnd) / 2;
 
-  while (monthStart <= to) {
-    const month = new Date(monthStart);
-    const nextMonth = Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1);
-    const monthNumber = month.getUTCFullYear() * 12 + month.getUTCMonth();
-    const cumulative: number[] = [];
-    let weight = 0;
-    for (let at = monthStart; at < nextMonth; at += HOUR) {
-      const date = new Date(at);
-      const dailyVariation = .88 + hash(`${project.id}/${iso(at).slice(0, 10)}`) * .24;
-      weight += WEEKDAYS[date.getUTCDay()] * dailyVariation * HOURS[date.getUTCHours()];
-      cumulative.push(weight);
-    }
-    for (const provider of providers) {
-      const count = Math.round(ANCHOR_VISITS[provider] * profile.trafficScale * (1 + profile.monthlyGrowth) ** (monthNumber - anchorMonth));
-      const key = `${project.id}/${monthNumber}/${provider}`;
-      const phase = .15 + hash(`${key}/time`) * .7;
-      const countrySeed = hash(`${key}/country`), pageSeed = hash(`${key}/page`);
-      const browserSeed = hash(`${key}/browser`), deviceSeed = hash(`${key}/device`);
-      for (let ordinal = 0; ordinal < count; ordinal++) {
-        const position = (ordinal + phase) / count * weight;
-        let low = 0, high = cumulative.length - 1;
-        while (low < high) {
-          const middle = (low + high) >>> 1;
-          if (cumulative[middle] < position) low = middle + 1;
-          else high = middle;
+  for (const provider of providers) {
+    const key = `${project.id}/${provider}`;
+    const timeSeed = hash(`${key}/time`), countrySeed = hash(`${key}/country`), pageSeed = hash(`${key}/page`);
+    const browserSeed = hash(`${key}/browser`), deviceSeed = hash(`${key}/device`);
+    for (let date = Math.floor(from / DAY) * DAY; date <= to; date += DAY) {
+      const months = (date + DAY / 2 - anchorMiddle) / (MONTH_DAYS * DAY);
+      const rate = ANCHOR_VISITS[provider] * profile.trafficScale / anchorDays * (1 + profile.monthlyGrowth) ** months;
+      const pairs = Math.floor(rate / 2);
+      for (let ordinal = -1; ordinal < pairs; ordinal++) {
+        // Inclusive millisecond bounds mirror around DAY - 1. Put the singleton
+        // on the earlier center millisecond so a half-day boundary cannot lose it.
+        const offset = ordinal < 0 ? DAY / 2 - 1 : 1 + Math.floor(fraction((ordinal + 1) * .6180339887498949 + timeSeed) * (DAY / 2 - 2));
+        const country = ordinal < 0 ? countries[0] : dimension(countries, ordinal, countrySeed, .6180339887498949);
+        const page = ordinal < 0 ? pages[0] : dimension(pages, ordinal, pageSeed, .4142135623730951);
+        const browser = ordinal < 0 ? browsers[0] : dimension(browsers, ordinal, browserSeed, .7320508075688772);
+        const device = ordinal < 0 ? devices[0] : dimension(devices, ordinal, deviceSeed, .2360679774997897);
+        for (const at of ordinal < 0 ? [date + offset] : [date + offset, date + DAY - 1 - offset]) {
+          if (at < from || at > to) continue;
+          const current = at >= currentStart && at <= currentEnd;
+          const previous = at >= previousStart && at <= previousEnd;
+          if (current) availableCountries.add(country);
+          if (filters.countries.length && !filters.countries.includes(country)) continue;
+          const total = totals.get(provider)!;
+          if (previous) total.previous++;
+          if (!current) continue;
+          total.visits++;
+          const bucket = seriesIndex.get(iso(Math.floor(at / step) * step));
+          if (bucket) bucket[provider] = (bucket[provider] || 0) + 1;
+          add(sources, HOSTS[provider]);
+          add(locations, country);
+          add(pageCounts, page);
+          add(browserCounts, browser);
+          add(deviceCounts, device);
         }
-        const priorWeight = low ? cumulative[low - 1] : 0;
-        const at = monthStart + low * HOUR + Math.floor((position - priorWeight) / (cumulative[low] - priorWeight) * HOUR);
-        if (at < from || at > to) continue;
-        const current = at >= currentStart && at <= currentEnd;
-        const previous = at >= previousStart && at <= previousEnd;
-        const country = dimension(countries, ordinal, countrySeed, .6180339887498949);
-        if (current) availableCountries.add(country);
-        if (filters.countries.length && !filters.countries.includes(country)) continue;
-        const total = totals.get(provider)!;
-        if (previous) total.previous++;
-        if (!current) continue;
-        total.visits++;
-        const bucket = seriesIndex.get(iso(Math.floor(at / step) * step));
-        if (bucket) bucket[provider] = (bucket[provider] || 0) + 1;
-        add(sources, HOSTS[provider]);
-        add(locations, country);
-        add(pageCounts, dimension(pages, ordinal, pageSeed, .4142135623730951));
-        add(browserCounts, dimension(browsers, ordinal, browserSeed, .7320508075688772));
-        add(deviceCounts, dimension(devices, ordinal, deviceSeed, .2360679774997897));
       }
     }
-    monthStart = nextMonth;
   }
   return {
     current: [...totals.values()].reduce((sum, item) => sum + item.visits, 0),

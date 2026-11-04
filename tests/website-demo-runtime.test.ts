@@ -76,11 +76,12 @@ describe('public website service scenarios', () => {
     for (const company of analysis.companies || [])
       expect(answer.text.slice(company.evidence.start, company.evidence.end)).toBe(company.evidence.quote);
     const anchor = aggregateScenarioTraffic(project, month(9));
-    expect(anchor.providers[0].visits).toBe(Math.round(2000 * service.profile.trafficScale));
+    expect(Math.abs(anchor.providers[0].visits - 2000 * service.profile.trafficScale)).toBeLessThan(31);
     let previous = 0;
     for (let calendarMonth = 5; calendarMonth <= 14; calendarMonth++) {
       const traffic = aggregateScenarioTraffic(project, month(calendarMonth));
-      expect(traffic.current).toBeGreaterThan(previous); previous = traffic.current;
+      const dailyAverage = traffic.current / traffic.series.length;
+      expect(dailyAverage).toBeGreaterThan(previous); previous = dailyAverage;
     }
     expect(await base.repository.listRuns(project.id)).toEqual([]);
     expect((await base.repository.aggregateTraffic(project.id, month(9))).current).toBe(0);

@@ -204,6 +204,7 @@ tr:last-child td { border-bottom:0}
 .page-buttons { display:flex; gap:5px; align-items:center}
 .page-buttons button { font-size:12px; min-width:32px; height:32px; border:1px solid var(--line); border-radius:8px; color:var(--muted); }
 .page-buttons button.active { background:var(--purple-soft); color:var(--purple); border-color:var(--primary-border)}
+.source-pagination button:disabled { cursor:default; }
 .summary-inline { display:flex; gap:20px; align-items:center; margin-bottom:23px; padding:19px 22px; border:1px solid var(--line); border-radius:11px; background:white; flex-wrap:wrap}
 .summary-item { display:flex; align-items:center; gap:12px}
 .summary-item+.summary-item { border-left:1px solid var(--line); padding-left:20px}

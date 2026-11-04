@@ -422,7 +422,7 @@ function TrafficSettings({
   notify: (message: string) => void;
   onDashboard: () => void;
 }) {
-  const status = useApi<TrafficStatus>(`${path}/traffic/status`);
+  const status = useApi<TrafficStatus>(project.demo ? null : `${path}/traffic/status`);
   const [testing, setTesting] = useState(false),
     [result, setResult] = useState(''),
     [error, setError] = useState<Error>();
@@ -461,7 +461,7 @@ function TrafficSettings({
     /* No configured website. */
   }
   const test = async () => {
-    if (!target || testing) return;
+    if (project.demo || !target || testing) return;
     const id = crypto.randomUUID();
     target.searchParams.set('utm_source', 'chatgpt');
     target.searchParams.set('citevia_test', id);
@@ -515,6 +515,51 @@ function TrafficSettings({
       if (!abort.signal.aborted) setTesting(false);
     }
   };
+  if (project.demo) {
+    return (
+      <div className="traffic-settings">
+        <section className="traffic-panel">
+          <header>
+            <div>
+              <span className="traffic-eyebrow">WEBSITE CONNECTION</span>
+              <h2>AI traffic settings</h2>
+              <p>Traffic is configured for {project.name || project.brand.name}.</p>
+            </div>
+            <span className="traffic-connection connected"><i />Demo configured</span>
+          </header>
+          <div className="traffic-install">
+            <p className="traffic-help">
+              {project.demo.presentation?.reportingOnly
+                ? 'This demo account reports its saved traffic.'
+                : 'This demo account uses generated traffic.'} Website tracking is read-only;
+              live script installation and connection tests are available on standard accounts.
+            </p>
+            <div className="traffic-detected-sites">
+              <h3>Configured websites</h3>
+              {project.brand.domains.map((website) => (
+                <div key={website}>
+                  <span>{website}</span>
+                </div>
+              ))}
+            </div>
+            <div className="traffic-step">
+              <Activity size={22} />
+              <div>
+                <h3>{project.demo.presentation?.reportingOnly ? 'AI providers' : 'Reporting period'}</h3>
+                {!project.demo.presentation?.reportingOnly && (
+                  <p>{project.demo.startDate} – {project.demo.endDate} · UTC</p>
+                )}
+                <p>{TRAFFIC_PROVIDERS.map((provider) => TRAFFIC_LABELS[provider]).join(', ')}</p>
+              </div>
+            </div>
+            <button className="button button-primary" onClick={onDashboard}>
+              View AI traffic
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="traffic-settings">
       <section className="traffic-panel">
@@ -788,8 +833,6 @@ export default function TrafficView({
         </button>
         <button
           aria-pressed={tab === 'settings'}
-          disabled={Boolean(project.demo)}
-          title={project.demo ? 'Owner access is required to change website tracking.' : undefined}
           onClick={() => setTab('settings')}
         >
           Settings
