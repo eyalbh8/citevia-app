@@ -120,7 +120,10 @@ describe('explicit illustrative presentation measurements', () => {
     expect(traffic).toHaveBeenCalledWith(project.id, filters);
     expect(status).toHaveBeenCalledWith(project.id, 'test');
     expect(tracked).toHaveBeenCalledWith(project.id);
-    expect(matches).toHaveBeenCalledWith(project.id, 'tracked');
+    expect(matches).toHaveBeenCalledWith(project.id, 'tracked', undefined);
+    const options = { start: period.start, end: period.end };
+    expect(await runtime.repository.listTrackingMatches(project.id, 'tracked', options)).toEqual([]);
+    expect(matches).toHaveBeenCalledWith(project.id, 'tracked', options);
   });
 
   it.each([

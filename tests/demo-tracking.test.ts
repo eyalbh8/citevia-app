@@ -131,6 +131,38 @@ describe('virtual tracked URL evidence', () => {
     expect(createScenarioTracking(project, { history, evidence }).listTrackingMatches()).toEqual(prefixed);
   });
 
+  it('generates only requested dates and keeps bounded results separate from full history', () => {
+    const { project, history, evidence, samples } = fixture();
+    const adapter = createScenarioTracking(project, { history, evidence });
+    const options = { start: '2026-05-05T00:00:00.000Z', end: '2026-05-05T23:59:59.999Z' };
+    const matches = adapter.listTrackingMatches(undefined, options);
+    expect(matches.map(match => match.capture.runId)).toEqual(['after']);
+    expect(history).toHaveBeenCalledExactlyOnceWith(options.start, options.end);
+    expect(evidence).toHaveBeenCalledTimes(1);
+    expect(evidence.mock.calls[0][0].id).toBe('after');
+    expect(adapter.listTrackingMatches(undefined, options)).toEqual(matches);
+    expect(history).toHaveBeenCalledTimes(1);
+    expect(adapter.listTrackingMatches(undefined, { end: '2026-05-04T23:59:59.999Z' })).toEqual([]);
+    expect(evidence).toHaveBeenCalledTimes(1);
+    const full = adapter.listTrackingMatches();
+    expect(full.map(match => match.capture.runId)).toEqual(['gemini', 'after']);
+    expect(full.find(match => match.capture.runId === 'after')!.evidence).toEqual(
+      citationMeasurement(samples[1].result, samples[1].run, samples[1].answer, samples[1].analysis)!.evidence[0],
+    );
+    expect(adapter.listTrackingMatches(undefined, options)).toEqual(matches);
+  });
+
+  it('extends cached tracking dates without reading the earlier history again', () => {
+    const { project, history, evidence } = fixture();
+    const adapter = createScenarioTracking(project, { history, evidence });
+    expect(adapter.listTrackingMatches(undefined, { end: '2026-05-05T23:59:59.999Z' }).map(match => match.capture.runId)).toEqual(['after']);
+    expect(adapter.listTrackingMatches(undefined, { end: '2026-05-08T23:59:59.999Z' }).map(match => match.capture.runId)).toEqual(['gemini', 'after']);
+    expect(history).toHaveBeenNthCalledWith(2, '2026-05-06T00:00:00.000Z', '2026-05-08T23:59:59.999Z');
+    expect(evidence).toHaveBeenCalledTimes(2);
+    expect(adapter.listTrackingMatches(undefined, { end: '2026-05-05T23:59:59.999Z' }).map(match => match.capture.runId)).toEqual(['after']);
+    expect(history).toHaveBeenCalledTimes(2);
+  });
+
   it.each(['igeo-dr-roof', 'igeo-nayax', 'website-demo'] as const)('builds and caches only requested %s URL evidence until the whole catalog is needed', (source) => {
     const { project, history, evidence, samples } = fixture();
     project.demo!.source = source;

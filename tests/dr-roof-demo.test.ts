@@ -75,11 +75,13 @@ describe('explicit compact Dr. Roof demo', () => {
     const p = project(), now = () => new Date('2026-10-25T12:00:00.000Z'), repository = new MemoryRepository();
     await repository.saveProject(p, null);
     const runtime = withDemoRuntime({ repository, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() }, now);
-    for (const [days, count] of [[7, 3], [30, 12]]) {
+    for (const days of [7, 30]) {
       const response = await monitoringRoute(runtime, p, 'tracked-urls', new Request(`https://citevia.test/v1/projects/${p.id}/tracked-urls?days=${days}`), now(), async () => { throw new Error('GET only'); });
       expect(response?.status).toBe(200);
       const data = await response!.json();
-      expect(data.total).toBe(count);
+      expect(data.total).toBe(78);
+      expect(data.items).toHaveLength(25);
+      expect(data.period.end).toBe(now().toISOString());
       expect(data.items.every((item: { publishedAt: string }) => item.publishedAt <= now().toISOString())).toBe(true);
       expect(data.items.reduce((sum: number, item: { periodAppearances: number }) => sum + item.periodAppearances, 0)).toBeGreaterThan(0);
     }

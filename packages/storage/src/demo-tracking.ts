@@ -15,6 +15,7 @@ import {
   type TrackingMatch,
 } from '@citevia/core';
 import { uuidFor } from './sql.js';
+import type { TrackingMatchOptions } from './contracts.js';
 
 interface ScenarioTrackingHooks {
   history(start: string, end: string): PromptHistory;
@@ -64,7 +65,7 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
   // This cache belongs to the scenario adapter, never a database or object store.
   let matches: TrackingMatch[] | undefined;
   const scopedMatches = new Map<string, TrackingMatch[]>();
-  const measureMatches = (selected: Map<string, TrackedUrl>, start: string) => {
+  const measureMatches = (selected: Map<string, TrackedUrl>, start: string, end = `${project.demo!.endDate}T23:59:59.999Z`) => {
     const measured: TrackingMatch[] = [];
     const selectedUrls = [...selected.values()];
     const enrolledCitation = (citation: Citation, at: string) => {
@@ -72,13 +73,14 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
       const url = key ? selected.get(key) : undefined;
       return !!url && enrolledAt(url, at);
     };
-    if (selected.size && project.demo) {
-      const history = hooks.history(start, `${project.demo.endDate}T23:59:59.999Z`);
+    if (selected.size && project.demo && start <= end) {
+      const history = hooks.history(start, end);
       const runs = new Map(history.runs.map((run) => [run.id, run]));
       for (const result of history.results) {
         const run = runs.get(result.runId);
         if (!run || run.reportingExcludedAt || !['completed', 'partial'].includes(run.status)) continue;
         const capturedAt = result.capturedAt || run.createdAt;
+        if (capturedAt < start || capturedAt > end) continue;
         if (!selectedUrls.some((url) => enrolledAt(url, capturedAt))) continue;
         if (hooks.citations && !hooks.citations(run, result.prompt).some((citation) => enrolledCitation(citation, capturedAt))) continue;
         const evidence = hooks.evidence(run, result.prompt);
@@ -100,9 +102,35 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
     }
     return measured;
   };
-  const listTrackingMatches = (trackedUrlId?: string): TrackingMatch[] => {
+  const boundedMatches = new Map<string, { end: string; items: TrackingMatch[] }>();
+  const listTrackingMatches = (trackedUrlId?: string, options: TrackingMatchOptions = {}): TrackingMatch[] => {
     const selected = trackedUrlId ? urlList.find((url) => url.id === trackedUrlId) : undefined;
     if (trackedUrlId && !selected) return [];
+    if (options.start || options.end) {
+      const inRange = (match: TrackingMatch) => (!trackedUrlId || match.trackedUrlId === trackedUrlId) &&
+        (!options.start || match.capture.capturedAt >= options.start) && (!options.end || match.capture.capturedAt <= options.end);
+      if (matches) return matches.filter(inRange);
+      if (selected && scopedMatches.has(selected.id)) return scopedMatches.get(selected.id)!.filter(inRange);
+      if (!project.demo) return [];
+      const catalog = selected ? new Map([[selected.normalizedUrl, selected]]) : urls;
+      const start = new Date(Math.max(Date.parse(`${project.demo.startDate}T00:00:00.000Z`),
+        options.start ? Date.parse(options.start) : 0,
+        selected ? Math.max(Date.parse(selected.createdAt), Date.parse(selected.publishedAt)) : 0)).toISOString();
+      const end = new Date(Math.min(Date.parse(`${project.demo.endDate}T23:59:59.999Z`),
+        options.end ? Date.parse(options.end) : Infinity)).toISOString();
+      const key = `${trackedUrlId || '*'}:${start}`;
+      let cached = boundedMatches.get(key);
+      if (!cached || cached.end < end) {
+        // List and summary requests have slightly different 'now' timestamps.
+        // Extend an existing interval instead of regenerating account history.
+        const nextStart = cached ? new Date(Math.max(Date.parse(start), Date.parse(cached.end) + 1)).toISOString() : start;
+        const items = [...measureMatches(catalog, nextStart, end), ...(cached?.items || [])];
+        cached = { end, items };
+        if (boundedMatches.size >= 16) boundedMatches.delete(boundedMatches.keys().next().value!);
+        boundedMatches.set(key, cached);
+      }
+      return cached.items.filter(inRange);
+    }
     if (!matches && selected && project.demo) {
       let measured = scopedMatches.get(selected.id);
       if (!measured) {

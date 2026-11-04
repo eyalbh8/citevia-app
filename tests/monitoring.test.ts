@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   citationMeasurement,
   trackedUrlKey,
@@ -552,6 +552,44 @@ it.each(['memory', 'postgres'])(
       expect(await repository.listTrackingMatches('other')).toEqual([]);
       now = new Date('2026-10-21T23:00:00.000Z');
       const params = 'days=custom&start=2026-10-10&end=2026-10-21';
+      const currentMatches = await repository.listTrackingMatches(project.id, tracked.id, {
+        start: '2026-10-15T00:00:00.000Z', end: now.toISOString(),
+      });
+      expect(currentMatches).toHaveLength(3);
+      expect(await repository.listTrackingMatches(project.id, tracked.id, {
+        start: samples[1].answer.createdAt, end: samples[1].answer.createdAt,
+      })).toHaveLength(1);
+      expect(await repository.listTrackingMatches('other', undefined, { end: now.toISOString() })).toEqual([]);
+      const historyReads = vi.spyOn(repository, 'listPromptHistory');
+      const artifactReads = vi.spyOn(artifacts, 'get');
+      try {
+        const list = await (await call('tracked-urls')).json();
+        expect(list.period).toMatchObject({ start: '2026-10-15T00:00:00.000Z', end: now.toISOString() });
+        // Previously the publication-date filter hid this older page completely.
+        expect(list.items).toHaveLength(1);
+        expect(list.items[0]).toMatchObject({ id: tracked.id, appearances: 24, periodAppearances: 18 });
+        const tracking = await (await call('tracked-urls/summary')).json();
+        expect(tracking).toMatchObject({ trackedCount: 1, appearances: 18, citedCount: 1, citedRate: 100 });
+        expect(tracking.series.map((point: { date: string }) => point.date)).toEqual([
+          '2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21',
+        ]);
+        expect(tracking.series.reduce((n: number, p: { citations: number }) => n + p.citations, 0)).toBe(18);
+        expect(tracking.series.reduce((n: number, p: { mentions: number }) => n + p.mentions, 0)).toBe(3);
+        expect(historyReads).toHaveBeenCalledExactlyOnceWith(project.id, list.period.start, list.period.end, undefined);
+        expect(artifactReads).not.toHaveBeenCalled();
+        const previous = await (await call('tracked-urls/summary?days=custom&start=2026-10-10&end=2026-10-14')).json();
+        expect(previous).toMatchObject({ trackedCount: 1, appearances: 6, citedCount: 1 });
+        const hourly = await (await call('tracked-urls/summary?days=custom&start=2026-10-20&end=2026-10-20&providers=gemini')).json();
+        expect(hourly.series).toHaveLength(24);
+        expect(hourly.series.find((p: { date: string }) => p.date === '2026-10-20T14:00:00.000Z')).toMatchObject({ citations: 6, mentions: 1 });
+        expect(hourly.appearances).toBe(6);
+        const empty = await (await call('tracked-urls/summary?region=IT')).json();
+        expect(empty).toMatchObject({ trackedCount: 1, appearances: 0, citedCount: 0 });
+        expect(empty.series.every((p: { citations: number; mentions: number }) => p.citations === 0 && p.mentions === 0)).toBe(true);
+      } finally {
+        historyReads.mockRestore();
+        artifactReads.mockRestore();
+      }
       const mentions = await call(`mentions?${params}`);
       expect(mentions.status).toBe(200);
       const m = await mentions.json();

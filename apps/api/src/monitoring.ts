@@ -336,7 +336,7 @@ export async function monitoringRoute(
     }
     const [urls, matches] = await Promise.all([
       repository.listTrackedUrls(project.id),
-      repository.listTrackingMatches(project.id),
+      repository.listTrackingMatches(project.id, undefined, { start: period.start, end: period.end }),
     ]);
     const markerGroups = new Map<
       string,
@@ -420,10 +420,11 @@ export async function monitoringRoute(
     repository.listTrackingMatches(
       project.id,
       trackedId && trackedId !== 'summary' ? trackedId : undefined,
+      { end: period.end },
     ),
   ]);
   const scoped = allMatches.filter((m) =>
-    (!project.demo || m.capture.capturedAt <= period.end) && matchesMonitoringFilters(
+    m.capture.capturedAt <= period.end && matchesMonitoringFilters(
       m.capture.prompt,
       m.capture.provider,
       m.capture.country,
@@ -435,17 +436,15 @@ export async function monitoringRoute(
     const chosen = rows.filter(
       (row) =>
         row.active &&
-        row.publishedAt >= period.start &&
+        row.createdAt <= period.end &&
         row.publishedAt <= period.end,
     );
     const month = now.toISOString().slice(0, 7),
       ids = new Set(chosen.map((row) => row.id));
     const history = await repository.listPromptHistory(
       project.id,
-      new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 6, 1),
-      ).toISOString(),
-      now.toISOString(),
+      period.start,
+      period.end,
     );
     history.runs = history.runs.filter((r) =>
       ['completed', 'partial'].includes(r.status),
@@ -469,17 +468,38 @@ export async function monitoringRoute(
           { ...filters, search: '' },
         ),
     );
+    const bucket = (at: string) => period.granularity === 'hourly' ? `${at.slice(0, 13)}:00:00.000Z` : at.slice(0, 10);
+    const series = new Map<string, TrackingSummary['series'][number]>();
+    const step = period.granularity === 'hourly' ? 3600000 : 86400000;
+    for (let at = Date.parse(bucket(period.start)); at <= Date.parse(period.end); at += step) {
+      const date = bucket(new Date(at).toISOString());
+      series.set(date, { date, citations: 0, mentions: 0, published: 0 });
+    }
+    for (const match of scoped) {
+      if (!ids.has(match.trackedUrlId) || match.capture.capturedAt < period.start) continue;
+      const point = series.get(bucket(match.capture.capturedAt));
+      if (point) point.citations += match.evidence.appearances;
+    }
+    for (const mention of mentions) {
+      const point = series.get(bucket(mention.result.capturedAt || mention.run.createdAt));
+      if (point) point.mentions++;
+    }
+    for (const row of chosen) {
+      if (row.publishedAt < period.start) continue;
+      const point = series.get(bucket(row.publishedAt));
+      if (point) point.published++;
+    }
+    const citedCount = chosen.filter((row) => row.matchingAnswers > 0).length;
     const summary: TrackingSummary = {
+      period,
       trackedCount: chosen.length,
       trackedThisMonth: urls.filter(
-        (u) => u.active && u.createdAt.startsWith(month),
+        (u) => u.active && u.createdAt.startsWith(month) && u.createdAt <= period.end,
       ).length,
-      appearances: chosen.reduce((n, r) => n + r.appearances, 0),
-      citedCount: chosen.filter((r) => r.firstCitedAt).length,
+      appearances: chosen.reduce((n, r) => n + r.periodAppearances, 0),
+      citedCount,
       citedRate: chosen.length
-        ? Math.round(
-            (chosen.filter((r) => r.firstCitedAt).length / chosen.length) * 100,
-          )
+        ? Math.round((citedCount / chosen.length) * 100)
         : 0,
       medianPickup: medianPickupDays(
         rows
@@ -494,29 +514,7 @@ export async function monitoringRoute(
           ),
       ),
       clicks: null,
-      series: Array.from({ length: 7 }, (_, i) => {
-        const date = new Date(
-          Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 6 + i, 1),
-        )
-          .toISOString()
-          .slice(0, 7);
-        return {
-          date,
-          citations: scoped
-            .filter(
-              (m) =>
-                ids.has(m.trackedUrlId) &&
-                m.capture.capturedAt.startsWith(date),
-            )
-            .reduce((n, m) => n + m.evidence.appearances, 0),
-          mentions: mentions.filter((m) =>
-            (m.result.capturedAt || m.run.createdAt).startsWith(date),
-          ).length,
-          published: urls.filter(
-            (u) => u.active && u.publishedAt.startsWith(date),
-          ).length,
-        };
-      }),
+      series: [...series.values()],
     };
     return json(summary);
   }
@@ -532,7 +530,7 @@ export async function monitoringRoute(
     const items = rows.filter(
       (r) =>
         (status === 'paused' ? !r.active : r.active) &&
-        r.publishedAt >= period.start &&
+        r.createdAt <= period.end &&
         r.publishedAt <= period.end &&
         (!text || `${r.title} ${r.url}`.toLocaleLowerCase().includes(text)) &&
         (status === 'cited'
@@ -546,7 +544,7 @@ export async function monitoringRoute(
     items.sort(
       (a, b) =>
         (sort === 'cited'
-          ? b.appearances - a.appearances
+          ? b.periodAppearances - a.periodAppearances
           : sort === 'fastest'
             ? (a.daysToFirstCitation ?? Infinity) -
               (b.daysToFirstCitation ?? Infinity)

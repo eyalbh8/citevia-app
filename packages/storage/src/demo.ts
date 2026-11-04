@@ -648,9 +648,9 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
       const project = await demoProject(projectId);
       return project && !project.demo!.presentation?.reportingOnly ? trackingFor(project).listTrackedUrls() : runtime.repository.listTrackedUrls(projectId);
     },
-    async listTrackingMatches(projectId, trackedUrlId) {
+    async listTrackingMatches(projectId, trackedUrlId, options) {
       const project = await demoProject(projectId);
-      return project && !project.demo!.presentation?.reportingOnly ? trackingFor(project).listTrackingMatches(trackedUrlId) : runtime.repository.listTrackingMatches(projectId, trackedUrlId);
+      return project && !project.demo!.presentation?.reportingOnly ? trackingFor(project).listTrackingMatches(trackedUrlId, options) : runtime.repository.listTrackingMatches(projectId, trackedUrlId, options);
     },
     async listRuns(projectId, limit = 60) {
       const project = await demoProject(projectId);

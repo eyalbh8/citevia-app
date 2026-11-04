@@ -35,7 +35,7 @@ import {
   type WebsiteHealthJob,
 } from '@citevia/core';
 import type {
-  ArtifactStore, JobQueue, Repository, SavedAnalysisRef, SavedAnalysis,
+  ArtifactStore, JobQueue, Repository, SavedAnalysisRef, SavedAnalysis, TrackingMatchOptions,
 } from './contracts.js';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
@@ -453,7 +453,7 @@ export class MemoryRepository implements Repository {
       this.state.trackedUrls[id] = copy(url); return true;
     }, true);
   }
-  listTrackingMatches(projectId: string, trackedUrlId?: string) {
+  listTrackingMatches(projectId: string, trackedUrlId?: string, options: TrackingMatchOptions = {}) {
     return this.operation(() => {
       const matches: TrackingMatch[] = [];
       for (const url of Object.values(this.state.trackedUrls || {})) {
@@ -462,6 +462,7 @@ export class MemoryRepository implements Repository {
           const measurement = this.state.citationCaptures?.[captureId];
           const measuredRun = measurement && this.state.runs[key(projectId,measurement.capture.runId)];
           if (!measurement || !measuredRun || measuredRun.reportingExcludedAt || !['completed','partial'].includes(measuredRun.status)) continue;
+          if ((options.start && measurement.capture.capturedAt < options.start) || (options.end && measurement.capture.capturedAt > options.end)) continue;
           const evidence = measurement.evidence.find(e => e.normalizedUrl === url.normalizedUrl);
           if (evidence) matches.push({trackedUrlId: url.id, capture: measurement.capture, evidence});
         }

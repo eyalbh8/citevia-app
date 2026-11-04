@@ -94,6 +94,10 @@ The UK-focused eToro and payabl. sources are in `scripts/demo-sources/{etoro,pay
 
 Audit source configurations in memory with `node --import tsx scripts/audit-service-demos.ts --source scripts/demo-sources/medical.json --source scripts/demo-sources/luxury.json --source scripts/demo-sources/business.json`. Add `--mode aws` to read and verify the saved production accounts using the normal database configuration, or `--mode local` for an existing local database. The audit performs no writes or provider calls and checks all fifty prompts, native mirrors, growing metrics, every answer's company/citation evidence and the first scan citation for every publication. `--output /private/path/report.json` saves the verification report.
 
+## Tracking
+
+Tracking opens on **Last 7 days** for every account. The date range filters citation activity, provider counts, answers and the daily/hourly trend. Previously enrolled content stays in the list, including pages with no citations in the selected period; future publications appear only when their enrollment/publication dates are reached. The table and summary report period citations, while URL details retain lifetime citation and pickup measurements through the selected end date. Failed report requests can be retried with **Try again**.
+
 ## AI Traffic
 
 Open **AI Traffic** to measure page visits referred by ChatGPT, Claude, Perplexity, Gemini, Copilot and DeepSeek. The screen includes provider totals and change versus the preceding period, a zero-filled UTC trend chart, provider/region/date filters, CSV export, and independently paginated sources, pages, countries, devices and browsers. These are received page visits, not unique visitors or citation counts. A zero baseline with new traffic is labeled **New**.

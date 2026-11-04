@@ -54,6 +54,11 @@ export interface PromptAnswerPage {
   items: { result: PromptResult; run: ScanRun }[];
   total: number;
 }
+export interface TrackingMatchOptions {
+  /** Inclusive capture-time bounds; omit start to retain lifecycle history. */
+  start?: string;
+  end?: string;
+}
 export interface Repository extends UserRepository, McpRepository, GeoBacklinkRepository {
   /** Atomically select a prompt and reserve every eligible connected destination once. */
   reserveSocialOccurrence(input: ReserveSocialOccurrenceInput): Promise<ReserveSocialOccurrenceResult>;
@@ -91,7 +96,7 @@ export interface Repository extends UserRepository, McpRepository, GeoBacklinkRe
   listTrackedUrls(projectId: string): Promise<TrackedUrl[]>;
   registerTrackedUrl(url: TrackedUrl): Promise<TrackedUrl>;
   updateTrackedUrl(url: TrackedUrl, expectedVersion: number): Promise<boolean>;
-  listTrackingMatches(projectId: string, trackedUrlId?: string): Promise<TrackingMatch[]>;
+  listTrackingMatches(projectId: string, trackedUrlId?: string, options?: TrackingMatchOptions): Promise<TrackingMatch[]>;
   createOnboarding(
     project: Project,
     job: OnboardingJob,

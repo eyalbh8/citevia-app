@@ -210,8 +210,10 @@ describe('compact Dr. Roof scenario runtime', () => {
     expect(markers.map(marker => marker.title).sort()).toEqual(current.map(row => row.title).sort());
     expect(markers.every(marker => marker.contentType === 'BLOG')).toBe(true);
     const list = await call<{ items: TrackingRow[]; total: number }>('tracked-urls');
-    expect(list.total).toBe(3);
-    expect(list.items.map(row => row.title).sort()).toEqual(current.map(row => row.title).sort());
+    expect(list.total).toBe(78);
+    expect(list.items).toHaveLength(25);
+    expect(list.items.slice(0, 3).map(row => row.title).sort()).toEqual(current.map(row => row.title).sort());
+    expect(list.items.every(row => row.publishedAt <= currentTime)).toBe(true);
     const selected = markers.find(marker => marker.appearances > 0)!;
     expect(selected).toBeDefined();
     const detail = await call<TrackingDetail>(`tracked-urls/${selected.id}`);

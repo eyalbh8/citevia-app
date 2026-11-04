@@ -96,7 +96,9 @@ function TrackingTrend({ summary }: { summary: TrackingSummary }) {
                 ? 'Brand mentions in AI answers over time'
                 : 'Clicks from AI answers over time'}
           </h2>
-          <p>Monthly totals · Last 7 months</p>
+          <p>
+            {summary.period.granularity === 'hourly' ? 'Hourly' : 'Daily'} totals · Selected period
+          </p>
         </div>
         <div className="tracking-tabs" role="group" aria-label="Trend metric">
           {(['citations', 'mentions', 'clicks'] as const).map((value) => (
@@ -133,10 +135,13 @@ function TrackingTrend({ summary }: { summary: TrackingSummary }) {
                 />
               </div>
               <small>
-                {new Date(`${point.date}-01T12:00:00Z`).toLocaleDateString(
-                  'en',
-                  { month: 'short', timeZone: 'UTC' },
-                )}
+                {summary.period.granularity === 'hourly'
+                  ? new Date(point.date).toLocaleTimeString('en-GB', {
+                      hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+                    })
+                  : new Date(`${point.date}T12:00:00Z`).toLocaleDateString('en-GB', {
+                      day: 'numeric', month: 'short', timeZone: 'UTC',
+                    })}
               </small>
               <small>{point.published} published</small>
             </div>
@@ -157,9 +162,7 @@ export default function TrackingView({
   onResponse: (id: string) => void;
   notify: (s: string) => void;
 }) {
-  const [selection, setSelection] = useState(() => project.demo
-    ? { ...initialSelection('30', project.demo), days: 'custom', start: project.demo.startDate, end: project.demo.endDate }
-    : initialSelection('30')),
+  const [selection, setSelection] = useState(() => initialSelection()),
     [status, setStatus] = useState('all'),
     [sort, setSort] = useState('newest'),
     [group, setGroup] = useState('status'),
@@ -194,7 +197,7 @@ export default function TrackingView({
       refresh((r) => r + 1);
       setStatus(saved.active ? 'all' : 'paused');
       setPage(0);
-      setSelection(initialSelection('30', project.demo));
+      setSelection(initialSelection());
       notify(
         saved.active
           ? 'Tracking activated. Future scans will check this URL.'
@@ -248,7 +251,10 @@ export default function TrackingView({
           </button>
         )}
       </div>
-      <ErrorNotice error={list.error || summary.error} />
+      <ErrorNotice
+        error={list.error || summary.error}
+        retry={() => refresh((r) => r + 1)}
+      />
       {summary.loading && !summary.data ? (
         <Skeleton variant="chart" label="Loading tracked URLs…" />
       ) : (
@@ -263,13 +269,13 @@ export default function TrackingView({
                 <strong>{summary.data.trackedCount}</strong>
                 <span>+{summary.data.trackedThisMonth} this month</span>
               </div>
-              <div title="Lifetime source occurrences for URLs published in this range">
+              <div title="Source occurrences during the selected period">
                 <small>Citations in AI answers</small>
                 <strong>{summary.data.appearances.toLocaleString()}</strong>
-                <span>Lifetime appearances</span>
+                <span>Appearances in this period</span>
               </div>
               <div>
-                <small>Cited at least once</small>
+                <small>Cited in this period</small>
                 <strong>{summary.data.citedRate}%</strong>
                 <span>
                   {summary.data.citedCount} of {summary.data.trackedCount} URLs
@@ -441,8 +447,8 @@ export default function TrackingView({
                             {statusLabels[row.status]}
                           </span>
                         </td>
-                        <td title="Lifetime source occurrences">
-                          <strong>{row.appearances.toLocaleString()}</strong>
+                        <td title="Source occurrences during the selected period">
+                          <strong>{row.periodAppearances.toLocaleString()}</strong>
                           <Sparkline values={row.series.map((p) => p.count)} />
                         </td>
                         <td>
@@ -501,9 +507,9 @@ export default function TrackingView({
         )}
       </section>
       <p className="monitor-note">
-        Publication time starts when tracking is activated. Dates filter that
-        time. Citations show lifetime source occurrences; engines and answer
-        details use the selected scan period. All dates use UTC.
+        Dates filter citation activity, engines and answer details. Content
+        tracked before this period remains visible. Tracking details include
+        lifetime citations and pickup dates. All dates use UTC.
       </p>
       {adding && (
         <Drawer

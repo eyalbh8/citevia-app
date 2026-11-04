@@ -9,6 +9,7 @@ import {
 } from '@citevia/core';
 import { uuidFor, type SqlDatabase, type SqlSession } from './sql.js';
 import { AccessError } from './users.js';
+import type { TrackingMatchOptions } from './contracts.js';
 
 async function refreshCounters(
   tx: SqlSession,
@@ -213,14 +214,18 @@ export async function listTrackingMatches(
   db: SqlSession,
   projectId: string,
   trackedUrlId?: string,
+  options: TrackingMatchOptions = {},
 ): Promise<TrackingMatch[]> {
   const rows = await db.query(
     `SELECT m.tracked_url_id,cap.data AS capture,c.data AS evidence FROM citevia_tracked_url_matches m
     JOIN citevia_citation_captures cap ON cap.project_id=m.project_id AND cap.capture_key=m.capture_key
     JOIN citevia_response_citations c ON c.project_id=m.project_id AND c.capture_key=m.capture_key AND c.normalized_url=m.normalized_url
     JOIN citevia_runs r ON r.project_id=cap.project_id AND r.id=cap.run_id
-    WHERE m.project_id=$1 AND ($2::uuid IS NULL OR m.tracked_url_id=$2::uuid) AND r.status IN ('completed','partial') AND r.data->>'reportingExcludedAt' IS NULL ORDER BY cap.captured_at DESC,m.capture_key`,
-    [projectId, trackedUrlId || null],
+    WHERE m.project_id=$1 AND ($2::uuid IS NULL OR m.tracked_url_id=$2::uuid)
+    AND ($3::timestamptz IS NULL OR cap.captured_at >= $3::timestamptz)
+    AND ($4::timestamptz IS NULL OR cap.captured_at <= $4::timestamptz)
+    AND r.status IN ('completed','partial') AND r.data->>'reportingExcludedAt' IS NULL ORDER BY cap.captured_at DESC,m.capture_key`,
+    [projectId, trackedUrlId || null, options.start || null, options.end || null],
   );
   return rows.rows.map((row) => ({
     trackedUrlId: String(row.tracked_url_id),

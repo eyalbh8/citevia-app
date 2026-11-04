@@ -29,7 +29,7 @@ import {
 } from '@citevia/core';
 import * as tracking from './tracking-postgres.js';
 import * as mcp from './mcp.js';
-import type { Repository, SavedAnalysis, SavedAnalysisRef, PromptAnswerPageOptions, PromptAnswerPage } from './contracts.js';
+import type { Repository, SavedAnalysis, SavedAnalysisRef, PromptAnswerPageOptions, PromptAnswerPage, TrackingMatchOptions } from './contracts.js';
 import { uuidFor, type SqlDatabase, type SqlSession } from './sql.js';
 import { AccessError, PostgresUsers } from './users.js';
 
@@ -211,7 +211,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
   listTrackedUrls(projectId: string) { return tracking.listTrackedUrls(this.db,projectId); }
   registerTrackedUrl(url: TrackedUrl) { return tracking.registerTrackedUrl(this.db,url); }
   updateTrackedUrl(url: TrackedUrl, expectedVersion: number) { return tracking.updateTrackedUrl(this.db,url,expectedVersion); }
-  listTrackingMatches(projectId: string, trackedUrlId?: string) { return tracking.listTrackingMatches(this.db,projectId,trackedUrlId); }
+  listTrackingMatches(projectId: string, trackedUrlId?: string, options?: TrackingMatchOptions) { return tracking.listTrackingMatches(this.db,projectId,trackedUrlId,options); }
   async listProjectSummaries(
     userId: string,
     options: { offset: number; limit: number; query?: string },

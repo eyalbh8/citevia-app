@@ -298,6 +298,7 @@ export interface TrackingRow extends TrackedUrl {
   clicks: null;
 }
 export interface TrackingSummary {
+  period: MonitoringPeriod;
   trackedCount: number;
   trackedThisMonth: number;
   appearances: number;
