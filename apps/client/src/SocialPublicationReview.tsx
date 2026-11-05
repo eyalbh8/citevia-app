@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowUp, Save, Trash2, Upload } from 'lucide-react';
 import { request, useApi } from './api';
@@ -131,9 +132,9 @@ export default function SocialPublicationReview({ post, path, owner, enabled, ti
     {savedPost.status === 'scheduled' && <p className="social-approved-note">Approved for scheduled publishing. Any saved edit or media replacement removes approval until you review it again.</p>}
     <form className="social-post-editor" aria-label="Edit prepared post" onSubmit={save}>
       <fieldset disabled={!editable || busy}>
-        <label className="field"><span>Post title</span><input aria-label="Post title" value={title} onChange={event => setTitle(event.target.value)} maxLength={300} required /></label>
-        <label className="field"><span>Post text</span><textarea aria-label="Post text" value={body} onChange={event => setBody(event.target.value)} rows={7} required /></label>
-        <label className="field"><span>Hashtags</span><input aria-label="Post hashtags" value={hashtags} onChange={event => setHashtags(event.target.value)} placeholder="#YourBrand #Topic" /></label>
+        <label className="field"><span>Post title</span><input aria-label="Post title" value={editable ? title : reportExcerpt(title)} onChange={event => setTitle(event.target.value)} maxLength={300} required /></label>
+        <label className="field"><span>Post text</span><textarea aria-label="Post text" value={editable ? body : reportExcerpt(body)} onChange={event => setBody(event.target.value)} rows={7} required /></label>
+        <label className="field"><span>Hashtags</span><input aria-label="Post hashtags" value={editable ? hashtags : reportExcerpt(hashtags)} onChange={event => setHashtags(event.target.value)} placeholder="#YourBrand #Topic" /></label>
         <label className="field"><span>Publishing date and time · {timezone}</span><input type="datetime-local" aria-label="Post publishing date and time" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)} required /></label>
         <p className="social-help">The time is in {timezone}. If clocks repeat an hour, a new time uses its first occurrence. Publishing starts only after approval.</p>
         <div className="social-editor-media-heading"><h3>{isVideo ? 'Video' : post.channel === 'instagram' ? 'Images and carousel order' : 'Image'}</h3><span>{media.length} / {maximumMedia}</span></div>

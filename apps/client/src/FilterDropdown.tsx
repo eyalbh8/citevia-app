@@ -10,6 +10,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import './filter-dropdown.css';
+import { reportExcerpt } from './report-excerpt';
 
 export type FilterOption = {
   value: string;
@@ -79,7 +80,7 @@ export default function FilterDropdown(props: Props) {
   const selected = options.filter((option) => isSelected(option.value));
   const triggerIcon =
     icon ?? (selected.length === 1 ? selected[0].icon : undefined);
-  const caption =
+  const caption = reportExcerpt(
     displayValue ??
     (values.length === 0 && placeholder
       ? placeholder
@@ -87,7 +88,8 @@ export default function FilterDropdown(props: Props) {
         ? selected[0].label
         : values.length
           ? `${values.length} selected`
-          : label);
+          : label),
+  );
   const active = props.active ?? Boolean(values.length);
   const enabled = options
     .map((option, index) => (option.disabled ? -1 : index))
@@ -249,7 +251,7 @@ export default function FilterDropdown(props: Props) {
       ).find(
         (index) =>
           !options[index].disabled &&
-          options[index].label.toLocaleLowerCase().startsWith(search),
+          reportExcerpt(options[index].label).toLocaleLowerCase().startsWith(search),
       );
       if (match !== undefined) setFocused(match);
     }
@@ -318,9 +320,9 @@ export default function FilterDropdown(props: Props) {
                   role="option"
                   aria-selected={isSelected(option.value)}
                   aria-disabled={option.disabled || undefined}
-                  aria-label={option.label}
+                  aria-label={reportExcerpt(option.label)}
                   className={`filter-dropdown-option${isSelected(option.value) ? ' is-selected' : ''}${focused === index ? ' is-focused' : ''}${option.value === '' ? ' is-all' : ''}`}
-                  title={option.label}
+                  title={reportExcerpt(option.label)}
                   onPointerMove={() => !option.disabled && setFocused(index)}
                   onClick={() => choose(index)}
                 >
@@ -333,8 +335,8 @@ export default function FilterDropdown(props: Props) {
                     </span>
                   )}
                   <span className="filter-dropdown-option-text">
-                    <span>{option.label}</span>
-                    {option.description && <small>{option.description}</small>}
+                    <span>{reportExcerpt(option.label)}</span>
+                    {option.description && <small>{reportExcerpt(option.description)}</small>}
                   </span>
                   <span
                     className={`filter-dropdown-check${props.multiple ? ' is-checkbox' : ''}`}

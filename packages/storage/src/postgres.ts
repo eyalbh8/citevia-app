@@ -261,8 +261,8 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       ).rows,
     );
   }
-  async getTrafficProject(trackerId: string) {
-    const { rows } = await this.db.query('SELECT data FROM citevia_projects WHERE account_id=$1::uuid', [trackerId]);
+  async getProjectByAccountUuid(accountUuid: string) {
+    const { rows } = await this.db.query('SELECT data FROM citevia_projects WHERE account_id=$1::uuid', [accountUuid]);
     return data<Project>(rows);
   }
   async listProjects(userId: string) {

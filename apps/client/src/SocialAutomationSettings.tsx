@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { CalendarClock, Check, FileText, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { MAX_SOCIAL_AUTOMATION_SLOTS, SOCIAL_CHANNELS, socialAutomationInputSchema,
@@ -136,7 +137,7 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
       {history.data && !history.data.items.length && <p className="social-empty">Prepared posts and blog drafts will appear here. Choose a preparation cadence and publishing times, then save to get started.</p>}
       <div className="social-history">
         {history.data?.items.map(item => <button type="button" className="social-history-row" key={item.id} onClick={() => setSelectedId(item.id)}>
-          <div><span className="social-history-channel">{labels[item.channel]} · {item.destination}</span><strong>{item.content?.title || item.prompt}</strong>
+          <div><span className="social-history-channel">{labels[item.channel]} · {item.destination}</span><strong>{reportExcerpt(item.content?.title || item.prompt)}</strong>
             <span>{timestamp(item.scheduledAt, state.data?.settings?.timezone)}</span></div>
           <Badge value={item.status === 'draft_created' || item.status === 'published' ? 'completed' : item.status === 'review_required' ? 'partial' : item.status} label={statusLabels[item.status]} />
         </button>)}
@@ -148,18 +149,18 @@ export default function SocialAutomationSettings({ project, path, onSaved, notif
       {!post && !detail.error && <Skeleton variant="form" label="Loading post preview…" />}
       {post && <div className="social-preview">
         <Badge value={post.status} label={statusLabels[post.status]} />
-        <p className="card-description">Answering: {post.prompt}</p>
+        <p className="card-description">Answering: {reportExcerpt(post.prompt)}</p>
         {post.channel !== 'blog' && ['review_required', 'scheduled'].includes(post.status)
           ? <SocialPublicationReview key={`${post.id}-${post.version}`} post={post} path={path} owner={owner}
               enabled={state.data?.settings.enabled === true} timezone={state.data?.settings.timezone || 'UTC'} onSaved={saved} notify={notify} />
           : <>
-        <h3>{post.content?.title || 'Post in progress'}</h3>
+        <h3>{reportExcerpt(post.content?.title || 'Post in progress')}</h3>
         <div className="social-preview-media">{post.media?.map((media, index) => {
           const url = safeUrl(media.url); if (!url) return null;
           return <div key={url}>{media.type === 'video' ? <video src={url} controls preload="metadata" aria-label="Post video" /> : <img src={url} alt={`Post image ${index + 1}`} />}<SocialPhotoCredit photos={media.attribution} /></div>;
         })}</div>
-        <p className="social-preview-copy">{post.content?.body}</p>
-        {Boolean(post.content?.hashtags.length) && <p className="social-preview-tags">{post.content!.hashtags.join(' ')}</p>}
+        <p className="social-preview-copy">{reportExcerpt(post.content?.body || '')}</p>
+        {Boolean(post.content?.hashtags.length) && <p className="social-preview-tags">{reportExcerpt(post.content!.hashtags.join(' '))}</p>}
           </>}
         <ErrorNotice error={post.error?.message} />
         {post.status === 'uncertain' && <p className="social-readiness">Publication could not be confirmed. Check the connected account before creating another post with this content.</p>}

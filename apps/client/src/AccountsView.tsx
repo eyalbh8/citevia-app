@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { Skeleton } from './Loading';
 import { useEffect, useState, type FormEvent } from 'react';
 import {
@@ -471,7 +472,7 @@ export default function AccountsView({
                       )}
                     </div>
                     {job.error && (
-                      <p className="account-error">{job.error.message}</p>
+                      <p className="account-error">{reportExcerpt(job.error.message)}</p>
                     )}
                     {['failed', 'stopped'].includes(job.status) && (
                       <p className="card-description">

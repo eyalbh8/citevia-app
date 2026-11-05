@@ -261,6 +261,21 @@ describe('MCP URL-only connections', () => {
     expect(toolData(await queryRpc(f, global.token, { params: { name: 'settings', arguments: { accountId: 'beta' } } })).id).toBe('beta');
   });
 
+  it('publishes neutral account URLs and accepts existing keys at their original scope', async () => {
+    const f = await setup(), projectId = 'account_etoro_demo_v1';
+    await f.repository.saveProject(newProject({ id: projectId, name: 'eToro' }), null);
+    await f.repository.putMembership({ projectId, userId: 'viewer', role: 'viewer' });
+    const key = await f.mint('viewer', projectId);
+    expect(key.workspaceId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(key.serverUrl).toBe(`https://api.test/mcp/accounts/${key.workspaceId}`);
+    const path = new URL(key.serverUrl).pathname;
+    expect((await queryRpc(f, key.token, { path, workspace: key.workspaceId })).response.status).toBe(200);
+    expect((await queryRpc(f, key.token, { path: `/mcp/accounts/${projectId}`, workspace: projectId })).response.status).toBe(200);
+    const other = await f.mint('owner', 'beta');
+    expect((await queryRpc(f, other.token, { path, workspace: key.workspaceId })).response.status).toBe(403);
+    expect((await queryRpc(f, key.token, { path, workspace: 'beta' })).response.status).toBe(403);
+  });
+
   it('does not allow account URLs, query parameters or tool arguments to change credential scope', async () => {
     const f = await setup(), account = await f.mint('owner', 'alpha'), global = await f.mint('admin');
     for (const options of [

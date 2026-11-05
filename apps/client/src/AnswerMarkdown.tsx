@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './answers.css';
+import { isReportTextBoundary, reportExcerptParts } from './report-excerpt';
 
 type TreeNode = {
   type: string;
@@ -9,6 +11,38 @@ type TreeNode = {
   properties?: Record<string, string>;
   children?: TreeNode[];
 };
+
+// Compute display text and its attribution together, after parsing destinations.
+function reportBody(preserveOriginal: boolean) {
+  return () => (tree: TreeNode) => {
+    let omitted = false;
+    let inline: TreeNode[] = [];
+    function flush() {
+      const values = inline.map(node => node.value ?? '');
+      const excerpts = reportExcerptParts(values);
+      if (excerpts !== values) {
+        omitted = true;
+        inline.forEach((node, index) => { node.value = excerpts[index]; });
+      }
+      inline = [];
+    }
+    function visit(node: TreeNode) {
+      const boundary = isReportTextBoundary(node.tagName);
+      if (boundary) flush();
+      if (node.type === 'text') inline.push(node);
+      if (node.tagName === 'img') {
+        // Only alt text is shown. The image destination is never displayed or fetched.
+        node.type = 'text';
+        node.value = node.properties?.alt || '';
+        inline.push(node);
+      }
+      node.children?.forEach(visit);
+      if (boundary) flush();
+    }
+    if (!preserveOriginal) { visit(tree); flush(); }
+    tree.children = [{ type: 'element', tagName: 'div', properties: { dataReportBody: omitted ? 'excerpt' : 'full' }, children: tree.children }];
+  };
+}
 
 // Highlight text leaves after Markdown parsing, never markup, URLs or code.
 function highlightBrands(aliases: string[]) {
@@ -56,21 +90,27 @@ export default function AnswerMarkdown({
   text,
   aliases = [],
   preview = false,
+  preserveOriginal = false,
+  renderReport,
 }: {
   text: string;
   aliases?: string[];
   preview?: boolean;
+  preserveOriginal?: boolean;
+  renderReport?: (content: ReactNode, omitted: boolean) => ReactNode;
 }) {
   return (
-    <div
-      className={`answer-markdown${preview ? ' answer-preview' : ''}`}
-      dir="auto"
-    >
       <Markdown
         skipHtml
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[highlightBrands(aliases)]}
+        rehypePlugins={[reportBody(preserveOriginal), highlightBrands(aliases)]}
         components={{
+          div: ({ node, children, ...props }) => {
+            const kind = node?.properties.dataReportBody;
+            if (!kind) return <div {...props}>{children}</div>;
+            const content = <div className={`answer-markdown${preview ? ' answer-preview' : ''}`} dir="auto">{children}</div>;
+            return renderReport ? renderReport(content, kind === 'excerpt') : content;
+          },
           a: ({ href, children }) =>
             !preview && href && /^(https?:\/\/|#)/i.test(href) ? (
               <a
@@ -93,6 +133,5 @@ export default function AnswerMarkdown({
       >
         {text}
       </Markdown>
-    </div>
   );
 }

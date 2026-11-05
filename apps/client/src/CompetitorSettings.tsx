@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { useState } from 'react';
 import { Check, Plus, Search, Trash2 } from 'lucide-react';
 import { promptFingerprint, type Brand, type Project } from '@citevia/core';
@@ -176,7 +177,7 @@ export default function CompetitorSettings({
                   className="competitor-suggestion"
                 >
                   <div>
-                    <strong>{suggestion.name}</strong>
+                    <strong>{reportExcerpt(suggestion.name)}</strong>
                     <span>
                       {suggestion.mentions}{' '}
                       {suggestion.mentions === 1 ? 'answer' : 'answers'}
@@ -188,8 +189,8 @@ export default function CompetitorSettings({
                     disabled={added || value.length >= 5}
                     aria-label={
                       added
-                        ? `${suggestion.name} added`
-                        : `Add ${suggestion.name} as competitor`
+                        ? `${reportExcerpt(suggestion.name)} added`
+                        : `Add ${reportExcerpt(suggestion.name)} as competitor`
                     }
                     onClick={() => add(suggestion.name)}
                   >
@@ -198,7 +199,7 @@ export default function CompetitorSettings({
                   </button>
                   <details>
                     <summary>View evidence</summary>
-                    <blockquote>{suggestion.evidence.quote}</blockquote>
+                    <blockquote>{reportExcerpt(suggestion.evidence.quote)}</blockquote>
                   </details>
                 </article>
               );

@@ -7,6 +7,7 @@ import {
 } from '@citevia/core';
 import { SentimentScore } from './ScoreBadge';
 import AnswerMarkdown from './AnswerMarkdown';
+import { isReportTextBoundary, reportExcerpt, reportExcerptParts } from './report-excerpt';
 import DomainLogo from './DomainLogo';
 import {
   ExternalLink as LinkIcon,
@@ -25,6 +26,38 @@ import {
   ExternalLink,
   formatDate,
 } from './components';
+
+// Parse provider suggestion cards in an inert template. Their search links still
+// point to the provider’s original destination, including any search query.
+function searchSuggestionsExcerpt(html: string): string {
+  if (typeof document === 'undefined') return '';
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  let inline: Node[] = [];
+  function flush() {
+    const values = inline.map(node => node.textContent || '');
+    const excerpts = reportExcerptParts(values);
+    if (values !== excerpts) inline.forEach((node, index) => { node.textContent = excerpts[index]; });
+    inline = [];
+  }
+  function visit(node: Node) {
+    const tag = node.nodeType === Node.ELEMENT_NODE ? (node as Element).tagName.toLowerCase() : '';
+    if (tag === 'script' || tag === 'style') return;
+    if (isReportTextBoundary(tag)) flush();
+    if (node.nodeType === Node.TEXT_NODE) inline.push(node);
+    node.childNodes.forEach(visit);
+    if (isReportTextBoundary(tag)) flush();
+  }
+  visit(template.content);
+  flush();
+  for (const element of template.content.querySelectorAll('[title], [alt], [aria-label]')) {
+    for (const attr of ['title', 'alt', 'aria-label']) {
+      const label = element.getAttribute(attr);
+      if (label) element.setAttribute(attr, reportExcerpt(label));
+    }
+  }
+  return template.innerHTML;
+}
 
 export default function ResponseDrawer({
   path,
@@ -66,7 +99,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
         {formatDate(result.capturedAt || run.createdAt, true)} ·{' '}
         {result.prompt.branded ? 'Branded' : 'Discovery'} prompt
       </div>
-      <p className="drawer-prompt">{result.prompt.text}</p>
+      <p className="drawer-prompt">{reportExcerpt(result.prompt.text)}</p>
       <div style={{ marginBottom: 18 }}>
         <Badge value={result.status} />
       </div>
@@ -105,25 +138,21 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
         </div>
       </div>
       {result.error && (
-        <ErrorNotice error={`${result.error.code}: ${result.error.message}`} />
+        <ErrorNotice error={`${result.error.code}: ${reportExcerpt(result.error.message)}`} />
       )}
       {answer ? (
         <>
-          <h3 className="drawer-section-title">
-            <MessageSquareText size={14} />
-            {generated ? 'Answer' : 'Original answer'}{' '}
-            <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 400 }}>
-              {answer.model}
-            </span>
-          </h3>
-          {answer.refusal && <ErrorNotice error={answer.refusal} />}
-          <div className="answer-block" dir="auto">
-            {answer.text ? (
-              <AnswerMarkdown text={answer.text} aliases={aliases} />
-            ) : (
-              'No answer text was returned.'
-            )}
-          </div>
+          <AnswerMarkdown text={answer.text || ''} aliases={aliases} renderReport={(content, omitted) => <>
+            <h3 className="drawer-section-title">
+              <MessageSquareText size={14} />
+              {omitted ? 'Answer excerpt' : generated ? 'Answer' : 'Original answer'}{' '}
+              <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 400 }}>{reportExcerpt(answer.model)}</span>
+            </h3>
+            {answer.refusal && <ErrorNotice error={reportExcerpt(answer.refusal)} />}
+            <div className="answer-block" dir="auto">
+              {answer.text ? content : 'No answer text was returned.'}
+            </div>
+          </>} />
           {target?.sentimentEvidence && (
             <>
               <h3 className="drawer-section-title">
@@ -131,7 +160,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
                 Sentiment evidence
               </h3>
               <blockquote className="evidence">
-                {target.sentimentEvidence.quote}
+                {reportExcerpt(target.sentimentEvidence.quote)}
               </blockquote>
             </>
           )}
@@ -142,7 +171,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
                 Rank evidence
               </h3>
               <blockquote className="evidence">
-                {target.rankEvidence.quote}
+                {reportExcerpt(target.rankEvidence.quote)}
               </blockquote>
             </>
           )}
@@ -155,7 +184,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
                 (company) => (
                   <p className="card-description" key={company.company}>
                     {company.rank === null ? 'Unranked' : `#${company.rank}`} ·{' '}
-                    {company.company}
+                    {reportExcerpt(company.company)}
                     {company.sentimentScore !== null && (
                       <> · Sentiment {company.sentimentScore}/100</>
                     )}
@@ -179,9 +208,9 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
                   </span>
                   <div>
                     <ExternalLink url={citation.url}>
-                      {citation.title || citation.url}
+                      {reportExcerpt(citation.title || citation.url)}
                     </ExternalLink>
-                    <small>{citation.url}</small>
+                    <small>{reportExcerpt(citation.url)}</small>
                   </div>
                 </div>
               ))}
@@ -210,9 +239,9 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
                   <DomainLogo publisher domain={source.url} />
                   <div>
                     <ExternalLink url={source.url}>
-                      {source.title || source.url}
+                      {reportExcerpt(source.title || source.url)}
                     </ExternalLink>
-                    <small>{source.url}</small>
+                    <small>{reportExcerpt(source.url)}</small>
                   </div>
                 </div>
               ))}
@@ -230,7 +259,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
               referrerPolicy="no-referrer"
               srcDoc={
                 '<meta http-equiv="Content-Security-Policy" content="default-src &apos;none&apos;; style-src &apos;unsafe-inline&apos;; img-src https:; base-uri &apos;none&apos;">' +
-                html
+                searchSuggestionsExcerpt(html)
               }
               style={{ border: 0, width: '100%', minHeight: 120 }}
             />

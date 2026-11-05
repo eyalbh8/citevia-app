@@ -80,6 +80,20 @@ function siteReport(): WebsiteHealthAudit {
 }
 
 describe('Website Health reports', () => {
+  it('omits restricted words from read-only audit text and checklists while retaining the page destination', async () => {
+    const destination = 'https://example.com/demo/insights';
+    const audit = report('latest', undefined, destination);
+    const issue = audit.results.mobile.lab!.issues[0];
+    issue.title = 'Review DEMO headers';
+    issue.description = 'Compare demos with saved examples.';
+    page.items = [audit];
+    await render({ ...project, role: 'viewer' });
+    expect(container.textContent).not.toMatch(/\bdemos?\b/i);
+    expect(container.querySelector('.health-report-heading a')?.getAttribute('href')).toBe(destination);
+    expect(websiteHealthChecklist(audit, 'mobile')).not.toMatch(/\bdemos?\b/i);
+    expect(issue.title).toBe('Review DEMO headers');
+  });
+
   it('renders initial history loading before any report has been selected', async () => {
     mocks.useApi.mockImplementation((requested: string | null) => ({
       data: undefined,

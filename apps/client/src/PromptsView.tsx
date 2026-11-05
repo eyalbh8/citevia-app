@@ -31,6 +31,8 @@ import {
   type PromptMetricComparison,
 } from '@citevia/core';
 import { downloadCsv, query, request, useApi } from './api';
+import { reportExcerpt } from './report-excerpt';
+import { reportReference } from './report-reference';
 import {
   Drawer,
   Empty,
@@ -333,7 +335,7 @@ export default function PromptsView({
     downloadCsv(
       'citevia-prompts.csv',
       [
-        'ID',
+        project?.demo ? 'Prompt reference' : 'ID',
         'Prompt',
         'SEO keyword',
         'Regions',
@@ -364,9 +366,9 @@ export default function PromptsView({
         'Comparison providers',
       ],
       exported.map((prompt) => [
-        prompt.id,
-        prompt.text,
-        prompt.seoKeyword,
+        reportReference(prompt.id),
+        reportExcerpt(prompt.text),
+        reportExcerpt(prompt.seoKeyword || ''),
         prompt.regions.join(', '),
         prompt.intent,
         String(prompt.branded),
@@ -377,7 +379,7 @@ export default function PromptsView({
         prompt.avgRank,
         prompt.rankChange,
         prompt.createdAt,
-        prompt.tags?.join(', '),
+        reportExcerpt(prompt.tags?.join(', ') || ''),
         prompt.active ? 'active' : 'archived',
         provider || 'all',
         scores.data?.period.start,
@@ -614,7 +616,7 @@ export default function PromptsView({
                       <td className="prompt-check-cell">
                         <input
                           type="checkbox"
-                          aria-label={`Select prompt: ${prompt.text}`}
+                          aria-label={`Select prompt: ${reportExcerpt(prompt.text)}`}
                           checked={selection.includes(prompt.id)}
                           onChange={() =>
                             setSelection(
@@ -632,7 +634,7 @@ export default function PromptsView({
                           title="View all saved answers"
                           onClick={() => setAnswerPrompt(prompt)}
                         >
-                          {prompt.text}
+                          {reportExcerpt(prompt.text)}
                         </button>
                         {!prompt.active && (
                           <small className="prompt-measurement-note">
@@ -653,9 +655,9 @@ export default function PromptsView({
                           {prompt.stage ? (
                             <span
                               className={`intent-chip intent-${prompt.stage}`}
-                              title={`${labelize(prompt.stage)}: ${journeyGoal(prompt.stage, project.brand.name)}`}
+                              title={`${labelize(prompt.stage)}: ${reportExcerpt(journeyGoal(prompt.stage, project.brand.name))}`}
                               role="img"
-                              aria-label={`${labelize(prompt.stage)}: ${journeyGoal(prompt.stage, project.brand.name)}`}
+                              aria-label={`${labelize(prompt.stage)}: ${reportExcerpt(journeyGoal(prompt.stage, project.brand.name))}`}
                             >
                               {prompt.stage.charAt(0).toUpperCase()}
                             </span>
@@ -724,7 +726,7 @@ export default function PromptsView({
                         <div className="prompt-actions">
                           <button
                             className="icon-button"
-                            aria-label={`View all answers to ${prompt.text}`}
+                            aria-label={`View all answers to ${reportExcerpt(prompt.text)}`}
                             title="View all saved answers"
                             onClick={() => setAnswerPrompt(prompt)}
                           >
@@ -734,7 +736,7 @@ export default function PromptsView({
                             <>
                               <button
                                 className="icon-button"
-                                aria-label={`Edit prompt: ${prompt.text}`}
+                                aria-label={`Edit prompt: ${reportExcerpt(prompt.text)}`}
                                 title="Edit prompt"
                                 disabled={!editable || busy}
                                 onClick={() => setEditing(prompt)}
@@ -743,7 +745,7 @@ export default function PromptsView({
                               </button>
                               <button
                                 className="prompt-archive-action"
-                                aria-label={`${prompt.active ? 'Archive' : 'Activate'} prompt: ${prompt.text}`}
+                                aria-label={`${prompt.active ? 'Archive' : 'Activate'} prompt: ${reportExcerpt(prompt.text)}`}
                                 title={
                                   prompt.active
                                     ? 'Archive prompt'
@@ -816,7 +818,7 @@ export default function PromptsView({
             <ul>
               {pendingArchive.map((prompt) => (
                 <li key={prompt.id} dir="auto">
-                  {prompt.text}
+                  {reportExcerpt(prompt.text)}
                 </li>
               ))}
             </ul>

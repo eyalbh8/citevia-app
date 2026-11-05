@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { useEffect } from 'react';
 import { ArrowLeft, ArrowUpRight, FileText } from 'lucide-react';
 import { trackedArticleUrl, type Project } from '@citevia/core';
@@ -18,6 +19,17 @@ export function readDemoContentPath(pathname: string): { projectId: string; slug
   } catch { return null; }
 }
 
+/** Upgrade bookmarked article links before sign-in or a network request. */
+export function canonicalizeArticleLocation() {
+  const location = new URL(window.location.href);
+  if (!location.pathname.startsWith('/demo-content/')) return;
+  const article = readDemoContentPath(location.pathname);
+  if (!article) return;
+  const savedUrl = `https://app.citevia.io/demo-content/${article.projectId}/${article.slug}`;
+  location.pathname = new URL(trackedArticleUrl(savedUrl)).pathname;
+  window.history.replaceState(window.history.state, '', location.href);
+}
+
 function referenceUrl(value: string) {
   try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password ? url.href : null; }
   catch { return null; }
@@ -32,10 +44,7 @@ export default function DemoContentView({ projectId, slug }: { projectId: string
     ? project.data.demo.trackedUrls?.find(item => item.demoPost && item.provenance?.kind === 'demo-draft'
       && trackedArticleUrl(item.url) === publicUrl)
     : undefined;
-  useEffect(() => { document.title = post ? `${post.title} · Citevia` : 'Article · Citevia'; }, [post]);
-  useEffect(() => {
-    if (post && window.location.pathname === pathname) window.history.replaceState(null, '', new URL(publicUrl).pathname);
-  }, [post, pathname, publicUrl]);
+  useEffect(() => { document.title = post ? `${reportExcerpt(post.title || 'Article')} · Citevia` : 'Article · Citevia'; }, [post]);
   const references = [...new Set(post?.provenance?.sourceUrls || [])].flatMap(value => {
     const url = referenceUrl(value); return url ? [url] : [];
   });
@@ -50,11 +59,11 @@ export default function DemoContentView({ projectId, slug }: { projectId: string
         <ErrorNotice error={project.error} />
         {project.loading && !project.data ? <Skeleton variant="detail" rows={3} label="Loading article…" />
           : post ? <>
-            <p className="demo-article-brand">{project.data!.name}</p>
-            <h1>{post.title}</h1>
+            <p className="demo-article-brand">{reportExcerpt(project.data!.name)}</p>
+            <h1>{reportExcerpt(post.title || 'Article')}</h1>
             <p className="demo-article-meta"><time dateTime={post.publishedAt}>{new Date(post.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</time><span>Blog post</span></p>
-            <div className="demo-article-body">{post.body?.split(/\n\s*\n/).filter(Boolean).map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>
-            {references.length > 0 && <section className="demo-article-references"><h2>Company and topic references</h2><ul>{references.map(url => <li key={url}><a href={url} target="_blank" rel="noopener noreferrer">{url.replace(/^https:\/\//, '')}<ArrowUpRight size={14} /></a></li>)}</ul></section>}
+            <div className="demo-article-body">{post.body?.split(/\n\s*\n/).filter(Boolean).map((paragraph, index) => <p key={index}>{reportExcerpt(paragraph)}</p>)}</div>
+            {references.length > 0 && <section className="demo-article-references"><h2>Company and topic references</h2><ul>{references.map(url => <li key={url}><a href={url} target="_blank" rel="noopener noreferrer">{reportExcerpt(url.replace(/^https:\/\//, ''))}<ArrowUpRight size={14} /></a></li>)}</ul></section>}
           </> : !project.error && <Empty title="Article unavailable" description="Open an article from the account’s tracked content." />}
       </article>
     </main>

@@ -74,7 +74,7 @@ export async function publicTrafficRoute(
     const payload = parsed.data;
     const isTrackerId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(payload.projectId);
     const project = isTrackerId
-      ? await runtime.repository.getTrafficProject(payload.projectId)
+      ? await runtime.repository.getProjectByAccountUuid(payload.projectId)
       : await runtime.repository.getProject(payload.projectId);
     if (!project) return json({ error: 'Unknown website' }, 404);
     if (project.demo && !isTrackerId) return new Response(null, { status: 204 });

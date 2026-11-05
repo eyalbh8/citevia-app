@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { ResponseDetail } from '@citevia/core';
@@ -45,6 +46,38 @@ describe('Answer attribution', () => {
       expect(html).not.toMatch(/illustrative|simulated|scenario|original answer|captured from the|sources returned by the API/i);
     },
   );
+
+  it('labels excerpts, including accessible citation text and embedded search suggestions, while retaining saved evidence', () => {
+    const data = answerDetail(null);
+    const destination = 'https://example.com/demo';
+    data.result.prompt.text = 'Who offers a demo?';
+    data.answer!.text = 'Try the **de**mo.';
+    data.answer!.citations = [{ id: '1', blockId: 'answer', url: destination, title: 'Demo page', start: null, end: null }];
+    data.answer!.searchSuggestions = ['<a href="https://example.com/demo" title="Demo">See <b>De</b>mos</a>'];
+    const original = structuredClone(data);
+    const report = document.createElement('div');
+    report.innerHTML = renderToStaticMarkup(<ResponseDetailContent data={data} />);
+    expect(report.textContent).toContain('Answer excerpt');
+    expect(report.textContent).not.toMatch(/\bdemos?\b/i);
+    expect(report.querySelector('a')?.getAttribute('href')).toBe(destination);
+    const suggestions = document.createElement('template');
+    suggestions.innerHTML = report.querySelector('iframe')!.srcdoc;
+    expect(suggestions.content.textContent).toBe('See […]');
+    const link = suggestions.content.querySelector('a')!;
+    expect(link.title).toBe('[…]');
+    expect(link.href).toBe(destination);
+    expect(data).toEqual(original);
+  });
+
+  it('keeps original attribution when the only matching word is in a non-displayed destination', () => {
+    const data = answerDetail(null);
+    data.answer!.text = '[Broker](https://example.org/demo) and **demo**cracy';
+    const report = document.createElement('div');
+    report.innerHTML = renderToStaticMarkup(<ResponseDetailContent data={data} />);
+    expect(report.textContent).toContain('Original answer');
+    expect(report.textContent).toContain('Broker and democracy');
+    expect(report.querySelector('a')?.getAttribute('href')).toBe('https://example.org/demo');
+  });
 
   it.each([null, 'original', { illustrative: false }])('identifies saved provider answers', (raw) => {
     const html = renderToStaticMarkup(<ResponseDetailContent data={answerDetail(raw)} />);

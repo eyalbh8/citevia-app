@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { Skeleton } from './Loading';
 import { useEffect, useState } from 'react';
 import {
@@ -209,7 +210,7 @@ function DomainCard({
       <summary className="source-card-summary">
         <DomainLogo publisher domain={source.domain} size={30} className="domain-icon" />
         <div className="domain-info">
-          <span className="domain-name">{source.domain}</span>
+          <span className="domain-name">{reportExcerpt(source.domain)}</span>
           <span className="domain-meta">
             {source.owned ? 'Your domain' : 'Third-party source'} ·{' '}
             {source.uniqueUrlCount}{' '}
@@ -272,9 +273,9 @@ function DomainCard({
                 <DomainLogo publisher domain={url.domain || url.url} size={24} />
                 <div>
                   <ExternalLink url={url.url || ''}>
-                    {url.title || url.url}
+                    {reportExcerpt(url.title || url.url || '')}
                   </ExternalLink>
-                  <small>{url.url}</small>
+                  <small>{reportExcerpt(url.url || '')}</small>
                   <small>
                     {url.citationCount} citations · {url.promptCount} prompts ·
                     Last seen {formatDate(url.lastSeenAt)}
@@ -334,12 +335,12 @@ function SourceAnswers({
         {source.kind === 'cited' ? 'Cited source' : 'Retrieved source'}
       </div>
       <h3 className="drawer-prompt" style={{ overflowWrap: 'anywhere' }}>
-        {source.title || source.domain}
+        {reportExcerpt(source.title || source.domain)}
       </h3>
       {source.url && (
         <div className="source-url">
           <DomainLogo publisher domain={source.domain || source.url} size={24} />
-          <ExternalLink url={source.url}>{source.url}</ExternalLink>
+          <ExternalLink url={source.url}>{reportExcerpt(source.url)}</ExternalLink>
         </div>
       )}
       <ErrorNotice error={error} />
@@ -355,7 +356,7 @@ function SourceAnswers({
               onClick={() => onResponse(result.responseId)}
             >
               <div style={{ flex: 1 }}>
-                <span className="prompt-name">{result.prompt.text}</span>
+                <span className="prompt-name">{reportExcerpt(result.prompt.text)}</span>
                 <div style={{ marginTop: 8 }}>
                   <Badge
                     value={

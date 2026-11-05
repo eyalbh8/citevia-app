@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
   Activity,
@@ -375,8 +376,8 @@ function Breakdown({
         <tbody>
           {rows.slice(start, start + 5).map((row) => (
             <tr key={row.label}>
-              <td title={row.label}>
-                {render ? render(row.label) : row.label}
+              <td title={reportExcerpt(row.label)}>
+                {render ? render(row.label) : reportExcerpt(row.label)}
               </td>
               <td>{number(row.visits)}</td>
             </tr>
@@ -632,7 +633,7 @@ function TrafficSettings({
               {status.data.sites.map((site) => (
                 <div key={site.origin}>
                   <a href={site.origin} target="_blank" rel="noreferrer">
-                    {site.origin}
+                    {reportExcerpt(site.origin)}
                   </a>
                   <span>
                     Last seen {new Date(site.lastSeenAt).toLocaleString()}
@@ -713,7 +714,7 @@ export default function TrafficView({
       ['Device', data.devices],
       ['Browser', data.browsers],
     ] as const)
-      rows.push(...items.map((r) => [label, r.label, r.visits, '']));
+      rows.push(...items.map((r) => [label, reportExcerpt(r.label), r.visits, '']));
     for (const point of data.series)
       for (const provider of data.providers)
         rows.push([
@@ -916,7 +917,7 @@ export default function TrafficView({
                       return (
                         <span className="traffic-row-label">
                           {p && <Mark provider={p} />}
-                          <span>{label}</span>
+                          <span>{reportExcerpt(label)}</span>
                         </span>
                       );
                     }}
@@ -974,7 +975,7 @@ export default function TrafficView({
                         ) : (
                           <Globe2 size={18} />
                         )}
-                        <span>{label}</span>
+                        <span>{reportExcerpt(label)}</span>
                       </span>
                     )}
                   />

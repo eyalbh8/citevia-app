@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import {
   AuthProvider,
   Descope,
@@ -1005,7 +1006,7 @@ function Workspace() {
       )}
       {toast && (
         <div className="toast" role="status">
-          {toast}
+          {reportExcerpt(toast)}
         </div>
       )}
     </div>

@@ -137,8 +137,8 @@
       ]
     },
     {
-      "url": "https://www.etoro.com/trading/demo-account/",
-      "title": "Demo account. Real lessons.",
+      "url": "https://www.etoro.com/academy/videos/etoros-virtual-portfolio/",
+      "title": "eToro virtual portfolio",
       "kind": "official",
       "claims": [
         "Virtual portfolio uses simulated trades and virtual funds"
@@ -786,7 +786,7 @@
       "text": "Compare the practice-account experience offered by eToro, IG and CMC Markets for UK residents.",
       "stage": "prefer",
       "topic": "Practice account comparison",
-      "seoKeyword": "eToro IG CMC Markets demo account UK",
+      "seoKeyword": "eToro IG CMC Markets practice account UK",
       "tags": [
         "Practice account comparison"
       ]
@@ -1120,7 +1120,7 @@
       "/trading/platforms/",
       "/trading/fees/",
       "/copytrader/how-it-works/",
-      "/trading/demo-account/",
+      "/academy/videos/etoros-virtual-portfolio/",
       "/academy/",
       "/investing/what-is-etf/",
       "/investing/fractional-shares/",

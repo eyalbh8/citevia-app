@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { MemoryArtifacts, MemoryQueue, MemoryRepository } from '@citevia/storage';
+import { MemoryArtifacts, MemoryQueue, MemoryRepository, uuidFor } from '@citevia/storage';
 import { createMcpOAuth } from '../apps/api/src/mcp-oauth.js';
 import { AuthenticationError } from '../apps/api/src/descope.js';
 import { newProject } from './fixtures/scanner.js';
@@ -142,6 +142,24 @@ describe('MCP OAuth', () => {
     expect((await f.refresh(client.client_id, tokens.refresh_token)).status).toBe(400);
     expect((await f.refresh(client.client_id, rotated.refresh_token)).status).toBe(400);
     expect((await f.repository.getMcpConnection(connection!.id))?.revokedAt).toBeTruthy();
+  });
+
+  it('uses the saved membership for a public account UUID and binds the grant to its exact resource', async () => {
+    const f = await setup(), client = await f.register();
+    const projectId = 'account_etoro_demo_v1', resource = `${BASE}/mcp/accounts/${uuidFor(projectId)}`;
+    await f.repository.saveProject(newProject({ id: projectId, name: 'eToro' }), null);
+    await f.repository.putMembership({ projectId, userId: 'viewer', role: 'viewer' });
+    const requestId = await f.pending(client.client_id, resource);
+    expect((await f.approve(requestId, 'outsider')).status).toBe(403);
+    const approval = await f.approve(requestId, 'viewer');
+    expect(approval.status).toBe(200);
+    const code = new URL((await approval.json()).redirectUrl).searchParams.get('code')!;
+    expect((await f.exchange(client.client_id, code, `${BASE}/mcp/accounts/${projectId}`)).status).toBe(400);
+    const response = await f.exchange(client.client_id, code, resource);
+    expect(response.status).toBe(200);
+    const grant = await f.repository.getMcpRecord('access', hash((await response.json()).access_token));
+    expect(grant?.data.resource).toBe(resource);
+    expect(await f.repository.getMcpConnection(String(grant?.data.connectionId))).toMatchObject({ projectId, userId: 'viewer' });
   });
 
   it('provides one global administrator grant and refuses new explicit account grants for admins', async () => {

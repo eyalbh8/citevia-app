@@ -6,6 +6,7 @@ import type { IdentityProvider } from './descope.js';
 import { createMcpOAuth } from './mcp-oauth.js';
 import { mcpTools, callMcpTool, mcpRoutes } from './mcp-tools.js';
 import { readRequestJson } from './request-body.js';
+import { mcpWorkspaceId } from './mcp-workspace.js';
 
 export interface McpConfig {
   /** Public API origin. Never derive OAuth URLs from Host/Forwarded headers. */
@@ -100,8 +101,9 @@ export function createMcp(
       if (!project) throw new AccessError(404, 'NOT_FOUND', 'Account not found.');
       projectName = project.name;
     }
-    const context = { scope: projectId === null ? 'system' : 'account', projectId, projectName,
-      serverUrl: mcpServerUrl(config, projectId), oauthEnabled: true };
+    const workspaceId = mcpWorkspaceId(projectId);
+    const context = { scope: projectId === null ? 'system' : 'account', projectId, workspaceId, projectName,
+      serverUrl: mcpServerUrl(config, workspaceId), oauthEnabled: true };
     if (!input) return mcpJson({ ...context, connections: (await repository.listMcpConnections(user.subject, projectId)).map(mcpMetadata) });
     const date = now();
     const token = `citevia_live_${randomBytes(32).toString('base64url')}`;
@@ -140,14 +142,15 @@ export function createMcp(
     if (!connection) throw new AccessError(401, 'INVALID_TOKEN', 'Invalid or expired MCP credential.');
     // Account credentials may use the generic endpoint for header-based clients,
     // but can never select another account or acquire global access.
-    if (endpointProject !== null && connection.projectId !== endpointProject)
+    const accountIdentifiers = [connection.projectId, mcpWorkspaceId(connection.projectId)];
+    if (endpointProject !== null && !accountIdentifiers.includes(endpointProject))
       throw new AccessError(403, 'ACCOUNT_MISMATCH', 'This connection belongs to a different account.');
     if (query.getAll('workspace_id').length > 1)
       throw new AccessError(400, 'ACCOUNT_MISMATCH', 'Supply one workspace identifier.');
     const workspaceHeader = request.headers.get('x-workspace-id');
     const workspaceQuery = query.get('workspace_id');
     // Neither a URL parameter nor a header can change the credential's scope.
-    if ([workspaceHeader, workspaceQuery].some(workspace => workspace !== null && workspace !== connection.projectId))
+    if ([workspaceHeader, workspaceQuery].some(workspace => workspace !== null && !accountIdentifiers.includes(workspace)))
       throw new AccessError(403, 'ACCOUNT_MISMATCH', connection.projectId === null
         ? 'A system connection must not include a workspace ID. Select accounts in tool arguments.'
         : 'The workspace ID does not match this connection’s account.');

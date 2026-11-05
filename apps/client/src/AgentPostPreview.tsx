@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import {
   blogBodyText,
   agentJsonLd,
@@ -6,10 +7,10 @@ import {
 } from '@citevia/core';
 import AnswerMarkdown from './AnswerMarkdown';
 
-export function AgentPhoto({ image }: { image: AgentImage }) {
+export function AgentPhoto({ image, preserveOriginal = false }: { image: AgentImage; preserveOriginal?: boolean }) {
   return (
     <figure className="agent-post-photo">
-      <img src={image.url} alt={image.alt} loading="lazy" />
+      <img src={image.url} alt={preserveOriginal ? image.alt : reportExcerpt(image.alt)} loading="lazy" />
       <figcaption>
         Photo by{' '}
         <a
@@ -17,7 +18,7 @@ export function AgentPhoto({ image }: { image: AgentImage }) {
           target="_blank"
           rel="noreferrer noopener"
         >
-          {image.photographer}
+          {preserveOriginal ? image.photographer : reportExcerpt(image.photographer)}
         </a>{' '}
         on{' '}
         <a href={image.photoUrl} target="_blank" rel="noreferrer noopener">
@@ -27,18 +28,18 @@ export function AgentPhoto({ image }: { image: AgentImage }) {
     </figure>
   );
 }
-export function AgentBlogBody({ content }: { content: AgentContent }) {
+export function AgentBlogBody({ content, preserveOriginal = false }: { content: AgentContent; preserveOriginal?: boolean }) {
   const blog = content.blog;
-  if (!blog) return <AnswerMarkdown text={blogBodyText(content.body)} />;
+  if (!blog) return <AnswerMarkdown text={blogBodyText(content.body)} preserveOriginal={preserveOriginal} />;
   return (
     <>
-      <AnswerMarkdown text={blogBodyText(content.body)} />
+      <AnswerMarkdown text={blogBodyText(content.body)} preserveOriginal={preserveOriginal} />
       <section className="agent-blog-faqs">
         <h2>Frequently asked questions</h2>
         {blog.faqs.map((faq, index) => (
           <div key={index}>
-            <h3>{faq.question}</h3>
-            <p dir="auto">{faq.answer}</p>
+            <h3>{preserveOriginal ? faq.question : reportExcerpt(faq.question)}</h3>
+            <p dir="auto">{preserveOriginal ? faq.answer : reportExcerpt(faq.answer)}</p>
           </div>
         ))}
       </section>
@@ -49,7 +50,7 @@ export function AgentBlogBody({ content }: { content: AgentContent }) {
             {blog.sources.map((source) => (
               <li key={source.url}>
                 <a href={source.url} target="_blank" rel="noreferrer noopener">
-                  {source.title}
+                  {preserveOriginal ? source.title : reportExcerpt(source.title)}
                 </a>
               </li>
             ))}
@@ -75,13 +76,13 @@ export function AgentBlogSeo({ content }: { content: AgentContent }) {
       </p>
       <dl>
         <dt>Focus keyphrase</dt>
-        <dd>{blog.focusKeyphrase}</dd>
+        <dd>{reportExcerpt(blog.focusKeyphrase)}</dd>
         <dt>SEO title</dt>
-        <dd>{blog.seoTitle}</dd>
+        <dd>{reportExcerpt(blog.seoTitle)}</dd>
         <dt>Meta description</dt>
-        <dd>{blog.metaDescription}</dd>
+        <dd>{reportExcerpt(blog.metaDescription)}</dd>
         <dt>Suggested slug</dt>
-        <dd>{blog.slug}</dd>
+        <dd>{reportExcerpt(blog.slug)}</dd>
       </dl>
       <ul>
         {blog.checks.map((check) => (
@@ -89,7 +90,7 @@ export function AgentBlogSeo({ content }: { content: AgentContent }) {
             key={check.id}
             className={check.passed ? 'seo-pass' : 'seo-review'}
           >
-            {check.passed ? '✓' : 'Review:'} {check.label}
+            {check.passed ? '✓' : 'Review:'} {reportExcerpt(check.label)}
           </li>
         ))}
       </ul>
@@ -115,8 +116,8 @@ export async function blogArticleHtml(content: AgentContent) {
       <body>
         <article>
           <h1>{content.title}</h1>
-          {content.image && <AgentPhoto image={content.image} />}
-          <AgentBlogBody content={content} />
+          {content.image && <AgentPhoto image={content.image} preserveOriginal />}
+          <AgentBlogBody content={content} preserveOriginal />
         </article>
         <script
           type="application/ld+json"

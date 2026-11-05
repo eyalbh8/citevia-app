@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   ArrowRight,
@@ -241,7 +242,7 @@ export default function AgentsView({
                       </td>
                       <td>
                         <span className="agent-history-prompt">
-                          {post.prompt}
+                          {reportExcerpt(post.prompt)}
                         </span>
                       </td>
                       <td>
@@ -257,7 +258,7 @@ export default function AgentsView({
                       <td>
                         <button
                           className="button button-outline"
-                          aria-label={`Open post: ${post.prompt}`}
+                          aria-label={`Open post: ${reportExcerpt(post.prompt)}`}
                           onClick={() => setSelectedId(post.id)}
                         >
                           Open
@@ -319,7 +320,7 @@ export default function AgentsView({
               <h3>Answer a prompt. Reach your audience.</h3>
               <p>
                 Choose one of the saved account prompts and the target agent for{' '}
-                {project.brand.name}. Your brandbook guides the voice and
+                {reportExcerpt(project.brand.name)}. Your brandbook guides the voice and
                 content.
               </p>
             </div>
@@ -343,7 +344,7 @@ export default function AgentsView({
                 </option>
                 {prompts.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.text}
+                    {reportExcerpt(item.text)}
                   </option>
                 ))}
               </select>
@@ -524,8 +525,8 @@ export function PostDetail({
       </div>
       <dl className="agent-post-context">
         <dt>Prompt</dt>
-        <dd>{post.prompt}</dd>
-        {post.blogRefresh && <><dt>{post.blogRefresh.action === 'adjust' ? 'Adjustment for' : 'New article for'}</dt><dd><a href={post.blogRefresh.url} target="_blank" rel="noreferrer">{post.blogRefresh.url}</a></dd></>}
+        <dd>{reportExcerpt(post.prompt)}</dd>
+        {post.blogRefresh && <><dt>{post.blogRefresh.action === 'adjust' ? 'Adjustment for' : 'New article for'}</dt><dd><a href={post.blogRefresh.url} target="_blank" rel="noreferrer">{reportExcerpt(post.blogRefresh.url)}</a></dd></>}
       </dl>
       <ErrorNotice error={error} />
       {active(post) ? (
@@ -630,18 +631,18 @@ export function PostDetail({
         ) : (
           <>
             <div className="agent-post-content">
-              <h2 dir="auto">{post.content.title}</h2>
+              <h2 dir="auto">{reportExcerpt(post.content.title)}</h2>
               {post.content.image && <AgentPhoto image={post.content.image} />}
               {post.channel === 'blog' ? (
                 <AgentBlogBody content={post.content} />
               ) : (
                 <p className="agent-post-body" dir="auto">
-                  {post.content.body}
+                  {reportExcerpt(post.content.body)}
                 </p>
               )}
               {post.content.hashtags.length > 0 && (
                 <p className="agent-post-hashtags" dir="auto">
-                  {post.content.hashtags.join(' ')}
+                  {reportExcerpt(post.content.hashtags.join(' '))}
                 </p>
               )}
             </div>
@@ -701,7 +702,7 @@ export function PostDetail({
               )}
             </div>
             <p className="integration-scope-note">
-              Saved as a draft · {post.model} ·{' '}
+              Saved as a draft · {reportExcerpt(post.model)} ·{' '}
               {formatDate(post.createdAt, true)}
             </p>
           </>

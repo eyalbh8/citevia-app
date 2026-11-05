@@ -26,6 +26,7 @@ import {
   formatDate,
 } from './components';
 import AnswerMarkdown from './AnswerMarkdown';
+import { reportExcerpt } from './report-excerpt';
 import FilterDropdown from './FilterDropdown';
 import { ResponseDetailContent } from './ResponseDrawer';
 
@@ -116,11 +117,11 @@ export default function PromptAnswersDrawer({
         ) : (
           <>
             <p className="drawer-prompt" dir="auto">
-              {prompt.text}
+              {reportExcerpt(prompt.text)}
             </p>
             <p className="answer-history-note">
               Every saved answer across scans and providers. Open a row to read
-              the full answer and its sources.
+              the answer and its sources.
             </p>
             {!prompt.active && (
               <p className="answer-history-note">
@@ -134,7 +135,7 @@ export default function PromptAnswersDrawer({
         <>
           <ErrorNotice error={detail.error} />
           {detail.loading && !detail.data ? (
-            <Skeleton variant="detail" rows={3} label="Opening the original answer…" />
+            <Skeleton variant="detail" rows={3} label="Opening the answer…" />
           ) : (
             detail.data && <ResponseDetailContent data={detail.data} />
           )}
@@ -235,7 +236,7 @@ export default function PromptAnswersDrawer({
                                 </span>
                               )}
                               <span className="answer-read-label">
-                                Read full answer <ArrowUpRight size={14} />
+                                Read answer <ArrowUpRight size={14} />
                               </span>
                             </button>
                             {row.status !== 'succeeded' && (
@@ -244,15 +245,15 @@ export default function PromptAnswersDrawer({
                         {row.promptText !== prompt.text && (
                               <small
                                 className="answer-version"
-                                title={row.promptText}
+                                title={reportExcerpt(row.promptText)}
                               >
-                            Previous wording: {row.promptText}
+                            Previous wording: {reportExcerpt(row.promptText)}
                               </small>
                             )}
                           </td>
                           <td>
                             <strong>{PROVIDER_LABELS[row.provider]}</strong>
-                            <small>{row.model}</small>
+                            <small>{reportExcerpt(row.model)}</small>
                             <small>{row.country}</small>
                           </td>
                           <td>{row.rank === null ? '—' : row.rank}</td>
@@ -260,7 +261,7 @@ export default function PromptAnswersDrawer({
                             <div className="answer-brands">
                               {row.brands.length
                                 ? row.brands.map((name) => (
-                                    <span key={name}>{name}</span>
+                                    <span key={name}>{reportExcerpt(name)}</span>
                                   ))
                                 : '—'}
                             </div>

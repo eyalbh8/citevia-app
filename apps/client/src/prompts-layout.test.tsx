@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import type { Project } from '@citevia/core';
-const { useApi } = vi.hoisted(() => ({ useApi: vi.fn() }));
-vi.mock('./api', async original => ({ ...await original<object>(), useApi }));
+const { useApi, downloadCsv } = vi.hoisted(() => ({ useApi: vi.fn(), downloadCsv: vi.fn() }));
+vi.mock('./api', async original => ({ ...await original<object>(), useApi, downloadCsv }));
 import PromptsView from './PromptsView';
 
 it('keeps prompt metrics and actions aligned after removing the Created column', () => {
@@ -20,4 +22,33 @@ it('keeps prompt metrics and actions aligned after removing the Created column',
   expect(headings).toHaveLength(8);
   expect(container.querySelectorAll('tbody tr:first-child td')).toHaveLength(8);
   expect(container.querySelector('[aria-label^="View all answers"]')).not.toBeNull();
+});
+
+it('exports a stable public reference for a selected account prompt', async () => {
+  const id = 'account_etoro_demo_v1-p01';
+  const project = { id: 'account_etoro_demo_v1', country: 'GB', language: 'en', role: 'viewer',
+    demo: { startDate: '2026-05-05', endDate: '2027-05-05' },
+    brand: { id: 'target', name: 'eToro', aliases: [], domains: ['etoro.com'] },
+    prompts: [{ id, text: 'Which investing platforms should I compare?', version: 1, active: true,
+      createdAt: '2026-05-05T00:00:00.000Z', updatedAt: '2026-05-05T00:00:00.000Z', tags: [] }] };
+  useApi.mockImplementation((path: string) => ({ loading: false, data: path.endsWith('/settings') ? project : undefined }));
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  try {
+    await act(async () => root.render(<PromptsView path="/projects/account_etoro_demo_v1" onSaved={() => {}} notify={() => {}} />));
+    await act(async () => container.querySelector<HTMLInputElement>('tbody input[type=checkbox]')!.click());
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent?.includes('Export selected'))!;
+    await act(async () => button.click());
+    const [, headers, rows] = downloadCsv.mock.lastCall!;
+    expect(headers[0]).toBe('Prompt reference');
+    expect(rows[0][0]).toMatch(/^ref-[a-z0-9]+$/);
+    expect(JSON.stringify(rows)).not.toContain(id);
+    expect(rows[0][1]).toBe(project.prompts[0].text);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
 });

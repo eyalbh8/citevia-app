@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '@citevia/core';
-import DemoContentView, { readDemoContentPath } from './DemoContentView';
+import DemoContentView, { canonicalizeArticleLocation, readDemoContentPath } from './DemoContentView';
 const api = vi.hoisted(() => ({ value: { data: undefined as Project | undefined, loading: false, error: undefined as Error | undefined }, use: vi.fn() }));
 vi.mock('./api', async () => ({ ApiError: (await import('./api-error')).ApiError, useApi: (path: string) => { api.use(path); return api.value; } }));
 const projectId = 'account_acme_locksmith_demo_v1', slug = 'planning-smart-lock-installation';
@@ -43,6 +43,17 @@ describe('Authenticated demo articles', () => {
   it('keeps access failures visible without article content', async () => {
     api.value = { loading: false, data: undefined, error: new Error('Account access denied') }; await render();
     expect(container.textContent).toContain('Account access denied'); expect(container.querySelector('h1')).toBeNull();
+  });
+  it('upgrades a saved article bookmark before fetching the account or signing in', () => {
+    const original = window.location.href;
+    try {
+      window.history.replaceState({ back: 1 }, '', `/demo-content/${projectId}/${slug}/?x=1#references`);
+      canonicalizeArticleLocation();
+      expect(window.location.pathname).toBe(`/articles/${btoa(projectId).replace(/=+$/, '')}/${slug}`);
+      expect(window.location.search + window.location.hash).toBe('?x=1#references');
+      expect(window.history.state).toEqual({ back: 1 });
+      expect(api.use).not.toHaveBeenCalled();
+    } finally { window.history.replaceState(null, '', original); }
   });
   it('rejects malformed routes and encoded traversal segments', () => {
     expect(readDemoContentPath(`/demo-content/${projectId}/${slug}`)).toEqual({ projectId, slug });

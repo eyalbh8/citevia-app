@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { Skeleton } from './Loading';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
@@ -473,9 +474,9 @@ export default function TrackingView({
                               className="tracking-site-icon"
                             />
                             <span>
-                              <strong>{row.title}</strong>
+                              <strong>{reportExcerpt(row.title)}</strong>
                               <small>
-                                {row.url.replace(/^https?:\/\//, '')}
+                                {reportExcerpt(row.url.replace(/^https?:\/\//, ''))}
                               </small>
                               <small>{date(row.publishedAt)}</small>
                             </span>
@@ -676,10 +677,10 @@ export function TrackingDetailDrawer({
               {statusLabels[row.status]}
             </span>
             {!row.active && <span>Paused</span>}
-            <h2>{row.title}</h2>
+            <h2>{reportExcerpt(row.title)}</h2>
             <a href={row.url} target="_blank" rel="noopener noreferrer">
               <DomainLogo domain={row.url} size={24} />
-              {row.url}
+              {reportExcerpt(row.url)}
               <ArrowUpRight size={15} />
             </a>
             {owner && (
@@ -790,7 +791,7 @@ export function TrackingDetailDrawer({
             <h3>Prompts citing this URL</h3>
             {detail.data?.prompts.map((p) => (
               <div className="tracking-prompt" key={`${p.id}-${p.provider}`}>
-                <span>{p.text}</span>
+                <span>{reportExcerpt(p.text)}</span>
                 <span>
                   {PROVIDER_LABELS[p.provider]} · {p.answers} answers
                 </span>

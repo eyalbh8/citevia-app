@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { axisTickIndices } from './chart-time';
 import {
   useEffect,
@@ -417,7 +418,7 @@ export function TrackedPublicationMarker({
                 <li key={item.id}>
                   <button
                     className="marker-content-card"
-                    aria-label={`Open tracking details for ${item.title}`}
+                    aria-label={`Open tracking details for ${reportExcerpt(item.title)}`}
                     onClick={() => {
                       onClose();
                       onTracked(item.id);
@@ -451,9 +452,9 @@ export function TrackedPublicationMarker({
                         loading="lazy"
                       />
                     )}
-                    <strong>{item.title}</strong>
+                    <strong>{reportExcerpt(item.title)}</strong>
                     <small className="marker-content-url">
-                      {item.url.replace(/^https?:\/\//, '')}
+                      {reportExcerpt(item.url.replace(/^https?:\/\//, ''))}
                     </small>
                     <span
                       className="marker-content-citations"
@@ -933,7 +934,7 @@ function MentionBrands({ row }: { row: MentionAnswer }) {
             <span
               key={`${name}-${i}`}
               className="monitor-brand-logo"
-              title={name}
+              title={reportExcerpt(name)}
             >
               <DomainLogo
                 domain={
@@ -965,13 +966,13 @@ function MentionBrands({ row }: { row: MentionAnswer }) {
               target="_blank"
               rel="noopener noreferrer"
             >
-              <DomainLogo domain={brand.url} name={brand.name} size={22} />
-              {brand.name}
+              <DomainLogo domain={brand.url} name={reportExcerpt(brand.name)} size={22} />
+              {reportExcerpt(brand.name)}
             </a>
           ) : (
             <span key={i} className="monitor-brand-link">
-              <DomainLogo name={brand.name} size={22} />
-              {brand.name}
+              <DomainLogo name={reportExcerpt(brand.name)} size={22} />
+              {reportExcerpt(brand.name)}
             </span>
           ),
         )}
@@ -1061,8 +1062,8 @@ export function AnswerTable({
                 <button
                   className="monitor-answer-button"
                   onClick={() => onResponse(row.responseId)}
-                  aria-label={`Read answer to ${row.promptText}`}
-                  title={row.promptText}
+                  aria-label={`Read answer to ${reportExcerpt(row.promptText)}`}
+                  title={reportExcerpt(row.promptText)}
                 >
                   {row.answerPreview ? (
                     <AnswerMarkdown text={row.answerPreview} preview />

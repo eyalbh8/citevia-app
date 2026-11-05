@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { axisTickIndices } from './chart-time';
 import {
   useEffect,
@@ -106,7 +107,7 @@ function exportOverview(data: DashboardOverview, name: string) {
         'Filter',
         name,
         key,
-        Array.isArray(value) ? value.join(', ') : String(value),
+        reportExcerpt(Array.isArray(value) ? value.join(', ') : String(value)),
       );
   for (const p of data.providers) {
     add('Providers', PROVIDER_LABELS[p.provider], 'Mentions', p.count);

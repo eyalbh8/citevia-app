@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { identifier, type User } from '@citevia/core';
 import { AccessError, type McpConnection, type McpRecord, type Runtime } from '@citevia/storage';
 import { authenticationFailure, AuthenticationError, type IdentityProvider } from './descope.js';
+import { mcpWorkspaceId } from './mcp-workspace.js';
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -248,7 +249,15 @@ export function createMcpOAuth(
     if (user.isSystemAdmin && projectId !== null)
       throw new OAuthError('access_denied', 403,
         `System administrators connect all accounts. Restart the connection using ${base}/mcp.`);
-    if (projectId !== null) await eligible(user, projectId);
+    if (projectId !== null) {
+      // Memberships use the stored project ID. Keep the exact requested resource
+      // on the grant so old and new endpoints retain separate OAuth audiences.
+      if (/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(projectId)) {
+        const project = await repository.getProjectByAccountUuid(projectId);
+        if (project && mcpWorkspaceId(project.id) === projectId) projectId = project.id;
+      }
+      await eligible(user, projectId);
+    }
     const projects = user.isSystemAdmin || projectId !== null ? [] :
       (await repository.listProjects(user.subject)).map(project => ({ id: project.id, name: project.name, role: project.role ?? 'viewer' }));
     if (!user.isSystemAdmin && projectId === null && projects.length === 0)
@@ -263,7 +272,7 @@ export function createMcpOAuth(
     if (body.approve) {
       if (projectId === null && !user.isSystemAdmin)
         projectId = required(body.projectId, 100);
-      if (body.projectId !== undefined && body.projectId !== projectId)
+      if (body.projectId !== undefined && body.projectId !== projectId && body.projectId !== mcpWorkspaceId(projectId))
         throw new OAuthError('access_denied', 403);
       await eligible(user, projectId);
     }

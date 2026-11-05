@@ -20,12 +20,13 @@ type Connection = {
 type Connections = {
   scope: 'system' | 'account';
   projectId: string | null;
+  workspaceId?: string | null;
   projectName: string | null;
   serverUrl: string;
   oauthEnabled: boolean;
   connections: Connection[];
 };
-type CreatedConnection = Pick<Connections, 'serverUrl' | 'scope' | 'projectId'> & {
+type CreatedConnection = Pick<Connections, 'serverUrl' | 'scope' | 'projectId' | 'workspaceId'> & {
   connection: Connection;
   token: string;
 };
@@ -94,7 +95,7 @@ function AssistantActions({ connectionUrl, onCreate }: { connectionUrl?: string;
 }
 
 export function CreatedConnectionPanel({ created, onHide }: { created: CreatedConnection; onHide: () => void }) {
-  const connectionUrl = mcpConnectionUrl(created.serverUrl, created.token, created.projectId);
+  const connectionUrl = mcpConnectionUrl(created.serverUrl, created.token, created.workspaceId ?? created.projectId);
   return <section className="card mcp-created" aria-labelledby="mcp-created-title">
     <div className="mcp-section-heading"><span className="mcp-feature-icon"><KeyRound size={21} /></span><div><h2 id="mcp-created-title">Your connection URL is ready</h2><p>This URL includes your API key. Keep it private and save it now; its full value is only available until you hide it or leave this account.</p></div></div>
     <label className="field" htmlFor="mcp-connection-url">Connection URL (URL-only)<small>{created.connection.name}</small></label>
@@ -197,7 +198,7 @@ function ScopedMcpView({ systemAdmin, project }: { systemAdmin: boolean; project
             <h3>Connect with one URL</h3>
             <p>Create a key to get a full connection URL, then paste it into your assistant’s Server URL field and choose <strong>None / No authentication</strong>. No separate login or Authorization header is needed.</p>
             <p className="mcp-method-detail">Start with an assistant below. Your connection URL is shown once after key creation.</p>
-            <AssistantActions connectionUrl={created ? mcpConnectionUrl(created.serverUrl, created.token, created.projectId) : undefined} onCreate={openCreate} />
+            <AssistantActions connectionUrl={created ? mcpConnectionUrl(created.serverUrl, created.token, created.workspaceId ?? created.projectId) : undefined} onCreate={openCreate} />
           </div>
           {data.oauthEnabled && <div className="mcp-method">
             <span className="mcp-method-label">OAUTH</span>

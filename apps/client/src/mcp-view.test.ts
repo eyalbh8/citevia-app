@@ -56,6 +56,11 @@ describe('MCP connection scope UI', () => {
       connection: { id: 'qa-created', name: 'My assistant', keyPrefix: 'qa-only', createdAt: new Date().toISOString(), expiresAt: null, lastUsedAt: null, revokedAt: null, kind: 'api_key' as const },
     };
     const html = renderToStaticMarkup(createElement(CreatedConnectionPanel, { created, onHide: () => undefined }));
+    const scoped = { ...created, projectId: 'account_brand_demo_v1', workspaceId: '2d6ce80b-54a1-5168-b454-7ba3ca41aa2d',
+      serverUrl: 'https://app.citevia.io/api/v1/mcp/accounts/2d6ce80b-54a1-5168-b454-7ba3ca41aa2d' };
+    const scopedHtml = renderToStaticMarkup(createElement(CreatedConnectionPanel, { created: scoped, onHide: () => undefined }));
+    expect(scopedHtml).toContain(`workspace_id=${scoped.workspaceId}`);
+    expect(scopedHtml).not.toContain(scoped.projectId);
     expect(html).toContain('Connection URL (URL-only)');
     expect(html).toContain('mcp_token=qa-only-created-token&amp;workspace_id=account-A');
     expect(html).toContain('None / No authentication');

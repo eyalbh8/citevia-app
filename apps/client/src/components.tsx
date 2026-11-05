@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { AlertCircle, ArrowUpRight, ChevronLeft, ChevronRight, FileSearch, LogIn, X } from 'lucide-react';
 import { ApiError } from './api';
@@ -7,7 +8,7 @@ export function Logo() { return <div className="brand" aria-label="Citevia"><spa
 export function ErrorNotice({ error, retry }: { error?: Error | string; retry?: () => void }) {
   if (!error) return null;
   const expired = error instanceof ApiError && error.status === 401;
-  return <div className="error-box" role="alert"><AlertCircle size={17} /><span>{typeof error === 'string' ? error : error.message}</span>{expired ? <button className="button button-outline" onClick={() => void signIn()}><LogIn size={13} />Sign in</button> : retry && <button className="button button-outline" onClick={retry}>Try again</button>}</div>;
+  return <div className="error-box" role="alert"><AlertCircle size={17} /><span>{reportExcerpt(typeof error === 'string' ? error : error.message)}</span>{expired ? <button className="button button-outline" onClick={() => void signIn()}><LogIn size={13} />Sign in</button> : retry && <button className="button button-outline" onClick={retry}>Try again</button>}</div>;
 }
 export function Empty({ title, description, children }: { title: string; description: string; children?: ReactNode }) { return <div className="empty-state"><span className="empty-icon"><FileSearch size={23} /></span><h3>{title}</h3><p>{description}</p>{children}</div>; }
 export function Badge({ value, label }: { value: string; label?: string }) { return <span className={`tag ${value.startsWith('failed') ? 'failed' : value}`}>{label || labelize(value)}</span>; }
@@ -18,8 +19,9 @@ export function percent(value?: number | null) { return value == null ? '—' : 
 export function safeUrl(url: string): string | undefined { try { const parsed = new URL(url); return ['https:', 'http:'].includes(parsed.protocol) ? parsed.href : undefined; } catch { return undefined; } }
 export function ExternalLink({ url, children }: { url: string; children: ReactNode }) {
   const href = safeUrl(url);
-  if (!href || new URL(href).hostname.endsWith('.example')) return <span>{children}</span>;
-  return <a href={href} target="_blank" rel="noreferrer noopener">{children}<ArrowUpRight size={11} /></a>;
+  const label = typeof children === 'string' ? reportExcerpt(children) : children;
+  if (!href || new URL(href).hostname.endsWith('.example')) return <span>{label}</span>;
+  return <a href={href} target="_blank" rel="noreferrer noopener">{label}<ArrowUpRight size={11} /></a>;
 }
 export function Pagination({ page, total, size, onChange, disabled = false }: {
   page: number; total: number; size: number; disabled?: boolean; onChange: (page: number) => void;
@@ -65,5 +67,5 @@ export function Drawer({ title, onClose, children, wide = false }: { title: stri
     document.addEventListener('keydown', handleKey);
     return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', handleKey); previous?.focus(); };
   }, []);
-  return <div className="overlay" onClick={event => { if (event.target === event.currentTarget) onClose(); }}><section ref={ref} tabIndex={-1} className={`drawer${wide ? ' drawer-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}><div className="drawer-header"><h2>{title}</h2><button className="icon-button" aria-label="Close details" onClick={onClose}><X size={20} /></button></div><div className="drawer-body">{children}</div></section></div>;
+  return <div className="overlay" onClick={event => { if (event.target === event.currentTarget) onClose(); }}><section ref={ref} tabIndex={-1} className={`drawer${wide ? ' drawer-wide' : ''}`} role="dialog" aria-modal="true" aria-label={reportExcerpt(title)}><div className="drawer-header"><h2>{reportExcerpt(title)}</h2><button className="icon-button" aria-label="Close details" onClick={onClose}><X size={20} /></button></div><div className="drawer-body">{children}</div></section></div>;
 }
