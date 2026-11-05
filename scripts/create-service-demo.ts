@@ -60,6 +60,7 @@ export const serviceDemoSourceSchema = z.object({
   companyDiscovery: z.literal(true).optional(),
   dashboardComparison: z.literal('scenario_start').optional(),
   publicationAlignment: z.literal('scans').optional(),
+  reportingProfile: z.literal('uk_investing').optional(),
   industry: z.string().trim().min(2).max(150), serviceArea: z.string().trim().min(2).max(150),
   services: z.array(z.string().trim().min(2).max(100)).min(5).max(30), audience: textList.min(1),
   description: z.string().trim().min(20).max(4000), criteria: textList.optional(),
@@ -157,6 +158,25 @@ export function alignDemoTrackingToScans(items: NonNullable<DemoConfig['trackedU
   });
 }
 
+/** Stagger scenario publication before the enrolled scan where the URL is first cited. */
+export function withDemoPublicationLeadTimes(items: NonNullable<DemoConfig['trackedUrls']>,
+  window: Pick<DemoConfig, 'startDate' | 'anchorDate'>): NonNullable<DemoConfig['trackedUrls']> {
+  const day = 86_400_000;
+  const start = Date.parse(window.startDate), anchor = Date.parse(window.anchorDate);
+  return items.map(item => {
+    const createdAt = item.createdAt || item.publishedAt;
+    const enrolledDay = Date.parse(createdAt.slice(0, 10));
+    // Keep the anchor week's publications visible and future releases in the future.
+    const earliest = enrolledDay > anchor ? anchor + day
+      : enrolledDay >= anchor - 6 * day ? Math.max(start, anchor - 6 * day) : start;
+    const maxLead = Math.max(0, Math.min(14, (enrolledDay - earliest) / day));
+    const seed = createHash('sha256').update(trackedUrlKey(item.url) || item.url).digest().readUInt32BE(0);
+    const lead = seed % (maxLead + 1);
+    const publishedAt = new Date(Date.parse(createdAt) - lead * day).toISOString();
+    return { ...item, createdAt, publishedAt };
+  });
+}
+
 function trackedContent(source: ParsedSource, existing: NonNullable<DemoConfig['trackedUrls']> = []): NonNullable<DemoConfig['trackedUrls']> {
   const dates = weeklyPublicationDates(serviceDemoDates(source.anchorDate)), official = domain(source.website);
   const enrolled = new Set(existing.map(item => trackedUrlKey(item.url)));
@@ -181,8 +201,9 @@ function trackedContent(source: ParsedSource, existing: NonNullable<DemoConfig['
       sourcePublishedAt: isoDate(link.sourcePublishedAt), sourceTrackedAt: isoDate(link.sourceTrackedAt),
       publishedAt, createdAt: publishedAt };
   }))];
-  return [...existing, ...(source.publicationAlignment === 'scans'
-    ? alignDemoTrackingToScans(additions, serviceDemoDates(source.anchorDate)) : additions)];
+  const window = serviceDemoDates(source.anchorDate);
+  const aligned = source.publicationAlignment === 'scans' ? alignDemoTrackingToScans(additions, window) : additions;
+  return [...existing, ...(source.reportingProfile === 'uk_investing' ? withDemoPublicationLeadTimes(aligned, window) : aligned)];
 }
 
 /** Public website metadata creates a compact synthetic scenario, never historical customer measurements. */
@@ -237,6 +258,7 @@ export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOStri
     }; }), brandbook, createdAt: at, updatedAt: copiedAt,
     demo: { version: 1, source: 'website-demo', ...dates, companyDiscovery: source.companyDiscovery,
       dashboardComparison: source.dashboardComparison, publicationAlignment: source.publicationAlignment,
+      reportingProfile: source.reportingProfile,
       sourceAccountId: `website:${official}`, sourceCopiedAt: copiedAt,
       profile: { ...serviceDemoProfile(source.id), ...source.profile },
       industry: { label: source.industry, audience: source.audience.join('; '), services: source.services, criteria }, copy: source.copy,
@@ -325,10 +347,34 @@ export async function expandServiceDemoTracking(
     paidCalls: 0 };
 }
 
+/** Upgrade the report presentation on an existing scan-aligned demo without reenrolling its URLs. */
+export async function syncServiceDemoReporting(
+  repository: Pick<Repository, 'getProject' | 'saveProject'>, value: unknown, apply = false, now = new Date(),
+) {
+  const source = serviceDemoSourceSchema.parse(value), existing = await repository.getProject(source.id);
+  const demo = existing?.demo, dates = serviceDemoDates(source.anchorDate);
+  if (source.reportingProfile !== 'uk_investing' || source.publicationAlignment !== 'scans' || !demo ||
+    !existing || existing.enabled || demo.presentation || demo.source !== 'website-demo' || demo.publicationAlignment !== 'scans' ||
+    demo.sourceAccountId !== `website:${domain(source.website)}` || existing.brand.domains[0] !== domain(source.website) ||
+    source.anchorDate !== demo.anchorDate || dates.startDate !== demo.startDate || dates.endDate !== demo.endDate)
+    throw new Error('Reporting updates require the matching scan-aligned website demo and its saved timeline.');
+  validateServiceDemo(existing);
+  const trackedUrls = withDemoPublicationLeadTimes(demo.trackedUrls!, demo);
+  const unchanged = demo.reportingProfile === source.reportingProfile && isDeepStrictEqual(demo.trackedUrls, trackedUrls);
+  const desired: Project = unchanged ? existing : { ...existing, updatedAt: now.toISOString(), version: existing.version + 1,
+    demo: { ...demo, reportingProfile: source.reportingProfile, trackedUrls } };
+  if (apply && !unchanged && !await repository.saveProject(desired, existing.version))
+    throw new Error('Account changed concurrently; retry to inspect it.');
+  return { status: unchanged ? 'unchanged' : apply ? 'updated' : 'preview', projectId: source.id, version: desired.version,
+    reportingProfile: source.reportingProfile, trackedUrls: trackedUrls.length,
+    updatedPublicationDates: trackedUrls.filter((row, index) => row.publishedAt !== demo.trackedUrls![index].publishedAt).length };
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: { source: { type: 'string' }, mode: { type: 'string', default: 'local' },
-    apply: { type: 'boolean' }, 'expand-tracking': { type: 'boolean' }, help: { type: 'boolean' } } });
-  if (values.help) { console.log('npm run demo:service -- --source /private/path/public-website-sources.json --mode local|aws [--expand-tracking] [--apply]\nSource accepts one account, an array, or {accounts:[...]}. Defaults to preview. Tracking expansion preserves existing URL enrollment dates and account settings. Never calls iGEO or an AI provider.'); return; }
+    apply: { type: 'boolean' }, 'expand-tracking': { type: 'boolean' }, 'sync-reporting': { type: 'boolean' }, help: { type: 'boolean' } } });
+  if (values.help) { console.log('npm run demo:service -- --source /private/path/public-website-sources.json --mode local|aws [--expand-tracking | --sync-reporting] [--apply]\nSource accepts one account, an array, or {accounts:[...]}. Defaults to preview. Both update modes preserve saved enrollment dates. Never calls iGEO or an AI provider.'); return; }
+  if (values['expand-tracking'] && values['sync-reporting']) throw new Error('Choose one update mode.');
   if (!values.source || !['local', 'aws'].includes(values.mode)) throw new Error('Supply --source and choose --mode local|aws.');
   const value = JSON.parse(await readFile(resolve(values.source), 'utf8'));
   const sources = Array.isArray(value) ? value : Array.isArray(value?.accounts) ? value.accounts : [value];
@@ -340,7 +386,8 @@ export async function main(argv = process.argv.slice(2)) {
   const db = await openConfigurationDatabase(values.mode as 'local' | 'aws', resolve(process.env.LOCAL_DATA_DIR || '.local-data/real'));
   try {
     const repository = new PostgresRepository(db), results = [];
-    for (const [index, project] of projects.entries()) results.push(values['expand-tracking']
+    for (const [index, project] of projects.entries()) results.push(values['sync-reporting']
+      ? await syncServiceDemoReporting(repository, sources[index], values.apply) : values['expand-tracking']
       ? await expandServiceDemoTracking(repository, sources[index], values.apply)
       : await createServiceDemo(repository, project, values.apply));
     console.log(JSON.stringify(results, null, 2));

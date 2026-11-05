@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   ArrowUpRight,
-  ChevronLeft,
   ChevronRight,
   Search,
 } from 'lucide-react';
@@ -19,6 +18,7 @@ import {
   ExternalLink,
   formatDate,
   formatNumber,
+  Pagination,
   percent,
 } from './components';
 
@@ -38,25 +38,25 @@ export default function SourcesView({
     [debounced, setDebounced] = useState(''),
     [owned, setOwned] = useState('');
   const [selected, setSelected] = useState<SourceRow>();
-  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const [location, setLocation] = useState({ scope: '', page: 0 });
   const runId = dashboard.run?.id;
+  const investingDemo = dashboard.project?.demo?.reportingProfile === 'uk_investing';
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(search), 250);
     return () => clearTimeout(timer);
   }, [search]);
-  useEffect(() => {
-    setCursors([undefined]);
-  }, [kind, debounced, owned, runId]);
+  const scope = JSON.stringify([path, runId, kind, debounced, owned]);
+  const page = location.scope === scope ? location.page : 0;
   const { data, error, loading } = useApi<Page<SourceRow>>(
     runId
-      ? `${path}/sources${query({ runId, kind, groupBy: 'domain', q: debounced, owned, limit: SOURCE_PAGE_SIZE, cursor: cursors.at(-1) })}`
+      ? `${path}/sources${query({ runId, kind, groupBy: 'domain', q: debounced, owned, limit: SOURCE_PAGE_SIZE, page })}`
       : null,
   );
   return (
     <>
       <div className="summary-inline">
         <div className="summary-item">
-          <strong>{dashboard.metrics.uniqueDomains}</strong>
+          <strong>{formatNumber(dashboard.metrics.uniqueDomains)}</strong>
           <span>
             Cited
             <br />
@@ -64,7 +64,7 @@ export default function SourcesView({
           </span>
         </div>
         <div className="summary-item">
-          <strong>{dashboard.metrics.uniqueUrls}</strong>
+          <strong>{formatNumber(dashboard.metrics.uniqueUrls)}</strong>
           <span>
             Unique cited
             <br />
@@ -72,7 +72,7 @@ export default function SourcesView({
           </span>
         </div>
         <div className="summary-item">
-          <strong>{dashboard.metrics.citations}</strong>
+          <strong>{formatNumber(dashboard.metrics.citations)}</strong>
           <span>
             Citation
             <br />
@@ -123,12 +123,16 @@ export default function SourcesView({
               { value: 'false', label: 'Third-party domains' },
             ]}
           />
-          <span className="filter-count">{data?.total ?? '—'} domains</span>
+          <span className="filter-count">{formatNumber(data?.total)} domains</span>
         </div>
         <div className="inline-notice">
           {kind === 'cited'
-            ? 'Domains explicitly cited in the original answers. Coverage counts distinct answers, so repeated citations do not inflate it.'
-            : 'Sources returned by the search tool. These may have been retrieved without being cited in the answer.'}
+            ? investingDemo
+              ? 'Domains cited in simulated answers, including illustrative UK investing publications. Coverage is the share of answers that cite each domain.'
+              : 'Domains explicitly cited in the original answers. Coverage counts distinct answers, so repeated citations do not inflate it.'
+            : investingDemo
+              ? 'Sources retrieved for the simulated answers, including illustrative UK investing publications.'
+              : 'Sources returned by the search tool. These may have been retrieved without being cited in the answer.'}
         </div>
       </div>
       <ErrorNotice error={error} />
@@ -161,32 +165,10 @@ export default function SourcesView({
               />
             ))}
           </div>
-          <div className="pagination source-pagination" style={{ border: 0 }}>
-            <span aria-live="polite">
-              {(cursors.length - 1) * SOURCE_PAGE_SIZE + 1}–{(cursors.length - 1) * SOURCE_PAGE_SIZE + data.items.length} of {data.total} domains
-            </span>
-            {(data.nextCursor || cursors.length > 1) && <div className="page-buttons">
-              <button
-                disabled={loading || cursors.length === 1}
-                onClick={() => setCursors((previous) => previous.slice(0, -1))}
-                aria-label="Previous source page"
-                title={cursors.length === 1 ? 'This is the first page' : 'Previous source page'}
-              >
-                <ChevronLeft size={13} />
-              </button>
-              <span style={{ padding: '0 8px' }}>Page {cursors.length} of {Math.ceil(data.total / SOURCE_PAGE_SIZE)}</span>
-              <button
-                disabled={loading || !data.nextCursor}
-                onClick={() =>
-                  setCursors((previous) => [...previous, data.nextCursor!])
-                }
-                aria-label="Next source page"
-                title={data.nextCursor ? 'Next source page' : 'This is the last page'}
-              >
-                <ChevronRight size={13} />
-              </button>
-            </div>}
-          </div>
+          {data.total > SOURCE_PAGE_SIZE && (
+            <Pagination page={page} size={SOURCE_PAGE_SIZE} total={data.total}
+              disabled={loading} onChange={(next) => setLocation({ scope, page: next })} />
+          )}
         </>
       )}
       {selected && runId && (
@@ -230,20 +212,16 @@ function DomainCard({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary className="source-card-summary">
-        <DomainLogo domain={source.domain} size={30} className="domain-icon" />
+        <DomainLogo domain={source.domain} name={source.domain.split('.')[0].replaceAll('-', ' ')} size={30} className="domain-icon" />
         <div className="domain-info">
           <span className="domain-name">{source.domain}</span>
           <span className="domain-meta">
-            {source.owned ? 'Your domain' : 'Third-party source'} ·{' '}
+            {source.owned ? 'Your domain' : source.domain.endsWith('.example') ? 'Illustrative source' : 'Third-party source'} ·{' '}
             {source.uniqueUrlCount}{' '}
             {source.uniqueUrlCount === 1 ? 'page' : 'pages'}
           </span>
         </div>
         <div className="source-stats">
-          <div>
-            <strong>{source.answerCount}</strong>
-            <small>Answers</small>
-          </div>
           <div>
             <strong>{percent(source.coverage)}</strong>
             <small>Coverage</small>
@@ -287,7 +265,7 @@ function DomainCard({
               className="button button-quiet"
               onClick={() => onSelect(source)}
             >
-              View all {source.answerCount} answers <ArrowRight size={12} />
+              View answers <ArrowRight size={12} />
             </button>
           </div>
           <ErrorNotice error={error} />
@@ -308,8 +286,7 @@ function DomainCard({
                   </small>
                 </div>
                 <button className="button" onClick={() => onSelect(url)}>
-                  {url.answerCount}{' '}
-                  {url.answerCount === 1 ? 'answer' : 'answers'}
+                  View answers
                   <ArrowUpRight size={12} />
                 </button>
               </div>

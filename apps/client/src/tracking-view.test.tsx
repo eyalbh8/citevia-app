@@ -21,7 +21,7 @@ const row = {
 };
 const summary: TrackingSummary = {
   period, trackedCount: 1, trackedThisMonth: 0, appearances: 3, citedCount: 1, citedRate: 100, medianPickup: null, clicks: null,
-  series: Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.parse(period.start) + i * 86400000).toISOString().slice(0, 10), citations: i === 6 ? 3 : 0, mentions: 0, published: 0 })),
+  series: Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.parse(period.start) + i * 86400000).toISOString().slice(0, 10), citations: i === 6 ? 3 : 0, mentions: 0, published: i === 3 ? 1 : 0 })),
 };
 let root: Root, container: HTMLDivElement;
 let state: 'loading' | 'ready' | 'error';
@@ -85,6 +85,12 @@ describe('Tracking report', () => {
     expect(container.textContent).not.toContain('Invalid Date');
     expect(container.querySelectorAll('.tracking-month')).toHaveLength(7);
     expect(container.querySelector('.tracking-month')?.textContent).toContain('29 Oct');
+    const chart = container.querySelector('.tracking-month-chart')!;
+    const markers = chart.querySelectorAll('.tracking-publication-mark');
+    expect(markers).toHaveLength(1);
+    expect(markers[0].getAttribute('aria-label')).toBe('2026-11-01: 1 URL published');
+    expect(chart.textContent).not.toContain('published');
+    expect(container.querySelector('.tracking-publication-key')?.textContent).toBe('1 URL published');
   });
 
   it('can retry failed content and summary requests', async () => {

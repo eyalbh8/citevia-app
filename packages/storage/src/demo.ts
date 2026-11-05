@@ -1,6 +1,8 @@
 import {
   buildSummary,
   domainForUrl,
+  investingExpectedRank,
+  investingVisibilityRate,
   projectProviders,
   trackedUrlKey,
   type Analysis,
@@ -18,6 +20,7 @@ import {
 import type { Repository, Runtime, SavedAnalysisRef } from './contracts.js';
 import { aggregateScenarioTraffic, demoNumericProfile } from './demo-traffic.js';
 import { createScenarioTracking } from './demo-tracking.js';
+import { investingSources } from './demo-investing-sources.js';
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -361,28 +364,41 @@ function visibleCompetitorsFor(project: Project, provider: ScanProvider, prompt:
     (hash(`${prompt.id}:${brand.id}:${provider}`) % 1000) / 1000 < 0.50 - 0.30 * phase - index * 0.025);
 }
 
-/** Stable, cumulative prompt cohorts drive the same growth in every report. */
+/** The target, competitors and answer evidence all use these per-scan measurements. */
 function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): BrandAnalysis[] {
   if (configFor(project)!.presentation) return presentationMeasurements(project, run, prompt);
   const plan = measurementPlan(project, run.snapshot.provider!);
   const { phase, mentionCount, positiveStart, ranks } = plan.scans.get(Date.parse(run.scheduledAt))!;
   const index = plan.promptOrder.get(prompt.id)!;
-  const mentioned = index < mentionCount;
+  let mentioned = index < mentionCount;
+  let positive = index >= positiveStart;
+  let rank = ranks.get(prompt.id) ?? 1;
   const visibleCompetitors = visibleCompetitorsFor(project, run.snapshot.provider!, prompt, phase);
+  if (project.demo?.reportingProfile === 'uk_investing') {
+    const at = Date.parse(run.scheduledAt), provider = run.snapshot.provider!;
+    const rate = investingVisibilityRate(project.demo, prompt.id, provider, at);
+    const scan = scanTimes(project).indexOf(at);
+    const providerPhase = { openai: 0, perplexity: 1 / 3, gemini: 2 / 3 }[provider];
+    // Space providers evenly across a scan, then rotate from one scan to the next.
+    // Each prompt can gain coverage independently as its expected visibility rises.
+    const sample = (salt: string, stride: number) =>
+      (hash(`${prompt.id}:${salt}`) / 4294967296 + providerPhase + scan * stride) % 1;
+    mentioned = sample('visibility', .61803398875) < rate;
+    // Keep each provider's view of the prompt consistent as its rank and sentiment improve.
+    positive = sample('sentiment', 0) < rate;
+    const expectedRank = investingExpectedRank(rate);
+    rank = Math.min(1 + visibleCompetitors.length + sourceCompanies(project).length,
+      Math.floor(expectedRank) + Number(sample('rank', 0) < expectedRank % 1));
+  }
   if (configFor(project)!.companyDiscovery && !mentioned && !visibleCompetitors.length && project.competitors.length)
     visibleCompetitors.push(project.competitors[hash(`${project.id}:${run.snapshot.provider}:${prompt.id}:discovery`) % project.competitors.length]);
-  // All earlier ordinal positions must have a company in the simulated answer.
-  // Sparse fixtures without source alternatives use the highest supportable rank.
-  // Later mention cohorts rank at least as well, so growing visibility cannot
-  // dilute the improving rank curve by introducing lower-ranked prompt results.
-  const rank = ranks.get(prompt.id) ?? 1;
   const target: BrandAnalysis = {
     brandId: project.brand.id,
     mentioned,
     explicitRank: mentioned ? rank : null,
     appearanceRank: mentioned ? rank : null,
     mentionOrder: mentioned ? rank : null,
-    sentiment: mentioned ? index >= positiveStart ? 'positive' : 'neutral' : 'not_applicable',
+    sentiment: mentioned ? positive ? 'positive' : 'neutral' : 'not_applicable',
     evidence: [],
     rankEvidence: null,
     sentimentEvidence: null,
@@ -509,10 +525,13 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     const item = eligible[hash(`${run.id}:${prompt.id}:content`) % eligible.length];
     base.push({ url: item.url, title: item.title });
   }
-  return [...new Map(base.map(item => [item.url, item])).values()].map((citation, index) => ({
+  const citations: Citation[] = [...new Map(base.map(item => [item.url, item])).values()].map((citation, index) => ({
     id: `citation_${index + 1}`, blockId: 'answer', url: citation.url,
     title: citation.title || new URL(citation.url).hostname, start: null, end: null,
   }));
+  return project.demo?.reportingProfile === 'uk_investing'
+    ? citations.concat(investingSources(activePrompts(project), prompt.id))
+    : citations;
 }
 
 function resultFor(project: Project, run: ScanRun, prompt: Prompt): PromptResult {

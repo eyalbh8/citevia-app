@@ -95,6 +95,8 @@ function exportOverview(data: DashboardOverview, name: string) {
   ) => rows.push([section, item, metric, value]);
   add('Period', name, 'Start (UTC)', data.period.start);
   add('Period', name, 'End (UTC)', data.period.end);
+  if (data.comparison === 'modeled_period')
+    add('Period', name, 'Growth basis', 'Modeled target mention and visibility growth over the selected dates');
   for (const [key, value] of Object.entries(data.filters))
     if (
       Array.isArray(value) ? value.length : value !== '' && value !== undefined
@@ -158,6 +160,9 @@ export function DashboardView({
     retry,
   );
   const data = overview.data;
+  const growthLabel = data?.comparison === 'modeled_period'
+    ? 'Modeled growth over the selected period'
+    : data?.comparison === 'scenario_baseline' ? 'Growth since the first scan' : 'Change from first to last observed day';
   const periodCaption =
     selection.days === 'custom'
       ? 'Mentions in the selected period'
@@ -211,6 +216,9 @@ export function DashboardView({
                 {data.comparison === 'scenario_baseline' && data.comparisonPeriod && (
                   <span className="overview-timezone"> · Growth since {dayLabel(data.comparisonPeriod.start, true)}</span>
                 )}
+                {data.comparison === 'modeled_period' && (
+                  <span className="overview-timezone"> · Modeled growth over this period</span>
+                )}
               </span>
               <span role="status">
                 {overview.error
@@ -241,7 +249,7 @@ export function DashboardView({
                     <strong>{formatNumber(p.count)}</strong>
                     <Change
                       value={p.change}
-                      label={data.comparison === 'scenario_baseline' ? 'Growth since the first scan' : 'Change from first to last observed day'}
+                      label={growthLabel}
                     />
                   </div>
                   <p>{periodCaption}</p>
@@ -290,7 +298,7 @@ export function DashboardView({
                           <strong>{formatNumber(s.visibility)}%</strong>
                           <Change
                             value={s.visibilityChange ?? null}
-                            label={`${s.key === 'unassigned' ? 'No stage' : labelize(s.key)} visibility ${data.comparison === 'scenario_baseline' ? 'growth since the first scan' : 'change from first to last observed day'} (relative percentage)`}
+                            label={`${s.key === 'unassigned' ? 'No stage' : labelize(s.key)} visibility ${growthLabel.toLowerCase()} (relative percentage)`}
                           />
                         </div>
                       </div>
@@ -424,7 +432,7 @@ export function DashboardView({
                                 <strong>{formatNumber(b.mentions)}</strong>
                                 <Change
                                   value={b.mentionChange}
-                                  label={data.comparison === 'scenario_baseline' ? 'Mention growth since the first scan' : 'Mention change from first to last observed day'}
+                                  label={b.isTarget || data.comparison === 'scenario_baseline' ? `Mentions: ${growthLabel}` : 'Mention change from first to last observed day'}
                                 />
                               </div>
                             </td>

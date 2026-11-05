@@ -108,7 +108,10 @@ describe('demo sentiment progression', () => {
         }
       }
       expect(regressions, `${provider} positive cohorts must stay positive`).toEqual([]);
-      expect(diluted, `${provider} new mention cohorts must enter positive`).toEqual([]);
+      // A fixed-cohort demo expands with positive entrants. In the investing
+      // scenario a first mention can be neutral as individual answers rotate.
+      if (project.demo?.reportingProfile !== 'uk_investing')
+        expect(diluted, `${provider} new mention cohorts must enter positive`).toEqual([]);
 
       const monthly: number[] = [];
       const start = new Date(project.demo!.startDate);
@@ -117,7 +120,13 @@ describe('demo sentiment progression', () => {
         monthly.push(sentimentMean(providerRuns.filter(run => run.scheduledAt.startsWith(month))
           .flatMap(run => rowsByRun.get(run.id)!)));
       }
-      expect(monthly.every((value, index) => !index || value >= monthly[index - 1])).toBe(true);
+      if (project.demo?.reportingProfile === 'uk_investing') {
+        const quarters = [0, 3, 6].map(index => monthly.slice(index, index + 3).reduce((sum, value) => sum + value, 0) / 3);
+        expect(quarters[1]).toBeGreaterThan(quarters[0]);
+        expect(quarters[2]).toBeGreaterThan(quarters[1]);
+      } else {
+        expect(monthly.every((value, index) => !index || value >= monthly[index - 1])).toBe(true);
+      }
       expect(monthly.at(-1)!).toBeGreaterThan(monthly[0] + 15);
     }
     expect(await repository.listRuns(project.id)).toEqual([]);

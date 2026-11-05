@@ -1,10 +1,13 @@
 import {
   aggregateDashboardOverview,
   dashboardObservations,
+  investingComparisonPeriod,
+  investingTrend,
   isReportableRun,
   matchesMonitoringFilters,
   snapshotProvider,
   type CapturedAnswer,
+  type InvestingCohort,
   type Project,
 } from '@citevia/core';
 import { AccessError, type Runtime } from '@citevia/storage';
@@ -84,7 +87,22 @@ export async function dashboardOverviewRoute(
   }
   const report = aggregateDashboardOverview(project, period, filters,
     await historicalCompetitorMentions(runtime, project, observations));
-  if (project.demo?.dashboardComparison === 'scenario_start' && !project.demo.presentation && observations.length) {
+  if (project.demo?.reportingProfile === 'uk_investing' && !project.demo.presentation && observations.length) {
+    const demo = project.demo, comparison = investingComparisonPeriod(demo, period.start, period.end);
+    const unique = new Map<string, InvestingCohort & { stage: string }>();
+    for (const { result, run } of observations) {
+      const provider = snapshotProvider(run.snapshot), key = `${result.promptId}:${provider}`;
+      if (!unique.has(key)) unique.set(key, { promptId: result.promptId, provider, stage: result.prompt.stage || 'unassigned' });
+    }
+    const cohorts = [...unique.values()];
+    const growth = (group: InvestingCohort[]) => investingTrend(demo, group, comparison)?.visibility ?? null;
+    for (const row of report.providers) row.change = growth(cohorts.filter(pair => pair.provider === row.provider));
+    for (const row of report.stages) row.visibilityChange = growth(cohorts.filter(pair => pair.stage === row.key));
+    const target = report.ranking.find(row => row.isTarget);
+    if (target) target.mentionChange = growth(cohorts);
+    report.comparison = 'modeled_period';
+    report.comparisonPeriod = comparison;
+  } else if (project.demo?.dashboardComparison === 'scenario_start' && !project.demo.presentation && observations.length) {
     const baselineStart = `${project.demo.startDate}T00:00:00.000Z`;
     const baselineEnd = new Date(Math.min(Date.parse(period.end), Date.parse(baselineStart) + 7 * 86400000)).toISOString();
     const baselineHistory = await runtime.repository.listPromptHistory(project.id, baselineStart, baselineEnd);

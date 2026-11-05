@@ -83,7 +83,9 @@ export function PromptMetricChange({
     return start === end ? start : `${start}–${end}`;
   };
   const basis = comparison
-    ? comparison.mode === 'first_last_day'
+    ? comparison.mode === 'modeled_period'
+      ? `Modeled growth from ${dates(comparison.baseline)} to ${dates(comparison.current)} UTC, across ${comparison.providers.length} provider${comparison.providers.length === 1 ? '' : 's'}.`
+      : comparison.mode === 'first_last_day'
       ? `First to latest scan day: ${dates(comparison.baseline)} → ${dates(comparison.current)} UTC. ${comparison.providers.length} matched provider${comparison.providers.length === 1 ? '' : 's'}, one answer per provider on each day. Values above average the entire selected period.`
       : `Previous equal-length period: ${dates(comparison.baseline)} → ${dates(comparison.current)} UTC. ${comparison.baseline.measurementCount} → ${comparison.current.measurementCount} analyzed answers.`
     : 'Needs comparable measurements in the previous period or on two distinct scan days in this period.';
@@ -477,9 +479,10 @@ export default function PromptsView({
           </div>
         </div>
         <p className="prompt-comparison-note">
-          {filtered.filter((prompt) => prompt.measurementCount > 0).length} of {filtered.length} matching prompts have {project.demo?.presentation ? 'simulated' : 'analyzed'} answers.
-          {' '}Values summarize saved analyses in the selected period. Changes compare matching analysis settings
-          in the previous period, or the first and latest comparable scan days.
+          {filtered.filter((prompt) => prompt.measurementCount > 0).length} of {filtered.length} matching prompts have {project.demo?.presentation || project.demo?.reportingProfile === 'uk_investing' ? 'simulated' : 'analyzed'} answers.
+          {' '}{project.demo?.reportingProfile === 'uk_investing'
+            ? 'Scores summarize those answers. Changes show modeled growth over the selected period.'
+            : 'Values summarize saved analyses in the selected period. Changes compare matching analysis settings in the previous period, or the first and latest comparable scan days.'}
           {filtered.some((prompt) => prompt.historicalAnalysis) && ' Some scores use earlier saved analysis settings.'}
         </p>
         {pendingSetup && (
@@ -786,7 +789,7 @@ export default function PromptsView({
         {dateRange.days === 'custom'
           ? `Averages from ${dateRange.start} through ${dateRange.end} (UTC).`
           : `Averages for the last ${dateRange.days} days.`}{' '}
-        Changes compare the preceding equal-length period.{' '}
+        {project.demo?.reportingProfile === 'uk_investing' ? 'Changes reflect modeled growth.' : 'Changes compare the preceding equal-length period.'}{' '}
         <span>— means no measurement or comparable baseline.</span>
       </p>
       {answerPrompt && (

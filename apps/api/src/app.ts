@@ -161,8 +161,14 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       );
     return { offset, limit };
   }
-  function paginate<T>(items: T[], query: URLSearchParams): Page<T> {
-    const { offset, limit } = paging(query);
+  function paginate<T>(items: T[], query: URLSearchParams, page: string | null = null): Page<T> {
+    const { offset: cursorOffset, limit } = paging(query);
+    let offset = cursorOffset;
+    if (page !== null) {
+      offset = Number(page) * limit;
+      if (query.has('cursor') || !/^(0|[1-9]\d*)$/.test(page) || !Number.isSafeInteger(offset) || offset > 1000000)
+        throw new HttpError(400, 'INVALID_PAGE', 'Choose a valid page number or use a cursor');
+    }
     return {
       items: items.slice(offset, offset + limit),
       total: items.length,
@@ -1251,7 +1257,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             );
           items = items.filter((row) => row.owned === (owned === 'true'));
         }
-        return response(paginate(items, query));
+        return response(paginate(items, query, query.get('page')));
       }
       const sourceMatch = tail.match(/^sources\/([^/]+)\/responses$/);
       if (sourceMatch && method === 'GET') {

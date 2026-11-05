@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { CapturedAnswer, DashboardOverview, MentionsSummary, Page, Project, PromptResult, TrackingRow, TrackingSummary, TrafficDashboard } from '@citevia/core';
+import type { CapturedAnswer, DashboardOverview, MentionsSummary, Page, Project, PromptMetricsResponse, PromptResult, TrackingRow, TrackingSummary, TrafficDashboard } from '@citevia/core';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository } from '@citevia/storage';
 import { createApi } from '../apps/api/src/app.js';
 import { buildServiceDemo, createServiceDemo, expandServiceDemoTracking } from '../scripts/create-service-demo.js';
@@ -76,9 +76,19 @@ describe('complete eToro demo account', () => {
       const dashboard = await get<DashboardOverview>(`dashboard/overview?${range}`);
       expect(dashboard.analyzed).toBeGreaterThan(0);
       expect(dashboard.providers.every(row => row.count > 0)).toBe(true);
-      expect(dashboard.comparison).toBe('scenario_baseline');
+      expect(dashboard.comparison).toBe('modeled_period');
       expect(dashboard.providers.every(row => (row.change || 0) > 0)).toBe(true);
       expect(dashboard.stages.every(row => (row.visibilityChange || 0) > 0)).toBe(true);
+      const band = ({ 'days=7': [2, 4], 'days=30': [7, 10], 'days=90': [20, 30] })[range];
+      if (band) {
+        const prompts = await get<PromptMetricsResponse>(`prompt-metrics?${range}`);
+        const growth = [...dashboard.providers.map(row => row.change), ...dashboard.stages.map(row => row.visibilityChange),
+          ...prompts.items.map(row => row.visibilityChange)];
+        expect(growth.every(value => value !== null && value >= band[0] && value <= band[1])).toBe(true);
+        expect(prompts.items.filter(row => row.avgVisibility! >= 60 && row.avgVisibility! <= 80).length).toBeGreaterThan(24);
+        expect(prompts.items.filter(row => row.avgVisibility === 0).length).toBeLessThan(3);
+        expect(prompts.items.every(row => row.comparison?.mode === 'modeled_period')).toBe(true);
+      }
       const traffic = await get<TrafficDashboard>(`traffic?${range}`);
       expect(traffic.current).toBeGreaterThan(0);
       expect(traffic.providers.reduce((sum, row) => sum + row.visits, 0)).toBe(traffic.current);
@@ -87,6 +97,17 @@ describe('complete eToro demo account', () => {
       const summary = await get<TrackingSummary>(`tracked-urls/summary?${range}`);
       expect(tracking.items.reduce((sum, row) => sum + row.periodAppearances, 0)).toBe(summary.appearances);
       const mentions = await get<MentionsSummary>(`mentions/summary?${range}`);
+      if (range === 'days=7') {
+        const pickupDays = tracking.items.map(row => row.daysToFirstCitation!);
+        expect(Math.min(...pickupDays)).toBe(0);
+        expect(Math.max(...pickupDays)).toBe(14);
+        expect(new Set(pickupDays).size).toBeGreaterThan(7);
+        expect(summary.medianPickup).toBeGreaterThan(0);
+        const publications = mentions.markers.flatMap(marker => marker.items);
+        expect(new Set(publications.map(item => new URL(item.url).hostname))).toEqual(
+          new Set(['www.etoro.com', 'www.youtube.com', 'www.reddit.com']),
+        );
+      }
       expect(mentions.markers.flatMap(marker => marker.items).length).toBe(summary.series.reduce((sum, point) => sum + point.published, 0));
       for (const marker of mentions.markers) for (const item of marker.items) {
         const row = tracking.items.find(row => row.id === item.id)!;

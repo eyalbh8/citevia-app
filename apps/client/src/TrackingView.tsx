@@ -86,6 +86,7 @@ function TrackingTrend({ summary }: { summary: TrackingSummary }) {
     1,
     ...summary.series.map((p) => (metric === 'clicks' ? 0 : p[metric])),
   );
+  const publicationCount = summary.series.reduce((total, point) => total + point.published, 0);
   return (
     <section className="monitor-card tracking-trend">
       <header>
@@ -97,8 +98,13 @@ function TrackingTrend({ summary }: { summary: TrackingSummary }) {
                 ? 'Brand mentions in AI answers over time'
                 : 'Clicks from AI answers over time'}
           </h2>
-          <p>
+          <p className="tracking-trend-caption">
             {summary.period.granularity === 'hourly' ? 'Hourly' : 'Daily'} totals · Selected period
+            {metric !== 'clicks' && publicationCount > 0 && (
+              <span className="tracking-publication-key"><Link2 size={13} aria-hidden="true" />
+                {publicationCount.toLocaleString()} {publicationCount === 1 ? 'URL' : 'URLs'} published
+              </span>
+            )}
           </p>
         </div>
         <div className="tracking-tabs" role="group" aria-label="Trend metric">
@@ -126,9 +132,9 @@ function TrackingTrend({ summary }: { summary: TrackingSummary }) {
             <div key={point.date} className="tracking-month">
               <div
                 className="tracking-month-bar"
-                title={`${point[metric]} ${metric}; ${point.published} URLs published`}
+                title={`${point[metric].toLocaleString()} ${metric}`}
               >
-                <span>{point[metric].toLocaleString()}</span>
+                {point[metric] > 0 && <span>{point[metric].toLocaleString()}</span>}
                 <i
                   style={{
                     height: `${Math.max(1, (point[metric] / max) * 140)}px`,
@@ -144,7 +150,13 @@ function TrackingTrend({ summary }: { summary: TrackingSummary }) {
                       day: 'numeric', month: 'short', timeZone: 'UTC',
                     })}
               </small>
-              <small>{point.published} published</small>
+              {point.published > 0 && (
+                <span className="tracking-publication-mark" role="img"
+                  aria-label={`${point.date}: ${point.published} ${point.published === 1 ? 'URL' : 'URLs'} published`}
+                  title={`${point.published} ${point.published === 1 ? 'URL' : 'URLs'} published`}>
+                  <Link2 size={12} aria-hidden="true" />{point.published}
+                </span>
+              )}
             </div>
           ))}
         </div>

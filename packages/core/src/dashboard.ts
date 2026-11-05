@@ -29,7 +29,7 @@ export interface DashboardOverview {
     promptCount: number;
     measuredPromptCount: number;
     visibility: number;
-    /** Relative percentage change from the first to last observed stage day. */
+    /** Relative percentage change using the report's comparison basis. */
     visibilityChange: number | null;
   }[];
   ranking: {
@@ -54,7 +54,7 @@ export interface DashboardOverview {
     citationCount: number;
     owned: boolean;
   }[];
-  comparison: 'first_to_last_observed_day' | 'scenario_baseline';
+  comparison: 'first_to_last_observed_day' | 'scenario_baseline' | 'modeled_period';
   comparisonPeriod?: { start: string; end: string };
 }
 
@@ -150,6 +150,7 @@ export function aggregateDashboardOverview(
     string,
     { pages: Set<string>; citationCount: number }
   >();
+  const occurrencesByUrl = new Map<string, number>();
   for (const { result, run, answer } of observations) {
     const provider = snapshotProvider(run.snapshot);
     const day = result.capturedAt!.slice(0, 10);
@@ -199,18 +200,18 @@ export function aggregateDashboardOverview(
       });
       mentions.set(brand.id, events);
     }
-    for (const citation of answer?.citations || []) {
-      const page = trackedUrlKey(citation.url);
-      if (!page) continue;
-      const domain = new URL(citation.url).hostname.toLowerCase();
-      const source = sourceRows.get(domain) || {
-        pages: new Set<string>(),
-        citationCount: 0,
-      };
-      source.pages.add(page);
-      source.citationCount++;
-      sourceRows.set(domain, source);
-    }
+    for (const { url } of answer?.citations || [])
+      occurrencesByUrl.set(url, (occurrencesByUrl.get(url) || 0) + 1);
+  }
+  // A long reporting period can cite the same page in thousands of captures.
+  for (const [url, occurrences] of occurrencesByUrl) {
+    const page = trackedUrlKey(url);
+    if (!page) continue;
+    const domain = new URL(url).hostname.toLowerCase();
+    const source = sourceRows.get(domain) || { pages: new Set<string>(), citationCount: 0 };
+    source.pages.add(page);
+    source.citationCount += occurrences;
+    sourceRows.set(domain, source);
   }
 
   const daily = new Map<string, Map<string, number>>();

@@ -13,6 +13,7 @@
   "companyDiscovery": true,
   "dashboardComparison": "scenario_start",
   "publicationAlignment": "scans",
+  "reportingProfile": "uk_investing",
   "industry": "Online investing and multi-asset brokerage",
   "serviceArea": "the United Kingdom",
   "services": [

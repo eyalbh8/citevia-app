@@ -12,6 +12,7 @@ export * from './users.js';
 export * from './providers.js';
 export * from './tracking.js';
 export * from './dashboard.js';
+export * from './demo-growth.js';
 export * from './competitors.js';
 
 export * from './traffic.js';

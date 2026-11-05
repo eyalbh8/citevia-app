@@ -95,6 +95,8 @@ export interface DemoConfig {
   /** Compare demo dashboard growth with the first scenario capture. */
   dashboardComparison?: 'scenario_start';
   publicationAlignment?: 'scans';
+  /** Opt in to the UK investing demo's modeled trends, source catalog and pickup schedule. */
+  reportingProfile?: 'uk_investing';
   /** An explicitly labeled illustration layered over preserved source observations. */
   presentation?: { label: string; targetRank: number; mentionCount: number; reportingOnly: true };
   anchorDate: string;

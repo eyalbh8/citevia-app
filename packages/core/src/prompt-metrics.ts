@@ -8,11 +8,12 @@ import type {
 import { isReportableRun, sameTargetMethod } from './metrics.js';
 import { brandRank, brandSentimentScore } from './scoring.js';
 import { projectProviders, snapshotProvider } from './providers.js';
+import { investingComparisonPeriod, investingTrend } from './demo-growth.js';
 
 export interface PromptMetricComparison {
-  mode: 'previous_period' | 'first_last_day';
-  baseline: { start: string; end: string; measurementCount: number };
-  current: { start: string; end: string; measurementCount: number };
+  mode: 'previous_period' | 'first_last_day' | 'modeled_period';
+  baseline: { start: string; end: string; measurementCount: number | null };
+  current: { start: string; end: string; measurementCount: number | null };
   providers: ScanProvider[];
 }
 export interface PromptMetricsRow extends Prompt {
@@ -394,14 +395,30 @@ export function promptPeriodMetrics(
             },
           }
         : firstLastDayComparison(current, runs);
+      const metrics = metricRow(
+        project,
+        prompt,
+        current,
+        comparison ? previous : [],
+        comparison,
+      );
+      if (project.demo?.reportingProfile === 'uk_investing' && !project.demo.presentation && current.length) {
+        const period = investingComparisonPeriod(project.demo, start, end);
+        const providers = [...currentProviders].sort();
+        const trend = investingTrend(project.demo, providers.map(provider => ({ provider, promptId: prompt.id })), period);
+        if (trend) {
+          metrics.visibilityChange = trend.visibility;
+          metrics.rankChange = metrics.rankCount ? trend.rank : null;
+          metrics.sentimentChange = metrics.sentimentCount ? trend.sentiment : null;
+          metrics.comparison = {
+            mode: 'modeled_period', providers,
+            baseline: { start: period.start, end: period.start, measurementCount: null },
+            current: { start: period.end, end: period.end, measurementCount: null },
+          };
+        }
+      }
       return {
-        ...metricRow(
-          project,
-          prompt,
-          current,
-          comparison ? previous : [],
-          comparison,
-        ),
+        ...metrics,
         // Keep history coverage visible even when no paired comparison is possible.
         previousMeasurementCount: previous.length,
         analysisModels: [

@@ -16,11 +16,33 @@ export function formatDate(date?: string | null, full = false) { if (!date) retu
 export function formatNumber(value?: number | null, digits = 0) { return value == null || !Number.isFinite(value) ? '—' : value.toLocaleString('en', { maximumFractionDigits: digits, minimumFractionDigits: digits }); }
 export function percent(value?: number | null) { return value == null ? '—' : `${formatNumber(value, 0)}%`; }
 export function safeUrl(url: string): string | undefined { try { const parsed = new URL(url); return ['https:', 'http:'].includes(parsed.protocol) ? parsed.href : undefined; } catch { return undefined; } }
-export function ExternalLink({ url, children }: { url: string; children: ReactNode }) { const href = safeUrl(url); return href ? <a href={href} target="_blank" rel="noreferrer noopener">{children}<ArrowUpRight size={11} /></a> : <span>{children}</span>; }
-export function Pagination({ page, total, size, onChange }: { page: number; total: number; size: number; onChange: (page: number) => void }) {
+export function ExternalLink({ url, children }: { url: string; children: ReactNode }) {
+  const href = safeUrl(url);
+  if (!href || new URL(href).hostname.endsWith('.example')) return <span>{children}</span>;
+  return <a href={href} target="_blank" rel="noreferrer noopener">{children}<ArrowUpRight size={11} /></a>;
+}
+export function Pagination({ page, total, size, onChange, disabled = false }: {
+  page: number; total: number; size: number; disabled?: boolean; onChange: (page: number) => void;
+}) {
   const pages = Math.ceil(total / size);
-  const visiblePages = pages <= 7 ? Array.from({ length: pages }, (_, index) => index) : [...new Set([0, ...[page - 1, page, page + 1].filter(index => index > 0 && index < pages - 1), pages - 1])];
-  return <div className="pagination"><span>{total ? `${page * size + 1}–${Math.min((page + 1) * size, total)} of ${total}` : 'No results'}</span><nav className="page-buttons" aria-label="Pagination"><button aria-label="Previous page" disabled={page === 0} onClick={() => onChange(page - 1)}><ChevronLeft size={15} /></button>{visiblePages.map((index, position) => <span className="page-number-group" key={index}>{position > 0 && index - visiblePages[position - 1] > 1 && <span className="pagination-gap" aria-hidden="true">…</span>}<button className={index === page ? 'active' : ''} aria-label={`Page ${index + 1}`} aria-current={index === page ? 'page' : undefined} onClick={() => onChange(index)}>{index + 1}</button></span>)}<button aria-label="Next page" disabled={page + 1 >= pages} onClick={() => onChange(page + 1)}><ChevronRight size={15} /></button></nav></div>;
+  const visiblePages = pages <= 7 ? Array.from({ length: pages }, (_, index) => index)
+    : [0, ...[page - 1, page, page + 1].filter(index => index > 0 && index < pages - 1), pages - 1];
+  return <div className="pagination">
+    <span aria-live="polite">{total ? `${page * size + 1}–${Math.min((page + 1) * size, total)} of ${total}` : 'No results'}</span>
+    <nav className="page-buttons" aria-label="Pagination">
+      <button aria-label="Previous page" disabled={disabled || page === 0} onClick={() => onChange(page - 1)}>
+        <ChevronLeft size={15} />
+      </button>
+      {visiblePages.map((index, position) => <span className="page-number-group" key={index}>
+        {position > 0 && index - visiblePages[position - 1] > 1 && <span className="pagination-gap" aria-hidden="true">…</span>}
+        <button disabled={disabled} className={index === page ? 'active' : ''} aria-label={`Page ${index + 1}`}
+          aria-current={index === page ? 'page' : undefined} onClick={() => onChange(index)}>{index + 1}</button>
+      </span>)}
+      <button aria-label="Next page" disabled={disabled || page + 1 >= pages} onClick={() => onChange(page + 1)}>
+        <ChevronRight size={15} />
+      </button>
+    </nav>
+  </div>;
 }
 export function Drawer({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLElement>(null);

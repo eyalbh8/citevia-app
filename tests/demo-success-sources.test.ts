@@ -52,7 +52,7 @@ async function setup(project: Project) {
 }
 
 describe('successful demo histories and Reddit source coverage', () => {
-  it.each(projects)('$name retains every gained mention and improves comparable measurements throughout its year', async project => {
+  it.each(projects.filter(project => project.demo?.reportingProfile !== 'uk_investing'))('$name retains every gained mention and improves comparable measurements throughout its year', async project => {
     const { history, repository, artifacts, queue } = await setup(project);
     const byRun = new Map<string, PromptResult[]>();
     for (const result of history.results) {
@@ -107,6 +107,25 @@ describe('successful demo histories and Reddit source coverage', () => {
     expect(queue.messages).toEqual([]);
   }, 30_000);
 
+  it('rotates investing prompt coverage between scans while more answers mention the brand over the year', async () => {
+    const project = projects.find(item => item.demo?.reportingProfile === 'uk_investing')!;
+    const { history } = await setup(project);
+    const byRun = new Map<string, Set<string>>();
+    for (const result of history.results) {
+      if (!result.target?.mentioned) continue;
+      const prompts = byRun.get(result.runId) || new Set();
+      prompts.add(result.promptId);
+      byRun.set(result.runId, prompts);
+    }
+    for (const { provider } of project.scanProviders!) {
+      const scans = history.runs.filter(run => run.snapshot.provider === provider)
+        .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt)).map(run => byRun.get(run.id)!);
+      expect(scans.some((prompts, i) => i > 0 && [...scans[i - 1]].some(id => !prompts.has(id)))).toBe(true);
+      const total = (values: Set<string>[]) => values.reduce((sum, values) => sum + values.size, 0);
+      expect(total(scans.slice(-8))).toBeGreaterThan(total(scans.slice(0, 8)));
+    }
+  });
+
   it.each(projects)('$name ranks Reddit second through fifth from generated citations across the scenario', async project => {
     const { history, runtime } = await setup(project);
     // Every month and provider, plus both edges, covers changing citation-pool
@@ -122,7 +141,11 @@ describe('successful demo histories and Reddit source coverage', () => {
       if (position < 2 || position > 5) positions.push({ run: run.id, position });
       const reddit = summary.domains.find(source => source.domain === 'reddit.com')!;
       expect(reddit.answerCount).toBeGreaterThan(0);
-      expect(reddit.citationCount).toBe(reddit.answerCount);
+      // A single answer may cite both the Reddit community and a tracked thread.
+      const redditPages = summary.urls.filter(source => source.domain === 'reddit.com');
+      expect(reddit.citationCount).toBe(redditPages.reduce((sum, page) => sum + page.citationCount, 0));
+      expect(reddit.answerCount).toBe(new Set(redditPages.flatMap(page => page.responseIds)).size);
+      if (redditPages.length === 1) expect(reddit.citationCount).toBe(reddit.answerCount);
       const consultedPosition = summary.consultedDomains.findIndex(source => source.domain === 'reddit.com') + 1;
       expect(consultedPosition).toBeGreaterThanOrEqual(2);
       expect(consultedPosition).toBeLessThanOrEqual(5);

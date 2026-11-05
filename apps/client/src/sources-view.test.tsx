@@ -48,7 +48,7 @@ beforeEach(() => {
   mocks.useApi.mockImplementation((path: string | null) => {
     if (!path) return { data: undefined, loading: false };
     const params = new URL(path, 'http://localhost').searchParams;
-    const limit = Number(params.get('limit') || 50), offset = Number(params.get('cursor') || 0);
+    const limit = Number(params.get('limit') || 50), offset = Number(params.get('page') || 0) * limit;
     const matching = params.get('kind') === 'consulted' ? rows.slice(0, 3) : rows;
     return { loading, data: {
       items: matching.slice(offset, offset + limit), total: matching.length,
@@ -69,43 +69,55 @@ describe('source domain pagination', () => {
   it('requests ten domains per page, visits the next page and returns without skipping sources', async () => {
     await render();
     expect(container.querySelectorAll('.source-card')).toHaveLength(10);
-    expect(container.textContent).toContain('1–10 of 14 domains');
-    expect(container.textContent).toContain('Page 1 of 2');
-    expect(button('Previous source page')?.disabled).toBe(true);
-    expect(button('Previous source page')?.title).toBe('This is the first page');
-    expect(button('Next source page')?.disabled).toBe(false);
-    await click('Next source page');
+    expect(container.textContent).toContain('1–10 of 14');
+    expect([...container.querySelectorAll('.source-stats small')].map(label => label.textContent)).not.toContain('Answers');
+    expect(button('Page 1')?.getAttribute('aria-current')).toBe('page');
+    expect(button('Previous page')?.disabled).toBe(true);
+    expect(button('Next page')?.disabled).toBe(false);
+    await click('Next page');
     expect(container.querySelectorAll('.source-card')).toHaveLength(4);
     expect(container.textContent).toContain('source-10.example');
     expect(container.textContent).not.toContain('source-0.example');
-    expect(container.textContent).toContain('11–14 of 14 domains');
-    expect(container.textContent).toContain('Page 2 of 2');
-    expect(button('Next source page')?.disabled).toBe(true);
-    expect(button('Next source page')?.title).toBe('This is the last page');
-    await click('Previous source page');
+    expect(container.textContent).toContain('11–14 of 14');
+    expect(button('Page 2')?.getAttribute('aria-current')).toBe('page');
+    expect(button('Next page')?.disabled).toBe(true);
+    await click('Previous page');
     expect(container.textContent).toContain('source-0.example');
-    expect(container.textContent).toContain('Page 1 of 2');
+    expect(button('Page 1')?.getAttribute('aria-current')).toBe('page');
   });
 
-  it('resets the cursor when source filters change and omits navigation for one page', async () => {
+  it('resets the page when source filters change and omits navigation for one page', async () => {
     await render();
-    await click('Next source page');
+    await click('Next page');
     await click('Retrieved sources');
     expect(container.querySelectorAll('.source-card')).toHaveLength(3);
-    expect(container.textContent).toContain('1–3 of 3 domains');
-    expect(button('Next source page')).toBeUndefined();
-    expect(button('Previous source page')).toBeUndefined();
+    expect(container.textContent).toContain('3 domains');
+    expect(button('Next page')).toBeUndefined();
+    expect(button('Previous page')).toBeUndefined();
     const lastRequest = mocks.useApi.mock.calls.filter(([path]) => path).at(-1)![0];
     expect(lastRequest).toContain('kind=consulted');
-    expect(lastRequest).not.toContain('cursor=');
+    expect(lastRequest).toContain('page=0');
+  });
+
+  it('jumps directly to the last page of a large catalog', async () => {
+    rows = Array.from({ length: 1152 }, (_, index) => ({
+      ...sources[0], id: `source-${index}`, domain: `publisher-${index}.example`,
+    }));
+    await render();
+    await click('Page 116');
+    expect(container.querySelectorAll('.source-card')).toHaveLength(2);
+    expect(container.textContent).toContain('publisher-1151.example');
+    expect(button('Next page')?.disabled).toBe(true);
+    await click('Page 1');
+    expect(container.textContent).toContain('publisher-0.example');
   });
 
   it('prevents duplicate page advances while a request is loading', async () => {
     await render();
     loading = true;
     await render();
-    expect(button('Next source page')?.disabled).toBe(true);
-    await click('Next source page');
-    expect(container.textContent).toContain('Page 1 of 2');
+    expect(button('Next page')?.disabled).toBe(true);
+    await click('Next page');
+    expect(button('Page 1')?.getAttribute('aria-current')).toBe('page');
   });
 });
