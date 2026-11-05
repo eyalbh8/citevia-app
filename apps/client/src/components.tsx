@@ -1,3 +1,4 @@
+import { publicSourceUrl } from '@citevia/core';
 import { reportExcerpt } from './report-excerpt';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { AlertCircle, ArrowUpRight, ChevronLeft, ChevronRight, FileSearch, LogIn, X } from 'lucide-react';
@@ -16,7 +17,7 @@ export function labelize(value: string) { return value === 'not_applicable' ? 'N
 export function formatDate(date?: string | null, full = false) { if (!date) return '—'; const value = new Date(date); return Number.isNaN(value.getTime()) ? '—' : value.toLocaleDateString('en', { month: 'short', day: 'numeric', ...(full ? { year: 'numeric' } : {}) }); }
 export function formatNumber(value?: number | null, digits = 0) { return value == null || !Number.isFinite(value) ? '—' : value.toLocaleString('en', { maximumFractionDigits: digits, minimumFractionDigits: digits }); }
 export function percent(value?: number | null) { return value == null ? '—' : `${formatNumber(value, 0)}%`; }
-export function safeUrl(url: string): string | undefined { try { const parsed = new URL(url); return ['https:', 'http:'].includes(parsed.protocol) ? parsed.href : undefined; } catch { return undefined; } }
+export function safeUrl(url: string): string | undefined { return publicSourceUrl(url) ?? undefined; }
 export function ExternalLink({ url, children }: { url: string; children: ReactNode }) {
   const href = safeUrl(url);
   const label = typeof children === 'string' ? reportExcerpt(children) : children;

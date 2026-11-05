@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { resolveReportId } from '@citevia/core';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -43,7 +44,7 @@ it('exports a stable public reference for a selected account prompt', async () =
     await act(async () => button.click());
     const [, headers, rows] = downloadCsv.mock.lastCall!;
     expect(headers[0]).toBe('Prompt reference');
-    expect(rows[0][0]).toMatch(/^ref-[a-z0-9]+$/);
+    expect(resolveReportId(rows[0][0])).toBe(id);
     expect(JSON.stringify(rows)).not.toContain(id);
     expect(rows[0][1]).toBe(project.prompts[0].text);
   } finally {

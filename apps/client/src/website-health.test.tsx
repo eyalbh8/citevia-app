@@ -80,7 +80,7 @@ function siteReport(): WebsiteHealthAudit {
 }
 
 describe('Website Health reports', () => {
-  it('omits restricted words from read-only audit text and checklists while retaining the page destination', async () => {
+  it('omits restricted words from read-only audit text and checklists and omits restricted page destinations', async () => {
     const destination = 'https://example.com/demo/insights';
     const audit = report('latest', undefined, destination);
     const issue = audit.results.mobile.lab!.issues[0];
@@ -89,7 +89,7 @@ describe('Website Health reports', () => {
     page.items = [audit];
     await render({ ...project, role: 'viewer' });
     expect(container.textContent).not.toMatch(/\bdemos?\b/i);
-    expect(container.querySelector('.health-report-heading a')?.getAttribute('href')).toBe(destination);
+    expect(container.querySelector('.health-report-heading a[href]')).toBeNull();
     expect(websiteHealthChecklist(audit, 'mobile')).not.toMatch(/\bdemos?\b/i);
     expect(issue.title).toBe('Review DEMO headers');
   });

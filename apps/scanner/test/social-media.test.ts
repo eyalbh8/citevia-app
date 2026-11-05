@@ -139,6 +139,7 @@ describe('social media generation', () => {
     { body: 'Read more at https://example.com' },
     { body: 'Read more. Link in bio.' },
     { hashtags: ['#One', '#Two', '#Three'] },
+    { slides: [{ ...slides[0], heading: 'Watch the demo' }] },
     { slides },
   ])('rejects invalid shared copy without a second paid call: %j', async patch => {
     const { generator, fetcher } = transport({ ...copyValue, slides: slides.slice(0, 1), ...patch });

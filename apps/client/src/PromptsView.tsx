@@ -881,11 +881,11 @@ function PromptEditor({
   onSaved: () => void;
   notify: (text: string) => void;
 }) {
-  const [text, setText] = useState(prompt?.text || ''),
+  const [text, setText] = useState(() => reportExcerpt(prompt?.text || '')),
     [stage, setStage] = useState<JourneyStage>(prompt?.stage || 'understand');
   const [intent, setIntent] = useState<PromptIntent | ''>(prompt?.intent || '');
-  const [seoKeyword, setSeoKeyword] = useState(prompt?.seoKeyword || ''),
-    [tags, setTags] = useState(prompt?.tags?.join(', ') || '');
+  const [seoKeyword, setSeoKeyword] = useState(() => reportExcerpt(prompt?.seoKeyword || '')),
+    [tags, setTags] = useState(() => reportExcerpt(prompt?.tags?.join(', ') || ''));
   const [saving, setSaving] = useState(false),
     [error, setError] = useState<Error>();
   const texts = text

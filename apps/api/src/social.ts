@@ -1,6 +1,7 @@
+import { restoreReportFields } from './public-report.js';
 import { z } from 'zod';
 import { createHash, randomUUID } from 'node:crypto';
-import { SOCIAL_CHANNELS, defaultSocialAutomationSettings, socialAutomationInputSchema, socialApprovalSnapshot, agentCopyValid, agentImageSchema, type Project, type SocialPublication, type SocialContent } from '@citevia/core';
+import { SOCIAL_CHANNELS, defaultSocialAutomationSettings, socialAutomationInputSchema, socialApprovalSnapshot, publicReportMarkdown, agentCopyValid, agentImageSchema, type Project, type SocialPublication, type SocialContent } from '@citevia/core';
 import { AccessError, createSocialMediaUploadStore, validateSocialUpload, type SocialMediaUploadStore, type SocialUploadedMedia, type Runtime, type SocialPublisher } from '@citevia/storage';
 import { repairSocialSchedule, syncSocialSchedule } from './social-scheduler.js';
 
@@ -28,6 +29,11 @@ function editable(post: SocialPublication, now: Date) {
 function validateContent(post: SocialPublication, content?: SocialContent) {
   if (!content) return fail(400, 'CONTENT_REQUIRED', 'Wait for the post content to finish.');
   contentSchema.parse(content);
+  // The worker publishes the approved snapshot verbatim. Require a clean saved
+  // revision before approval, including for drafts created by older generators.
+  if ([content.title, content.body, ...content.hashtags].some(value => publicReportMarkdown(value) !== value)) {
+    return fail(400, 'CONTENT_REVIEW_REQUIRED', 'Edit the caption, title, or hashtags and save the wording you want to publish.');
+  }
   const channel = post.destination.channel;
   const fullText = [content.body, content.hashtags.join(' ')].filter(Boolean).join('\n\n');
   const valid = channel === 'linkedin' ? [...fullText].length <= 3000 : channel === 'tiktok' ? [...fullText].length <= 2200 : agentCopyValid(channel, content);
@@ -183,7 +189,7 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
     };
     if (!match[2] && request.method === 'PATCH') {
       const input = z.object({ version: z.number().int().positive(), content: contentSchema,
-        media: z.array(mediaSchema).max(10).optional(), scheduledAt: z.string().datetime({ offset: true }).optional() }).strict().parse(await body(request));
+        media: z.array(mediaSchema).max(10).optional(), scheduledAt: z.string().datetime({ offset: true }).optional() }).strict().parse(restoreReportFields(await body(request), { content: post.content }));
       assertEditable(input.version); validateContent(post, input.content);
       if (input.scheduledAt && (Date.parse(input.scheduledAt) <= now.getTime() || Date.parse(input.scheduledAt) > now.getTime() + 366 * 86400000))
         return fail(400, 'INVALID_PUBLISH_TIME', 'Choose a future publishing time within the next year.');

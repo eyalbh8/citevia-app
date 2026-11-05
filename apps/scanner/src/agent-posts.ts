@@ -16,6 +16,7 @@ import {
   finalizeSocialCopy,
   assertStandalonePost,
   verifiedBlogLinks,
+  requiresCopyRevision,
 } from './agent-generation.js';
 export {
   agentGenerationRequest,
@@ -283,7 +284,7 @@ export class AgentPostEngine {
         ).filter((item) => !item.passed);
         if (
           current.stage === 'write' ||
-          (current.stage === 'format' && failedChecks.length)
+          (current.stage === 'format' && (failedChecks.length || requiresCopyRevision(draft)))
         ) {
           await this.advance(
             current,
@@ -301,6 +302,8 @@ export class AgentPostEngine {
             'Web search and editorial revision could not produce valid internal and external blog links. Retry generation to search for sources again.',
             false,
           );
+        if (requiresCopyRevision(draft))
+          throw new ProviderError('agent_editorial_word', 'The draft needs an editorial revision. Retry generation.', false);
         assertStandalonePost(draft);
         content = {
           ...draft,
@@ -403,7 +406,7 @@ export class AgentPostEngine {
       }
       if (error instanceof ProviderError) {
         if (
-          ['agent_brand_mention', 'agent_conversational_opening'].includes(
+          ['agent_brand_mention', 'agent_conversational_opening', 'agent_editorial_word'].includes(
             error.code,
           ) &&
           !current.stage &&

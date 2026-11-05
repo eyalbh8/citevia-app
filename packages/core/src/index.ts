@@ -8,6 +8,8 @@ export * from './company-reporting.js';
 export * from './validation.js';
 export * from './scheduling.js';
 export * from './urls.js';
+export * from './public-text.js';
+export * from './public-markdown.js';
 export * from './users.js';
 export * from './providers.js';
 export * from './tracking.js';
@@ -24,3 +26,5 @@ export * from './website-health.js';
 export * from './blog-performance.js';
 export * from './social-automation.js';
 export * from './geo-backlinks.js';
+
+export * from './report-id.js';

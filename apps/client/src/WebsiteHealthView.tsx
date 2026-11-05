@@ -38,7 +38,7 @@ export function websiteHealthChecklist(audit: WebsiteHealthAudit, device: Websit
   if (!lab) return '';
   return [
     `Website Health — ${deviceLabels[device]}`,
-    audit.url,
+    safeUrl(audit.url) ?? '',
     `Audited: ${lab.fetchedAt}`,
     '',
     ...categories.map(category => `${category.label}: ${lab.scores[category.id] == null ? 'Not available' : `${lab.scores[category.id]}/100`}`),
@@ -145,7 +145,7 @@ export default function WebsiteHealthView({ project, path, notify }: { project: 
 
   useEffect(() => {
     if (!initialUrlSet.current && latest.data) {
-      setUrl(latest.data.defaultUrl || '');
+      setUrl(safeUrl(latest.data.defaultUrl || '') || '');
       initialUrlSet.current = true;
     }
   }, [latest.data]);
@@ -186,7 +186,7 @@ export default function WebsiteHealthView({ project, path, notify }: { project: 
       setSubmittedAudit(result.audit);
       setSelectedId(result.audit.id);
       setPageSelection(undefined);
-      setUrl(result.audit.url);
+      setUrl(safeUrl(result.audit.url) || '');
       setDevice('mobile');
       setCategory('all');
       void invalidateApiQueries(`${path}/website-health`);
@@ -206,7 +206,7 @@ export default function WebsiteHealthView({ project, path, notify }: { project: 
   function selectAudit(item: WebsiteHealthAudit) {
     setSelectedId(item.id);
     setPageSelection(undefined);
-    setUrl(item.url);
+    setUrl(safeUrl(item.url) || '');
     initialUrlSet.current = true;
     setCategory('all');
   }
@@ -227,7 +227,7 @@ export default function WebsiteHealthView({ project, path, notify }: { project: 
     {latest.loading && !latest.data ? <Skeleton variant="cards" label="Loading saved website audits…" /> : !audit && !latest.error ? <div className="card health-empty"><Empty title="Your next improvement starts here" description="Run your first website audit to get device-specific scores, real-user measurements where available, and a prioritized checklist of fixes." /><div className="health-empty-benefits"><span><Smartphone size={17} /> Mobile &amp; desktop</span><span><ListIcon /> Four quality checks</span><span><Sparkles size={17} /> Actionable improvements</span></div></div> : audit ? <div className="health-workspace">
       <aside className="card health-history" aria-labelledby="health-history-title"><div className="health-history-heading"><h2 id="health-history-title"><Clock3 size={16} /> Saved audits</h2><span>{latest.data?.total ?? history.length}</span></div><div className="health-history-items">{history.map(item => <button key={item.id} className={`health-history-item${reportId === item.id ? ' selected' : ''}`} aria-pressed={reportId === item.id} onClick={() => selectAudit(item)}><span className="health-history-date">{formatDate(item.createdAt, true)}<span className={`health-status ${item.status}`}>{auditLabel(item.status)}</span></span><span className="health-history-url" title={reportExcerpt(item.url)}>{reportExcerpt(item.url)}</span><span className="health-history-devices">{item.scope === 'site' && <><Globe2 size={12} /> Website · {item.site?.pageCount ?? 0} pages <i /></>}<Smartphone size={12} /> Mobile <i /> <Monitor size={12} /> Desktop</span></button>)}</div>{nextCursor && <button className="button button-quiet health-load-more" disabled={older.loading} onClick={() => setCursor(nextCursor)}>{older.loading ? <LoaderCircle size={13} className="spinner" /> : <ChevronDown size={13} />}Load older audits</button>}<ErrorNotice error={older.error} retry={() => void invalidateApiQueries(`${path}/website-health`)} /></aside>
       <div className="health-report">
-        <div className="health-report-heading"><div><span className="health-kicker">AUDIT REPORT · {formatDate(audit.createdAt, true)}</span><h2>{safeUrl(audit.url) ? <a href={audit.url} target="_blank" rel="noopener noreferrer">{reportExcerpt(audit.url)}<ExternalLink size={13} /></a> : reportExcerpt(audit.url)}</h2><p className="health-report-meta"><span className={`health-status ${audit.status}`}>{auditLabel(audit.status)}</span>{active(audit) ? 'Results update automatically as the scan progresses.' : 'Saved results · Run another audit after making changes.'}</p></div>{owner && <button className="button button-outline" disabled={!available || starting || isActive} onClick={() => void startAudit(audit.url, audit.scope || 'page', audit.site?.maxPages)}><RefreshCw size={13} />{audit.site ? 'Rescan website' : 'Recheck page'}</button>}</div>
+        <div className="health-report-heading"><div><span className="health-kicker">AUDIT REPORT · {formatDate(audit.createdAt, true)}</span><h2>{safeUrl(audit.url) ? <a href={safeUrl(audit.url)} target="_blank" rel="noopener noreferrer">{reportExcerpt(audit.url)}<ExternalLink size={13} /></a> : reportExcerpt(audit.url)}</h2><p className="health-report-meta"><span className={`health-status ${audit.status}`}>{auditLabel(audit.status)}</span>{active(audit) ? 'Results update automatically as the scan progresses.' : 'Saved results · Run another audit after making changes.'}</p></div>{owner && <button className="button button-outline" disabled={!available || starting || isActive} onClick={() => void startAudit(audit.url, audit.scope || 'page', audit.site?.maxPages)}><RefreshCw size={13} />{audit.site ? 'Rescan website' : 'Recheck page'}</button>}</div>
         <ErrorNotice error={details.error} retry={() => void invalidateApiQueries(`${path}/website-health`)} />
         {audit.site && !selectedPage && <div className="health-device-toggle health-site-device-toggle" aria-label="Site average device"><button aria-pressed={device === 'mobile'} onClick={() => setDevice('mobile')}><Smartphone size={16} />Mobile</button><button aria-pressed={device === 'desktop'} onClick={() => setDevice('desktop')}><Monitor size={16} />Desktop</button></div>}
         {audit.site && !audit.summaryOnly && <SiteScanOverview audit={audit} device={device} selectedPageId={selectedPage?.id} onSelect={pageId => setPageSelection(pageId ? { auditId: audit.id, pageId } : undefined)} />}

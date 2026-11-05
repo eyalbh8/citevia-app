@@ -1,3 +1,4 @@
+import { publicSourceUrl } from '@citevia/core';
 import { reportExcerpt } from './report-excerpt';
 import { Skeleton } from './Loading';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -678,7 +679,7 @@ export function TrackingDetailDrawer({
             </span>
             {!row.active && <span>Paused</span>}
             <h2>{reportExcerpt(row.title)}</h2>
-            <a href={row.url} target="_blank" rel="noopener noreferrer">
+            <a href={publicSourceUrl(row.url) ?? undefined} target="_blank" rel="noopener noreferrer">
               <DomainLogo domain={row.url} size={24} />
               {reportExcerpt(row.url)}
               <ArrowUpRight size={15} />

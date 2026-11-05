@@ -5,7 +5,7 @@ import { usage } from './normalize.js';
 import type { ProviderCallContext } from './provider.js';
 import { isIP } from 'node:net';
 import { z } from 'zod';
-import { agentCopyValid, type AgentImage, type Project, type Prompt } from '@citevia/core';
+import { agentCopyValid, publicReportMarkdown, type AgentImage, type Project, type Prompt } from '@citevia/core';
 import { providerApiKey, providerPost } from './provider-http.js';
 import { ProviderError, responseFailure, responseText, type ProviderReceipt } from './provider.js';
 import { renderSocialVideo, socialVideoReady, wrapSocialCaption, type SocialVideoOptions } from './social-video.js';
@@ -266,7 +266,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     const { value, receipt } = await this.structured('social_post_copy', project,
       'You are an expert social editor. ' + (sharedFormat(destination) ? sharedCaptionRules :
         'Create a complete standalone post answering the exact saved prompt. Answer immediately. ' + channelRules[destination.channel]) +
-        ' Do not begin with Yes, No, Sure, Great question or other chat acknowledgements. Be useful, without hype or invented claims. Follow the observed brand voice. Return title, body, hashtags (separately), and a media storyboard. Slide headings must be at most 65 characters, body at most 160 characters, and imagePrompt at most 1800 characters. ' +
+        ' Use “practice” or “preview” instead of “demo” in the post and storyboard. Do not begin with Yes, No, Sure, Great question or other chat acknowledgements. Be useful, without hype or invented claims. Follow the observed brand voice. Return title, body, hashtags (separately), and a media storyboard. Slide headings must be at most 65 characters, body at most 160 characters, and imagePrompt at most 1800 characters. ' +
         (destination.imageSource === 'unsplash'
           ? 'Each imagePrompt must be a concise English stock photo search query of 2–6 concrete visual keywords (at most 100 characters), directly related to the exact saved question, the post answer and that slide. Describe real subjects or activities that illustrate the advice. Avoid generic office filler, brand names, text overlays, diagrams or invented products. The photo will have no overlaid slide text, so the caption must stand on its own.'
           : 'Image prompts describe a new business-appropriate image, not a stock photo search.'),
@@ -284,6 +284,10 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
       if (site) body += '\n\n' + site;
     }
     const content = { ...value, body, format, requestId: receipt.requestId };
+    const copyFields = [content.title, content.body, ...content.hashtags,
+      ...content.slides.flatMap(slide => [slide.heading, slide.body, slide.imagePrompt])];
+    if (copyFields.some(field => publicReportMarkdown(field) !== field))
+      return invalid('social_copy_invalid', 'The post or its storyboard needs an editorial revision.');
     assertStandalonePost(content);
     const maxTags = sharedFormat(destination) ? 2 : { facebook: 2, instagram: 5, linkedin: 3, x: 2, pinterest: 2, reddit: 0, tiktok: 5 }[destination.channel];
     const validLength = sharedFormat(destination) ? [...copyText(content)].length <= 400

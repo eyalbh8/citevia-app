@@ -1,4 +1,5 @@
 import { publicTrafficRoute } from './traffic.js';
+import { publicReportResponse } from './public-report.js';
 import { trafficCountry } from './traffic-geo.js';
 import type {
   APIGatewayProxyEventV2,
@@ -82,7 +83,8 @@ export function createAuthenticatedApi(
     if (new URL(request.url).pathname === '/health' && request.method === 'GET')
       return app(request);
     try {
-      return await app(request, await identity.authenticate(request));
+      const user = await identity.authenticate(request);
+      return await publicReportResponse(await app(request, user, 'public'));
     } catch (error) {
       return authenticationFailure(error);
     }

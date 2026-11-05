@@ -5,12 +5,15 @@ import {
   blogDraftSchema,
   normalizeUrl,
   normalizeDomain,
+  publicReportMarkdown,
+  publicSourceUrl,
   blogBodyText,
   naturalPunctuation,
   descriptiveLinkLabel,
   hasConversationalOpening,
   type AgentPostJob,
   type AgentContent,
+  type BlogDraft,
 } from '@citevia/core';
 import {
   AGENT_PROMPTS,
@@ -169,6 +172,14 @@ export function parseBlogDraft(receipt: ProviderReceipt) {
     );
   return parsed;
 }
+export function requiresCopyRevision(content: Pick<AgentContent, 'title' | 'body' | 'hashtags'> & { blog?: BlogDraft }): boolean {
+  const blog = content.blog;
+  const fields = [content.title, content.body, ...content.hashtags];
+  if (blog) fields.push(blog.slug, blog.seoTitle, blog.metaDescription, blog.imageAlt, blog.focusKeyphrase,
+    ...blog.faqs.flatMap(item => [item.question, item.answer]));
+  return fields.some(field => publicReportMarkdown(field) !== field);
+}
+
 export function verifiedBlogLinks(
   post: AgentPostJob,
   body: string,
@@ -184,7 +195,8 @@ export function verifiedBlogLinks(
         .filter((item) => item.enabled)
         .map((item) => item.sourceUrl) || []),
     ]
-      .filter((item): item is string => Boolean(item))
+      .map(publicSourceUrl)
+      .filter((item): item is string => item !== null)
       .map((item) => [normalizeUrl(item), item]),
   );
   const seen = new Set<string>();
@@ -362,6 +374,8 @@ export function finalizeSocialCopy(
     body,
     hashtags,
   };
+  if (requiresCopyRevision(result))
+    throw new ProviderError('agent_editorial_word', 'The draft needs an editorial revision. Retry generation.', false);
   assertStandalonePost(result);
   assertUnbrandedSocial(post, result);
   if (!agentCopyValid(post.channel, result))

@@ -2,44 +2,50 @@ import { reportExcerpt } from './report-excerpt';
 import {
   blogBodyText,
   agentJsonLd,
+  publicSourceUrl,
+  publicReportMarkdown,
+  agentPostText,
+  type AgentChannel,
   type AgentContent,
   type AgentImage,
 } from '@citevia/core';
 import AnswerMarkdown from './AnswerMarkdown';
 
-export function AgentPhoto({ image, preserveOriginal = false }: { image: AgentImage; preserveOriginal?: boolean }) {
+export function AgentPhoto({ image }: { image: AgentImage }) {
+  const url = publicSourceUrl(image.url);
+  if (!url || !publicSourceUrl(image.photographerUrl) || !publicSourceUrl(image.photoUrl)) return null;
   return (
     <figure className="agent-post-photo">
-      <img src={image.url} alt={preserveOriginal ? image.alt : reportExcerpt(image.alt)} loading="lazy" />
+      <img src={url} alt={reportExcerpt(image.alt)} loading="lazy" />
       <figcaption>
         Photo by{' '}
         <a
-          href={image.photographerUrl}
+          href={publicSourceUrl(image.photographerUrl) ?? undefined}
           target="_blank"
           rel="noreferrer noopener"
         >
-          {preserveOriginal ? image.photographer : reportExcerpt(image.photographer)}
+          {reportExcerpt(image.photographer)}
         </a>{' '}
         on{' '}
-        <a href={image.photoUrl} target="_blank" rel="noreferrer noopener">
+        <a href={publicSourceUrl(image.photoUrl) ?? undefined} target="_blank" rel="noreferrer noopener">
           Unsplash
         </a>
       </figcaption>
     </figure>
   );
 }
-export function AgentBlogBody({ content, preserveOriginal = false }: { content: AgentContent; preserveOriginal?: boolean }) {
+export function AgentBlogBody({ content }: { content: AgentContent }) {
   const blog = content.blog;
-  if (!blog) return <AnswerMarkdown text={blogBodyText(content.body)} preserveOriginal={preserveOriginal} />;
+  if (!blog) return <AnswerMarkdown text={blogBodyText(content.body)} />;
   return (
     <>
-      <AnswerMarkdown text={blogBodyText(content.body)} preserveOriginal={preserveOriginal} />
+      <AnswerMarkdown text={blogBodyText(content.body)} />
       <section className="agent-blog-faqs">
         <h2>Frequently asked questions</h2>
         {blog.faqs.map((faq, index) => (
           <div key={index}>
-            <h3>{preserveOriginal ? faq.question : reportExcerpt(faq.question)}</h3>
-            <p dir="auto">{preserveOriginal ? faq.answer : reportExcerpt(faq.answer)}</p>
+            <h3>{reportExcerpt(faq.question)}</h3>
+            <p dir="auto">{reportExcerpt(faq.answer)}</p>
           </div>
         ))}
       </section>
@@ -49,8 +55,8 @@ export function AgentBlogBody({ content, preserveOriginal = false }: { content: 
           <ul>
             {blog.sources.map((source) => (
               <li key={source.url}>
-                <a href={source.url} target="_blank" rel="noreferrer noopener">
-                  {preserveOriginal ? source.title : reportExcerpt(source.title)}
+                <a href={publicSourceUrl(source.url) ?? undefined} target="_blank" rel="noreferrer noopener">
+                  {reportExcerpt(source.title)}
                 </a>
               </li>
             ))}
@@ -101,6 +107,38 @@ export function AgentBlogSeo({ content }: { content: AgentContent }) {
     </details>
   );
 }
+// Schema.org fields can contain nested authors, images, URLs and quoted article text.
+export function publishableSchema(content: AgentContent) {
+  return JSON.stringify(agentJsonLd(content), (key, value: unknown) => {
+    if (key && reportExcerpt(key) !== key) return undefined;
+    if (typeof value !== 'string') return value;
+    if (/^https?:\/\//i.test(value)) return publicSourceUrl(value) ?? undefined;
+    return publicReportMarkdown(value);
+  }, 2);
+}
+export function copyablePostText(channel: AgentChannel, content: AgentContent) {
+  const clean = { ...content, title: reportExcerpt(content.title), body: publicReportMarkdown(content.body), hashtags: content.hashtags.map(reportExcerpt) };
+  if (content.blog) {
+    const schema = JSON.parse(publishableSchema(content))['@graph'];
+    clean.blog = { ...content.blog,
+      faqs: content.blog.faqs.map(faq => ({ question: publicReportMarkdown(faq.question), answer: publicReportMarkdown(faq.answer) })),
+      sources: content.blog.sources?.flatMap(source => {
+        const url = publicSourceUrl(source.url);
+        return url ? [{ ...source, url, title: reportExcerpt(source.title) }] : [];
+      }),
+      articleSchema: schema[0], faqSchema: schema[1],
+    };
+  }
+  if (content.image) {
+    const url = publicSourceUrl(content.image.url);
+    const photographerUrl = publicSourceUrl(content.image.photographerUrl);
+    const photoUrl = publicSourceUrl(content.image.photoUrl);
+    clean.image = url && photographerUrl && photoUrl
+      ? { ...content.image, url, photographerUrl, photoUrl, photographer: reportExcerpt(content.image.photographer), alt: reportExcerpt(content.image.alt) }
+      : undefined;
+  }
+  return agentPostText(channel, clean);
+}
 export async function blogArticleHtml(content: AgentContent) {
   if (!content.blog) return null;
   const { renderToStaticMarkup } = await import('react-dom/server');
@@ -109,20 +147,20 @@ export async function blogArticleHtml(content: AgentContent) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{content.blog.seoTitle}</title>
-        <meta name="description" content={content.blog.metaDescription} />
-        <meta name="keywords" content={content.blog.focusKeyphrase} />
+        <title>{reportExcerpt(content.blog.seoTitle)}</title>
+        <meta name="description" content={reportExcerpt(content.blog.metaDescription)} />
+        <meta name="keywords" content={reportExcerpt(content.blog.focusKeyphrase)} />
       </head>
       <body>
         <article>
-          <h1>{content.title}</h1>
-          {content.image && <AgentPhoto image={content.image} preserveOriginal />}
-          <AgentBlogBody content={content} preserveOriginal />
+          <h1>{reportExcerpt(content.title)}</h1>
+          {content.image && <AgentPhoto image={content.image} />}
+          <AgentBlogBody content={content} />
         </article>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify(agentJsonLd(content)).replace(
+            __html: publishableSchema(content).replace(
               /</g,
               '\\u003c',
             ),
@@ -141,7 +179,7 @@ export async function downloadBlogArticle(content: AgentContent) {
   );
   const link = document.createElement('a');
   link.href = url;
-  link.download = content.blog.slug + '.html';
+  link.download = reportExcerpt(content.blog.slug) + '.html';
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

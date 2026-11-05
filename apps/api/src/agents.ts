@@ -1,3 +1,4 @@
+import { restoreReportFields } from './public-report.js';
 import { createHash } from 'node:crypto';
 import {
   agentEditSchema,
@@ -204,7 +205,7 @@ export async function agentRoute(
   if (!match[2] && method === 'GET')
     return json({ post: publicAgentPost(post) });
   if (!match[2] && method === 'PATCH') {
-    const { version, ...content } = agentEditSchema.parse(await body(request));
+    const { version, ...content } = agentEditSchema.parse(restoreReportFields(await body(request), { ...post.content }));
     if (post.status !== 'draft')
       return fail(
         409,

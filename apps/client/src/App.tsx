@@ -1,3 +1,4 @@
+import { reportReference } from './report-reference';
 import { reportExcerpt } from './report-excerpt';
 import {
   AuthProvider,
@@ -170,7 +171,7 @@ function readIntegrationHighlight() {
 }
 function storedProject() {
   try {
-    return localStorage.getItem('citevia.project') || '';
+    return reportReference(localStorage.getItem('citevia.project') || '');
   } catch {
     return '';
   }

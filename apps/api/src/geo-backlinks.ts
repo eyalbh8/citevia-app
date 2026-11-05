@@ -1,3 +1,4 @@
+import { restoreReportFields } from './public-report.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
@@ -108,7 +109,7 @@ export async function geoBacklinksRoute(runtime:Runtime,project:Project,user:Use
         publishedAt:atSchema.nullable().optional(),publishedUrl:urlSchema.nullable().optional(),landingPage:urlSchema.nullable().optional(),
         placementType:z.string().max(200).nullable().optional(),linkType:z.enum(['follow','nofollow','sponsored','ugc','unknown']).optional(),
         cost:z.number().finite().min(0).max(1e9).nullable().optional(),currency:z.string().regex(/^[A-Z]{3}$/).nullable().optional(),
-      }).strict().parse(await body(request));
+      }).strict().parse(restoreReportFields(await body(request), { ...existing }));
       const next={...existing,...input,version:input.version+1,updatedAt:now.toISOString()};
       if (next.status==='published' && (!next.publishedAt || !next.publishedUrl)) return fail(400,'PUBLICATION_REQUIRED','Record a publication date and URL before marking a placement published.');
       if ([next.contactedAt,next.publishedAt].some(at=>at && Date.parse(at)>now.getTime())) return fail(400,'FUTURE_DATE','Contact and publication dates cannot be in the future.');

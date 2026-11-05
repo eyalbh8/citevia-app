@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./auth', () => ({ getAccessToken: async () => 'test-token' }));
-import { idempotentPost } from './api';
+import { idempotentPost, request } from './api';
 
 function storage() {
   const values = new Map<string, string>();
@@ -38,4 +38,16 @@ describe('scan request idempotency', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect((fetcher.mock.calls[0][1].headers as Headers).get('Idempotency-Key')).toBe((fetcher.mock.calls[1][1].headers as Headers).get('Idempotency-Key'));
   });
+});
+
+it('uses public account handles for navigation and restores only the profile fields needed by report views', async () => {
+  const id = 'cvh_6163636f756e745f64656d6f';
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [{ id, reportingProfile: {
+    source: 'website-history', reportingProfile: 'uk_investing', trackedUrls: [{ workspacePost: true, provenance: { kind: 'report-draft' } }],
+  } }] })));
+  vi.stubGlobal('fetch', fetcher);
+  const result = await request<{ items: { id: string; demo?: unknown }[] }>(`/projects/${id}/settings`);
+  expect(fetcher.mock.calls[0][0]).toContain(id);
+  expect(result.items[0]).toEqual({ id, demo: { source: 'website-demo', reportingProfile: 'uk_investing',
+    trackedUrls: [{ demoPost: true, provenance: { kind: 'demo-draft' } }] } });
 });

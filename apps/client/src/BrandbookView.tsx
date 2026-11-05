@@ -1,10 +1,11 @@
+import { publicSourceUrl } from '@citevia/core';
 import { Skeleton } from './Loading';
 import { useState, type FormEvent } from 'react';
 import { ExternalLink, Save } from 'lucide-react';
 import type { Brandbook } from '@citevia/core';
 import { request, useApi } from './api';
 import { Empty, ErrorNotice, formatDate } from './components';
-import { hasExcerptOmissions, reportExcerpt } from './report-excerpt';
+import { reportExcerpt } from './report-excerpt';
 type BookData = { brandbook: Brandbook | null; version: number; role: string };
 export default function BrandbookView({
   path,
@@ -59,7 +60,6 @@ function BrandbookForm({
   readOnly: boolean;
 }) {
   const [draft, setDraft] = useState(data.brandbook),
-    [editing, setEditing] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<Error>();
   const owner = data.role === 'owner' && !readOnly;
@@ -113,7 +113,6 @@ function BrandbookForm({
         }),
       });
       notify('Brandbook saved. Existing scan snapshots are preserved.');
-      setEditing(false);
       onSaved();
     } catch (error) {
       setError(error as Error);
@@ -139,13 +138,8 @@ function BrandbookForm({
     personality: 'Personality',
     knowledgeSources: 'Knowledge sources',
   };
-  const saved = data.brandbook;
-  const requiresEdit = [
-    saved.about, saved.industryCategory, saved.subIndustryCategory, saved.sitemapUrl || '', saved.caseStudiesSourceUrl || '',
-    ...arrays.flatMap(key => saved[key]), ...saved.postGuidelines.dos, ...saved.postGuidelines.donts,
-  ].some(hasExcerptOmissions);
-  const canEdit = owner && (!requiresEdit || editing);
-  const fieldValue = (value: string) => canEdit ? value : reportExcerpt(value);
+  const canEdit = owner;
+  const fieldValue = (value: string, saved: string) => value === saved ? reportExcerpt(value) : value;
   return (
     <div className="brandbook-layout">
       <section className="card">
@@ -156,7 +150,6 @@ function BrandbookForm({
               Your company identity, audience, voice and source library.
             </p>
           </div>
-          {owner && requiresEdit && !editing && <button type="button" className="button button-outline" onClick={() => setEditing(true)}>Edit brandbook</button>}
         </div>
         <form
           className="card-content form-stack"
@@ -171,7 +164,7 @@ function BrandbookForm({
                 minLength={20}
                 maxLength={10000}
                 rows={5}
-                value={fieldValue(draft.about)}
+                value={fieldValue(draft.about, data.brandbook.about)}
                 onChange={(e) => setDraft({ ...draft, about: e.target.value })}
               />
             </label>
@@ -179,7 +172,7 @@ function BrandbookForm({
               <label className="field">
                 Industry
                 <input
-                  value={fieldValue(draft.industryCategory)}
+                  value={fieldValue(draft.industryCategory, data.brandbook.industryCategory)}
                   onChange={(e) =>
                     setDraft({ ...draft, industryCategory: e.target.value })
                   }
@@ -188,7 +181,7 @@ function BrandbookForm({
               <label className="field">
                 Subindustry
                 <input
-                  value={fieldValue(draft.subIndustryCategory)}
+                  value={fieldValue(draft.subIndustryCategory, data.brandbook.subIndustryCategory)}
                   onChange={(e) =>
                     setDraft({ ...draft, subIndustryCategory: e.target.value })
                   }
@@ -201,7 +194,7 @@ function BrandbookForm({
                   {labels[key]}
                   <textarea
                     rows={4}
-                    value={fieldValue(draft[key].join('\n'))}
+                    value={fieldValue(draft[key].join('\n'), data.brandbook[key].join('\n'))}
                     onChange={(e) =>
                       setDraft({ ...draft, [key]: e.target.value.split('\n') })
                     }
@@ -215,7 +208,7 @@ function BrandbookForm({
                 Sitemap URL
                 <input
                   type="url"
-                  value={fieldValue(draft.sitemapUrl || '')}
+                  value={fieldValue(draft.sitemapUrl || '', data.brandbook.sitemapUrl || '')}
                   onChange={(e) =>
                     setDraft({ ...draft, sitemapUrl: e.target.value || null })
                   }
@@ -225,7 +218,7 @@ function BrandbookForm({
                 Case studies URL
                 <input
                   type="url"
-                  value={fieldValue(draft.caseStudiesSourceUrl || '')}
+                  value={fieldValue(draft.caseStudiesSourceUrl || '', data.brandbook.caseStudiesSourceUrl || '')}
                   onChange={(e) =>
                     setDraft({
                       ...draft,
@@ -243,7 +236,7 @@ function BrandbookForm({
                     : 'Claims and wording to avoid'}
                   <textarea
                     rows={4}
-                    value={fieldValue(draft.postGuidelines[key].join('\n'))}
+                    value={fieldValue(draft.postGuidelines[key].join('\n'), data.brandbook.postGuidelines[key].join('\n'))}
                     onChange={(e) =>
                       setDraft({
                         ...draft,
@@ -259,7 +252,6 @@ function BrandbookForm({
             </div>
             {canEdit && (
               <div className="form-actions">
-                {requiresEdit && <button type="button" className="button button-outline" onClick={() => { setDraft(data.brandbook); setEditing(false); }}>Cancel</button>}
                 <button
                   className="button button-primary"
                   type="submit"
@@ -282,7 +274,7 @@ function BrandbookForm({
             <p className="scan-options">
               Generated {formatDate(draft.generatedAt)}
               <br />
-              {draft.model === 'public-website-demo' ? 'Source: Company website research' : `Model: ${reportExcerpt(draft.model)}`}
+              {['public-website-demo', 'public-website-history'].includes(draft.model) ? 'Source: Company website research' : `Model: ${reportExcerpt(draft.model)}`}
               <br />
               Brandbook version: {draft.version}
             </p>
@@ -301,8 +293,8 @@ function BrandbookForm({
               <div className="brandbook-evidence" key={index}>
                 <small>{reportExcerpt(item.field)}</small>
                 <blockquote>{reportExcerpt(item.quote)}</blockquote>
-                <a href={item.url} target="_blank" rel="noreferrer">
-                  {reportExcerpt(new URL(item.url).hostname)}
+                <a href={publicSourceUrl(item.url) ?? undefined} target="_blank" rel="noreferrer">
+                  {reportExcerpt(publicSourceUrl(item.url) ? new URL(item.url).hostname : item.url || 'Source')}
                   <ExternalLink size={11} />
                 </a>
               </div>

@@ -1,3 +1,4 @@
+import { publicSourceUrl } from '@citevia/core';
 import { reportExcerpt } from './report-excerpt';
 import { axisTickIndices } from './chart-time';
 import {
@@ -412,7 +413,7 @@ export function TrackedPublicationMarker({
           <ul className="marker-content-list" aria-label="Tracked URL citation counts">
             {marker.items.map((item) => {
               const contentType = item.contentType;
-              const imageUrl = item.imageUrl;
+              const imageUrl = publicSourceUrl(item.imageUrl);
               const published = item.publishedAt ?? marker.date;
               return (
                 <li key={item.id}>
@@ -962,7 +963,7 @@ function MentionBrands({ row }: { row: MentionAnswer }) {
             <a
               key={i}
               className="monitor-brand-link"
-              href={brand.url}
+              href={publicSourceUrl(brand.url) ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
             >

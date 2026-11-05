@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { publicReportId } from '@citevia/core';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,13 +21,13 @@ const render = () => act(async () => root.render(<DemoContentView projectId={pro
 describe('Authenticated demo articles', () => {
   it('loads the scoped account and presents the full draft with its provenance', async () => {
     await render();
-    expect(api.use).toHaveBeenCalledWith(`/projects/${projectId}/settings`);
+    expect(api.use).toHaveBeenCalledWith(`/projects/${publicReportId(projectId)}/settings`);
     expect(container.querySelector('h1')?.textContent).toBe('Planning smart lock installation');
-    expect(container.querySelectorAll('.demo-article-body p')).toHaveLength(2);
+    expect(container.querySelectorAll('.tracked-article-body p')).toHaveLength(2);
     expect(container.textContent).not.toMatch(/demo|sample|scenario/i);
     expect(document.title).toBe('Planning smart lock installation · Citevia');
-    expect(container.querySelectorAll('.demo-article-references a')).toHaveLength(1);
-    expect(container.querySelector('.demo-article-references a')?.getAttribute('href')).toBe('https://www.acmelocksmith.com/');
+    expect(container.querySelectorAll('.tracked-article-references a')).toHaveLength(1);
+    expect(container.querySelector('.tracked-article-references a')?.getAttribute('href')).toBe('https://www.acmelocksmith.com/');
   });
   it('does not expose a normal account or an official article through the demo route', async () => {
     api.value.data!.demo!.source = 'igeo-dr-roof'; await render();
@@ -37,8 +38,8 @@ describe('Authenticated demo articles', () => {
   it('renders article content as plain text and cannot execute source markup', async () => {
     api.value.data!.demo!.trackedUrls![0].body = '<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>';
     await render();
-    expect(container.querySelectorAll('.demo-article-body script,.demo-article-body img')).toHaveLength(0);
-    expect(container.querySelector('.demo-article-body')?.textContent).toContain('<script>');
+    expect(container.querySelectorAll('.tracked-article-body script,.tracked-article-body img')).toHaveLength(0);
+    expect(container.querySelector('.tracked-article-body')?.textContent).toContain('<script>');
   });
   it('keeps access failures visible without article content', async () => {
     api.value = { loading: false, data: undefined, error: new Error('Account access denied') }; await render();

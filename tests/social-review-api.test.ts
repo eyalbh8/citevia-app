@@ -144,6 +144,18 @@ describe('social publication approval and editing API', () => {
     expect((await expired.call('/approve', 'POST', consent)).status).toBe(400);
     expect(expired.queue.messages).toEqual([]); expect(f.queue.messages).toEqual([]);
   });
+  it('requires a clean saved revision before an older caption can be approved for publication', async () => {
+    const content = { title: 'Explore the platform', body: 'Book a DEMO before you decide.', hashtags: ['#Investing'] };
+    const f = await fixture('facebook', { content });
+    expect((await f.call('/approve', 'POST', consent)).status).toBe(400);
+    expect((await f.call('', 'PATCH', { version: 2, content })).status).toBe(400);
+    expect(f.queue.messages).toEqual([]);
+    const edited = { ...content, body: 'Explore the platform before you decide.' };
+    expect((await f.call('', 'PATCH', { version: 2, content: edited })).status).toBe(200);
+    expect((await f.call('/approve', 'POST', { ...consent, version: 3 })).status).toBe(202);
+    expect((await f.current())?.content).toEqual(edited);
+  });
+
   it('accepts refreshed preview URLs by owned asset ID while retaining immutable canonical media', async () => {
     const f = await fixture();
     const publicPost = await (await f.call()).json();

@@ -1,7 +1,8 @@
+import { reportReference } from './report-reference';
 import { reportExcerpt } from './report-excerpt';
 import { useEffect } from 'react';
 import { ArrowLeft, ArrowUpRight, FileText } from 'lucide-react';
-import { trackedArticleUrl, type Project } from '@citevia/core';
+import { publicSourceUrl, trackedArticleUrl, type Project } from '@citevia/core';
 import { useApi } from './api';
 import { Empty, ErrorNotice, Logo } from './components';
 import { Skeleton } from './Loading';
@@ -31,13 +32,13 @@ export function canonicalizeArticleLocation() {
 }
 
 function referenceUrl(value: string) {
-  try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password ? url.href : null; }
-  catch { return null; }
+  const url = publicSourceUrl(value);
+  return url?.startsWith('https://') ? url : null;
 }
 
 /** Demo posts remain behind the same account permissions as their reporting data. */
 export default function DemoContentView({ projectId, slug }: { projectId: string; slug: string }) {
-  const project = useApi<Project>(`/projects/${encodeURIComponent(projectId)}/settings`);
+  const project = useApi<Project>(`/projects/${encodeURIComponent(reportReference(projectId))}/settings`);
   const pathname = `/demo-content/${projectId}/${slug}`;
   const publicUrl = trackedArticleUrl(`https://app.citevia.io${pathname}`);
   const post = project.data?.demo?.source === 'website-demo'
@@ -49,21 +50,21 @@ export default function DemoContentView({ projectId, slug }: { projectId: string
     const url = referenceUrl(value); return url ? [url] : [];
   });
   function selectAccount() {
-    try { localStorage.setItem('citevia.project', projectId); } catch { /* storage unavailable */ }
+    try { localStorage.setItem('citevia.project', project.data ? reportReference(project.data.id) : reportReference(projectId)); } catch { /* storage unavailable */ }
   }
   return (
-    <main className="demo-article-page">
-      <header className="demo-article-header"><Logo /><span><FileText size={15} />Tracked content</span></header>
-      <article className="demo-article">
-        <a className="demo-article-back" href="/#mentions" onClick={selectAccount}><ArrowLeft size={16} />Back to Mentions</a>
+    <main className="tracked-article-page">
+      <header className="tracked-article-header"><Logo /><span><FileText size={15} />Tracked content</span></header>
+      <article className="tracked-article">
+        <a className="tracked-article-back" href="/#mentions" onClick={selectAccount}><ArrowLeft size={16} />Back to Mentions</a>
         <ErrorNotice error={project.error} />
         {project.loading && !project.data ? <Skeleton variant="detail" rows={3} label="Loading article…" />
           : post ? <>
-            <p className="demo-article-brand">{reportExcerpt(project.data!.name)}</p>
+            <p className="tracked-article-brand">{reportExcerpt(project.data!.name)}</p>
             <h1>{reportExcerpt(post.title || 'Article')}</h1>
-            <p className="demo-article-meta"><time dateTime={post.publishedAt}>{new Date(post.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</time><span>Blog post</span></p>
-            <div className="demo-article-body">{post.body?.split(/\n\s*\n/).filter(Boolean).map((paragraph, index) => <p key={index}>{reportExcerpt(paragraph)}</p>)}</div>
-            {references.length > 0 && <section className="demo-article-references"><h2>Company and topic references</h2><ul>{references.map(url => <li key={url}><a href={url} target="_blank" rel="noopener noreferrer">{reportExcerpt(url.replace(/^https:\/\//, ''))}<ArrowUpRight size={14} /></a></li>)}</ul></section>}
+            <p className="tracked-article-meta"><time dateTime={post.publishedAt}>{new Date(post.publishedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}</time><span>Blog post</span></p>
+            <div className="tracked-article-body">{post.body?.split(/\n\s*\n/).filter(Boolean).map((paragraph, index) => <p key={index}>{reportExcerpt(paragraph)}</p>)}</div>
+            {references.length > 0 && <section className="tracked-article-references"><h2>Company and topic references</h2><ul>{references.map(url => <li key={url}><a href={url} target="_blank" rel="noopener noreferrer">{reportExcerpt(url.replace(/^https:\/\//, ''))}<ArrowUpRight size={14} /></a></li>)}</ul></section>}
           </> : !project.error && <Empty title="Article unavailable" description="Open an article from the account’s tracked content." />}
       </article>
     </main>

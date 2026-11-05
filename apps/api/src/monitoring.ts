@@ -1,3 +1,4 @@
+import { restoreReportFields } from './public-report.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
@@ -239,6 +240,10 @@ export async function monitoringRoute(
     !tail.endsWith('/answers') &&
     trackedId !== 'summary'
   ) {
+    const current = (await repository.listTrackedUrls(project.id)).find(
+      (u) => u.id === trackedId,
+    );
+    if (!current) fail('Tracked URL not found.', 404);
     const input = z
       .object({
         version: z.number().int().positive(),
@@ -246,11 +251,7 @@ export async function monitoringRoute(
         title: z.string().trim().min(1).max(200).optional(),
       })
       .strict()
-      .parse(await readBody(request));
-    const current = (await repository.listTrackedUrls(project.id)).find(
-      (u) => u.id === trackedId,
-    );
-    if (!current) fail('Tracked URL not found.', 404);
+      .parse(restoreReportFields(await readBody(request), { ...current }));
     const next = {
       ...current!,
       ...input,

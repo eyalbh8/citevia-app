@@ -1,3 +1,4 @@
+import { publicSourceUrl } from '@citevia/core';
 import { reportExcerpt } from './report-excerpt';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowUpRight, FileText, LoaderCircle, RefreshCw, Search, ShieldCheck, Sparkles } from 'lucide-react';
@@ -58,7 +59,7 @@ function AdminBlogPerformance({ project, onTracking }: { project: Project; onTra
     <ErrorNotice error={result.error} retry={() => void invalidateApiQueries(path)} />
     {!result.data && result.loading ? <Skeleton variant="cards" label="Reviewing tracked blogs…" /> : result.data?.items.length ? <>
       <div className="blog-review-list" aria-busy={result.loading}>{result.data.items.map((row) => <article className="blog-review-card" key={row.url.id}>
-        <header><div><span className={`blog-outcome outcome-${row.outcome}`}>{outcomes[row.outcome]}</span><h2><a href={row.url.url} target="_blank" rel="noreferrer">{reportExcerpt(row.url.title)}<ArrowUpRight size={15} /></a></h2><p className="blog-review-url">{reportExcerpt(row.url.url)}</p></div><button className="button button-outline" onClick={() => setEditing(row)} disabled={Boolean(project.demo)}>{row.prompt ? 'Change prompt' : 'Link prompt'}</button></header>
+        <header><div><span className={`blog-outcome outcome-${row.outcome}`}>{outcomes[row.outcome]}</span><h2><a href={publicSourceUrl(row.url.url) ?? undefined} target="_blank" rel="noreferrer">{reportExcerpt(row.url.title)}<ArrowUpRight size={15} /></a></h2><p className="blog-review-url">{reportExcerpt(row.url.url)}</p></div><button className="button button-outline" onClick={() => setEditing(row)} disabled={Boolean(project.demo)}>{row.prompt ? 'Change prompt' : 'Link prompt'}</button></header>
         <div className="blog-review-prompt"><span>Prompt to answer</span><p>{reportExcerpt(row.prompt?.text || 'No prompt linked yet')}{row.prompt && !row.prompt.active && <strong> · Inactive</strong>}</p></div>
         <dl className="blog-review-metrics"><div><dt>Cited answers · 30 days</dt><dd>{row.current.citedAnswers} <small>/ {row.current.answers}</small></dd></div><div><dt>Citation rate</dt><dd>{rate(row.current.citationRate)}</dd></div><div><dt>Previous 30 days</dt><dd>{rate(row.previous.citationRate)}<small> · {row.previous.answers} answers</small></dd></div><div><dt>Last citation for prompt</dt><dd className="blog-review-date">{row.lastCitedAt ? formatDate(row.lastCitedAt, true) : 'No citation observed'}</dd></div></dl>
         <section className="blog-review-recommendation"><h3>{actions[row.action]}</h3><p>{reportExcerpt(row.reason)}</p>{row.changes.length > 0 && <ul>{row.changes.map((change) => <li key={change}>{reportExcerpt(change)}</li>)}</ul>}</section>

@@ -58,6 +58,7 @@ import { verifiedIdentitySchema, type VerifiedIdentity } from '@citevia/core';
 import { AuthenticationError } from './descope.js';
 import { adminRoute } from './admin.js';
 import { readRequestJson } from './request-body.js';
+import { resolveReportInput, resolveReportUrl, restoreReportFields } from './public-report.js';
 import { actorFingerprint, auditRoute, enforceApiLimit } from './api-security.js';
 import { runIdFor, providerRunIdFor } from '../../scanner/src/engine.js';
 import { brandbookUpdateSchema } from '@citevia/core';
@@ -103,9 +104,6 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
   runtime = withDemoRuntime(runtime, options.now);
   const { repository, artifacts, queue } = runtime;
   const now = options.now || (() => new Date());
-  async function body(request: Request): Promise<unknown> {
-    return readRequestJson(request);
-  }
   async function details(
     result: PromptResult,
     run: ScanRun,
@@ -209,11 +207,17 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
   }
   const handle = async (
     request: Request,
-    identity?: VerifiedIdentity,
+    identity: VerifiedIdentity | undefined,
+    inputFormat: 'public' | 'native',
   ): Promise<Response> => {
+    const body = async (input: Request) => {
+      const value = await readRequestJson(input);
+      return inputFormat === 'public' ? resolveReportInput(value) : value;
+    };
     try {
-      const url = new URL(request.url),
-        query = url.searchParams,
+      const url = inputFormat === 'public' ? resolveReportUrl(request.url) : new URL(request.url);
+      if (url.href !== request.url) request = new Request(url, request);
+      const query = url.searchParams,
         method = request.method.toUpperCase();
       const path = url.pathname.replace(/\/$/, '');
       if (path === '/health' && method === 'GET')
@@ -542,7 +546,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             'Complete account setup first',
           );
         const { version, ...input } = brandbookUpdateSchema.parse(
-          await body(request),
+          restoreReportFields(await body(request), { ...stored.brandbook }),
         );
         if (version !== stored.version)
           throw new HttpError(
@@ -578,7 +582,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       }
       if (editingCompetitors) {
         const input = settingsSchema.pick({ version: true, competitors: true })
-          .extend({ competitors: settingsSchema.shape.competitors.unwrap() }).strict().parse(await body(request));
+          .extend({ competitors: settingsSchema.shape.competitors.unwrap() }).strict().parse(restoreReportFields(await body(request), { competitors: stored.competitors }));
         if (input.version !== stored.version)
           throw new HttpError(409, 'VERSION_CONFLICT', 'Competitors changed. Refresh and try again.');
         const next = { ...stored, competitors: input.competitors, competitorsConfiguredAt: now().toISOString(),
@@ -588,7 +592,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         return response({ ...next, role: project.role });
       }
       if (tail === 'settings' && method === 'PATCH') {
-        const input = settingsSchema.parse(await body(request));
+        const input = settingsSchema.parse(restoreReportFields(await body(request), { ...stored }));
         if (input.geoBacklinks !== undefined && !user.isSystemAdmin)
           throw new HttpError(403, 'FORBIDDEN', 'Only system administrators can configure GEO Backlink Strategy.');
         if (
@@ -784,7 +788,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         const input =
           method === 'DELETE'
             ? { active: false }
-            : promptUpdateSchema.parse(await body(request));
+            : promptUpdateSchema.parse(restoreReportFields(await body(request), { ...current }));
         if ('version' in input && input.version !== current.version)
           throw new HttpError(
             409,
@@ -1336,9 +1340,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       );
     }
   };
-  return async (request: Request, identity?: VerifiedIdentity): Promise<Response> => {
+  return async (request: Request, identity?: VerifiedIdentity, inputFormat: 'public' | 'native' = 'native'): Promise<Response> => {
     const started = Date.now();
-    const result = await handle(request, identity);
+    const result = await handle(request, identity, inputFormat);
     if (result.status === 429) result.headers.set('Retry-After', '60');
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && typeof identity?.subject === 'string') {
       const url = new URL(request.url);

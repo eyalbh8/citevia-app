@@ -1,3 +1,4 @@
+import { hasRestrictedDestination } from '@citevia/core';
 import { normalizeDomain, normalizeUrl } from '@citevia/core';
 
 /** Only public hostnames are sent to image services, never paths or URL tokens. */
@@ -30,7 +31,7 @@ export function domainLogoSources(
   token?: string,
 ): string[] {
   const domain = logoDomain(value);
-  if (!domain) return [];
+  if (!domain || hasRestrictedDestination(domain)) return [];
   const publicToken = token?.trim();
   const sources: string[] = [];
   if (publicToken?.startsWith('pk_')) {

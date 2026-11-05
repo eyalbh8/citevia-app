@@ -1,8 +1,9 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { identifier, type User } from '@citevia/core';
+import { identifier, resolveReportId, type User } from '@citevia/core';
 import { AccessError, type McpConnection, type McpRecord, type Runtime } from '@citevia/storage';
 import { authenticationFailure, AuthenticationError, type IdentityProvider } from './descope.js';
 import { mcpWorkspaceId } from './mcp-workspace.js';
+import { publicReportValue, resolveReportInput } from './public-report.js';
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -68,7 +69,7 @@ export function createMcpOAuth(
     const prefix = `${base}/mcp/accounts/`;
     if (resource.startsWith(prefix)) {
       const projectId = resource.slice(prefix.length);
-      if (identifier.safeParse(projectId).success) return projectId;
+      if (identifier.safeParse(resolveReportId(projectId)).success) return projectId;
     }
     throw new OAuthError('invalid_target');
   };
@@ -240,12 +241,12 @@ export function createMcpOAuth(
     const user = await repository.syncUser(identity, true);
     if (user.disabled) throw new OAuthError('access_denied', 403);
     await limit(`consent:${user.subject}`, 60);
-    const body = request.method === 'POST' ? await readBody(request) : {};
+    const body = request.method === 'POST' ? resolveReportInput(await readBody(request)) as Record<string, unknown> : {};
     const requestId = required(request.method === 'POST' ? body.requestId : url.searchParams.get('requestId'), 128);
     const record = await pending(requestId);
     const authorization = record.data;
     const client = await clientFor(authorization.clientId);
-    let projectId = authorization.projectId;
+    let projectId = authorization.projectId && resolveReportId(authorization.projectId);
     if (user.isSystemAdmin && projectId !== null)
       throw new OAuthError('access_denied', 403,
         `System administrators connect all accounts. Restart the connection using ${base}/mcp.`);
@@ -264,9 +265,9 @@ export function createMcpOAuth(
       throw new OAuthError('access_denied', 403);
     if (request.method === 'GET') {
       const project = projectId ? await repository.getProject(projectId) : null;
-      return json({ clientName: client.name,
+      return json(publicReportValue({ clientName: client.name,
         scope: user.isSystemAdmin && projectId === null ? 'system' : 'account',
-        projectId, projectName: project?.name ?? null, projects, expiresAt: record.expiresAt });
+        projectId, projectName: project?.name ?? null, projects, expiresAt: record.expiresAt }));
     }
     if (typeof body.approve !== 'boolean') throw new OAuthError('invalid_request');
     if (body.approve) {
@@ -377,8 +378,9 @@ export function createMcpOAuth(
     try {
       if (request.method === 'GET' && isProtectedMetadata) {
         const resource = `${base}${path === metadataPrefix ? '/mcp' : path.slice(metadataPrefix.length)}`;
-        resourceProject(resource);
-        return json({ resource, authorization_servers: [base], scopes_supported: ['mcp'], bearer_methods_supported: ['header'] });
+        const workspace = resourceProject(resource);
+        const publicResource = workspace ? base + '/mcp/accounts/' + mcpWorkspaceId(workspace) : resource;
+        return json({ resource: publicResource, authorization_servers: [base], scopes_supported: ['mcp'], bearer_methods_supported: ['header'] });
       }
       if (request.method === 'GET' && path === '/.well-known/oauth-authorization-server')
         return json({

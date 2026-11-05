@@ -55,9 +55,9 @@ export default function SocialPublicationReview({ post, path, owner, enabled, ti
   onSaved: () => void; notify: (message: string) => void;
 }) {
   const [savedPost, setSavedPost] = useState(post);
-  const [title, setTitle] = useState(post.content?.title || '');
-  const [body, setBody] = useState(post.content?.body || '');
-  const [hashtags, setHashtags] = useState(post.content?.hashtags.join(' ') || '');
+  const [title, setTitle] = useState(() => reportExcerpt(post.content?.title || ''));
+  const [body, setBody] = useState(() => reportExcerpt(post.content?.body || ''));
+  const [hashtags, setHashtags] = useState(() => reportExcerpt(post.content?.hashtags.join(' ') || ''));
   const [media, setMedia] = useState(post.media || []);
   const [scheduledAt, setScheduledAt] = useState(() => socialLocalDateTime(post.scheduledAt, timezone));
   const [saving, setSaving] = useState(false);
@@ -72,8 +72,8 @@ export default function SocialPublicationReview({ post, path, owner, enabled, ti
   }, [post, savedPost.version]);
   const editable = owner && post.editable !== false && ['review_required', 'scheduled'].includes(savedPost.status);
   const content = { title, body, hashtags: tags(hashtags) };
-  const dirty = title !== (savedPost.content?.title || '') || body !== (savedPost.content?.body || '') ||
-    JSON.stringify(content.hashtags) !== JSON.stringify(savedPost.content?.hashtags || []) || mediaIdentity(media) !== mediaIdentity(savedPost.media || []) ||
+  const dirty = title !== reportExcerpt(savedPost.content?.title || '') || body !== reportExcerpt(savedPost.content?.body || '') ||
+    JSON.stringify(content.hashtags) !== JSON.stringify((savedPost.content?.hashtags || []).map(reportExcerpt)) || mediaIdentity(media) !== mediaIdentity(savedPost.media || []) ||
     scheduledAt !== socialLocalDateTime(savedPost.scheduledAt, timezone);
   const isVideo = post.channel === 'tiktok';
   const maximumMedia = post.channel === 'instagram' ? 10 : 1;
@@ -87,8 +87,8 @@ export default function SocialPublicationReview({ post, path, owner, enabled, ti
       const updated = await request<SocialPublicationPreview>(`${path}/social/publications/${post.id}`, {
         method: 'PATCH', body: JSON.stringify({ version: savedPost.version, content, media, scheduledAt: instant }),
       });
-      setSavedPost(updated); setTitle(updated.content?.title || ''); setBody(updated.content?.body || '');
-      setHashtags(updated.content?.hashtags.join(' ') || ''); setMedia(updated.media || []);
+      setSavedPost(updated); setTitle(reportExcerpt(updated.content?.title || '')); setBody(reportExcerpt(updated.content?.body || ''));
+      setHashtags(reportExcerpt(updated.content?.hashtags.join(' ') || '')); setMedia(updated.media || []);
       setScheduledAt(socialLocalDateTime(updated.scheduledAt, timezone));
       notify('Changes saved. Review this version before approving publishing.'); onSaved();
     } catch (failure) { setError(failure as Error); }
@@ -132,9 +132,9 @@ export default function SocialPublicationReview({ post, path, owner, enabled, ti
     {savedPost.status === 'scheduled' && <p className="social-approved-note">Approved for scheduled publishing. Any saved edit or media replacement removes approval until you review it again.</p>}
     <form className="social-post-editor" aria-label="Edit prepared post" onSubmit={save}>
       <fieldset disabled={!editable || busy}>
-        <label className="field"><span>Post title</span><input aria-label="Post title" value={editable ? title : reportExcerpt(title)} onChange={event => setTitle(event.target.value)} maxLength={300} required /></label>
-        <label className="field"><span>Post text</span><textarea aria-label="Post text" value={editable ? body : reportExcerpt(body)} onChange={event => setBody(event.target.value)} rows={7} required /></label>
-        <label className="field"><span>Hashtags</span><input aria-label="Post hashtags" value={editable ? hashtags : reportExcerpt(hashtags)} onChange={event => setHashtags(event.target.value)} placeholder="#YourBrand #Topic" /></label>
+        <label className="field"><span>Post title</span><input aria-label="Post title" value={title} onChange={event => setTitle(event.target.value)} maxLength={300} required /></label>
+        <label className="field"><span>Post text</span><textarea aria-label="Post text" value={body} onChange={event => setBody(event.target.value)} rows={7} required /></label>
+        <label className="field"><span>Hashtags</span><input aria-label="Post hashtags" value={hashtags} onChange={event => setHashtags(event.target.value)} placeholder="#YourBrand #Topic" /></label>
         <label className="field"><span>Publishing date and time · {timezone}</span><input type="datetime-local" aria-label="Post publishing date and time" value={scheduledAt} onChange={event => setScheduledAt(event.target.value)} required /></label>
         <p className="social-help">The time is in {timezone}. If clocks repeat an hour, a new time uses its first occurrence. Publishing starts only after approval.</p>
         <div className="social-editor-media-heading"><h3>{isVideo ? 'Video' : post.channel === 'instagram' ? 'Images and carousel order' : 'Image'}</h3><span>{media.length} / {maximumMedia}</span></div>

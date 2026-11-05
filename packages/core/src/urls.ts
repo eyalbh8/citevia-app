@@ -1,4 +1,8 @@
 import { getDomain } from 'tldts';
+import { hasRestrictedWord, reportOmission } from './public-text.js';
+
+const isTrackingParameter = (key: string) =>
+  /^utm_/i.test(key) || ['gclid', 'fbclid', 'msclkid'].includes(key.toLowerCase());
 
 export function normalizeUrl(raw: string): string | null {
   try {
@@ -7,7 +11,7 @@ export function normalizeUrl(raw: string): string | null {
     url.hash = '';
     url.hostname = url.hostname.toLowerCase();
     for (const key of [...url.searchParams.keys()]) {
-      if (/^utm_/i.test(key) || ['gclid', 'fbclid', 'msclkid'].includes(key.toLowerCase())) url.searchParams.delete(key);
+      if (isTrackingParameter(key)) url.searchParams.delete(key);
     }
     url.searchParams.sort();
     return url.toString();
@@ -44,4 +48,43 @@ export function trackedArticleUrl(url: string): string {
   if (!match) return url;
   const account = btoa(match[1]).replace(/=+$/, '');
   return `https://app.citevia.io/articles/${account}/${match[2]}`;
+}
+
+/** Check both the spelling displayed by a browser and percent-encoded destinations. */
+export function hasRestrictedDestination(value: string): boolean {
+  for (let depth = 0; depth < 5; depth++) {
+    if (hasRestrictedWord(value) || value.includes(reportOmission)) return true;
+    if (!/%[\da-f]{2}/i.test(value)) return false;
+    const decoded = value.replace(/(?:%[\da-f]{2})+/gi, escapes => {
+      try { return decodeURIComponent(escapes); }
+      catch {
+        // Malformed UTF-8 must not hide independently decodable ASCII letters.
+        return escapes.replace(/%([0-7][\da-f])/gi, (_, digits: string) =>
+          String.fromCharCode(Number.parseInt(digits, 16)));
+      }
+    });
+    if (decoded === value) return false;
+    value = decoded;
+  }
+  return hasRestrictedWord(value) || value.includes(reportOmission) || /%[0-7][\da-f]/i.test(value);
+}
+
+/** An exact public destination, or null when it cannot be shown without changing the cited page. */
+export function publicSourceUrl(input: string | null | undefined): string | null {
+  if (!input || !/^https?:\/\//i.test(input)) return null;
+  try {
+    const value = trackedArticleUrl(input);
+    const url = new URL(value);
+    if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) return null;
+    if (!hasRestrictedDestination(value) && !hasRestrictedDestination(url.href)) return value;
+    // A campaign tag is disposable. Paths, meaningful queries and anchors identify the source.
+    let removed = false;
+    for (const key of [...url.searchParams.keys()]) {
+      if (isTrackingParameter(key) && (hasRestrictedDestination(key) || url.searchParams.getAll(key).some(hasRestrictedDestination))) {
+        url.searchParams.delete(key);
+        removed = true;
+      }
+    }
+    return removed && !hasRestrictedDestination(url.href) ? url.href : null;
+  } catch { return null; }
 }

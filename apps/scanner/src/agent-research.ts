@@ -1,6 +1,8 @@
 import {
   normalizeDomain,
   normalizeUrl,
+  publicReportMarkdown,
+  publicSourceUrl,
   type AgentPostJob,
 } from '@citevia/core';
 import { agentReasoning } from './agent-model.js';
@@ -89,7 +91,9 @@ function observedSources(
   const sources = new Map<string, BlogResearchSource>();
   // A discovered URL must come from a native citation or web-search source, never generated prose.
   for (const source of [...answer.citations, ...answer.sources]) {
-    const normalized = normalizeUrl(source.url);
+    const url = publicSourceUrl(source.url);
+    if (!url) continue;
+    const normalized = normalizeUrl(url);
     const environmentHost =
       normalized &&
       new URL(normalized).hostname
@@ -106,8 +110,8 @@ function observedSources(
     )
       continue;
     sources.set(normalized, {
-      url: source.url,
-      title: source.title || new URL(source.url).hostname,
+      url,
+      title: publicReportMarkdown(source.title || new URL(url).hostname),
       kind,
     });
   }
@@ -147,9 +151,11 @@ export function blogResearchBrief(
   ];
   const internalLinks = new Map<string, BlogResearchSource>();
   for (const source of [...(internal?.sources || []), ...known]) {
-    const normalized = normalizeUrl(source.url);
+    const url = publicSourceUrl(source.url);
+    if (!url) continue;
+    const normalized = normalizeUrl(url);
     if (normalized && owned(post, source.url) && !internalLinks.has(normalized))
-      internalLinks.set(normalized, { ...source, kind: 'internal' });
+      internalLinks.set(normalized, { url, title: publicReportMarkdown(source.title), kind: 'internal' });
   }
   const internalSources = [...internalLinks.values()].slice(0, 3);
   return {

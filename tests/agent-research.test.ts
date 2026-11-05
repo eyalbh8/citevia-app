@@ -184,6 +184,21 @@ describe('web-searched blog links', () => {
       'Try [beginner webinars](https://northstar.example/education/webinars) and compare the [independent learning guide](https://education.example.org/tutorials).';
     expect(verifiedBlogLinks(job(), body, brief.sources)).toBe(body);
   });
+  it('keeps eligible research links and omits a restricted source without inventing a replacement', () => {
+    const blocked = 'https://education.example.org/resources/%64%65%6D%6F';
+    const good = 'https://education.example.org/guides';
+    const brief = blogResearchBrief(job(), searchReceipt([
+      { url: blocked, title: 'Platform guide' },
+      { url: good, title: 'Platform fees' },
+    ]), internal);
+    expect(brief.externalLinks.map(item => item.url)).toEqual([good]);
+    expect(verifiedBlogLinks(job(), `See [platform guide](${blocked}) and [platform fees](${good}).`,
+      [{ url: blocked }, { url: good }])).toBe(`See platform guide and [platform fees](${good}).`);
+    const post = { title: 'A practice account', body: 'Explore the practice account.', hashtags: [] };
+    expect(() => finalizeSocialCopy(job('x'), post)).not.toThrow();
+    expect(() => finalizeSocialCopy(job('x'), { ...post, body: 'Explore the demo account.' }))
+      .toThrow('editorial revision');
+  });
   it('keeps each category even when external sources fill their cap, rejecting forged internal domains and generated URLs', () => {
     const outside = searchReceipt(
       Array.from({ length: 6 }, (_, i) => ({

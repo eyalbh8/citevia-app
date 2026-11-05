@@ -6,6 +6,8 @@ import type { IdentityProvider } from './descope.js';
 import { createMcpOAuth } from './mcp-oauth.js';
 import { mcpTools, callMcpTool, mcpRoutes } from './mcp-tools.js';
 import { readRequestJson } from './request-body.js';
+import { publicReportId, resolveReportId } from '@citevia/core';
+import { publicReportValue, resolveReportInput, resolveReportUrl } from './public-report.js';
 import { mcpWorkspaceId } from './mcp-workspace.js';
 
 export interface McpConfig {
@@ -88,8 +90,8 @@ export function createMcp(
     }
     if (url.pathname !== '/v1/mcp/connections' || !['GET', 'POST'].includes(request.method))
       throw new AccessError(404, 'NOT_FOUND', 'Endpoint not found.');
-    const input = request.method === 'POST' ? createSchema.parse(await mcpBody(request)) : null;
-    const requested = input ? input.projectId : url.searchParams.get('projectId');
+    const input = request.method === 'POST' ? createSchema.parse(resolveReportInput(await mcpBody(request))) : null;
+    const requested = input ? input.projectId : resolveReportUrl(url.href).searchParams.get('projectId');
     // Scope is selected by the saved role. A client cannot request global scope.
     if (user.isSystemAdmin && requested)
       throw new AccessError(400, 'INVALID_SCOPE', 'System administrators use one connection for all accounts.');
@@ -104,7 +106,7 @@ export function createMcp(
     const workspaceId = mcpWorkspaceId(projectId);
     const context = { scope: projectId === null ? 'system' : 'account', projectId, workspaceId, projectName,
       serverUrl: mcpServerUrl(config, workspaceId), oauthEnabled: true };
-    if (!input) return mcpJson({ ...context, connections: (await repository.listMcpConnections(user.subject, projectId)).map(mcpMetadata) });
+    if (!input) return mcpJson(publicReportValue({ ...context, connections: (await repository.listMcpConnections(user.subject, projectId)).map(mcpMetadata) }));
     const date = now();
     const token = `citevia_live_${randomBytes(32).toString('base64url')}`;
     const connection: McpConnection = {
@@ -114,7 +116,7 @@ export function createMcp(
       lastUsedAt: null, revokedAt: null,
     };
     await repository.createMcpConnection(connection);
-    return mcpJson({ ...context, connection: mcpMetadata(connection), token }, 201);
+    return mcpJson({ ...publicReportValue({ ...context, connection: mcpMetadata(connection) }) as object, token }, 201);
   }
   async function authenticate(request: Request, endpointProject: string | null): Promise<McpPrincipal> {
     const query = new URL(request.url).searchParams;
@@ -142,7 +144,7 @@ export function createMcp(
     if (!connection) throw new AccessError(401, 'INVALID_TOKEN', 'Invalid or expired MCP credential.');
     // Account credentials may use the generic endpoint for header-based clients,
     // but can never select another account or acquire global access.
-    const accountIdentifiers = [connection.projectId, mcpWorkspaceId(connection.projectId)];
+    const accountIdentifiers = [connection.projectId, mcpWorkspaceId(connection.projectId), connection.projectId && publicReportId(connection.projectId)];
     if (endpointProject !== null && !accountIdentifiers.includes(endpointProject))
       throw new AccessError(403, 'ACCOUNT_MISMATCH', 'This connection belongs to a different account.');
     if (query.getAll('workspace_id').length > 1)
@@ -184,7 +186,8 @@ export function createMcp(
         return result || mcpJson({ error: 'not_found' }, 404);
       }
       if (managed) { const result = await management(request, url); outcome = result.status; return result; }
-      const endpointProject = endpoint![1] ? identifier.parse(decodeURIComponent(endpoint![1])) : null;
+      const endpointProject = endpoint![1] ? decodeURIComponent(endpoint![1]) : null;
+      if (endpointProject !== null) identifier.parse(resolveReportId(endpointProject));
       principal = await authenticate(request, endpointProject);
       const minute = new Date(Math.floor(now().getTime() / 60000) * 60000).toISOString();
       if (!(await repository.limitMcpRequests(`mcp:${principal.user.id}:${principal.connection.projectId ?? 'system'}`, minute, 120)))
@@ -252,7 +255,7 @@ export function createMcp(
       outcome = status;
       const headers: Record<string, string> = {};
       if (status === 401 && endpoint) {
-        const resourcePath = url.pathname.replace(/\/$/, '');
+        const resourcePath = endpoint[1] ? '/mcp/accounts/' + mcpWorkspaceId(endpoint[1]) : '/mcp';
         headers['WWW-Authenticate'] = `Bearer resource_metadata="${config.publicUrl}/.well-known/oauth-protected-resource${resourcePath}"`;
       }
       if (status === 429) headers['Retry-After'] = '60';

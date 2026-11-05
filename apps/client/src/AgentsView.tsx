@@ -1,3 +1,4 @@
+import { publicSourceUrl, publicReportMarkdown } from '@citevia/core';
 import { reportExcerpt } from './report-excerpt';
 import { useEffect, useState, type FormEvent } from 'react';
 import {
@@ -17,8 +18,6 @@ import {
 } from 'lucide-react';
 import {
   agentContentSchema,
-  agentPostText,
-  agentJsonLd,
   type AgentContent,
   type AgentPost,
   type AgentPostPage,
@@ -34,7 +33,9 @@ import {
   AgentPhoto,
   AgentBlogBody,
   AgentBlogSeo,
+  copyablePostText,
   downloadBlogArticle,
+  publishableSchema,
 } from './AgentPostPreview';
 import IntegrationMark from './IntegrationMark';
 import FilterDropdown from './FilterDropdown';
@@ -437,6 +438,10 @@ export default function AgentsView({
   );
 }
 
+function editablePost(content: AgentContent): AgentContent {
+  return { ...content, title: reportExcerpt(content.title), body: publicReportMarkdown(content.body), hashtags: content.hashtags.map(reportExcerpt) };
+}
+
 export function PostDetail({
   post,
   owner,
@@ -453,7 +458,7 @@ export function PostDetail({
   const [editing, setEditing] = useState(false);
   const [editVersion, setEditVersion] = useState(post.version);
   const [content, setContent] = useState<AgentContent>(
-    post.content || { title: '', body: '', hashtags: [] },
+    () => editablePost(post.content || { title: '', body: '', hashtags: [] }),
   );
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -505,7 +510,7 @@ export function PostDetail({
   async function copy() {
     try {
       await navigator.clipboard.writeText(
-        agentPostText(post.channel, post.content!),
+        copyablePostText(post.channel, post.content!),
       );
       setCopied(true);
     } catch {
@@ -526,7 +531,7 @@ export function PostDetail({
       <dl className="agent-post-context">
         <dt>Prompt</dt>
         <dd>{reportExcerpt(post.prompt)}</dd>
-        {post.blogRefresh && <><dt>{post.blogRefresh.action === 'adjust' ? 'Adjustment for' : 'New article for'}</dt><dd><a href={post.blogRefresh.url} target="_blank" rel="noreferrer">{reportExcerpt(post.blogRefresh.url)}</a></dd></>}
+        {post.blogRefresh && <><dt>{post.blogRefresh.action === 'adjust' ? 'Adjustment for' : 'New article for'}</dt><dd><a href={publicSourceUrl(post.blogRefresh.url) ?? undefined} target="_blank" rel="noreferrer">{reportExcerpt(post.blogRefresh.url)}</a></dd></>}
       </dl>
       <ErrorNotice error={error} />
       {active(post) ? (
@@ -670,7 +675,7 @@ export function PostDetail({
                     onClick={() => {
                       void navigator.clipboard
                         .writeText(
-                          JSON.stringify(agentJsonLd(post.content!), null, 2),
+                          publishableSchema(post.content!),
                         )
                         .then(() => setCopied(true))
                         .catch(() => setError(new Error('Copy unavailable.')));
@@ -691,7 +696,7 @@ export function PostDetail({
                 <button
                   className="button button-primary"
                   onClick={() => {
-                    setContent(post.content!);
+                    setContent(editablePost(post.content!));
                     setEditVersion(post.version);
                     setEditing(true);
                   }}

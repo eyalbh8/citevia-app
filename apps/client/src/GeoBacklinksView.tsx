@@ -1,4 +1,5 @@
-import { hasExcerptOmissions, reportExcerpt } from './report-excerpt';
+import { publicSourceUrl } from '@citevia/core';
+import { reportExcerpt } from './report-excerpt';
 import { reportReference } from './report-reference';
 import { useEffect, useState, type FormEvent } from 'react';
 import { CalendarDays, ExternalLink as ExternalLinkIcon, Link2, LoaderCircle, RefreshCw, Search, ShieldCheck, Upload } from 'lucide-react';
@@ -124,18 +125,14 @@ function RecommendationDetails({ detail, activityPage, onActivityPage, base, dis
 
 function LifecycleForm({ item, base, disabled, notify }: { item: GeoBacklinkRecommendation; base: string; disabled: boolean; notify: (message: string) => void }) {
   const [status, setStatus] = useState(item.status);
-  const [notes, setNotes] = useState(item.notes);
-  const [editingOriginal, setEditingOriginal] = useState(false);
-  const hasHiddenFields = [item.notes, item.ownerId, item.publishedUrl, item.landingPage, item.placementType]
-    .some(text => text && hasExcerptOmissions(text));
-  const readOnly = disabled || (hasHiddenFields && !editingOriginal);
-  const fieldValue = (value: string) => readOnly ? reportExcerpt(value) : value;
-  const [ownerId, setOwnerId] = useState(item.ownerId || '');
+  const [notes, setNotes] = useState(() => reportExcerpt(item.notes));
+  const readOnly = disabled;
+  const [ownerId, setOwnerId] = useState(() => reportReference(item.ownerId || ''));
   const [contactedAt, setContactedAt] = useState(dateInput(item.contactedAt));
   const [publishedAt, setPublishedAt] = useState(dateInput(item.publishedAt));
-  const [publishedUrl, setPublishedUrl] = useState(item.publishedUrl || '');
-  const [landingPage, setLandingPage] = useState(item.landingPage || '');
-  const [placementType, setPlacementType] = useState(item.placementType || '');
+  const [publishedUrl, setPublishedUrl] = useState(() => publicSourceUrl(item.publishedUrl || '') ?? '');
+  const [landingPage, setLandingPage] = useState(() => publicSourceUrl(item.landingPage || '') ?? '');
+  const [placementType, setPlacementType] = useState(() => reportExcerpt(item.placementType || ''));
   const [linkType, setLinkType] = useState(item.linkType);
   const [cost, setCost] = useState(item.cost == null ? '' : String(item.cost));
   const [currency, setCurrency] = useState(item.currency || '');
@@ -146,10 +143,10 @@ function LifecycleForm({ item, base, disabled, notify }: { item: GeoBacklinkReco
     setBusy(true); setError(undefined);
     try {
       await request(`${base}/recommendations/${encodeURIComponent(item.id)}`, { method: 'PATCH', body: JSON.stringify({ version: item.version, status, notes, ownerId: ownerId || null, contactedAt: savedDate(contactedAt, item.contactedAt), publishedAt: savedDate(publishedAt, item.publishedAt), publishedUrl: publishedUrl || null, landingPage: landingPage || null, placementType: placementType || null, linkType, cost: cost === '' ? null : Number(cost), currency: currency || null }) });
-      setEditingOriginal(false); notify('Outreach and publication details saved.'); await invalidateApiQueries(base);
+      notify('Outreach and publication details saved.'); await invalidateApiQueries(base);
     } catch (failure) { setError(failure as Error); } finally { setBusy(false); }
   }
-  return <section><h3>Outreach & publication</h3>{hasHiddenFields && !disabled && !editingOriginal && <button type="button" className="button button-outline" onClick={() => setEditingOriginal(true)}>Edit details</button>}<form className="geo-form" onSubmit={event => void save(event)}><ErrorNotice error={error} /><fieldset disabled={busy || readOnly}><div className="geo-form-grid"><label>Status<select value={status} onChange={event => setStatus(event.target.value as GeoBacklinkStatus)}>{GEO_BACKLINK_STATUSES.map(value => <option key={value} value={value}>{labelize(value)}</option>)}</select></label><label>Owner / responsible user ID<input value={fieldValue(ownerId)} maxLength={200} onChange={event => setOwnerId(event.target.value)} /></label><label>Contacted date (UTC)<input type="date" value={contactedAt} onChange={event => setContactedAt(event.target.value)} /></label><label>Publication date (UTC)<input required={status === 'published'} type="date" value={publishedAt} onChange={event => setPublishedAt(event.target.value)} /></label><label>Published URL<input type="url" required={status === 'published'} value={fieldValue(publishedUrl)} onChange={event => setPublishedUrl(event.target.value)} placeholder="https://publisher.com/article" /></label><label>Customer landing page<input type="url" value={fieldValue(landingPage)} onChange={event => setLandingPage(event.target.value)} placeholder="https://your-website.com/page" /></label><label>Placement type<input value={fieldValue(placementType)} maxLength={200} onChange={event => setPlacementType(event.target.value)} placeholder="Editorial inclusion, sponsored…" /></label><label>Link attribute<select value={linkType} onChange={event => setLinkType(event.target.value as typeof linkType)}>{['unknown', 'follow', 'nofollow', 'sponsored', 'ugc'].map(value => <option key={value} value={value}>{labelize(value)}</option>)}</select></label><label>Placement cost<input type="number" min="0" step="0.01" value={cost} onChange={event => setCost(event.target.value)} /></label><label>Currency<input required={cost !== ''} value={currency} maxLength={3} pattern="[A-Z]{3}" placeholder="USD" onChange={event => setCurrency(event.target.value.toUpperCase())} /></label></div><label>Notes<textarea rows={4} maxLength={10000} value={fieldValue(notes)} onChange={event => setNotes(event.target.value)} /></label><button className="button button-primary" type="submit">{busy ? 'Saving…' : 'Save progress'}</button></fieldset></form></section>;
+  return <section><h3>Outreach & publication</h3><form className="geo-form" onSubmit={event => void save(event)}><ErrorNotice error={error} /><fieldset disabled={busy || readOnly}><div className="geo-form-grid"><label>Status<select value={status} onChange={event => setStatus(event.target.value as GeoBacklinkStatus)}>{GEO_BACKLINK_STATUSES.map(value => <option key={value} value={value}>{labelize(value)}</option>)}</select></label><label>Owner / responsible user ID<input value={ownerId} maxLength={200} onChange={event => setOwnerId(event.target.value)} /></label><label>Contacted date (UTC)<input type="date" value={contactedAt} onChange={event => setContactedAt(event.target.value)} /></label><label>Publication date (UTC)<input required={status === 'published'} type="date" value={publishedAt} onChange={event => setPublishedAt(event.target.value)} /></label><label>Published URL<input type="url" required={status === 'published'} value={publishedUrl} onChange={event => setPublishedUrl(event.target.value)} placeholder="https://publisher.com/article" /></label><label>Customer landing page<input type="url" value={landingPage} onChange={event => setLandingPage(event.target.value)} placeholder="https://your-website.com/page" /></label><label>Placement type<input value={placementType} maxLength={200} onChange={event => setPlacementType(event.target.value)} placeholder="Editorial inclusion, sponsored…" /></label><label>Link attribute<select value={linkType} onChange={event => setLinkType(event.target.value as typeof linkType)}>{['unknown', 'follow', 'nofollow', 'sponsored', 'ugc'].map(value => <option key={value} value={value}>{labelize(value)}</option>)}</select></label><label>Placement cost<input type="number" min="0" step="0.01" value={cost} onChange={event => setCost(event.target.value)} /></label><label>Currency<input required={cost !== ''} value={currency} maxLength={3} pattern="[A-Z]{3}" placeholder="USD" onChange={event => setCurrency(event.target.value.toUpperCase())} /></label></div><label>Notes<textarea rows={4} maxLength={10000} value={notes} onChange={event => setNotes(event.target.value)} /></label><button className="button button-primary" type="submit">{busy ? 'Saving…' : 'Save progress'}</button></fieldset></form></section>;
 }
 
 function HistoryImport({ base, onClose, notify }: { base: string; onClose: () => void; notify: (message: string) => void }) {

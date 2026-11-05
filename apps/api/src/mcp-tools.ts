@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { publicReportValue, resolveReportInput } from './public-report.js';
 import { identifier, JOURNEY_STAGES, PROMPT_INTENTS, SCAN_PROVIDERS, type VerifiedIdentity } from '@citevia/core';
 import { AccessError, type Runtime } from '@citevia/storage';
 import type { McpPrincipal } from './mcp.js';
@@ -11,12 +12,12 @@ const definitions: Tool[] = [
   { name: 'dashboard', description: 'Read visibility, sentiment, rank and changes from the account dashboard. Optional query: providers (comma-separated), days (1/7/14/30/90/custom), start and end (YYYY-MM-DD for custom), topic, region, tag, branded, intent, stage.', method: 'GET', path: 'dashboard/overview' },
   { name: 'prompts', description: 'List tracked prompts, including archived prompts and version metadata.', method: 'GET', path: 'prompts' },
   { name: 'prompt_metrics', description: 'Read prompt visibility, sentiment and rank over a period. Optional query: provider, days (1/7/14/30/90/custom), start and end (YYYY-MM-DD for custom), or runId for a single scan.', method: 'GET', path: 'prompt-metrics' },
-  { name: 'prompt_responses', description: 'Read paginated original answers for a prompt. Optional query: provider, days, sort, direction, limit, cursor.', method: 'GET', path: 'prompts/{promptId}/responses', id: 'promptId' },
+  { name: 'prompt_responses', description: 'Read paginated answer excerpts for a prompt. Optional query: provider, days, sort, direction, limit, cursor.', method: 'GET', path: 'prompts/{promptId}/responses', id: 'promptId' },
   { name: 'mentions', description: 'Read account mentions. Optional query: providers (comma-separated), days (1/7/14/30/90/custom), start, end, page (zero-based), pageSize (25/50/100), sort, direction.', method: 'GET', path: 'mentions' },
   { name: 'sources', description: 'Read citation sources for a scan. Optional query: runId, provider, groupBy (domain/url), kind (cited/consulted), domain, limit, cursor.', method: 'GET', path: 'sources' },
   { name: 'source_responses', description: 'Read answers citing a source. Use a sourceId from sources. Optional query: runId, provider, limit, cursor.', method: 'GET', path: 'sources/{sourceId}/responses', id: 'sourceId' },
   { name: 'responses', description: 'Read paginated results for a scan. Optional query: runId, provider, mentioned, limit, cursor.', method: 'GET', path: 'responses' },
-  { name: 'response', description: 'Read the complete original answer and analysis using a responseId from responses.', method: 'GET', path: 'responses/{responseId}', id: 'responseId' },
+  { name: 'response', description: 'Read the reported answer and analysis using a responseId from responses.', method: 'GET', path: 'responses/{responseId}', id: 'responseId' },
   { name: 'runs', description: 'List scan runs and their completion status. Optional query: provider, limit, cursor.', method: 'GET', path: 'runs' },
   { name: 'run', description: 'Read one scan run.', method: 'GET', path: 'runs/{runId}', id: 'runId' },
   { name: 'brandbook', description: 'Read the brand identity, audience, voice and research evidence. Includes current version for edits.', method: 'GET', path: 'brandbook' },
@@ -40,9 +41,9 @@ const definitions: Tool[] = [
 export const mcpRoutes = ['/v1/projects', ...definitions.filter(d => d.method === 'GET').map(d => `/v1/projects/{accountId}/${d.path}`)];
 const querySchema = z.record(z.string(), z.union([z.string().max(2000), z.number().finite(), z.boolean()])).refine(value => Object.keys(value).length <= 30);
 const queryJson = { type: 'object', description: 'Optional REST query parameters. Most lists use limit and cursor/nextCursor. Monitoring lists (mentions, tracked_urls) use page (zero-based), pageSize (25/50/100), and total.', additionalProperties: { type: ['string', 'number', 'boolean'] } };
-const idJson = { type: 'string', pattern: '^[A-Za-z0-9_-]{1,100}$', minLength: 1, maxLength: 100 };
+const idJson = { type: 'string', pattern: '^[A-Za-z0-9_-]{1,204}$', minLength: 1, maxLength: 204 };
 const responseId = z.string().regex(/^[A-Za-z0-9_-]{1,100}~[A-Za-z0-9_-]{1,100}$/);
-const responseIdJson = { type: 'string', pattern: '^[A-Za-z0-9_-]{1,100}~[A-Za-z0-9_-]{1,100}$', maxLength: 201 };
+const responseIdJson = { type: 'string', pattern: '^[A-Za-z0-9_-]{1,204}~[A-Za-z0-9_-]{1,204}$', maxLength: 409 };
 const textField = (maxLength: number, minLength = 0) => ({ type: 'string', minLength, maxLength });
 const objectSchema = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const stringList = (maxItems = 30, maxLength = 1000) => ({ type: 'array', items: textField(maxLength, 1), maxItems });
@@ -109,7 +110,8 @@ export async function callMcpTool(
   name: string, raw: unknown, principal: McpPrincipal, runtime: Runtime,
   api: (request: Request, identity?: VerifiedIdentity) => Promise<Response>,
 ) {
-  const content = (data: unknown, isError = false) => ({ content: [{ type: 'text' as const, text: JSON.stringify(data) }], ...(isError ? { isError: true } : {}) });
+  raw = resolveReportInput(raw);
+  const content = (data: unknown, isError = false) => ({ content: [{ type: 'text' as const, text: JSON.stringify(publicReportValue(data)) }], ...(isError ? { isError: true } : {}) });
   const scoped = (accountId: string) => {
     identifier.parse(accountId);
     if (principal.connection.projectId !== null && accountId !== principal.connection.projectId)
@@ -168,5 +170,5 @@ export async function callMcpTool(
   const text = await result.text();
   if (Buffer.byteLength(text) > 2_000_000)
     throw new AccessError(413, 'RESULT_TOO_LARGE', 'Result is too large. Use a smaller limit, narrower date range or a detail tool.');
-  return { content: [{ type: 'text', text: text || '{}' }], ...(result.ok ? {} : { isError: true }) };
+  return content(text ? JSON.parse(text) : {}, !result.ok);
 }

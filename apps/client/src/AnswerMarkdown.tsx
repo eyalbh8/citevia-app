@@ -1,3 +1,4 @@
+import { hasRestrictedDestination, publicSourceUrl } from '@citevia/core';
 import type { ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -13,8 +14,8 @@ type TreeNode = {
 };
 
 // Compute display text and its attribution together, after parsing destinations.
-function reportBody(preserveOriginal: boolean) {
-  return () => (tree: TreeNode) => {
+function reportBody() {
+  return (tree: TreeNode) => {
     let omitted = false;
     let inline: TreeNode[] = [];
     function flush() {
@@ -30,6 +31,7 @@ function reportBody(preserveOriginal: boolean) {
       const boundary = isReportTextBoundary(node.tagName);
       if (boundary) flush();
       if (node.type === 'text') inline.push(node);
+      if (node.tagName === 'a' && node.properties?.href && hasRestrictedDestination(node.properties.href)) omitted = true;
       if (node.tagName === 'img') {
         // Only alt text is shown. The image destination is never displayed or fetched.
         node.type = 'text';
@@ -39,7 +41,7 @@ function reportBody(preserveOriginal: boolean) {
       node.children?.forEach(visit);
       if (boundary) flush();
     }
-    if (!preserveOriginal) { visit(tree); flush(); }
+    visit(tree); flush();
     tree.children = [{ type: 'element', tagName: 'div', properties: { dataReportBody: omitted ? 'excerpt' : 'full' }, children: tree.children }];
   };
 }
@@ -90,20 +92,18 @@ export default function AnswerMarkdown({
   text,
   aliases = [],
   preview = false,
-  preserveOriginal = false,
   renderReport,
 }: {
   text: string;
   aliases?: string[];
   preview?: boolean;
-  preserveOriginal?: boolean;
   renderReport?: (content: ReactNode, omitted: boolean) => ReactNode;
 }) {
   return (
       <Markdown
         skipHtml
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[reportBody(preserveOriginal), highlightBrands(aliases)]}
+        rehypePlugins={[reportBody, highlightBrands(aliases)]}
         components={{
           div: ({ node, children, ...props }) => {
             const kind = node?.properties.dataReportBody;
@@ -112,9 +112,9 @@ export default function AnswerMarkdown({
             return renderReport ? renderReport(content, kind === 'excerpt') : content;
           },
           a: ({ href, children }) =>
-            !preview && href && /^(https?:\/\/|#)/i.test(href) ? (
+            !preview && href && (publicSourceUrl(href) || (href.startsWith('#') && !hasRestrictedDestination(href))) ? (
               <a
-                href={href}
+                href={href.startsWith('#') ? href : publicSourceUrl(href) ?? undefined}
                 target={href.startsWith('#') ? undefined : '_blank'}
                 rel="noreferrer noopener"
               >

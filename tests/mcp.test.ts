@@ -225,7 +225,7 @@ describe('MCP protocol and API contracts', () => {
     const responseId = (await f.repository.listResults('alpha', (await f.repository.listRuns('alpha'))[0].id))[0].responseId;
     expect(responseId).toContain('~');
     const typed = await f.tool(key.token, 'response', { responseId });
-    expect(toolData(typed)).toMatchObject({ result: { responseId }, answer: { model: 'demo-fixture' } });
+    expect(toolData(typed)).toMatchObject({ result: { responseId }, answer: { model: '[…]-fixture' } });
     const generic = await f.tool(key.token, 'api_get', { path: `/v1/projects/alpha/responses/${responseId}` });
     expect(toolData(generic)).toMatchObject({ result: { responseId } });
     expect((await f.tool(key.token, 'response', { responseId: '../beta' })).body.error.code).toBe(-32602);
@@ -269,11 +269,34 @@ describe('MCP URL-only connections', () => {
     expect(key.workspaceId).toMatch(/^[a-f0-9-]{36}$/);
     expect(key.serverUrl).toBe(`https://api.test/mcp/accounts/${key.workspaceId}`);
     const path = new URL(key.serverUrl).pathname;
+    const listed = toolData(await f.tool(key.token, 'list_accounts'));
+    const accountId = listed.items[0].id;
+    expect(JSON.stringify(key)).not.toContain(projectId);
+    expect(accountId).toBe(key.projectId);
+    expect(toolData(await f.tool(key.token, 'settings', { accountId })).id).toBe(accountId);
+    const global = await f.mint('admin');
+    expect(toolData(await f.tool(global.token, 'api_get', { path: '/v1/projects/' + accountId + '/settings' })).id).toBe(accountId);
+    expect((await f.tool((await f.mint('owner', 'beta')).token, 'settings', { accountId })).body.result.isError).toBe(true);
     expect((await queryRpc(f, key.token, { path, workspace: key.workspaceId })).response.status).toBe(200);
     expect((await queryRpc(f, key.token, { path: `/mcp/accounts/${projectId}`, workspace: projectId })).response.status).toBe(200);
+    expect((await queryRpc(f, key.token, { path, workspace: accountId })).response.status).toBe(200);
     const other = await f.mint('owner', 'beta');
     expect((await queryRpc(f, other.token, { path, workspace: key.workspaceId })).response.status).toBe(403);
     expect((await queryRpc(f, key.token, { path, workspace: 'beta' })).response.status).toBe(403);
+  });
+
+  it('decodes a public handle only once before a scoped read', async () => {
+    const f = await setup();
+    // The second native ID looks exactly like the public spelling of the first one.
+    for (const id of ['demo', 'cvh_64656d6f']) {
+      await f.repository.saveProject(newProject({ id, name: id === 'demo' ? 'First' : 'Second' }), null);
+      await f.repository.putMembership({ projectId: id, userId: 'viewer', role: 'viewer' });
+    }
+    const key = await f.mint('viewer', 'cvh_6376685f3634363536643666');
+    const accountId = toolData(await f.tool(key.token, 'list_accounts')).items[0].id;
+    expect(toolData(await f.tool(key.token, 'settings', { accountId })).name).toBe('Second');
+    expect(toolData(await f.tool(key.token, 'api_get', { path: '/v1/projects/' + accountId + '/settings' })).name).toBe('Second');
+    expect((await f.tool(key.token, 'settings', { accountId: 'cvh_64656d6f' })).body.result.isError).toBe(true);
   });
 
   it('does not allow account URLs, query parameters or tool arguments to change credential scope', async () => {

@@ -1,3 +1,4 @@
+import { reportExcerpt } from './report-excerpt';
 import { useContext, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getAccessToken } from './auth';
@@ -6,6 +7,7 @@ import { ApiSessionContext } from './ApiSessionProvider';
 import { apiQueryKey, invalidateAfterMutation, queryClient } from './query-cache';
 export { ApiError } from './api-error';
 import {
+  publicSourceUrl, publicReportMarkdown,
   onboardingInputSchema,
   type AccountOnboardingInput,
   type Project,
@@ -84,6 +86,25 @@ export function idempotentPost<T>(path: string, body?: unknown): Promise<T> {
   return operation;
 }
 
+// Keep the domain model used by the report components separate from the public API
+// envelope. The optional string profile inside an envelope is a different field.
+function unpackReportProfiles(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(unpackReportProfiles);
+  if (!value || typeof value !== 'object') return value;
+  const record = value as Record<string, unknown>;
+  if (record.reportingProfile === true || (record.reportingProfile && typeof record.reportingProfile === 'object')) {
+    record.demo = record.reportingProfile;
+    delete record.reportingProfile;
+  }
+  if (record.workspacePost === true) { record.demoPost = true; delete record.workspacePost; }
+  if (record.source === 'website-history') record.source = 'website-demo';
+  if (record.kind === 'report-draft') record.kind = 'demo-draft';
+  for (const key of Object.keys(record)) {
+    if (record[key] && typeof record[key] === 'object') unpackReportProfiles(record[key]);
+  }
+  return record;
+}
+
 export async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -112,9 +133,9 @@ export async function request<T>(
     } catch {
       /* non-JSON gateway failure */
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(reportExcerpt(message), response.status);
   }
-  const result = response.status === 204 ? undefined : await response.json();
+  const result = response.status === 204 ? undefined : unpackReportProfiles(await response.json());
   if (!['GET', 'HEAD'].includes((options.method || 'GET').toUpperCase()))
     void invalidateAfterMutation(path);
   return result as T;
@@ -162,7 +183,8 @@ export function downloadCsv(
   rows: (string | number | null | undefined)[][],
 ) {
   const escape = (value: string | number | null | undefined) => {
-    let text = String(value ?? '');
+    const raw = String(value ?? '');
+    let text = /^https?:\/\/\S+$/i.test(raw) ? publicSourceUrl(raw) ?? '' : publicReportMarkdown(raw);
     if (/^[=+@\-\t\r]/.test(text)) text = `'${text}`;
     return `"${text.replace(/"/g, '""')}"`;
   };
@@ -174,7 +196,7 @@ export function downloadCsv(
   );
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = reportExcerpt(filename);
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

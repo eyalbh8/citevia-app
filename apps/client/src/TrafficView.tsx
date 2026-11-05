@@ -1,3 +1,4 @@
+import { publicSourceUrl } from '@citevia/core';
 import { reportExcerpt } from './report-excerpt';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
@@ -632,7 +633,7 @@ function TrafficSettings({
               <h3>Detected websites</h3>
               {status.data.sites.map((site) => (
                 <div key={site.origin}>
-                  <a href={site.origin} target="_blank" rel="noreferrer">
+                  <a href={publicSourceUrl(site.origin) ?? undefined} target="_blank" rel="noreferrer">
                     {reportExcerpt(site.origin)}
                   </a>
                   <span>
@@ -714,7 +715,7 @@ export default function TrafficView({
       ['Device', data.devices],
       ['Browser', data.browsers],
     ] as const)
-      rows.push(...items.map((r) => [label, reportExcerpt(r.label), r.visits, '']));
+      rows.push(...items.map((r) => [label, r.label, r.visits, '']));
     for (const point of data.series)
       for (const provider of data.providers)
         rows.push([

@@ -12,6 +12,8 @@ import {
   AgentBlogSeo,
   AgentPhoto,
   blogArticleHtml,
+  copyablePostText,
+  publishableSchema,
 } from './AgentPostPreview';
 
 const seed: AgentContent = {
@@ -73,7 +75,7 @@ afterEach(async () => {
 });
 
 describe('blog post preview and export', () => {
-  it('omits words from the preview while keeping link destinations and the publishable draft intact', async () => {
+  it('omits restricted words from previews and exported articles, copied content and their destinations', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     const url = 'https://publisher.example/demo/start';
     const draft: AgentContent = {
@@ -81,19 +83,24 @@ describe('blog post preview and export', () => {
       body: `[Try the demo](${url})`,
       image: { ...content.image!, alt: 'Demo photo' },
       blog: { ...content.blog!, seoTitle: 'Try the demo', faqs: [{ question: 'Demo?', answer: 'The demo.' }],
-        sources: [{ url, title: 'Demo guide' }] },
+        sources: [{ url, title: 'Demo guide' }],
+        articleSchema: { headline: 'Try a demo', citation: url, author: { name: 'Demo author' } } },
     };
     const container = document.createElement('div');
     root = createRoot(container);
     await act(async () => root!.render(<><AgentPhoto image={draft.image!} /><AgentBlogBody content={draft} /><AgentBlogSeo content={draft} /></>));
     expect(container.textContent).not.toMatch(/\bdemo\b/i);
     expect(container.querySelector('img')?.alt).not.toMatch(/\bdemo\b/i);
-    expect(container.querySelector('.agent-blog-sources a')?.getAttribute('href')).toBe(url);
-    const html = new DOMParser().parseFromString((await blogArticleHtml(draft))!, 'text/html');
-    expect(html.title).toBe('Try the demo');
-    expect(html.querySelector('article p a')?.textContent).toBe('Try the demo');
-    expect(html.querySelector('article p a')?.getAttribute('href')).toBe(url);
-    expect(html.querySelector('.agent-blog-faqs p')?.textContent).toBe('The demo.');
+    expect(container.querySelector('.agent-blog-sources [href]')).toBeNull();
+    const exported = (await blogArticleHtml(draft))!;
+    expect(exported).not.toMatch(/\bdemos?\b/i);
+    const html = new DOMParser().parseFromString(exported, 'text/html');
+    expect(html.title).toBe('Try the […]');
+    expect(html.querySelector('article p a[href]')).toBeNull();
+    expect(html.querySelector('.agent-blog-faqs p')?.textContent).toBe('The […].');
+    expect(copyablePostText('blog', draft)).not.toMatch(/\bdemos?\b/i);
+    expect(publishableSchema(draft)).not.toMatch(/\bdemos?\b/i);
+    expect(draft.blog!.sources![0].url).toBe(url);
   });
 
   it('renders the attributed photo, no legacy screenshots, FAQs and honest SEO feedback', async () => {

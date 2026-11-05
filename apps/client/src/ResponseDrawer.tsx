@@ -1,3 +1,4 @@
+import { publicSourceUrl } from '@citevia/core';
 import { Skeleton } from './Loading';
 import {
   PROVIDER_LABELS,
@@ -54,6 +55,14 @@ function searchSuggestionsExcerpt(html: string): string {
     for (const attr of ['title', 'alt', 'aria-label']) {
       const label = element.getAttribute(attr);
       if (label) element.setAttribute(attr, reportExcerpt(label));
+    }
+  }
+  for (const element of template.content.querySelectorAll('[href], [src]')) {
+    for (const attr of ['href', 'src']) {
+      const value = element.getAttribute(attr);
+      if (!value) continue;
+      const safe = publicSourceUrl(value);
+      if (safe) element.setAttribute(attr, safe); else element.removeAttribute(attr);
     }
   }
   return template.innerHTML;
@@ -145,7 +154,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
           <AnswerMarkdown text={answer.text || ''} aliases={aliases} renderReport={(content, omitted) => <>
             <h3 className="drawer-section-title">
               <MessageSquareText size={14} />
-              {omitted ? 'Answer excerpt' : generated ? 'Answer' : 'Original answer'}{' '}
+              {omitted || ('isExcerpt' in answer && answer.isExcerpt === true) ? 'Answer excerpt' : generated ? 'Answer' : 'Original answer'}{' '}
               <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 400 }}>{reportExcerpt(answer.model)}</span>
             </h3>
             {answer.refusal && <ErrorNotice error={reportExcerpt(answer.refusal)} />}

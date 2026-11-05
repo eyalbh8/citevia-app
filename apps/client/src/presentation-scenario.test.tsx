@@ -59,24 +59,24 @@ describe('Answer attribution', () => {
     report.innerHTML = renderToStaticMarkup(<ResponseDetailContent data={data} />);
     expect(report.textContent).toContain('Answer excerpt');
     expect(report.textContent).not.toMatch(/\bdemos?\b/i);
-    expect(report.querySelector('a')?.getAttribute('href')).toBe(destination);
+    expect(report.querySelector('a[href]')).toBeNull();
     const suggestions = document.createElement('template');
     suggestions.innerHTML = report.querySelector('iframe')!.srcdoc;
     expect(suggestions.content.textContent).toBe('See […]');
     const link = suggestions.content.querySelector('a')!;
     expect(link.title).toBe('[…]');
-    expect(link.href).toBe(destination);
+    expect(link.hasAttribute('href')).toBe(false);
     expect(data).toEqual(original);
   });
 
-  it('keeps original attribution when the only matching word is in a non-displayed destination', () => {
+  it('labels an excerpt when a citation destination is omitted', () => {
     const data = answerDetail(null);
     data.answer!.text = '[Broker](https://example.org/demo) and **demo**cracy';
     const report = document.createElement('div');
     report.innerHTML = renderToStaticMarkup(<ResponseDetailContent data={data} />);
-    expect(report.textContent).toContain('Original answer');
+    expect(report.textContent).toContain('Answer excerpt');
     expect(report.textContent).toContain('Broker and democracy');
-    expect(report.querySelector('a')?.getAttribute('href')).toBe('https://example.org/demo');
+    expect(report.querySelector('a[href]')).toBeNull();
   });
 
   it.each([null, 'original', { illustrative: false }])('identifies saved provider answers', (raw) => {

@@ -31,20 +31,15 @@ describe('saved answer formatting', () => {
     );
     expect(html).not.toContain('**');
   });
-  it('omits words in rendered text and links while preserving destinations and export source', () => {
+  it('omits words in rendered text and links without exposing blocked destinations or changing the saved text', () => {
     const text = 'Demo  demos.  Democracy démonstration. **DEMO**\n\n[Demo](https://example.com/demo) <https://demo.example.com/demos> `/demo/script` ![demo](https://demo.example.org/img)';
     const original = text;
     const output = document.createElement('div');
     output.innerHTML = render(text);
     expect(output.textContent).toContain('[…]  […].  Democracy démonstration.');
     expect(output.textContent).not.toMatch(/\bdemos?\b/i);
-    expect([...output.querySelectorAll('a')].map(link => link.href)).toEqual([
-      'https://example.com/demo', 'https://demo.example.com/demos',
-    ]);
+    expect(output.querySelector('a')).toBeNull();
     expect(output.querySelector('code')?.textContent).toBe('/[…]/script');
-    output.innerHTML = renderToStaticMarkup(createElement(AnswerMarkdown, { text, preserveOriginal: true }));
-    expect(output.textContent).toContain('Demo  demos.');
-    expect(output.querySelector('code')?.textContent).toBe('/demo/script');
     expect(text).toBe(original);
   });
 
