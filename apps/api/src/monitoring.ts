@@ -312,6 +312,7 @@ export async function monitoringRoute(
       const page = paginate(eligible, q);
       return json({ ...page, items: await answers(runtime, page.items) });
     }
+    const total = eligible.length;
     const growthProfile = project.demo?.reportingProfile === 'merchant_payments' && !project.demo.presentation
       ? project.demo : undefined;
     const comparisonPeriod = growthProfile && investingComparisonPeriod(growthProfile, period.start, period.end);
@@ -355,36 +356,31 @@ export async function monitoringRoute(
       repository.listTrackedUrls(project.id),
       repository.listTrackingMatches(project.id, undefined, { start: period.start, end: period.end }),
     ]);
+    const published = urls.filter(url => url.active && url.createdAt <= period.end &&
+      url.publishedAt >= period.start && url.publishedAt <= period.end);
+    const appearances = new Map(published.map(url => [url.id, 0]));
+    for (const { trackedUrlId, capture, evidence } of matches) {
+      const count = appearances.get(trackedUrlId);
+      if (count !== undefined && capture.capturedAt >= period.start && capture.capturedAt <= period.end &&
+        matchesMonitoringFilters(capture.prompt, capture.provider, capture.country, filters))
+        appearances.set(trackedUrlId, count + evidence.appearances);
+    }
     const markerGroups = new Map<
       string,
       MentionsSummary['markers'][number]['items']
     >();
-    for (const url of urls.filter(
-      (u) => u.active && u.createdAt <= period.end && u.publishedAt >= period.start && u.publishedAt <= period.end,
-    )) {
-      const relevant = matches.filter(
-        (m) =>
-          m.trackedUrlId === url.id &&
-          m.capture.capturedAt >= period.start &&
-          m.capture.capturedAt <= period.end &&
-          matchesMonitoringFilters(
-            m.capture.prompt,
-            m.capture.provider,
-            m.capture.country,
-            filters,
-          ),
-      );
+    for (const url of published) {
       const date =
           period.granularity === 'hourly'
             ? `${url.publishedAt.slice(0, 13)}:00:00.000Z`
             : url.publishedAt.slice(0, 10),
         list = markerGroups.get(date) || [];
-      list.push(publicationItem(url, relevant.reduce((sum, match) => sum + match.evidence.appearances, 0)));
+      list.push(publicationItem(url, appearances.get(url.id)!));
       markerGroups.set(date, list);
     }
     const summary: MentionsSummary = {
       period,
-      total: eligible.length,
+      total,
       comparison: growthProfile ? 'modeled_period' : 'first_to_last_observed_day',
       providers: filters.providers
         .map((provider) => {
@@ -406,8 +402,8 @@ export async function monitoringRoute(
           return {
             provider,
             count,
-            share: eligible.length
-              ? Math.round((count / eligible.length) * 10000) / 100
+            share: total
+              ? Math.round((count / total) * 10000) / 100
               : 0,
             change,
             points,

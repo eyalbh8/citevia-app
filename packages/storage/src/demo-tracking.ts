@@ -20,13 +20,22 @@ import type { TrackingMatchOptions } from './contracts.js';
 
 interface ScenarioTrackingHooks {
   history(start: string, end: string): PromptHistory;
+  captures?(start: string, end: string): Iterable<{ run: ScanRun; prompt: Prompt; capturedAt: string }>;
   /** Cheap citation lookup avoids generating answer prose for unrelated captures. */
   citations?(run: ScanRun, prompt: Prompt): readonly Citation[];
-  evidence(run: ScanRun, prompt: Prompt): {
+  evidence(run: ScanRun, prompt: Prompt, citations?: Citation[]): {
     result: PromptResult;
     answer: CapturedAnswer;
     analysis: Analysis;
   };
+}
+
+function* historyCaptures(history: PromptHistory) {
+  const runs = new Map(history.runs.map(run => [run.id, run]));
+  for (const result of history.results) {
+    const run = runs.get(result.runId);
+    if (run) yield { run, prompt: result.prompt, capturedAt: result.capturedAt || run.createdAt };
+  }
 }
 
 /** Small enrollment metadata; counts use the same captures as the answer screens. */
@@ -76,16 +85,14 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
       return !!url && enrolledAt(url, at);
     };
     if (selected.size && project.demo && start <= end) {
-      const history = hooks.history(start, end);
-      const runs = new Map(history.runs.map((run) => [run.id, run]));
-      for (const result of history.results) {
-        const run = runs.get(result.runId);
-        if (!run || run.reportingExcludedAt || !['completed', 'partial'].includes(run.status)) continue;
-        const capturedAt = result.capturedAt || run.createdAt;
+      const captures = hooks.captures?.(start, end) ?? historyCaptures(hooks.history(start, end));
+      for (const { run, prompt, capturedAt } of captures) {
+        if (run.reportingExcludedAt || !['completed', 'partial'].includes(run.status)) continue;
         if (capturedAt < start || capturedAt > end) continue;
         if (!selectedUrls.some((url) => enrolledAt(url, capturedAt))) continue;
-        if (hooks.citations && !hooks.citations(run, result.prompt).some((citation) => enrolledCitation(citation, capturedAt))) continue;
-        const evidence = hooks.evidence(run, result.prompt);
+        const tracked = hooks.citations?.(run, prompt).filter(citation => enrolledCitation(citation, capturedAt));
+        if (tracked && !tracked.length) continue;
+        const evidence = hooks.evidence(run, prompt, tracked);
         // Citation counts and company attribution are independent for each URL.
         // Keeping only tracked annotations preserves their native measurement
         // while avoiding repeated parsing of every unrelated source per company.
@@ -104,7 +111,7 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
     }
     return measured;
   };
-  const boundedMatches = new Map<string, { end: string; items: TrackingMatch[] }>();
+  const boundedMatches = new Map<string, { start: string; end: string; urlId?: string; items: TrackingMatch[] }>();
   const listTrackingMatches = (trackedUrlId?: string, options: TrackingMatchOptions = {}): TrackingMatch[] => {
     const selected = trackedUrlId ? urlList.find((url) => url.id === trackedUrlId) : undefined;
     if (trackedUrlId && !selected) return [];
@@ -123,11 +130,18 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
       const key = `${trackedUrlId || '*'}:${start}`;
       let cached = boundedMatches.get(key);
       if (!cached || cached.end < end) {
+        // A previous lifetime read also covers shorter ranges and individual URL drawers.
+        for (const interval of boundedMatches.values())
+          if ((!interval.urlId || interval.urlId === trackedUrlId) && interval.start <= start && interval.end >= end)
+            return interval.items.filter(inRange);
         // List and summary requests have slightly different 'now' timestamps.
         // Extend an existing interval instead of regenerating account history.
         const nextStart = cached ? new Date(Math.max(Date.parse(start), Date.parse(cached.end) + 1)).toISOString() : start;
         const items = [...measureMatches(catalog, nextStart, end), ...(cached?.items || [])];
-        cached = { end, items };
+        cached = { start, end, urlId: trackedUrlId, items };
+        for (const [existingKey, interval] of boundedMatches)
+          if ((!trackedUrlId || interval.urlId === trackedUrlId) && start <= interval.start && end >= interval.end)
+            boundedMatches.delete(existingKey);
         if (boundedMatches.size >= 16) boundedMatches.delete(boundedMatches.keys().next().value!);
         boundedMatches.set(key, cached);
       }

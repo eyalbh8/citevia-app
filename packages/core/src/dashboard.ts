@@ -120,6 +120,7 @@ export function aggregateDashboardOverview(
   period: MonitoringPeriod,
   filters: DashboardOverview['filters'],
   input: DashboardObservation[],
+  citationOccurrences?: ReadonlyMap<string, number>,
 ): DashboardOverview {
   const observations = dashboardObservations(project, period, filters, input);
   const enabled = projectProviders(project).map((item) => item.provider);
@@ -189,6 +190,7 @@ export function aggregateDashboardOverview(
       dates.set(day, daily);
       dailyPromptResults.set(result.promptId, dates);
     }
+    const mentionKey = JSON.stringify([run.reanalysisOf || run.id, provider, result.prompt.text]);
     const measured = new Map<string, BrandAnalysis>(
       (result.brands || []).map((brand) => [brand.brandId, brand]),
     );
@@ -198,12 +200,7 @@ export function aggregateDashboardOverview(
       if (!measurement?.mentioned) continue;
       const events = mentions.get(brand.id) || new Map();
       // Reanalysis retains the original capture; it cannot create a new mention.
-      const key = JSON.stringify([
-        run.reanalysisOf || run.id,
-        provider,
-        result.prompt.text,
-      ]);
-      events.set(key, {
+      events.set(mentionKey, {
         day,
         hourCounts,
         provider,
@@ -215,7 +212,7 @@ export function aggregateDashboardOverview(
       occurrencesByUrl.set(url, (occurrencesByUrl.get(url) || 0) + 1);
   }
   // A long reporting period can cite the same page in thousands of captures.
-  for (const [url, occurrences] of occurrencesByUrl) {
+  for (const [url, occurrences] of citationOccurrences ?? occurrencesByUrl) {
     const page = normalizeUrl(url);
     if (!page) continue;
     // Use the same registrable domain and page identity as the Sources report.
@@ -235,15 +232,16 @@ export function aggregateDashboardOverview(
     for (const event of events.values()) {
       counts.set(event.day, (counts.get(event.day) || 0) + 1);
       if (event.hourCounts) event.hourCounts.set(brandId, (event.hourCounts.get(brandId) || 0) + 1);
-      if (event.sentiment !== null)
-        scores.set(event.day, [
-          ...(scores.get(event.day) || []),
-          event.sentiment,
-        ]);
+      if (event.sentiment !== null) {
+        const dayScores = scores.get(event.day) ?? [];
+        dayScores.push(event.sentiment);
+        scores.set(event.day, dayScores);
+      }
     }
     daily.set(brandId, counts);
     sentiments.set(brandId, scores);
   }
+  const firstMention = new Map([...daily].map(([brandId, counts]) => [brandId, [...counts.keys()].sort()[0]]));
   const ranks = new Map<string, Map<string, number>>();
   for (const day of days) {
     const leaders = brands
@@ -252,8 +250,8 @@ export function aggregateDashboardOverview(
         count: daily.get(brand.id)?.get(day) || 0,
       }))
       .filter((item) => {
-        const firstMention = [...(daily.get(item.id)?.keys() || [])].sort()[0];
-        return firstMention && day >= firstMention;
+        const first = firstMention.get(item.id);
+        return first && day >= first;
       });
     for (const item of leaders) {
       const scores = ranks.get(item.id) || new Map();

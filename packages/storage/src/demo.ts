@@ -82,6 +82,7 @@ function validateMetadata(config: DemoConfig, project: Project) {
 function configFor(project: Project): DemoConfig | null {
   const config = project.demo;
   if (!config) return null;
+  if (checkedMetadata.get(config) === project.id) return config;
   if (config.version !== 1 || !['igeo-nayax', 'igeo-dr-roof', 'website-demo'].includes(config.source) ||
       !Number.isFinite(day(config.startDate)) || !Number.isFinite(day(config.endDate)) ||
       !Number.isFinite(day(config.anchorDate)) || day(config.anchorDate) < day(config.startDate) ||
@@ -519,19 +520,19 @@ function enrolledForCapture(item: TrackedPublication, at: string) {
     (!item.trackingPeriods || item.trackingPeriods.some(period => period.start <= at && (!period.end || at < period.end)));
 }
 
-function modeledPickupPrompts(project: Project, item: TrackedPublication, scanAt: number, first: boolean): string[] {
+function pickupWindows(project: Project, scanAt: number, firstDayOnly: boolean, item?: TrackedPublication) {
   const merchant = project.demo?.reportingProfile === 'merchant_payments';
   const windows = new Map<number, string[]>();
   for (const [promptId, captured] of captureSchedule(project, scanAt).times) {
-    if (!enrolledForCapture(item, iso(captured))) continue;
-    if (!merchant && first && Math.floor(captured / DAY) !== Math.floor(scanAt / DAY)) continue;
+    if (item && !enrolledForCapture(item, iso(captured))) continue;
+    if (firstDayOnly && Math.floor(captured / DAY) !== Math.floor(scanAt / DAY)) continue;
     // One actual answer in each half-day keeps enrolled merchant content visible in a rolling 24-hour report.
     const window = merchant ? Math.floor(captured / (12 * HOUR)) : scanAt;
     const candidates = windows.get(window) || [];
     candidates.push(promptId);
     windows.set(window, candidates);
   }
-  return [...windows].map(([window, candidates]) => candidates[hash(`${item.url}:${window}`) % candidates.length]);
+  return windows;
 }
 
 /** Enroll each post at its first scan; aligned demos retain citations in subsequent scans. */
@@ -540,6 +541,7 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
   if (!pickups) {
     pickups = new Map();
     const providers = projectProviders(project), times = scanTimes(project);
+    const commonWindows = new Map<string, ReturnType<typeof pickupWindows>>();
     const tracked = [...(configFor(project)!.trackedUrls || [])]
       .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt) || a.url.localeCompare(b.url));
     for (const [index, item] of tracked.entries()) {
@@ -551,7 +553,15 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
       for (const at of configFor(project)!.publicationAlignment === 'scans' ? eligible : eligible.slice(0, 1)) {
         let promptIds: string[];
         if (usesModeledReporting(project.demo)) {
-          promptIds = modeledPickupPrompts(project, item, at, at === eligible[0]);
+          const firstDayOnly = project.demo.reportingProfile !== 'merchant_payments' && at === eligible[0];
+          const key = `${at}:${firstDayOnly}`;
+          let windows = item.trackingPeriods ? undefined : commonWindows.get(key);
+          if (!windows) {
+            // Captures after an eligible scan remain enrolled unless the URL has an explicit pause.
+            windows = pickupWindows(project, at, firstDayOnly, item.trackingPeriods ? item : undefined);
+            if (!item.trackingPeriods) commonWindows.set(key, windows);
+          }
+          promptIds = [...windows].map(([window, candidates]) => candidates[hash(`${item.url}:${window}`) % candidates.length]);
         } else {
           const plan = measurementPlan(project, provider), mentionCount = plan.scans.get(at)!.mentionCount;
           const order = index % Math.max(1, mentionCount);
@@ -638,9 +648,8 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     : citations;
 }
 
-function resultFor(project: Project, run: ScanRun, prompt: Prompt): PromptResult {
+function resultFor(project: Project, run: ScanRun, prompt: Prompt, citations = citationsFor(project, run, prompt)): PromptResult {
   const brands = brandMeasurements(project, run, prompt);
-  const citations = citationsFor(project, run, prompt);
   const captured = captureSchedule(project, Date.parse(run.scheduledAt)).times.get(prompt.id)!;
   return {
     projectId: project.id, runId: run.id, promptId: prompt.id,
@@ -659,8 +668,8 @@ function resultFor(project: Project, run: ScanRun, prompt: Prompt): PromptResult
   };
 }
 
-function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
-  const result = resultFor(project, run, prompt);
+function evidenceFor(project: Project, run: ScanRun, prompt: Prompt, citations = citationsFor(project, run, prompt)) {
+  const result = resultFor(project, run, prompt, citations);
   const sample = sampleFor(project, prompt);
   const names = new Map([project.brand, ...project.competitors].map((brand) => [brand.id, brand.name]));
   const companies = result.brands!.filter((brand) => brand.mentioned).map((brand) => ({
@@ -698,7 +707,6 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
     rankEvidence: brand.mentioned ? companySpans[companies.findIndex((company) => company.brandId === brand.brandId)] : null,
     sentimentEvidence: brand.mentioned ? companySpans[companies.findIndex((company) => company.brandId === brand.brandId)] : null,
   }));
-  const citations = citationsFor(project, run, prompt);
   const answer: CapturedAnswer = {
     provider: run.snapshot.provider,
     providerResponseId: `demo_${result.responseId}`,
@@ -725,10 +733,9 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
   return { result, answer, analysis };
 }
 
-function historyFor(project: Project, start: string, end: string, promptId?: string): PromptHistory {
+function* observedRuns(project: Project, start: string, end: string, promptId?: string) {
   const from = Date.parse(start), to = Date.parse(end);
-  const results: PromptResult[] = [], runs: ScanRun[] = [];
-  if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return { runs, results };
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return;
   const prompts = activePrompts(project).filter((prompt) => !promptId || prompt.id === promptId);
   for (const at of scanTimes(project)) {
     if (at > to) break;
@@ -741,9 +748,16 @@ function historyFor(project: Project, start: string, end: string, promptId?: str
     if (!observed.length) continue;
     for (const { provider } of projectProviders(project)) {
       const run = createRun(project, at, provider);
-      runs.push(run);
-      results.push(...observed.map(prompt => resultFor(project, run, prompt)));
+      yield { run, observed, schedule };
     }
+  }
+}
+
+function historyFor(project: Project, start: string, end: string, promptId?: string): PromptHistory {
+  const results: PromptResult[] = [], runs: ScanRun[] = [];
+  for (const { run, observed } of observedRuns(project, start, end, promptId)) {
+    runs.push(run);
+    results.push(...observed.map(prompt => resultFor(project, run, prompt)));
   }
   return { runs, results };
 }
@@ -760,8 +774,12 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
     if (!value) {
       value = createScenarioTracking(project, {
         history: (start, end) => historyFor(project, start, end),
+        *captures(start, end) {
+          for (const { run, observed, schedule } of observedRuns(project, start, end))
+            for (const prompt of observed) yield { run, prompt, capturedAt: iso(schedule.times.get(prompt.id)!) };
+        },
         citations: (run, prompt) => citationsFor(project, run, prompt),
-        evidence: (run, prompt) => evidenceFor(project, run, prompt),
+        evidence: (run, prompt, citations) => evidenceFor(project, run, prompt, citations),
       });
       tracking.set(project, value);
     }

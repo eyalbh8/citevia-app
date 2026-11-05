@@ -194,22 +194,24 @@ export function citationMeasurement(
     entry.nativeCount++;
     groups.set(key, entry);
   }
-  if (analyzed)
-    for (const company of reportingCompanies(analysis, run.snapshot, answer)) {
+  if (analyzed) {
+    // Only a native annotation with a character range can overlap company evidence.
+    const positioned = answer.citations.some(citation => citation.start !== null && citation.end !== null);
+    const companies = reportingCompanies(analysis, run.snapshot, positioned ? answer : null);
+    for (const company of companies) {
       if (company.rank === null) continue;
-      const hits = new Map<string, number>();
-      for (const citation of [...answer.citations, ...company.sources]) {
-        const key = trackedUrlKey(citation.url);
-        if (key) hits.set(key, (hits.get(key) || 0) + 1);
+      const companyKey = company.company.toLocaleLowerCase();
+      for (const entry of groups.values()) {
+        entry.appearances += entry.nativeCount;
+        entry.resultKeys.push(companyKey);
       }
-      for (const [key, count] of hits) {
-        const entry = groups.get(key);
-        if (entry) {
-          entry.appearances += count;
-          entry.resultKeys.push(company.company.toLocaleLowerCase());
-        }
+      for (const citation of company.sources) {
+        const key = trackedUrlKey(citation.url);
+        const entry = key && groups.get(key);
+        if (entry) entry.appearances++;
       }
     }
+  }
   return { capture, evidence: [...groups.values()] };
 }
 export function newerCapture(

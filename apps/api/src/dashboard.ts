@@ -58,37 +58,30 @@ export async function dashboardOverviewRoute(
     `${snapshotProvider(item.run.snapshot)}:${item.result.captureKey}`;
   // The capture index retains native annotations separately from company appearances.
   // An indexed capture with no annotations is authoritative, so it never needs S3.
-  const indexed = new Map(
-    (
-      await runtime.repository.listNativeCitations(
-        project.id,
-        observations
-          .filter((item) => item.result.captureKey)
-          .map(captureKeyFor),
-      )
-    ).map((item) => [item.captureKey, item.citations]),
-  );
-  const legacy = observations.filter((item) => {
-    const citations = indexed.get(captureKeyFor(item));
-    if (citations !== undefined) {
-      item.answer = { citations };
-      return false;
+  const occurrences = new Map<string, number>();
+  const record = (citations: CapturedAnswer['citations']) => {
+    for (const { url } of citations) occurrences.set(url, (occurrences.get(url) ?? 0) + 1);
+  };
+  const captured = observations.filter(item => item.result.captureKey);
+  // Retain one count per URL. Holding a full year of annotations in memory
+  // competes with the run history, even though the chart uses only domain totals.
+  for (let index = 0; index < captured.length; index += 500) {
+    const batch = captured.slice(index, index + 500);
+    const indexed = new Map((await runtime.repository.listNativeCitations(project.id, batch.map(captureKeyFor)))
+      .map(item => [item.captureKey, item.citations]));
+    const legacy = [];
+    for (const item of batch) {
+      const citations = indexed.get(captureKeyFor(item));
+      if (citations !== undefined) record(citations);
+      else if (item.result.citationCount > 0) legacy.push(item.result.captureKey!);
     }
-    return !!item.result.captureKey && item.result.citationCount > 0;
-  });
-  // Older captures can predate indexing. Preserve them with bounded fallback reads.
-  for (let index = 0; index < legacy.length; index += 10) {
-    await Promise.all(
-      legacy.slice(index, index + 10).map(async (item) => {
-        const answer = await runtime.artifacts.get<CapturedAnswer>(
-          item.result.captureKey!,
-        );
-        item.answer = answer ? { citations: answer.citations } : null;
-      }),
-    );
+    for (let offset = 0; offset < legacy.length; offset += 10) {
+      const answers = await Promise.all(legacy.slice(offset, offset + 10).map(key => runtime.artifacts.get<CapturedAnswer>(key)));
+      for (const answer of answers) if (answer?.citations) record(answer.citations);
+    }
   }
   const report = aggregateDashboardOverview(project, period, filters,
-    await historicalCompetitorMentions(runtime, project, observations));
+    await historicalCompetitorMentions(runtime, project, observations), occurrences);
   if (usesModeledReporting(project.demo) && !project.demo.presentation && observations.length) {
     const demo = project.demo, comparison = investingComparisonPeriod(demo, period.start, period.end);
     const unique = new Map<string, InvestingCohort & { stage: string }>();

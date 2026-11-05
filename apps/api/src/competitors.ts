@@ -205,49 +205,31 @@ export async function historicalCompetitorMentions(
   const currentNames = new Map(
     project.competitors.map((brand) => [brand.id, new Set(namesFor(brand))]),
   );
-  const projected = observations.map((item) => {
-    const previous = new Map(
-      item.run.snapshot.competitors.map((brand) => [brand.id, brand]),
-    );
-    const changedIds = new Set(
-      project.competitors
-        .filter(
-          (brand) => !sameCompetitorIdentity(previous.get(brand.id), brand),
-        )
-        .map((brand) => brand.id),
-    );
-    const brands = item.result.brands || [];
-    if (!brands.some((brand) => changedIds.has(brand.brandId))) return item;
-    return {
-      ...item,
-      result: {
-        ...item.result,
-        brands: brands.filter((brand) => !changedIds.has(brand.brandId)),
-      },
-    };
-  });
-  const pending = projected
-    .map((item, index) => {
-      const previous = new Map(
-        item.run.snapshot.competitors.map((brand) => [brand.id, brand]),
-      );
-      return {
-        item,
-        index,
-        missing: project.competitors
-          .filter(
-            (brand) => !sameCompetitorIdentity(previous.get(brand.id), brand),
-          )
-          .map((brand) => ({
-            brand,
-            // A new website cannot relabel evidence that identified the former company.
-            excludedNames: new Set(
-              previous.has(brand.id) ? namesFor(previous.get(brand.id)!) : [],
-            ),
-          })),
-      };
-    })
-    .filter(({ item, missing }) => missing.length && item.result.analysisKey);
+  // All answers from one scan share the same competitor configuration.
+  // Compare its saved identities once, including evidence exclusions for renamed brands.
+  type Missing = { brand: Brand; excludedNames: Set<string> }[];
+  const missingByRun = new Map<ScanRun, Missing>();
+  const projected = [...observations];
+  const pending: { item: DashboardObservation; index: number; missing: Missing }[] = [];
+  for (const [index, original] of observations.entries()) {
+    let missing = missingByRun.get(original.run);
+    if (!missing) {
+      const previous = new Map(original.run.snapshot.competitors.map(brand => [brand.id, brand]));
+      missing = project.competitors.flatMap(brand => {
+        const former = previous.get(brand.id);
+        return sameCompetitorIdentity(former, brand) ? [] : [{
+          brand, excludedNames: new Set(former ? namesFor(former) : []),
+        }];
+      });
+      missingByRun.set(original.run, missing);
+    }
+    if (!missing.length) continue;
+    const brands = original.result.brands || [];
+    const retained = brands.filter(brand => !missing.some(row => row.brand.id === brand.brandId));
+    if (retained.length !== brands.length)
+      projected[index] = { ...original, result: { ...original.result, brands: retained } };
+    if (original.result.analysisKey) pending.push({ item: projected[index], index, missing });
+  }
   const analyses = await savedAnalyses(
     runtime,
     project.id,

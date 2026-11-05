@@ -42,7 +42,6 @@ const HOSTS: Record<TrafficProvider, string> = {
 };
 const MONTH_DAYS = 365.25 / 12;
 const fraction = (value: number) => value - Math.floor(value);
-const iso = (at: number) => new Date(at).toISOString();
 const day = (value: string) => Date.parse(`${value}T00:00:00.000Z`);
 
 function hash(value: string): number {
@@ -104,7 +103,7 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
   const providers = observed.providers.map(({ provider }) => provider);
   const totals = new Map(observed.providers.map(item => [item.provider, { ...item }]));
   const series = observed.series.map(point => ({ date: point.date, values: { ...point.values } }));
-  const seriesIndex = new Map(series.map((point) => [point.date, point.values]));
+  const seriesIndex = new Map(series.map((point) => [Date.parse(point.date), point.values]));
   const counts = (items: TrafficRow[]) => new Map(items.map(item => [item.label, item.visits]));
   const sources = counts(observed.sources), pageCounts = counts(observed.pages), locations = counts(observed.locations);
   const browserCounts = counts(observed.browsers), deviceCounts = counts(observed.devices);
@@ -151,7 +150,7 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
           if (previous) total.previous++;
           if (!current) continue;
           total.visits++;
-          const bucket = seriesIndex.get(iso(Math.floor(at / step) * step));
+          const bucket = seriesIndex.get(Math.floor(at / step) * step);
           if (bucket) bucket[provider] = (bucket[provider] || 0) + 1;
           add(sources, HOSTS[provider]);
           add(locations, country);
