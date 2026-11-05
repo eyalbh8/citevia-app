@@ -54,7 +54,8 @@ export interface DashboardOverview {
     citationCount: number;
     owned: boolean;
   }[];
-  comparison: 'first_to_last_observed_day';
+  comparison: 'first_to_last_observed_day' | 'scenario_baseline';
+  comparisonPeriod?: { start: string; end: string };
 }
 
 export interface DashboardObservation {

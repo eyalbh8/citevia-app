@@ -145,7 +145,6 @@ export function Skeleton({
           </div>
         )}
       </div>
-      <span className="skeleton-caption" aria-hidden="true">{label}</span>
     </div>
   );
 }

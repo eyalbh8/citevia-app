@@ -87,7 +87,7 @@ describe('Website Health reports', () => {
     }));
     await render();
     expect(container.textContent).toContain('Website Health');
-    expect(container.textContent).toContain('Loading saved website audits');
+    expect(container.querySelector('[role="status"][aria-label^="Loading saved website audits"]')).not.toBeNull();
     expect(container.querySelector('.health-report')).toBeNull();
   });
 
@@ -238,7 +238,7 @@ describe('Website Health reports', () => {
     delete page.items[0].results.mobile.field;
     detailPending = true;
     await render();
-    expect(container.textContent).toContain('Loading this audit’s measurements and recommendations');
+    expect(container.querySelector('[role="status"][aria-label^="Loading this audit’s measurements and recommendations"]')).not.toBeNull();
     expect(container.textContent).not.toContain('No actionable issues');
     expect(container.textContent).not.toContain('Real-user data is not connected');
     expect(container.querySelector('.health-field')).toBeNull();
@@ -316,7 +316,7 @@ describe('Website Health reports', () => {
     expect(score('Average Performance').textContent).toContain('96');
     const selected = site.site!.pages[1];
     await act(async () => container.querySelectorAll<HTMLButtonElement>('.health-page-row')[1].click());
-    expect(container.textContent).toContain('Loading this audit’s measurements');
+    expect(container.querySelector('[role="status"][aria-label^="Loading this audit’s measurements"]')).not.toBeNull();
     expect(container.textContent).not.toContain('No actionable issues');
     pageReports[`${path}/website-health/audits/site/pages/about`] = selected;
     await render();
@@ -363,7 +363,7 @@ describe('Website Health reports', () => {
     await render();
     await act(async () => container.querySelector<HTMLButtonElement>('.health-page-row')!.click());
     expect(mocks.invalidateApiQueries).toHaveBeenCalledWith(detailPath);
-    expect(container.textContent).toContain('Loading this audit’s measurements');
+    expect(container.querySelector('[role="status"][aria-label^="Loading this audit’s measurements"]')).not.toBeNull();
     pageReports[detailPath] = site.site!.pages[0];
     await render();
     expect(container.textContent).toContain('Reduce render-blocking resources');

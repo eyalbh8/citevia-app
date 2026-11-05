@@ -82,14 +82,44 @@ export async function dashboardOverviewRoute(
       }),
     );
   }
+  const report = aggregateDashboardOverview(project, period, filters,
+    await historicalCompetitorMentions(runtime, project, observations));
+  if (project.demo?.dashboardComparison === 'scenario_start' && !project.demo.presentation && observations.length) {
+    const baselineStart = `${project.demo.startDate}T00:00:00.000Z`;
+    const baselineEnd = new Date(Math.min(Date.parse(period.end), Date.parse(baselineStart) + 7 * 86400000)).toISOString();
+    const baselineHistory = await runtime.repository.listPromptHistory(project.id, baselineStart, baselineEnd);
+    const baselineRows = promptAnswers(baselineHistory, project.id, undefined, undefined, 'date', 'asc');
+    const baselinePeriod = { ...period, start: baselineStart, end: baselineEnd };
+    const eligible = dashboardObservations(project, baselinePeriod, filters, baselineRows);
+    const first = eligible.map(row => row.result.capturedAt!.slice(0, 10)).sort()[0];
+    const last = observations.map(row => row.result.capturedAt!.slice(0, 10)).sort().at(-1)!;
+    if (first && first < last) {
+      const onDay = (date: string, rows: typeof observations) => aggregateDashboardOverview(project,
+        { ...period, start: `${date}T00:00:00.000Z`, end: `${date}T23:59:59.999Z` }, filters, rows);
+      const baseline = onDay(first, eligible), latest = onDay(last, observations);
+      const growth = (before: number, after: number) => Number((before ? (after - before) * 100 / before : after ? 100 : 0).toFixed(2));
+      report.providers = report.providers.map(row => ({ ...row, change: growth(
+        baseline.providers.find(item => item.provider === row.provider)?.count || 0,
+        latest.providers.find(item => item.provider === row.provider)?.count || 0) }));
+      report.stages = report.stages.map(row => ({ ...row, visibilityChange: growth(
+        baseline.stages.find(item => item.key === row.key)?.visibility || 0,
+        latest.stages.find(item => item.key === row.key)?.visibility || 0) }));
+      const difference = (before: number | null | undefined, after: number | null | undefined) =>
+        before == null || after == null ? null : Number((after - before).toFixed(1));
+      report.ranking = report.ranking.map(row => {
+        const previous = baseline.ranking.find(item => item.brandId === row.brandId);
+        const current = latest.ranking.find(item => item.brandId === row.brandId);
+        return { ...row, mentionChange: growth(previous?.mentions || 0, current?.mentions || 0),
+          rankChange: difference(current?.rank, previous?.rank),
+          sentimentChange: difference(previous?.sentiment, current?.sentiment) };
+      });
+      report.comparison = 'scenario_baseline';
+      report.comparisonPeriod = { start: `${first}T00:00:00.000Z`, end: `${last}T23:59:59.999Z` };
+    }
+  }
   return new Response(
     JSON.stringify({
-      ...aggregateDashboardOverview(
-        project,
-        period,
-        filters,
-        await historicalCompetitorMentions(runtime, project, observations),
-      ),
+      ...report,
       scanInProgress,
     }),
     {

@@ -24,11 +24,10 @@ import { Empty, ErrorNotice, formatNumber, labelize } from './components';
 import { Skeleton } from './Loading';
 import DomainLogo from './DomainLogo';
 import {
-  initialSelection,
+  useMonitoringSelection,
   MonitoringHeader,
   ProviderMark,
   selectionQuery,
-  type MonitorSelection,
 } from './MonitoringUI';
 import './dashboard.css';
 
@@ -64,11 +63,11 @@ function Change({
         ? ArrowUpRight
         : ArrowDownRight;
   const shown =
-    value === null ? '—' : `${formatNumber(Math.abs(value), 1)}${unit}`;
+    value === null ? '—' : `${value > 0 ? '+' : ''}${formatNumber(Math.abs(value), 1)}${unit}`;
   return (
     <span
       className={`overview-change ${value !== null && value > 0 ? 'positive' : value !== null && value < 0 ? 'negative' : 'neutral'}`}
-      title={`${label}: ${value === null ? 'no comparison available' : `${value > 0 ? '+' : value < 0 ? '−' : ''}${shown}`}`}
+      title={`${label}: ${value === null ? 'no comparison available' : `${value < 0 ? '−' : ''}${shown}`}`}
     >
       {value !== null && <Icon size={12} aria-hidden="true" />}
       <span className="visually-hidden">
@@ -152,8 +151,7 @@ export function DashboardView({
   path: string;
   actions?: ReactNode;
 }) {
-  const [selection, setSelection] =
-    useState<MonitorSelection>(() => initialSelection('7', project.demo));
+  const [selection, setSelection] = useMonitoringSelection(project);
   const [retry, setRetry] = useState(0);
   const overview = useApi<DashboardOverview>(
     `${path}/dashboard/overview${selectionQuery(selection)}`,
@@ -210,11 +208,12 @@ export function DashboardView({
                 {dayLabel(data.period.start)} –{' '}
                 {dayLabel(data.period.end, true)}{' '}
                 <span className="overview-timezone">UTC</span>
+                {data.comparison === 'scenario_baseline' && data.comparisonPeriod && (
+                  <span className="overview-timezone"> · Growth since {dayLabel(data.comparisonPeriod.start, true)}</span>
+                )}
               </span>
               <span role="status">
-                {overview.loading
-                  ? 'Updating results…'
-                  : overview.error
+                {overview.error
                     ? 'Showing the last loaded results'
                     : `${formatNumber(data.analyzed)} analyzed answers`}
               </span>
@@ -242,7 +241,7 @@ export function DashboardView({
                     <strong>{formatNumber(p.count)}</strong>
                     <Change
                       value={p.change}
-                      label="Change from first to last observed day"
+                      label={data.comparison === 'scenario_baseline' ? 'Growth since the first scan' : 'Change from first to last observed day'}
                     />
                   </div>
                   <p>{periodCaption}</p>
@@ -291,7 +290,7 @@ export function DashboardView({
                           <strong>{formatNumber(s.visibility)}%</strong>
                           <Change
                             value={s.visibilityChange ?? null}
-                            label={`${s.key === 'unassigned' ? 'No stage' : labelize(s.key)} visibility change from first to last observed day (relative percentage)`}
+                            label={`${s.key === 'unassigned' ? 'No stage' : labelize(s.key)} visibility ${data.comparison === 'scenario_baseline' ? 'growth since the first scan' : 'change from first to last observed day'} (relative percentage)`}
                           />
                         </div>
                       </div>
@@ -416,7 +415,7 @@ export function DashboardView({
                                 <Change
                                   value={b.rankChange}
                                   unit=""
-                                  label="Rank improvement from first to last observed day"
+                                  label={data.comparison === 'scenario_baseline' ? 'Rank improvement since the first scan' : 'Rank improvement from first to last observed day'}
                                 />
                               </div>
                             </td>
@@ -425,7 +424,7 @@ export function DashboardView({
                                 <strong>{formatNumber(b.mentions)}</strong>
                                 <Change
                                   value={b.mentionChange}
-                                  label="Mention change from first to last observed day"
+                                  label={data.comparison === 'scenario_baseline' ? 'Mention growth since the first scan' : 'Mention change from first to last observed day'}
                                 />
                               </div>
                             </td>
@@ -444,7 +443,7 @@ export function DashboardView({
                                 <Change
                                   value={b.sentimentChange}
                                   unit=" pts"
-                                  label="Sentiment change from first to last observed day"
+                                  label={data.comparison === 'scenario_baseline' ? 'Sentiment improvement since the first scan' : 'Sentiment change from first to last observed day'}
                                 />
                               </div>
                             </td>

@@ -9,8 +9,10 @@
   "country": "GB",
   "language": "en",
   "timezone": "Europe/London",
-  "anchorDate": "2026-10-28",
+  "anchorDate": "2026-11-05",
   "companyDiscovery": true,
+  "dashboardComparison": "scenario_start",
+  "publicationAlignment": "scans",
   "industry": "Online investing and multi-asset brokerage",
   "serviceArea": "the United Kingdom",
   "services": [
@@ -278,6 +280,324 @@
       "title": "Dollar Cost Averaging",
       "contentType": "BLOG",
       "sourceTrackedAt": "2026-10-28T09:46:02Z"
+    },
+    {
+      "title": "Compare Unit Trusts vs OEICs vs SPACs | eToro",
+      "url": "https://www.etoro.com/investing/unit-trusts-oeics-and-spacs-explained/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "How Financial Reports Are Built | eToro",
+      "url": "https://www.etoro.com/investing/how-a-financial-report-is-built/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Hedge Funds & Their Strategies Explained | eToro",
+      "url": "https://www.etoro.com/investing/hedge-fund-strategies-explained/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "How To Use Stock Screeners Effectively | eToro",
+      "url": "https://www.etoro.com/investing/how-to-use-stock-screeners/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Investing in Bonds & Understanding the Bonds Market | eToro",
+      "url": "https://www.etoro.com/investing/investing-in-bonds/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Microeconomic Theory for Traders and Investors | eToro",
+      "url": "https://www.etoro.com/investing/microeconomic-theory-for-investors/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Understanding Tax on Investments | eToro",
+      "url": "https://www.etoro.com/investing/tax-on-investments/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Tax-Smart Investing: CGT, ISAs & Tax-Loss Harvest | eToro",
+      "url": "https://www.etoro.com/investing/guide-to-tax-efficent-investing/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "How to Use Alpha & Beta in Your Investment Strategy | eToro",
+      "url": "https://www.etoro.com/investing/alpha-and-beta-explained/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Tax-Efficient Investing Strategies | eToro",
+      "url": "https://www.etoro.com/investing/tax-efficent-investing-strategies/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Cash ISA vs Stocks & Shares ISA: Key Differences | eToro",
+      "url": "https://www.etoro.com/investing/cash-isa-vs-stocks-and-shares-isa/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "AI for Investment Analysis and Strategy | eToro",
+      "url": "https://www.etoro.com/investing/ai-for-investment-analysis-and-strategy/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "What Is a Cash ISA? Learn About Tax-Free Savings | eToro",
+      "url": "https://www.etoro.com/investing/what-is-a-cash-isa/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Building Generational Wealth Through Investment | eToro",
+      "url": "https://www.etoro.com/investing/building-generational-wealth/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "What Are Tokenized Stocks | eToro",
+      "url": "https://www.etoro.com/investing/tokenized-stocks/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Target Date Funds & Glide Paths Explained",
+      "url": "https://www.etoro.com/investing/target-date-funds/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Financial Independence, Retire Early | The FIRE Method",
+      "url": "https://www.etoro.com/investing/fire-investing/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Market Corrections: Strategies for Investors - eToro",
+      "url": "https://www.etoro.com/investing/market-correction/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "How To Save Money for Investing: A Step-by-Step Guide",
+      "url": "https://www.etoro.com/investing/saving-to-invest/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "DIY vs Managed Stocks and Shares ISAs | eToro ISAs",
+      "url": "https://www.etoro.com/investing/diy-vs-managed-investment-isas/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Recurring Investment Strategies | RI Plans Explained",
+      "url": "https://www.etoro.com/investing/recurring-investment-strategies/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Recurring Investments: The Complete Guide | eToro",
+      "url": "https://www.etoro.com/investing/what-are-recurring-investment/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "What Is A Stocks & Shares ISAs? | Investment ISAs",
+      "url": "https://www.etoro.com/investing/what-is-a-stocks-and-shares-isa/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "How to Rebalance your Portfolio | Portfolio Rebalancing",
+      "url": "https://www.etoro.com/investing/rebalancing-your-portfolio/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Stock Delisting: What Does It Mean for Investors?",
+      "url": "https://www.etoro.com/investing/understanding-delisting-of-assets/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Buy-and-Hold Strategy: Long-Term Investing Explained",
+      "url": "https://www.etoro.com/investing/buy-and-hold-investment-strategy/",
+      "contentType": "BLOG",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    }
+  ],
+  "socialLinks": [
+    {
+      "url": "https://www.youtube.com/watch?v=cAr3-OCCwLo",
+      "title": "Starting Your Investing Journey | eToro Academy",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=0HZImOYM-Ns",
+      "title": "How to build your portfolio in 5 steps | eToro Academy",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=Yyhx4WMUbpA",
+      "title": "How to Build an Investment Portfolio | eToro Academy",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=VdVALsa97t8",
+      "title": "How to Manage Risk in Your Investments | eToro Academy",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "url": "https://www.reddit.com/r/Etoro/comments/1gkeyug/copy_trading_who_do_you_copy/",
+      "title": "Copy trading, who do you copy?",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "url": "https://www.reddit.com/r/Etoro/comments/1elks95/",
+      "title": "Copytrading meanwhile maintaining my own portfolio",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "url": "https://www.reddit.com/r/Etoro/comments/1aejt1g/",
+      "title": "Noob with a little to invest",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "url": "https://www.reddit.com/r/Etoro/comments/1mgvwsk/copy_trader/",
+      "title": "Copy trader",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Which Asset Class Should You Invest In? | eToro Academy",
+      "url": "https://www.youtube.com/watch?v=hsricADE5tM",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Bonds and fixed-income investments | eToro Academy",
+      "url": "https://www.youtube.com/watch?v=JSRF2ntXLBk",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "CopyTrading 101 | Part 1: Introduction",
+      "url": "https://www.youtube.com/watch?v=evMANAzX1uA",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "CopyTrading 101 Part 3: How to Start Copying an Investor on eToro",
+      "url": "https://www.youtube.com/watch?v=8H0Lrp2b3Lk",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "The 5 Golden Rules of Investing Explained | eToro Academy",
+      "url": "https://www.youtube.com/watch?v=xnWlim0QaJo",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "The 4 Trading Orders | eToro Academy",
+      "url": "https://www.youtube.com/watch?v=NJg1zbE6VhE",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Why should you consider investing? The Power of Compounding | eToro Academy",
+      "url": "https://www.youtube.com/watch?v=zcm_nr91wTg",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "How to Invest in Stocks for Beginners | eToro Academy",
+      "url": "https://www.youtube.com/watch?v=nymNHkMhA5k",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "What is an ETF? The Benefits of ETF Investing Explained | eToro Academy",
+      "url": "https://www.youtube.com/watch?v=HiXWQXY6aMQ",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "What is an ETF? | eToro Academy",
+      "url": "https://www.youtube.com/watch?v=-yD_avvC61Q",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=KxrGyYxallM",
+      "title": "The psychology behind investing | eToro Academy",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=nmuw-v_uzxc",
+      "title": "Investment terms you need to know | eToro Academy",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "How can i start ?",
+      "url": "https://www.reddit.com/r/Etoro/comments/1aih14k",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Copy trade results",
+      "url": "https://www.reddit.com/r/Etoro/comments/1kc7o4l",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Fees from copy trader",
+      "url": "https://www.reddit.com/r/Etoro/comments/1mtwve9",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "is copy trading a good idea?",
+      "url": "https://www.reddit.com/r/Etoro/comments/13k7hng/is_copy_trading_a_good_idea/",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Copytrading Blocked",
+      "url": "https://www.reddit.com/r/Etoro/comments/1hqqdpx",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "For the experts here",
+      "url": "https://www.reddit.com/r/Etoro/comments/1mz7cku",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Dividend Strategy",
+      "url": "https://www.reddit.com/r/Etoro/comments/1dmqwoc",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Female Investor Rookie Here — £100 In, Eager to Grow My Portfolio! Start",
+      "url": "https://www.reddit.com/r/Etoro/comments/1lz26fs",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Copy trading advice",
+      "url": "https://www.reddit.com/r/Etoro/comments/1qjomik/copy_trading_advice/",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Completely Clueless",
+      "url": "https://www.reddit.com/r/Etoro/comments/156pmz2",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "Etoro safe?",
+      "url": "https://www.reddit.com/r/Etoro/comments/kkglll",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
+    },
+    {
+      "title": "The Introduce Yourself / Show off your portfolio thread.",
+      "url": "https://www.reddit.com/r/Etoro/comments/mjylru",
+      "sourceTrackedAt": "2026-11-05T00:00:00Z"
     }
   ],
   "prompts": [

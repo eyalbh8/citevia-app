@@ -60,6 +60,25 @@ export const initialSelection = (days = '7', demo?: Project['demo']): MonitorSel
   branded: '',
   stage: '',
 });
+/** Retain the same report filters when moving between Mentions and Tracking. */
+export function useMonitoringSelection(project: Project) {
+  const key = `citevia:monitoring:${project.id}`;
+  const [selection, setSelection] = useState<MonitorSelection>(() => {
+    const fallback = initialSelection('7', project.demo);
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(key) || 'null');
+      if (!saved || !['1', '7', '14', '30', '90', 'custom'].includes(saved.days) ||
+        !Array.isArray(saved.providers) || saved.providers.some((value: unknown) => !['openai', 'perplexity', 'gemini'].includes(String(value))) ||
+        ['start', 'end', 'region', 'branded', 'stage'].some(field => typeof saved[field] !== 'string')) return fallback;
+      return { ...fallback, ...saved };
+    } catch { return fallback; }
+  });
+  const update = (next: MonitorSelection) => {
+    setSelection(next);
+    try { window.sessionStorage.setItem(key, JSON.stringify(next)); } catch { /* Storage can be disabled. */ }
+  };
+  return [selection, update] as const;
+}
 export function selectionQuery(
   s: MonitorSelection,
   extra: Record<string, string | number> = {},

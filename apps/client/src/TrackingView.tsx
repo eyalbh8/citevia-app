@@ -24,6 +24,7 @@ import FilterDropdown from './FilterDropdown';
 import {
   AnswerTable,
   initialSelection,
+  useMonitoringSelection,
   MonitoringHeader,
   PageControls,
   ProviderMark,
@@ -162,8 +163,8 @@ export default function TrackingView({
   onResponse: (id: string) => void;
   notify: (s: string) => void;
 }) {
-  const [selection, setSelection] = useState(() => initialSelection()),
-    [status, setStatus] = useState('all'),
+  const [selection, setSelection] = useMonitoringSelection(project);
+  const [status, setStatus] = useState('all'),
     [sort, setSort] = useState('newest'),
     [group, setGroup] = useState('status'),
     [search, setSearch] = useState(''),

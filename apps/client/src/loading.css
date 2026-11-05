@@ -75,10 +75,13 @@
 .skeleton-paragraph { display: grid; gap: 12px; margin-bottom: 12px; }
 .skeleton-paragraph .skeleton-line { max-width: none; }
 .skeleton-page-heading { display: grid; gap: 14px; padding: 8px 0 12px; }
-.skeleton-caption { display: block; margin-top: 16px; color: var(--muted, #71758a); font-size: 12px; line-height: 1.5; text-align: center; }
-.card > .content-skeleton { padding: 0; }
-.card > .content-skeleton .skeleton-panel { border: 0; border-radius: 0; }
-.card > .content-skeleton .skeleton-caption { margin-bottom: 18px; }
+:is(.card, .monitor-card, .prompts-panel, .source-card, .drawer-body) .content-skeleton { padding: 0; }
+:is(.card, .monitor-card, .prompts-panel, .source-card, .drawer-body) .content-skeleton > .skeleton-visual > .skeleton-panel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
 @keyframes skeleton-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 @media (max-width: 1080px) { .skeleton-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs } from 'node:util';
+import { isDeepStrictEqual, parseArgs } from 'node:util';
 import { z } from 'zod';
 import {
   DEFAULT_GEMINI_MODEL, DEFAULT_PERPLEXITY_PRESET, isBrandedPrompt, PARSER_VERSION, STAGE_INTENTS, trackedUrlKey,
@@ -33,6 +33,13 @@ const publicUrl = z.string().url().refine(value => {
 }, 'Use a public website URL without credentials or a custom port.');
 const textList = z.array(z.string().trim().min(1).max(300)).max(30);
 const sourceDate = z.string().refine(value => Number.isFinite(Date.parse(value)), 'Use a valid source date.');
+function supportedSocialUrl(value: string) {
+  const url = new URL(value), host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (url.protocol !== 'https:') return false;
+  if (host === 'youtube.com') return url.pathname === '/watch' && /^[\w-]{11}$/.test(url.searchParams.get('v') || '');
+  if (host === 'youtu.be') return /^\/[\w-]{11}\/?$/.test(url.pathname);
+  return host === 'reddit.com' && /^\/r\/[\w]+\/comments\/[a-z0-9]+(?:\/|$)/i.test(url.pathname);
+}
 const sourceReference = z.union([publicUrl, z.object({
   url: publicUrl, title: z.string().max(300).optional(), kind: z.enum(['official', 'independent']).optional(),
   claims: textList.optional(), field: z.string().max(100).optional(), quote: z.string().min(1).max(2000).optional(),
@@ -51,6 +58,8 @@ export const serviceDemoSourceSchema = z.object({
   language: z.string().regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/).default('en'), timezone: z.string().default('UTC'),
   anchorDate: z.string().optional(),
   companyDiscovery: z.literal(true).optional(),
+  dashboardComparison: z.literal('scenario_start').optional(),
+  publicationAlignment: z.literal('scans').optional(),
   industry: z.string().trim().min(2).max(150), serviceArea: z.string().trim().min(2).max(150),
   services: z.array(z.string().trim().min(2).max(100)).min(5).max(30), audience: textList.min(1),
   description: z.string().trim().min(20).max(4000), criteria: textList.optional(),
@@ -60,6 +69,11 @@ export const serviceDemoSourceSchema = z.object({
   blogs: z.array(z.object({ url: publicUrl, title: z.string().trim().min(1).max(200),
     contentType: z.enum(['BLOG', 'WEBSITE']).default('BLOG'), imageUrl: publicUrl.optional(),
     sourcePublishedAt: sourceDate.optional(), sourceTrackedAt: sourceDate.optional() })).min(1).max(1000),
+  socialLinks: z.array(z.object({
+    url: publicUrl.refine(supportedSocialUrl, 'Use a public YouTube video or Reddit discussion URL.'),
+    title: z.string().trim().min(1).max(200), imageUrl: publicUrl.optional(),
+    sourcePublishedAt: sourceDate.optional(), sourceTrackedAt: sourceDate.optional(),
+  })).max(1000).default([]),
   prompts: z.array(z.object({ text: z.string().trim().min(5).max(2000),
     stage: z.enum(['understand', 'prefer', 'trust', 'convert']).optional(), topic: z.string().max(200).optional(),
     seoKeyword: z.string().nullable().optional(), tags: textList.optional() })).length(50).optional(),
@@ -125,18 +139,50 @@ function weeklyPublicationDates(window = serviceDemoDates()) {
   return dates;
 }
 
-function trackedContent(source: ParsedSource): NonNullable<DemoConfig['trackedUrls']> {
+export function alignDemoTrackingToScans(items: NonNullable<DemoConfig['trackedUrls']>,
+  window: Pick<DemoConfig, 'startDate' | 'endDate'>, slots = [600, 5640]): NonNullable<DemoConfig['trackedUrls']> {
+  const start = Date.parse(`${window.startDate}T00:00:00Z`), end = Date.parse(`${window.endDate}T23:59:59Z`);
+  const monday = start - ((new Date(start).getUTCDay() + 6) % 7) * 86400000;
+  const scans: number[] = [];
+  for (let week = monday; week <= end; week += 7 * 86400000)
+    for (const slot of slots) { const at = week + slot * 60000; if (at >= start && at <= end) scans.push(at); }
+  scans.sort((a, b) => a - b);
+  if (!scans.length) throw new Error('Publication alignment requires a scan in the scenario window.');
+  return items.map(item => {
+    // Publication and enrollment precede a capture on the same scenario day.
+    const dayEnd = Date.parse(`${item.publishedAt.slice(0, 10)}T23:59:59Z`);
+    const at = [...scans].reverse().find(at => at <= dayEnd) ?? scans[0];
+    const publishedAt = new Date(Math.max(start, at - 2 * 3600000)).toISOString();
+    return { ...item, publishedAt, createdAt: publishedAt };
+  });
+}
+
+function trackedContent(source: ParsedSource, existing: NonNullable<DemoConfig['trackedUrls']> = []): NonNullable<DemoConfig['trackedUrls']> {
   const dates = weeklyPublicationDates(serviceDemoDates(source.anchorDate)), official = domain(source.website);
+  const enrolled = new Set(existing.map(item => trackedUrlKey(item.url)));
   for (const blog of source.blogs) if (!owns(blog.url, official) || !trackedUrlKey(blog.url))
     throw new Error('Verified public articles must use the official company website.');
-  const articles = [...new Map(source.blogs.map(blog => [trackedUrlKey(blog.url), blog])).values()].slice(0, dates.length);
+  const articles = [...new Map(source.blogs.map(blog => [trackedUrlKey(blog.url), blog])).values()]
+    .filter(blog => !enrolled.has(trackedUrlKey(blog.url))).slice(0, dates.length);
   // Enrollment dates belong to the scenario; source publication dates remain separate.
   // Reuse only researched pages, never invent URLs or manufacture unique query strings.
-  return articles.map((blog, index) => {
+  const blogs = articles.map((blog, index) => {
     const publishedAt = dates[Math.floor(index * dates.length / articles.length)];
     return { ...blog, sourcePublishedAt: isoDate(blog.sourcePublishedAt), sourceTrackedAt: isoDate(blog.sourceTrackedAt),
       publishedAt, createdAt: publishedAt };
   });
+  const social = [...new Map(source.socialLinks.map(link => [trackedUrlKey(link.url), link])).values()]
+    .filter(link => !enrolled.has(trackedUrlKey(link.url)));
+  // Each platform spans the scenario independently, keeping both visible in retrospective ranges.
+  const groups = [social.filter(link => domain(link.url) !== 'reddit.com'), social.filter(link => domain(link.url) === 'reddit.com')];
+  const additions = [...blogs, ...groups.flatMap(links => links.slice(0, dates.length).map((link, index) => {
+    const publishedAt = dates[Math.floor(index * dates.length / Math.min(links.length, dates.length))];
+    return { ...link, contentType: 'SOCIAL' as const,
+      sourcePublishedAt: isoDate(link.sourcePublishedAt), sourceTrackedAt: isoDate(link.sourceTrackedAt),
+      publishedAt, createdAt: publishedAt };
+  }))];
+  return [...existing, ...(source.publicationAlignment === 'scans'
+    ? alignDemoTrackingToScans(additions, serviceDemoDates(source.anchorDate)) : additions)];
 }
 
 /** Public website metadata creates a compact synthetic scenario, never historical customer measurements. */
@@ -190,6 +236,7 @@ export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOStri
       seoKeyword: prompt.seoKeyword || undefined, tags: 'tags' in prompt ? prompt.tags || [] : [source.industry], createdAt: at, updatedAt: at,
     }; }), brandbook, createdAt: at, updatedAt: copiedAt,
     demo: { version: 1, source: 'website-demo', ...dates, companyDiscovery: source.companyDiscovery,
+      dashboardComparison: source.dashboardComparison, publicationAlignment: source.publicationAlignment,
       sourceAccountId: `website:${official}`, sourceCopiedAt: copiedAt,
       profile: { ...serviceDemoProfile(source.id), ...source.profile },
       industry: { label: source.industry, audience: source.audience.join('; '), services: source.services, criteria }, copy: source.copy,
@@ -225,8 +272,9 @@ function validateServiceDemo(project: Project) {
     const key = trackedUrlKey(article.url);
     if (!key || seen.has(key)) throw new Error('Demo publications require distinct normalized URLs.');
     seen.add(key);
-    if (article.demoPost || !owns(article.url, project.brand.domains[0]))
-      throw new Error('Tracked articles must belong to the selected company website.');
+    if (article.demoPost || (article.contentType === 'SOCIAL'
+      ? !supportedSocialUrl(article.url) : !owns(article.url, project.brand.domains[0])))
+      throw new Error('Tracked articles must belong to the selected company website; social links require a YouTube video or Reddit discussion.');
   }
 }
 
@@ -241,16 +289,46 @@ export async function createServiceDemo(repository: Pick<Repository, 'getProject
   if (apply && !await repository.saveProject(project, null)) throw new Error('Account changed concurrently; retry to inspect it.');
   return { status: apply ? 'created' : 'preview', projectId: project.id, name: project.name, prompts: project.prompts.length,
     competitors: project.competitors.length, trackedUrls: project.demo!.trackedUrls!.length,
-    officialArticles: project.demo!.trackedUrls!.filter(article => !article.demoPost).length,
+    officialArticles: project.demo!.trackedUrls!.filter(article => !article.demoPost && article.contentType !== 'SOCIAL').length,
+    socialLinks: project.demo!.trackedUrls!.filter(article => article.contentType === 'SOCIAL').length,
     demoArticles: project.demo!.trackedUrls!.filter(article => article.demoPost).length,
     ...serviceDemoDates(project.demo!.anchorDate), scansPerWeek: 2, providers: 3, configurationBytes: bytes,
     persistedSyntheticAnswers: 0, persistedSyntheticTrafficEvents: 0, paidCalls: 0 };
 }
 
+/** Add researched tracking content without reenrolling existing URLs or replacing account settings. */
+export async function expandServiceDemoTracking(
+  repository: Pick<Repository, 'getProject' | 'saveProject'>, value: unknown, apply = false, now = new Date(),
+) {
+  const source = serviceDemoSourceSchema.parse(value), built = buildServiceDemo(source, now.toISOString());
+  const existing = await repository.getProject(source.id);
+  if (!existing?.demo || existing.enabled || existing.demo.presentation || existing.demo.source !== 'website-demo' ||
+    existing.demo.sourceAccountId !== built.demo!.sourceAccountId || existing.brand.domains[0] !== built.brand.domains[0])
+    throw new Error('Tracking expansion requires the matching disabled website demo account.');
+  if (source.anchorDate !== existing.demo.anchorDate || built.demo!.startDate !== existing.demo.startDate ||
+    built.demo!.endDate !== existing.demo.endDate)
+    throw new Error('Tracking expansion must preserve the explicitly supplied saved scenario timeline.');
+  const trackedUrls: NonNullable<DemoConfig['trackedUrls']> = JSON.parse(JSON.stringify(trackedContent(source, existing.demo.trackedUrls)));
+  const unchanged = isDeepStrictEqual(existing.demo.trackedUrls, trackedUrls);
+  const desired: Project = unchanged ? existing : { ...existing, version: existing.version + 1, updatedAt: now.toISOString(),
+    demo: { ...existing.demo, trackedUrls } };
+  validateServiceDemo(desired);
+  if (Buffer.byteLength(JSON.stringify(desired)) > 250000) throw new Error('Compact demo configuration exceeds 250 KB.');
+  if (apply && !unchanged && !await repository.saveProject(desired, existing.version))
+    throw new Error('Account changed concurrently; retry to inspect it.');
+  return { status: unchanged ? 'unchanged' : apply ? 'updated' : 'preview', projectId: existing.id,
+    previousTrackedUrls: existing.demo.trackedUrls?.length || 0, trackedUrls: trackedUrls.length,
+    added: trackedUrls.length - (existing.demo.trackedUrls?.length || 0),
+    blogs: trackedUrls.filter(item => item.contentType === 'BLOG').length,
+    youtube: trackedUrls.filter(item => item.contentType === 'SOCIAL' && domain(item.url) !== 'reddit.com').length,
+    reddit: trackedUrls.filter(item => item.contentType === 'SOCIAL' && domain(item.url) === 'reddit.com').length,
+    paidCalls: 0 };
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: { source: { type: 'string' }, mode: { type: 'string', default: 'local' },
-    apply: { type: 'boolean' }, help: { type: 'boolean' } } });
-  if (values.help) { console.log('npm run demo:service -- --source /private/path/public-website-sources.json --mode local|aws [--apply]\nSource accepts one account, an array, or {accounts:[...]}. Defaults to preview. Never calls iGEO or an AI provider.'); return; }
+    apply: { type: 'boolean' }, 'expand-tracking': { type: 'boolean' }, help: { type: 'boolean' } } });
+  if (values.help) { console.log('npm run demo:service -- --source /private/path/public-website-sources.json --mode local|aws [--expand-tracking] [--apply]\nSource accepts one account, an array, or {accounts:[...]}. Defaults to preview. Tracking expansion preserves existing URL enrollment dates and account settings. Never calls iGEO or an AI provider.'); return; }
   if (!values.source || !['local', 'aws'].includes(values.mode)) throw new Error('Supply --source and choose --mode local|aws.');
   const value = JSON.parse(await readFile(resolve(values.source), 'utf8'));
   const sources = Array.isArray(value) ? value : Array.isArray(value?.accounts) ? value.accounts : [value];
@@ -262,7 +340,9 @@ export async function main(argv = process.argv.slice(2)) {
   const db = await openConfigurationDatabase(values.mode as 'local' | 'aws', resolve(process.env.LOCAL_DATA_DIR || '.local-data/real'));
   try {
     const repository = new PostgresRepository(db), results = [];
-    for (const project of projects) results.push(await createServiceDemo(repository, project, values.apply));
+    for (const [index, project] of projects.entries()) results.push(values['expand-tracking']
+      ? await expandServiceDemoTracking(repository, sources[index], values.apply)
+      : await createServiceDemo(repository, project, values.apply));
     console.log(JSON.stringify(results, null, 2));
   } finally { await db.close(); }
 }

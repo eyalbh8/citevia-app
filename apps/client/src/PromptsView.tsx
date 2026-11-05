@@ -35,7 +35,6 @@ import {
   Drawer,
   Empty,
   ErrorNotice,
-  formatDate,
   labelize,
   Pagination,
 } from './components';
@@ -598,7 +597,6 @@ export default function PromptsView({
                     {sortHeader('Visibility', 'avgVisibility')}
                     {sortHeader('Sentiment', 'avgSentimentScore')}
                     {sortHeader('Rank', 'avgRank')}
-                    {sortHeader('Created', 'createdAt')}
                     <th scope="col">
                       <span className="visually-hidden">Actions</span>
                     </th>
@@ -718,17 +716,6 @@ export default function PromptsView({
                             metric="rank"
                           />
                         </div>
-                      </td>
-                      <td>
-                        <time
-                          className="prompt-created"
-                          dateTime={prompt.createdAt}
-                        >
-                          <span>{formatDate(prompt.createdAt)}</span>
-                          <span>
-                            {new Date(prompt.createdAt).getFullYear()}
-                          </span>
-                        </time>
                       </td>
                       <td>
                         <div className="prompt-actions">

@@ -343,7 +343,7 @@ export async function monitoringRoute(
       MentionsSummary['markers'][number]['items']
     >();
     for (const url of urls.filter(
-      (u) => u.createdAt >= period.start && u.createdAt <= period.end,
+      (u) => u.active && u.createdAt <= period.end && u.publishedAt >= period.start && u.publishedAt <= period.end,
     )) {
       const relevant = matches.filter(
         (m) =>
@@ -359,8 +359,8 @@ export async function monitoringRoute(
       );
       const date =
           period.granularity === 'hourly'
-            ? `${url.createdAt.slice(0, 13)}:00:00.000Z`
-            : url.createdAt.slice(0, 10),
+            ? `${url.publishedAt.slice(0, 13)}:00:00.000Z`
+            : url.publishedAt.slice(0, 10),
         list = markerGroups.get(date) || [];
       list.push({
         id: url.id,

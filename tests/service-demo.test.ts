@@ -124,6 +124,36 @@ describe('compact public website service demos', () => {
     expect(buildServiceDemo(allReal, copiedAt).demo?.trackedUrls?.some(article => article.demoPost)).toBe(false);
   });
 
+  it('enrolls distinct YouTube videos and Reddit threads independently across the year', async () => {
+    const socialLinks = [
+      { url: 'https://www.youtube.com/watch?v=cAr3-OCCwLo', title: 'Investing journey' },
+      { url: 'https://www.youtube.com/watch?v=0HZImOYM-Ns', title: 'Building a portfolio' },
+      { url: 'https://www.reddit.com/r/Etoro/comments/1gkeyug/', title: 'Copy trading' },
+      { url: 'https://www.reddit.com/r/Etoro/comments/1mgvwsk/', title: 'Copy trader' },
+    ];
+    const project = buildServiceDemo({ ...source(), socialLinks: [...socialLinks, socialLinks[0]] }, copiedAt);
+    const social = project.demo!.trackedUrls!.filter(item => item.contentType === 'SOCIAL');
+    expect(social.map(item => item.url)).toEqual(socialLinks.map(item => item.url));
+    expect(social[0].publishedAt).toBe(social[2].publishedAt);
+    expect(social[1].publishedAt).toBe(social[3].publishedAt);
+    expect(Date.parse(social[0].publishedAt)).toBeLessThan(Date.parse(copiedAt));
+    expect(Date.parse(social[1].publishedAt)).toBeGreaterThan(Date.parse(copiedAt));
+    expect(await createServiceDemo(new MemoryRepository(), project)).toMatchObject({
+      status: 'preview', officialArticles: 44, socialLinks: 4, trackedUrls: 48,
+    });
+  });
+
+  it('rejects social homepages, unrelated hosts and URLs mislabeled to bypass company ownership', async () => {
+    for (const url of ['https://www.youtube.com/', 'https://www.reddit.com/r/Etoro/',
+      'https://www.youtube.com/watch?v=invalid', 'https://www.youtube.com.evil.com/watch?v=cAr3-OCCwLo',
+      'https://unrelated.com/article', 'http://www.reddit.com/r/Etoro/comments/1gkeyug/'])
+      expect(() => buildServiceDemo({ ...source(), socialLinks: [{ url, title: 'Invalid social link' }] })).toThrow();
+    const project = buildServiceDemo(source(), copiedAt);
+    project.demo!.trackedUrls!.push({ url: 'https://unrelated.com/article', title: 'Forged social link',
+      contentType: 'SOCIAL', publishedAt: copiedAt });
+    await expect(createServiceDemo(new MemoryRepository(), project, true)).rejects.toThrow('YouTube video or Reddit discussion');
+  });
+
   it('accepts explicitly researched prompts, industry copy and modest deterministic numeric variations', () => {
     const value = source();
     const prompts = Array.from({ length: 50 }, (_, index) => ({ text: `What should a homeowner ask about gutter option ${index + 1}?`,

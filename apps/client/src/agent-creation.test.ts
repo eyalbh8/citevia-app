@@ -254,7 +254,8 @@ describe('agent creation UI', () => {
     promptsLoading = true;
     await render({ ...project, prompts: [] });
     await click('Generate');
-    expect(container.textContent).toContain('Loading account prompts');
+    expect(container.querySelector('select[aria-busy="true"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('Loading account prompts');
     expect(container.textContent).not.toContain('No active prompts available');
     expect(button('Generate content').disabled).toBe(true);
     promptsLoading = false;

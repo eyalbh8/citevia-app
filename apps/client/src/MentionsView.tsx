@@ -5,7 +5,7 @@ import { useApi } from './api';
 import { Empty, ErrorNotice } from './components';
 import {
   AnswerTable,
-  initialSelection,
+  useMonitoringSelection,
   MentionsChart,
   MonitoringHeader,
   PageControls,
@@ -24,8 +24,8 @@ export default function MentionsView({
   project: Project;
   onResponse: (id: string) => void;
 }) {
-  const [selection, setSelection] = useState(() => initialSelection('7', project.demo)),
-    [page, setPage] = useState(0),
+  const [selection, setSelection] = useMonitoringSelection(project);
+  const [page, setPage] = useState(0),
     [size, setSize] = useState(25),
     [sort, setSort] = useState('date'),
     [direction, setDirection] = useState('desc'),

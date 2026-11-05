@@ -339,9 +339,7 @@ export default function AgentsView({
                 onChange={(event) => setPromptId(event.target.value)}
               >
                 <option value="" disabled>
-                  {promptsLoading
-                    ? 'Loading account prompts…'
-                    : 'Select an account prompt'}
+                  Select an account prompt
                 </option>
                 {prompts.map((item) => (
                   <option key={item.id} value={item.id}>

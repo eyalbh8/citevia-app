@@ -146,9 +146,6 @@
   width: 80px;
 }
 .prompts-table th:nth-child(8) {
-  width: 95px;
-}
-.prompts-table th:nth-child(9) {
   width: 145px;
 }
 .prompts-table .prompt-check-cell {
@@ -308,12 +305,6 @@
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
-}
-.prompt-created {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  white-space: nowrap;
 }
 .prompt-actions {
   display: flex;

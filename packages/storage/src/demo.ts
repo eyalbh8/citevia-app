@@ -253,6 +253,13 @@ function measurementPlan(project: Project, provider: ScanProvider) {
   const ordered = [...prompts].sort((a, b) =>
     hash(`${project.id}:${a.id}`) - hash(`${project.id}:${b.id}`) || a.id.localeCompare(b.id),
   );
+  if (configFor(project)!.dashboardComparison === 'scenario_start') {
+    // Spread the growing cohort across stages instead of saturating one stage at the outset.
+    const groups = [...new Set(ordered.map(prompt => prompt.stage || 'unassigned'))]
+      .map(stage => ordered.filter(prompt => (prompt.stage || 'unassigned') === stage));
+    ordered.splice(0, ordered.length, ...Array.from({ length: Math.max(...groups.map(group => group.length)) },
+      (_, index) => groups.flatMap(group => group[index] ? [group[index]] : [])).flat());
+  }
   const plan = { promptOrder: new Map(ordered.map((prompt, index) => [prompt.id, index])),
     scans: new Map<number, { phase: number; mentionCount: number; positiveStart: number; ranks: Map<string, number> }>() };
   let previousCount = 0, previousPositive = 0, previousPositiveStart = prompts.length;
