@@ -235,6 +235,9 @@ type ImportedReportIdentity = {
 };
 
 const selectedServices = {
+  'four-seasons': { id: 'account_four_seasons_firenze_demo_v1', name: 'Four Seasons Hotel Firenze', domain: 'fourseasons.com', reportingProfile: 'luxury_hospitality' },
+  'kan-tor': { id: 'account_kan_tor_acco_demo_v1', name: 'Kan-Tor & Acco', domain: 'ktalegal.com', reportingProfile: 'immigration_law' },
+  'pacific-fertility': { id: 'account_pfcla_la_demo_v1', name: 'Pacific Fertility Center Los Angeles', domain: 'pfcla.com', reportingProfile: 'fertility_care' },
   brooklinen: { id: 'account_brooklinen_demo_v1', name: 'Brooklinen', domain: 'brooklinen.com', reportingProfile: 'home_bedding' },
   equinoxe: { id: 'account_equinoxe_yachts_demo_v1', name: 'Equinoxe Yachts', domain: 'equinoxeyachts.com', reportingProfile: 'yacht_chartering' },
   estepera: { id: 'account_estepera_demo_v1', name: 'Estepera Hair Transplant Clinic', domain: 'estepera.com', reportingProfile: 'hair_restoration' },
@@ -248,6 +251,9 @@ function serviceUpgrade(account: SelectedService) {
     syncImportedReporting(repository, { ...target, source: 'website-demo', sourceAccountId: `website:${target.domain}` },
       catalog, apply, now, requestedAnchor);
 }
+export const syncFourSeasonsReporting = serviceUpgrade('four-seasons');
+export const syncKanTorReporting = serviceUpgrade('kan-tor');
+export const syncPacificFertilityReporting = serviceUpgrade('pacific-fertility');
 export const syncBrooklinenReporting = serviceUpgrade('brooklinen');
 export const syncEquinoxeReporting = serviceUpgrade('equinoxe');
 export const syncEsteperaReporting = serviceUpgrade('estepera');
@@ -305,9 +311,24 @@ export async function syncImportedReporting(repository: Pick<Repository, 'getPro
     throw new Error('The reporting year has too few publication slots for this catalog.');
   const references = new Map(config.referenceSources?.map(row => [trackedUrlKey(row.url), row]));
   for (const { url, title } of catalog.sources) references.set(trackedUrlKey(url), { url, title });
+  // Some imported articles were enrolled before their publisher's recorded release.
+  // Preserve the enrollment itself and record newly verified dates for the report.
+  const sourcePublicationDates = { ...config.sourcePublicationDates };
+  if (identity.source === 'website-demo') {
+    const originalByKey = new Map(enrolled.map(item => [trackedUrlKey(item.url), item]));
+    for (const item of [...catalog.blogs, ...catalog.socialLinks]) {
+      const original = originalByKey.get(trackedUrlKey(item.url));
+      const published = isoDate(item.sourcePublishedAt);
+      if (original && published && Date.parse(published) > Date.parse(original.publishedAt) &&
+        Date.parse(published) > Date.parse(sourcePublicationDates[original.url] || original.sourcePublishedAt || original.publishedAt)) {
+        sourcePublicationDates[original.url] = published;
+      }
+    }
+  }
   // Compare JSON as stored. Absent optional properties must not cause a write on retries.
   const desiredConfig: DemoConfig = { ...config, ...dates, reportingProfile: identity.reportingProfile,
-    publicationAlignment: 'scans', referenceSources: [...references.values()], trackedUrls };
+    publicationAlignment: 'scans', referenceSources: [...references.values()], trackedUrls,
+    ...(Object.keys(sourcePublicationDates).length ? { sourcePublicationDates } : {}) };
   const unchanged = isDeepStrictEqual(JSON.parse(JSON.stringify(config)), JSON.parse(JSON.stringify(desiredConfig)));
   const desired: Project = unchanged ? project : { ...project, demo: desiredConfig, version: project.version + 1, updatedAt: now.toISOString() };
   const configurationBytes = Buffer.byteLength(JSON.stringify(desired));
@@ -508,7 +529,11 @@ export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: { source: { type: 'string' }, mode: { type: 'string', default: 'local' },
     account: { type: 'string' }, anchor: { type: 'string' }, 'restore-reporting': { type: 'string' },
     apply: { type: 'boolean' }, 'expand-tracking': { type: 'boolean' }, 'sync-reporting': { type: 'boolean' }, help: { type: 'boolean' } } });
-  if (values.help) { console.log('npm run demo:service -- --source FILE --mode local|aws [--expand-tracking | --sync-reporting] [--apply]\nFor a saved service account, pass --account brooklinen|equinoxe|estepera and either --sync-reporting [--anchor YYYY-MM-DD] or --restore-reporting BACKUP. Use the verified content catalog as FILE. Defaults to preview.'); return; }
+  if (values.help) {
+    console.log('npm run demo:service -- --source FILE --mode local|aws [--expand-tracking | --sync-reporting] [--apply]\n' +
+      `For a saved service account, pass --account ${Object.keys(selectedServices).join('|')} and either --sync-reporting [--anchor YYYY-MM-DD] or --restore-reporting BACKUP. Use the verified content catalog as FILE. Defaults to preview.`);
+    return;
+  }
   if ([values['expand-tracking'], values['sync-reporting'], values['restore-reporting']].filter(Boolean).length > 1)
     throw new Error('Choose one update mode.');
   if (values.account !== undefined && (!Object.hasOwn(selectedServices, values.account) || !(values['sync-reporting'] || values['restore-reporting'])))

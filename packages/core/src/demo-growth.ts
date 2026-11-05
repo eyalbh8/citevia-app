@@ -4,6 +4,7 @@ const DAY = 86_400_000;
 const promptSeed: Record<NonNullable<DemoConfig['reportingProfile']>, string> = {
   merchant_payments: ':payments', residential_roofing: ':roofing', unattended_payments: ':unattended', uk_investing: '', home_bedding: ':bedding',
   yacht_chartering: ':yachts', hair_restoration: ':hair',
+  luxury_hospitality: ':hospitality', immigration_law: ':immigration', fertility_care: ':fertility',
 };
 const providerOffset: Record<ScanProvider, number> = { openai: 1, perplexity: .5, gemini: 0 };
 

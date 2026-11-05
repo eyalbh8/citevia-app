@@ -9,7 +9,8 @@ const { useApi, downloadCsv } = vi.hoisted(() => ({ useApi: vi.fn(), downloadCsv
 vi.mock('./api', async original => ({ ...await original<object>(), useApi, downloadCsv }));
 import PromptsView from './PromptsView';
 
-it.each([undefined, 'uk_investing', 'merchant_payments', 'residential_roofing', 'unattended_payments', 'home_bedding', 'yacht_chartering', 'hair_restoration'])('aligns prompt metrics and explains the comparison for profile %s', reportingProfile => {
+it.each([undefined, 'uk_investing', 'merchant_payments', 'residential_roofing', 'unattended_payments', 'home_bedding', 'yacht_chartering', 'hair_restoration',
+  'luxury_hospitality', 'immigration_law', 'fertility_care'])('aligns prompt metrics and explains the comparison for profile %s', reportingProfile => {
   const project = { id: 'prompt-layout', name: 'Example', country: 'GB', language: 'en', role: 'viewer',
     demo: reportingProfile && { reportingProfile, startDate: '2026-05-05', endDate: '2027-05-05' },
     brand: { id: 'target', name: 'Example', aliases: [], domains: ['example.com'] },

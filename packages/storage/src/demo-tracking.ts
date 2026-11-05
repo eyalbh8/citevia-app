@@ -4,6 +4,7 @@ import {
   trackedArticleUrl,
   trackedUrlMetadata,
   trackingEnabledAt,
+  usesDetailedReporting,
   type Analysis,
   type CapturedAnswer,
   type Citation,
@@ -36,12 +37,12 @@ const publicationCache = new WeakMap<Project, NonNullable<DemoConfig['trackedUrl
 /** Older website enrollments can precede the date an article actually went live. */
 export function reportingPublications(project: Project) {
   const stored = project.demo?.trackedUrls || [];
-  const profile = project.demo?.reportingProfile;
-  if (profile !== 'home_bedding' && profile !== 'yacht_chartering' && profile !== 'hair_restoration') return stored;
+  const config = project.demo;
+  if (!usesDetailedReporting(config) || config.source !== 'website-demo' || config.reportingProfile === 'merchant_payments') return stored;
   let publications = publicationCache.get(project);
   if (!publications) {
     publications = stored.map(item => {
-      const actual = Date.parse(item.sourcePublishedAt || '');
+      const actual = Math.max(Date.parse(item.sourcePublishedAt || '') || 0, Date.parse(config.sourcePublicationDates?.[item.url] || '') || 0);
       return actual > Date.parse(item.publishedAt) ? { ...item, publishedAt: new Date(actual).toISOString() } : item;
     });
     publicationCache.set(project, publications);

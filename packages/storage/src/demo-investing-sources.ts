@@ -123,6 +123,58 @@ const restorationGuides = [
   'Questions for a consultation', 'Preparing for a clinical assessment', 'Comparing treatment approaches', 'Understanding donor areas',
   'Talking through potential risks', 'Planning follow-up appointments', 'Discussing graft estimates', 'Considering aftercare needs',
 ];
+const italyPlaces = [
+  'Arezzo', 'Assisi', 'Bari', 'Bergamo', 'Bologna', 'Bolzano', 'Brescia', 'Cagliari',
+  'Capri', 'Catania', 'Cefalu', 'Como', 'Cortona', 'Ferrara', 'Fiesole', 'Florence',
+  'Genoa', 'Greve', 'Lake Garda', 'Livorno', 'Lucca', 'Mantua', 'Matera', 'Milan',
+  'Modena', 'Montalcino', 'Montepulciano', 'Naples', 'Orvieto', 'Padua', 'Palermo', 'Parma',
+  'Perugia', 'Pienza', 'Pisa', 'Portofino', 'Positano', 'Ravenna', 'Rome', 'San Gimignano',
+  'Siena', 'Sorrento', 'Taormina', 'Trieste', 'Turin', 'Venice', 'Verona', 'Vicenza',
+];
+const hospitalityPublications = [
+  'City Hotels Journal', 'Guest Experience Review', 'Historic Residences Quarterly', 'Tuscan Travel Digest',
+  'Art and Architecture Guide', 'Dining Room Journal', 'Luxury Travel Report', 'Hotel Design Review',
+  'Independent Concierge Bulletin', 'Regional Cuisine Observer', 'Family Travel Review', 'Garden Visits Journal',
+  'Hotel Spa Digest', 'Heritage Hospitality Review', 'Courtyard and Palace Journal', 'Cultural Itineraries',
+  'Wedding Venues Report', 'Artisan Travel Quarterly', 'Private Dining Review', 'Travel Planner Almanac',
+  'Museum and Gallery Guide', 'Restaurant Chronicle', 'Boutique Hotels Ledger', 'Italian Destinations Weekly',
+];
+const hospitalityGuides = [
+  'Choosing a neighbourhood', 'Planning a seasonal stay', 'Exploring historic properties', 'Comparing room categories',
+  'Dining and reservations', 'A family travel checklist', 'Making time for local art', 'Questions for the concierge',
+];
+const mobilityMarkets = [
+  'Amsterdam', 'Ankara', 'Athens', 'Atlanta', 'Austin', 'Barcelona', 'Beersheba', 'Berlin',
+  'Boston', 'Brussels', 'Budapest', 'Chicago', 'Copenhagen', 'Dallas', 'Denver', 'Dublin',
+  'Frankfurt', 'Geneva', 'Haifa', 'Hamburg', 'Helsinki', 'Herzliya', 'Houston', 'Istanbul',
+  'Jerusalem', 'Lisbon', 'London', 'Los Angeles', 'Madrid', 'Manchester', 'Miami', 'Milan',
+  'Montreal', 'Munich', 'Netanya', 'New York', 'Paris', 'Philadelphia', 'Prague', 'Ramat Gan',
+  'Rome', 'San Francisco', 'Seattle', 'Stockholm', 'Tel Aviv', 'Toronto', 'Vienna', 'Zurich',
+];
+const immigrationPublications = [
+  'Global Mobility Review', 'Immigration Practice Journal', 'Cross Border Employment Digest', 'Corporate Relocation Bulletin',
+  'Work Permit Review', 'Expatriate Policy Journal', 'International Assignment Report', 'Business Immigration Observer',
+  'Residence Planning Quarterly', 'Employer Compliance Review', 'Consular Practice Journal', 'Talent Mobility Digest',
+  'Visa Procedures Review', 'Travel Documentation Journal', 'Workforce Mobility Report', 'Immigration Operations Review',
+  'International Hiring Letter', 'Relocation Planning Review', 'Mobility Policy Digest', 'Employment Practice Journal',
+  'Business Travel Review', 'Global Assignments Journal', 'Immigration Casework Bulletin', 'Mobility Services Review',
+];
+const immigrationGuides = [
+  'Preparing for a consultation', 'Documents for an application', 'Questions for a mobility team', 'Planning a relocation',
+  'Checking government requirements', 'Understanding employer responsibilities', 'Discussing renewal timelines', 'Comparing immigration pathways',
+];
+const fertilityPublications = [
+  'Fertility Care Review', 'Reproductive Health Journal', 'Family Building Digest', 'Patient Education Bulletin',
+  'Fertility Assessment Review', 'IVF Practice Journal', 'Embryology Report', 'Fertility Preservation Monitor',
+  'Reproductive Medicine Quarterly', 'Patient Experience Review', 'Donor Care Journal', 'Fertility Consultation Digest',
+  'Embryo Laboratory Review', 'Reproductive Endocrinology Journal', 'Fertility Outcomes Report', 'Treatment Planning Review',
+  'Patient Support Letter', 'Reproductive Care Review', 'Fertility Research Digest', 'Fertility Clinic Journal',
+  'Assisted Reproduction Review', 'Family Formation Journal', 'Egg Freezing Bulletin', 'Patient Information Review',
+];
+const fertilityGuides = [
+  'Questions for a fertility consultation', 'Preparing for a first visit', 'Discussing treatment options', 'Understanding the care team',
+  'Planning for monitoring appointments', 'Asking about laboratory standards', 'Interpreting clinic statistics', 'Finding patient support',
+];
 const industries = {
   uk_investing: { places, publications: investingPublications, guides: investingGuides, fallback: 'UK investing platforms', idPrefix: 'demo_investing' },
   merchant_payments: { places, publications: paymentPublications, guides: paymentGuides, fallback: 'Merchant payments', idPrefix: 'merchant_payments' },
@@ -131,6 +183,9 @@ const industries = {
   home_bedding: { places: usMarkets, publications: beddingPublications, guides: beddingGuides, fallback: 'Home bedding and bath linens', idPrefix: 'home_bedding' },
   yacht_chartering: { places: yachtPlaces, publications: yachtPublications, guides: yachtGuides, fallback: 'Mediterranean yacht charter and brokerage', idPrefix: 'yacht_chartering' },
   hair_restoration: { places: restorationPlaces, publications: restorationPublications, guides: restorationGuides, fallback: 'Hair restoration consultations', idPrefix: 'hair_restoration' },
+  luxury_hospitality: { places: italyPlaces, publications: hospitalityPublications, guides: hospitalityGuides, fallback: 'Luxury hotel stays in Florence', idPrefix: 'luxury_hospitality' },
+  immigration_law: { places: mobilityMarkets, publications: immigrationPublications, guides: immigrationGuides, fallback: 'Immigration and global mobility', idPrefix: 'immigration_law' },
+  fertility_care: { places: usMarkets, publications: fertilityPublications, guides: fertilityGuides, fallback: 'Fertility care and family building', idPrefix: 'fertility_care' },
 } satisfies Record<Profile, { places: string[]; publications: string[]; guides: string[]; fallback: string; idPrefix: string }>;
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -142,6 +197,9 @@ const caches = {
   home_bedding: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   yacht_chartering: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   hair_restoration: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  luxury_hospitality: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  immigration_law: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  fertility_care: new WeakMap<Prompt[], Map<string, Citation[]>>(),
 } satisfies Record<Profile, WeakMap<Prompt[], Map<string, Citation[]>>>;
 const noSources: Citation[] = [];
 

@@ -13,12 +13,21 @@ const accounts = [
   { name: 'Brooklinen', source: websiteSource('business', 'Brooklinen'), profile: 'home_bedding' },
   { name: 'Equinoxe Yachts', source: websiteSource('luxury', 'Equinoxe Yachts'), profile: 'yacht_chartering' },
   { name: 'Estepera Hair Transplant Clinic', source: websiteSource('medical', 'Estepera Hair Transplant Clinic'), profile: 'hair_restoration' },
+  { name: 'Four Seasons Hotel Firenze', source: websiteSource('luxury', 'Four Seasons Hotel Firenze'), profile: 'luxury_hospitality' },
+  { name: 'Kan-Tor & Acco', source: websiteSource('business', 'Kan-Tor & Acco'), profile: 'immigration_law' },
+  { name: 'Pacific Fertility Center Los Angeles', source: websiteSource('medical', 'Pacific Fertility Center Los Angeles'), profile: 'fertility_care' },
 ] as const;
 const now = () => new Date('2026-11-05T21:30:00Z');
 
 it.each(accounts)('reconciles $name brand and provider charts and measures positive growth across reporting ranges', async ({ source, profile }) => {
   const project = buildServiceDemo({ ...source, anchorDate: '2026-11-05' }, now().toISOString());
   project.demo!.reportingProfile = profile;
+  // The original PFCLA enrollment did not record the clinic's publication date.
+  if (profile === 'fertility_care') {
+    const article = project.demo!.trackedUrls![1];
+    article.publishedAt = article.createdAt = '2026-07-27T08:00:00.000Z';
+    project.demo!.sourcePublicationDates = { [article.url]: '2026-08-05T16:32:41.000Z' };
+  }
   const repository = new MemoryRepository();
   const identity = testIdentity('merchant-report-viewer');
   await repository.saveProject(project, null);
@@ -39,6 +48,15 @@ it.each(accounts)('reconciles $name brand and provider charts and measures posit
     expect(row).toMatchObject({ publishedAt: article.sourcePublishedAt, createdAt: article.createdAt });
     expect(row?.periodAppearances).toBeGreaterThan(0);
     expect(row!.firstCitedAt! >= row!.publishedAt).toBe(true);
+  }
+  if (profile === 'fertility_care') {
+    const article = project.demo!.trackedUrls![1];
+    const before = await get<Page<TrackingRow>>('tracked-urls?days=custom&start=2026-07-27&end=2026-08-04');
+    expect(before.items.some(row => row.url === article.url)).toBe(false);
+    const after = await get<Page<TrackingRow>>('tracked-urls?days=90');
+    const projected = after.items.find(row => row.url === article.url)!;
+    expect(projected).toMatchObject({ publishedAt: '2026-08-05T16:32:41.000Z', createdAt: article.createdAt });
+    expect(projected.firstCitedAt! >= projected.publishedAt).toBe(true);
   }
   for (const range of [
     'days=1', 'days=7', 'days=14', 'days=30', 'days=90',

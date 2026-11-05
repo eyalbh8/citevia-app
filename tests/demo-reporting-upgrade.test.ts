@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { MemoryRepository } from '@citevia/storage';
 import { buildServiceDemo, expandServiceDemoTracking, restoreServiceReporting, syncBrooklinenReporting, syncEquinoxeReporting,
-  syncEsteperaReporting, syncServiceDemoReporting, type ServiceDemoSource } from '../scripts/create-service-demo.js';
+  syncEsteperaReporting, syncFourSeasonsReporting, syncKanTorReporting, syncPacificFertilityReporting, syncServiceDemoReporting, type ServiceDemoSource } from '../scripts/create-service-demo.js';
 
 const source = JSON.parse(readFileSync(new URL('../scripts/demo-sources/etoro.json', import.meta.url), 'utf8'));
 
@@ -49,6 +49,9 @@ it('upgrades the existing merchant reporting year once and keeps the saved accou
 });
 
 const selected = [
+  { slug: 'four-seasons', source: 'luxury', id: 'account_four_seasons_firenze_demo_v1', profile: 'luxury_hospitality', sync: syncFourSeasonsReporting },
+  { slug: 'kan-tor', source: 'business', id: 'account_kan_tor_acco_demo_v1', profile: 'immigration_law', sync: syncKanTorReporting },
+  { slug: 'pacific-fertility', source: 'medical', id: 'account_pfcla_la_demo_v1', profile: 'fertility_care', sync: syncPacificFertilityReporting },
   { slug: 'brooklinen', source: 'business', id: 'account_brooklinen_demo_v1', profile: 'home_bedding', sync: syncBrooklinenReporting },
   { slug: 'equinoxe', source: 'luxury', id: 'account_equinoxe_yachts_demo_v1', profile: 'yacht_chartering', sync: syncEquinoxeReporting },
   { slug: 'estepera', source: 'medical', id: 'account_estepera_demo_v1', profile: 'hair_restoration', sync: syncEsteperaReporting },
@@ -61,7 +64,8 @@ it.each(selected)('preserves and can restore the selected $slug import with opti
   const repo = new MemoryRepository();
   const anchor = '2026-11-05', now = new Date(`${anchor}T19:00:00Z`);
   const catalog = {
-    blogs: [{ url: new URL('/new-article', source.website).href, title: 'Additional article', sourcePublishedAt: '2026-11-04T15:15:15Z' }],
+    blogs: [{ url: new URL('/new-article', source.website).href, title: 'Additional article', sourcePublishedAt: '2026-11-04T15:15:15Z' },
+      { url: previous.demo!.trackedUrls![0].url, title: 'Verified existing article', sourcePublishedAt: '2027-01-01T09:00:00Z' }],
     socialLinks: [{ url: 'https://www.youtube.com/watch?v=aBcdEfgHiJ1', title: 'New video' }], sources: source.sources,
   };
   await repo.saveProject(previous, null);
@@ -73,7 +77,8 @@ it.each(selected)('preserves and can restore the selected $slug import with opti
   expect(after.demo).toMatchObject({ reportingProfile: target.profile, startDate: '2026-05-05', endDate: '2027-05-05' });
   expect({ ...after, version: before.version, updatedAt: before.updatedAt, demo: before.demo }).toEqual(before);
   const config = after.demo!, original = before.demo!;
-  const { trackedUrls, referenceSources, reportingProfile, publicationAlignment, ...savedFields } = config;
+  const { trackedUrls, referenceSources, reportingProfile, publicationAlignment, sourcePublicationDates, ...savedFields } = config;
+  expect(sourcePublicationDates).toEqual({ [original.trackedUrls![0].url]: '2027-01-01T09:00:00.000Z' });
   expect(referenceSources?.length).toBeGreaterThan(0);
   expect(reportingProfile).toBe(target.profile);
   expect(publicationAlignment).toBe('scans');
