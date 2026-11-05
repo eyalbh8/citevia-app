@@ -644,7 +644,7 @@ function BrandTrend({
   const step = Math.max(1, Math.ceil(maximum / 4));
   const ceiling = step * 4;
   const y = (count: number) => bottom - (count / ceiling) * (bottom - top);
-  const ticks = axisTickIndices(dayCount, right - left);
+  const ticks = axisTickIndices(dayCount, right - left, dayCount <= 7 ? 52 : 80);
   const visibleActive =
     active === null ? null : Math.min(active, points.length - 1);
   const selected = visibleActive === null ? null : points[visibleActive];
