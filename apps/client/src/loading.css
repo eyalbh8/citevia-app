@@ -4,6 +4,7 @@
   padding: 4px 0;
 }
 .skeleton-visual { display: grid; gap: 20px; }
+.monitor-screen > .content-skeleton { margin-bottom: 24px; }
 .skeleton-shape {
   display: block;
   flex-shrink: 0;
