@@ -1,4 +1,4 @@
-import { publicSourceUrl } from '@citevia/core';
+import { usesDetailedReporting, publicSourceUrl } from '@citevia/core';
 import { reportExcerpt } from './report-excerpt';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {
@@ -687,7 +687,7 @@ export default function TrafficView({
   project: Project;
   notify: (message: string) => void;
 }) {
-  const fractionDigits = project.demo?.reportingProfile === 'merchant_payments' ? 1 : 0;
+  const fractionDigits = usesDetailedReporting(project.demo) ? 1 : 0;
   const [tab, setTab] = useState<'traffic' | 'settings'>('traffic');
   const [range, setRange] = useState<DateRangeSelection>(() => initialDateRange());
   const [providers, setProviders] = useState<TrafficProvider[]>([]),

@@ -7,6 +7,7 @@ import type {
   ScanRun,
 } from './types.js';
 import { projectProviders, snapshotProvider } from './providers.js';
+import { usesDetailedReporting } from './demo-growth.js';
 import { brandSentimentScore } from './scoring.js';
 import { isReportableRun } from './metrics.js';
 import { domainForUrl, isOwnedDomain, normalizeUrl } from './urls.js';
@@ -130,7 +131,7 @@ export function aggregateDashboardOverview(
   );
   const brands = [project.brand, ...project.competitors];
   const days = new Set<string>();
-  const hourly = period.granularity === 'hourly' && project.demo?.reportingProfile === 'merchant_payments'
+  const hourly = period.granularity === 'hourly' && usesDetailedReporting(project.demo)
     ? new Map<string, Map<string, number>>() : undefined;
   const providerDays = new Map<ScanProvider, Set<string>>();
   const activePrompts = new Map(

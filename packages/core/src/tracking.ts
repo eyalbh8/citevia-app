@@ -349,99 +349,47 @@ export function trackingRows(
     list.push(match);
     grouped.set(match.trackedUrlId, list);
   }
-  const pickup = urls.flatMap((url) => {
-    const first = grouped
-      .get(url.id)
-      ?.map((m) => m.capture.capturedAt)
-      .sort()[0];
-    return first
-      ? [
-          Math.max(
-            0,
-            Math.round(
-              (Date.parse(first) - Date.parse(url.publishedAt)) / 86400000,
-            ),
-          ),
-        ]
-      : [];
-  });
-  // The reference lifecycle uses the lower middle value (distinct from its KPI).
-  pickup.sort((a, b) => a - b);
-  const typicalPickup = pickup.length
-    ? pickup[Math.floor((pickup.length - 1) / 2)]
-    : 9;
-  const threshold = Math.max(14, 2 * typicalPickup);
-  const start = Date.parse(period.start),
-    end = Date.parse(period.end),
-    width = end - start + 1;
-  return urls.map((url) => {
-    const all = grouped.get(url.id) || [],
-      times = all.map((m) => m.capture.capturedAt).sort();
-    const current = all.filter(
-      (m) =>
-        Date.parse(m.capture.capturedAt) >= start &&
-        Date.parse(m.capture.capturedAt) <= end,
-    );
-    const prev = all.filter(
-      (m) =>
-        Date.parse(m.capture.capturedAt) >= start - width &&
-        Date.parse(m.capture.capturedAt) < start,
-    );
-    const recent = all.some(
-      (m) => Date.parse(m.capture.capturedAt) >= now.getTime() - 30 * 86400000,
-    );
-    const firstCitedAt = times[0] || null,
-      lastCitedAt = times.at(-1) || null;
-    const providers = new Map<ScanProvider, number>(),
-      series = new Map<string, number>();
-    for (const m of current) {
-      const count = m.evidence.resultKeys.length;
-      providers.set(
-        m.capture.provider,
-        (providers.get(m.capture.provider) || 0) + count,
-      );
-      const date = m.capture.capturedAt.slice(0, 10);
-      series.set(date, (series.get(date) || 0) + count);
+  const start = Date.parse(period.start), end = Date.parse(period.end);
+  const previousStart = start - (end - start + 1);
+  const recentSince = now.getTime() - 30 * 86400000;
+  const rows = urls.map((url): TrackingRow => {
+    const providers = new Map<ScanProvider, number>(), series = new Map<string, number>();
+    const promptIds = new Set<string>();
+    let firstCitedAt: string | null = null, lastCitedAt: string | null = null;
+    let appearances = 0, periodAppearances = 0, nativeCitations = 0;
+    let previousResults = 0, matchingResults = 0, matchingAnswers = 0, recent = false;
+    for (const { capture, evidence } of grouped.get(url.id) ?? []) {
+      const date = capture.capturedAt, at = Date.parse(date);
+      if (firstCitedAt === null || date < firstCitedAt) firstCitedAt = date;
+      if (lastCitedAt === null || date > lastCitedAt) lastCitedAt = date;
+      if (at >= recentSince) recent = true;
+      appearances += evidence.appearances;
+      const count = evidence.resultKeys.length;
+      if (at >= previousStart && at < start) previousResults += count;
+      if (!(at >= start && at <= end)) continue;
+      periodAppearances += evidence.appearances;
+      nativeCitations += evidence.nativeCount;
+      matchingResults += count;
+      matchingAnswers++;
+      promptIds.add(capture.promptId);
+      providers.set(capture.provider, (providers.get(capture.provider) ?? 0) + count);
+      const day = date.slice(0, 10);
+      series.set(day, (series.get(day) ?? 0) + count);
     }
-    const matchingResults = current.reduce(
-      (sum, m) => sum + m.evidence.resultKeys.length,
-      0,
-    );
     return {
       ...url,
-      status: recent
-        ? 'cited'
-        : all.length
-          ? 'lost'
-          : now.getTime() - Date.parse(url.publishedAt) > threshold * 86400000
-            ? 'stale'
-            : 'published',
-      appearances: all.reduce((sum, m) => sum + m.evidence.appearances, 0),
-      periodAppearances: current.reduce(
-        (sum, m) => sum + m.evidence.appearances,
-        0,
-      ),
-      nativeCitations: current.reduce(
-        (sum, m) => sum + m.evidence.nativeCount,
-        0,
-      ),
+      status: recent ? 'cited' : firstCitedAt ? 'lost' : 'published',
+      appearances,
+      periodAppearances,
+      nativeCitations,
       matchingResults,
-      matchingAnswers: current.length,
-      previousResults: prev.reduce(
-        (sum, m) => sum + m.evidence.resultKeys.length,
-        0,
-      ),
-      promptCount: new Set(current.map((m) => m.capture.promptId)).size,
+      matchingAnswers,
+      previousResults,
+      promptCount: promptIds.size,
       firstCitedAt,
       lastCitedAt,
       daysToFirstCitation: firstCitedAt
-        ? Math.max(
-            0,
-            Math.round(
-              (Date.parse(firstCitedAt) - Date.parse(url.publishedAt)) /
-                86400000,
-            ),
-          )
+        ? Math.max(0, Math.round((Date.parse(firstCitedAt) - Date.parse(url.publishedAt)) / 86400000))
         : null,
       providers: [...providers]
         .map(([provider, count]) => ({
@@ -458,4 +406,12 @@ export function trackingRows(
       clicks: null,
     };
   });
+  // The lifecycle threshold uses the lower middle pickup, distinct from the median KPI.
+  const pickups = rows.flatMap(row => row.daysToFirstCitation === null ? [] : [row.daysToFirstCitation]).sort((a, b) => a - b);
+  const typicalPickup = pickups.length ? pickups[Math.floor((pickups.length - 1) / 2)] : 9;
+  const staleBefore = now.getTime() - Math.max(14, 2 * typicalPickup) * 86400000;
+  for (const row of rows) {
+    if (row.status === 'published' && Date.parse(row.publishedAt) < staleBefore) row.status = 'stale';
+  }
+  return rows;
 }

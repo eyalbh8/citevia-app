@@ -1,10 +1,11 @@
 import {
+  usesDetailedReporting,
   aggregateDashboardOverview,
   dashboardObservations,
   investingComparisonPeriod,
   usesModeledReporting,
   investingTrend,
-  paymentBrandRate,
+  modeledBrandRate,
   isReportableRun,
   matchesMonitoringFilters,
   snapshotProvider,
@@ -96,11 +97,11 @@ export async function dashboardOverviewRoute(
     const trend = investingTrend(demo, cohorts, comparison);
     const target = report.ranking.find(row => row.isTarget);
     if (target) target.mentionChange = trend?.visibility ?? null;
-    if (trend && demo.reportingProfile === 'merchant_payments') {
+    if (trend && usesDetailedReporting(demo)) {
       const brands = [project.brand, ...project.competitors].map((brand, index) => ({
         id: brand.id,
-        before: paymentBrandRate(trend.before, index - 1),
-        after: paymentBrandRate(trend.after, index - 1),
+        before: modeledBrandRate(trend.before, index - 1),
+        after: modeledBrandRate(trend.after, index - 1),
       }));
       // Use the same prompt/provider cohort at both ends of the period.
       for (const row of report.ranking) {

@@ -160,14 +160,15 @@ export function alignDemoTrackingToScans(items: NonNullable<DemoConfig['trackedU
 
 /** Stagger scenario publication before the enrolled scan where the URL is first cited. */
 export function withDemoPublicationLeadTimes(items: NonNullable<DemoConfig['trackedUrls']>,
-  window: Pick<DemoConfig, 'startDate' | 'anchorDate'>): NonNullable<DemoConfig['trackedUrls']> {
+  window: Pick<DemoConfig, 'startDate' | 'anchorDate'>, finalWeekEnd?: string): NonNullable<DemoConfig['trackedUrls']> {
   const day = 86_400_000;
   const start = Date.parse(window.startDate), anchor = Date.parse(window.anchorDate);
+  const finalWeekStart = finalWeekEnd ? Date.parse(finalWeekEnd) - 6 * day : Infinity;
   return items.map(item => {
     const createdAt = item.createdAt || item.publishedAt;
     const enrolledDay = Date.parse(createdAt.slice(0, 10));
     // Keep the anchor week's publications visible and future releases in the future.
-    const earliest = enrolledDay > anchor ? anchor + day
+    const earliest = enrolledDay >= finalWeekStart ? finalWeekStart : enrolledDay > anchor ? anchor + day
       : enrolledDay >= anchor - 6 * day ? Math.max(start, anchor - 6 * day) : start;
     const maxLead = Math.max(0, Math.min(14, (enrolledDay - earliest) / day));
     const seed = createHash('sha256').update(trackedUrlKey(item.url) || item.url).digest().readUInt32BE(0);
@@ -177,8 +178,22 @@ export function withDemoPublicationLeadTimes(items: NonNullable<DemoConfig['trac
   });
 }
 
-function trackedContent(source: ParsedSource, existing: NonNullable<DemoConfig['trackedUrls']> = []): NonNullable<DemoConfig['trackedUrls']> {
-  const dates = weeklyPublicationDates(serviceDemoDates(source.anchorDate)), official = domain(source.website);
+type TrackingCatalog = Pick<ParsedSource, 'blogs' | 'socialLinks' | 'website' | 'anchorDate' | 'publicationAlignment'>
+  & Pick<DemoConfig, 'reportingProfile'>;
+
+export function trackedContent(source: TrackingCatalog, existing: NonNullable<DemoConfig['trackedUrls']> = []): NonNullable<DemoConfig['trackedUrls']> {
+  const window = serviceDemoDates(source.anchorDate), dates = weeklyPublicationDates(window), official = domain(source.website);
+  const roofing = source.reportingProfile === 'residential_roofing';
+  const anchorSlot = dates.filter(date => date.slice(0, 10) <= window.anchorDate).length - 1;
+  const dateFor = (index: number, count: number) => {
+    if (!roofing) return dates[Math.floor(index * dates.length / count)];
+    // Each new channel has a publication in the anchor week and spans both halves of the reporting year.
+    const middle = Math.floor(count / 2);
+    if (index === middle) return dates[anchorSlot];
+    const position = index < middle ? index * anchorSlot / middle
+      : anchorSlot + (index - middle) * (dates.length - 1 - anchorSlot) / (count - 1 - middle);
+    return dates[Math.round(position)];
+  };
   const enrolled = new Set(existing.map(item => trackedUrlKey(item.url)));
   for (const blog of source.blogs) if (!owns(blog.url, official) || !trackedUrlKey(blog.url))
     throw new Error('Verified public articles must use the official company website.');
@@ -187,7 +202,7 @@ function trackedContent(source: ParsedSource, existing: NonNullable<DemoConfig['
   // Enrollment dates belong to the scenario; source publication dates remain separate.
   // Reuse only researched pages, never invent URLs or manufacture unique query strings.
   const blogs = articles.map((blog, index) => {
-    const publishedAt = dates[Math.floor(index * dates.length / articles.length)];
+    const publishedAt = dateFor(index, articles.length);
     return { ...blog, sourcePublishedAt: isoDate(blog.sourcePublishedAt), sourceTrackedAt: isoDate(blog.sourceTrackedAt),
       publishedAt, createdAt: publishedAt };
   });
@@ -196,14 +211,19 @@ function trackedContent(source: ParsedSource, existing: NonNullable<DemoConfig['
   // Each platform spans the scenario independently, keeping both visible in retrospective ranges.
   const groups = [social.filter(link => domain(link.url) !== 'reddit.com'), social.filter(link => domain(link.url) === 'reddit.com')];
   const additions = [...blogs, ...groups.flatMap(links => links.slice(0, dates.length).map((link, index) => {
-    const publishedAt = dates[Math.floor(index * dates.length / Math.min(links.length, dates.length))];
+    const publishedAt = dateFor(index, Math.min(links.length, dates.length));
     return { ...link, contentType: 'SOCIAL' as const,
       sourcePublishedAt: isoDate(link.sourcePublishedAt), sourceTrackedAt: isoDate(link.sourceTrackedAt),
       publishedAt, createdAt: publishedAt };
   }))];
-  const window = serviceDemoDates(source.anchorDate);
-  const aligned = source.publicationAlignment === 'scans' ? alignDemoTrackingToScans(additions, window, undefined, source.reportingProfile === 'merchant_payments') : additions;
-  return [...existing, ...(source.reportingProfile ? withDemoPublicationLeadTimes(aligned, window) : aligned)];
+  const aligned = source.publicationAlignment === 'scans' ? alignDemoTrackingToScans(additions, window, undefined, roofing || source.reportingProfile === 'merchant_payments') : additions;
+  const scheduled = source.reportingProfile ? withDemoPublicationLeadTimes(aligned, window, roofing ? window.endDate : undefined) : aligned;
+  return [...existing, ...scheduled.map(item => {
+    if (!roofing || !item.sourcePublishedAt || item.sourcePublishedAt <= item.publishedAt) return item;
+    if (item.sourcePublishedAt.slice(0, 10) > window.endDate) throw new Error('A source was published after the reporting year.');
+    const createdAt = item.createdAt && item.createdAt >= item.sourcePublishedAt ? item.createdAt : item.sourcePublishedAt;
+    return { ...item, publishedAt: item.sourcePublishedAt, createdAt };
+  })];
 }
 
 /** Public website metadata creates a compact synthetic scenario, never historical customer measurements. */

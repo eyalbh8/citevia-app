@@ -1,12 +1,19 @@
 import type { DemoConfig, ScanProvider } from './types.js';
 
 const DAY = 86_400_000;
+const promptSeed: Record<NonNullable<DemoConfig['reportingProfile']>, string> = {
+  merchant_payments: ':payments', residential_roofing: ':roofing', uk_investing: '',
+};
 const providerOffset: Record<ScanProvider, number> = { openai: 1, perplexity: .5, gemini: 0 };
+
+export function usesDetailedReporting(config: DemoConfig | undefined): config is DemoConfig & { reportingProfile: 'merchant_payments' | 'residential_roofing' } {
+  return config?.reportingProfile === 'merchant_payments' || config?.reportingProfile === 'residential_roofing';
+}
 
 export function usesModeledReporting(
   config: DemoConfig | undefined,
 ): config is DemoConfig & { reportingProfile: NonNullable<DemoConfig['reportingProfile']> } {
-  return config?.reportingProfile === 'uk_investing' || config?.reportingProfile === 'merchant_payments';
+  return config?.reportingProfile === 'uk_investing' || usesDetailedReporting(config);
 }
 
 function fraction(value: string) {
@@ -19,8 +26,8 @@ function fraction(value: string) {
 export function investingVisibilityRate(demo: DemoConfig, promptId: string, provider: ScanProvider, at: number) {
   const anchor = Date.parse(demo.anchorDate) + DAY;
   const daysBeforeAnchor = (anchor - at) / DAY;
-  // A sector suffix disperses sequential prompt IDs across the payments cohort.
-  const strength = fraction(demo.reportingProfile === 'merchant_payments' ? promptId + ':payments' : promptId);
+  // Sector-specific seeds disperse sequential prompt IDs across the cohort.
+  const strength = fraction(promptId + (demo.reportingProfile ? promptSeed[demo.reportingProfile] : ''));
   const pace = (strength + providerOffset[provider]) / 2;
   const anchorRate = .59 + .17 * strength + .07 * providerOffset[provider];
   if (daysBeforeAnchor <= 0) {
@@ -37,7 +44,7 @@ export function investingVisibilityRate(demo: DemoConfig, promptId: string, prov
 }
 
 // Peer mentions can grow alongside the target: one answer may name several providers.
-export function paymentBrandRate(targetRate: number, peerIndex: number) {
+export function modeledBrandRate(targetRate: number, peerIndex: number) {
   return peerIndex < 0 ? targetRate : .04 + targetRate * (.60 - .06 * peerIndex);
 }
 

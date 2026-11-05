@@ -1,4 +1,5 @@
 import {
+  usesDetailedReporting,
   aggregateTraffic,
   type DemoConfig,
   type Project,
@@ -127,10 +128,10 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
     for (let date = Math.floor(from / DAY) * DAY; date <= to; date += DAY) {
       const months = (date + DAY / 2 - anchorMiddle) / (MONTH_DAYS * DAY);
       const rate = ANCHOR_VISITS[provider] * profile.trafficScale / anchorDays * (1 + profile.monthlyGrowth) ** months;
-      // The merchant report adds one recurring morning/evening referral pair per provider
+      // Detailed reports add one recurring morning/evening referral pair per provider
       // each day. Even a rolling 24-hour comparison includes a new visit, and the
       // actual events still reconcile across the chart, sources and page breakdowns.
-      const recurringPairs = config.reportingProfile === 'merchant_payments' ? (date - scenarioStart) / DAY : 0;
+      const recurringPairs = usesDetailedReporting(config) ? (date - scenarioStart) / DAY : 0;
       const pairs = Math.floor(rate / 2) + recurringPairs;
       for (let ordinal = -1; ordinal < pairs; ordinal++) {
         // Inclusive millisecond bounds mirror around DAY - 1. Put the singleton

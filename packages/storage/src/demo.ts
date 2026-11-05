@@ -1,10 +1,11 @@
 import {
+  usesDetailedReporting,
   buildSummary,
   domainForUrl,
   investingExpectedRank,
   usesModeledReporting,
   investingVisibilityRate,
-  paymentBrandRate,
+  modeledBrandRate,
   projectProviders,
   trackedUrlKey,
   trackedArticleUrl,
@@ -185,7 +186,7 @@ function captureSchedule(project: Project, at: number): CaptureSchedule {
     const starts = scanTimes(project);
     const until = starts[starts.indexOf(at) + 1] ?? day(project.demo.endDate) + DAY;
     const ordered = [...prompts].sort((a, b) => hash(a.id) - hash(b.id) || a.id.localeCompare(b.id));
-    if (project.demo.reportingProfile === 'merchant_payments') {
+    if (usesDetailedReporting(project.demo)) {
       // Interleave the funnel stages so a short collection window samples each stage.
       const byStage = new Map<Prompt['stage'], Prompt[]>();
       for (const prompt of ordered) {
@@ -431,10 +432,10 @@ function presentationMeasurements(project: Project, run: ScanRun, prompt: Prompt
     ...project.competitors.map((brand, index) => measurement(brand.id, index < presentation.targetRank - 1, index + 1))];
 }
 
-function visibleCompetitorsFor(project: Project, provider: ScanProvider, prompt: Prompt, phase: number, paymentTargetRate?: number) {
+function visibleCompetitorsFor(project: Project, provider: ScanProvider, prompt: Prompt, phase: number, modeledTargetRate?: number) {
   return project.competitors.filter((brand, index) =>
     (hash(`${prompt.id}:${brand.id}:${provider}`) % 1000) / 1000 <
-      (paymentTargetRate === undefined ? .50 - .30 * phase - index * .025 : paymentBrandRate(paymentTargetRate, index)));
+      (modeledTargetRate === undefined ? .50 - .30 * phase - index * .025 : modeledBrandRate(modeledTargetRate, index)));
 }
 
 /** The target, competitors and answer evidence all use these per-scan measurements. */
@@ -448,8 +449,8 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
   let rank = ranks.get(prompt.id) ?? 1;
   const at = Date.parse(run.scheduledAt), provider = run.snapshot.provider!;
   const rate = usesModeledReporting(project.demo) ? investingVisibilityRate(project.demo, prompt.id, provider, at) : undefined;
-  const paymentTargetRate = project.demo?.reportingProfile === 'merchant_payments' ? rate : undefined;
-  const visibleCompetitors = visibleCompetitorsFor(project, provider, prompt, phase, paymentTargetRate);
+  const modeledTargetRate = usesDetailedReporting(project.demo) ? rate : undefined;
+  const visibleCompetitors = visibleCompetitorsFor(project, provider, prompt, phase, modeledTargetRate);
   if (rate !== undefined) {
     const scan = scanTimes(project).indexOf(at);
     const providerPhase = { openai: 0, perplexity: 1 / 3, gemini: 2 / 3 }[provider];
@@ -483,7 +484,7 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
     const visible = visibleCompetitors.includes(brand);
     if (mentioned && nextPosition === rank) nextPosition++;
     const position = nextPosition;
-    const positiveRate = paymentTargetRate === undefined ? .24 + phase * .12 : paymentBrandRate(paymentTargetRate, index);
+    const positiveRate = modeledTargetRate === undefined ? .24 + phase * .12 : modeledBrandRate(modeledTargetRate, index);
     if (visible) nextPosition++;
     return {
       brandId: brand.id,
@@ -511,6 +512,7 @@ const citationPoolCache = new WeakMap<Project, Map<string, { url: string; title?
 const trackedCitationCache = new WeakMap<Project, {
   keys: Set<string | null>;
   eligible: Map<string, NonNullable<DemoConfig['trackedUrls']>>;
+  references: NonNullable<DemoConfig['referenceSources']>;
 }>();
 const contentPickupCache = new WeakMap<Project, Map<string, { url: string; title: string }[]>>();
 type TrackedPublication = NonNullable<DemoConfig['trackedUrls']>[number];
@@ -521,13 +523,13 @@ function enrolledForCapture(item: TrackedPublication, at: string) {
 }
 
 function pickupWindows(project: Project, scanAt: number, firstDayOnly: boolean, item?: TrackedPublication) {
-  const merchant = project.demo?.reportingProfile === 'merchant_payments';
+  const twiceDaily = usesDetailedReporting(project.demo);
   const windows = new Map<number, string[]>();
   for (const [promptId, captured] of captureSchedule(project, scanAt).times) {
     if (item && !enrolledForCapture(item, iso(captured))) continue;
     if (firstDayOnly && Math.floor(captured / DAY) !== Math.floor(scanAt / DAY)) continue;
-    // One actual answer in each half-day keeps enrolled merchant content visible in a rolling 24-hour report.
-    const window = merchant ? Math.floor(captured / (12 * HOUR)) : scanAt;
+    // One actual answer in each half-day keeps enrolled content visible in a rolling 24-hour report.
+    const window = twiceDaily ? Math.floor(captured / (12 * HOUR)) : scanAt;
     const candidates = windows.get(window) || [];
     candidates.push(promptId);
     windows.set(window, candidates);
@@ -544,22 +546,28 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
     const commonWindows = new Map<string, ReturnType<typeof pickupWindows>>();
     const tracked = [...(configFor(project)!.trackedUrls || [])]
       .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt) || a.url.localeCompare(b.url));
+    const roofCollections = project.demo?.reportingProfile === 'residential_roofing';
     for (const [index, item] of tracked.entries()) {
       const enrolledAt = Math.max(Date.parse(item.createdAt || item.publishedAt), Date.parse(item.publishedAt));
-      const eligible = times.filter(at => at >= enrolledAt && (!item.trackingPeriods || item.trackingPeriods.some(period =>
-        at >= Date.parse(period.start) && (!period.end || at < Date.parse(period.end)))));
+      const eligible = times.filter(at => {
+        // Imported roofing articles can start tracking in an open collection.
+        const last = roofCollections ? captureSchedule(project, at).last : at;
+        return last >= enrolledAt && (!item.trackingPeriods || item.trackingPeriods.some(period =>
+          last >= Date.parse(period.start) && (!period.end || at < Date.parse(period.end))));
+      });
       if (!eligible.length || !providers.length) continue;
       const provider = providers[index % providers.length].provider;
       for (const at of configFor(project)!.publicationAlignment === 'scans' ? eligible : eligible.slice(0, 1)) {
         let promptIds: string[];
         if (usesModeledReporting(project.demo)) {
-          const firstDayOnly = project.demo.reportingProfile !== 'merchant_payments' && at === eligible[0];
+          const firstDayOnly = !usesDetailedReporting(project.demo) && at === eligible[0];
           const key = `${at}:${firstDayOnly}`;
-          let windows = item.trackingPeriods ? undefined : commonWindows.get(key);
+          const partialWindow = item.trackingPeriods || at < enrolledAt;
+          let windows = partialWindow ? undefined : commonWindows.get(key);
           if (!windows) {
             // Captures after an eligible scan remain enrolled unless the URL has an explicit pause.
-            windows = pickupWindows(project, at, firstDayOnly, item.trackingPeriods ? item : undefined);
-            if (!item.trackingPeriods) commonWindows.set(key, windows);
+            windows = pickupWindows(project, at, firstDayOnly, partialWindow ? item : undefined);
+            if (!partialWindow) commonWindows.set(key, windows);
           }
           promptIds = [...windows].map(([window, candidates]) => candidates[hash(`${item.url}:${window}`) % candidates.length]);
         } else {
@@ -585,7 +593,12 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
   const tracked = configFor(project)!.trackedUrls || [];
   let trackedIndex = trackedCitationCache.get(project);
   if (!trackedIndex) {
-    trackedIndex = { keys: new Set(tracked.map(item => trackedUrlKey(item.url))), eligible: new Map() };
+    const keys = new Set(tracked.map(item => trackedUrlKey(item.url)));
+    const references = (project.demo?.referenceSources ?? []).filter(item => {
+      const key = trackedUrlKey(item.url);
+      return key && !keys.has(key);
+    });
+    trackedIndex = { keys, eligible: new Map(), references };
     trackedCitationCache.set(project, trackedIndex);
   }
   let pools = citationPoolCache.get(project);
@@ -621,6 +634,7 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
   const index = measurementPlan(project, run.snapshot.provider!).promptOrder.get(prompt.id)!;
   const count = activePrompts(project).length;
   const base = index < Math.floor(count / 2) ? unique.slice(0, size) : [];
+  if (trackedIndex.references.length) base.push(trackedIndex.references[index % trackedIndex.references.length]);
   const officialDomain = project.brand.domains[0];
   if (officialDomain) {
     const origin = new URL(/^https?:\/\//.test(officialDomain) ? officialDomain : `https://${officialDomain}`).origin;

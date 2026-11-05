@@ -1,12 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { parseArgs } from 'node:util';
+import { isDeepStrictEqual, parseArgs } from 'node:util';
 import { z } from 'zod';
 import { DEFAULT_GEMINI_MODEL, DEFAULT_PERPLEXITY_PRESET, isBrandedPrompt, PARSER_VERSION, STAGE_INTENTS, trackedUrlKey,
   type Brandbook, type JourneyStage, type Project } from '@citevia/core';
 import { PostgresRepository, type Repository } from '@citevia/storage';
 import { openConfigurationDatabase } from './configure-analysis.js';
+import { serviceDemoDates, serviceDemoSourceSchema, trackedContent } from './create-service-demo.js';
 
 export const DR_ROOF_DEMO_ID = 'account_dr_roof_demo_v1';
 export const DR_ROOF_SOURCE_ACCOUNT_ID = '2812fba4-a1d9-4b0b-a649-8d69ce4903dc';
@@ -126,13 +127,59 @@ export async function createDrRoofDemo(repository: Pick<Repository, 'getProject'
     configurationBytes: bytes, persistedSyntheticAnswers: 0, persistedSyntheticTrafficEvents: 0, paidCalls: 0 };
 }
 
+const catalogSchema = serviceDemoSourceSchema.pick({ blogs: true, socialLinks: true, sources: true });
+
+/** Upgrade the saved Dr. Roof reporting configuration without rebuilding its imported project or content. */
+export async function syncDrRoofReporting(repository: Pick<Repository, 'getProject' | 'saveProject'>,
+  value: unknown, apply = false, now = new Date(), requestedAnchor?: string) {
+  const catalog = catalogSchema.parse(value);
+  const project = await repository.getProject(DR_ROOF_DEMO_ID);
+  const config = project?.demo;
+  if (!project || project.id !== DR_ROOF_DEMO_ID || project.enabled || config?.source !== 'igeo-dr-roof' ||
+    config.version !== 1 || config.sourceAccountId !== DR_ROOF_SOURCE_ACCOUNT_ID || config.presentation ||
+    (config.reportingProfile && config.reportingProfile !== 'residential_roofing') ||
+    !project.brand.domains.some(value => officialDomain(value) === 'drroof.com'))
+    throw new Error('Reporting updates require the matching disabled Dr. Roof account.');
+  const dates = serviceDemoDates(requestedAnchor ?? (config.reportingProfile ? config.anchorDate : now.toISOString().slice(0, 10)));
+  if (config.reportingProfile && (config.anchorDate !== dates.anchorDate || config.startDate !== dates.startDate ||
+    config.endDate !== dates.endDate || config.publicationAlignment !== 'scans'))
+    throw new Error('Reporting updates must preserve the saved reporting year.');
+  const enrolled = config.trackedUrls ?? [];
+  const trackedUrls = trackedContent({ ...catalog, website: 'https://drroof.com', anchorDate: dates.anchorDate,
+    publicationAlignment: 'scans', reportingProfile: 'residential_roofing' }, enrolled);
+  const keys = new Set(trackedUrls.map(item => trackedUrlKey(item.url)));
+  if ([...catalog.blogs, ...catalog.socialLinks].some(item => !keys.has(trackedUrlKey(item.url))))
+    throw new Error('The reporting year has too few publication slots for this catalog.');
+  const references = new Map(config.referenceSources?.map(row => [trackedUrlKey(row.url), row]));
+  for (const { url, title } of catalog.sources) references.set(trackedUrlKey(url), { url, title });
+  // Compare JSON as stored. Absent optional properties must not cause a write on retries.
+  const desiredConfig = JSON.parse(JSON.stringify({ ...config, ...dates, reportingProfile: 'residential_roofing',
+    publicationAlignment: 'scans', referenceSources: [...references.values()], trackedUrls })) as NonNullable<Project['demo']>;
+  const unchanged = isDeepStrictEqual(config, desiredConfig);
+  const desired: Project = unchanged ? project : { ...project, demo: desiredConfig, version: project.version + 1, updatedAt: now.toISOString() };
+  const configurationBytes = Buffer.byteLength(JSON.stringify(desired));
+  if (configurationBytes > 250000) throw new Error('Compact reporting configuration exceeds 250 KB.');
+  if (apply && !unchanged && !await repository.saveProject(desired, project.version))
+    throw new Error('Account changed concurrently; retry to inspect it.');
+  return { status: unchanged ? 'unchanged' : apply ? 'updated' : 'preview', projectId: project.id, version: desired.version,
+    ...dates, trackedUrls: trackedUrls.length, added: trackedUrls.length - enrolled.length,
+    referenceSources: references.size, configurationBytes };
+}
+
 export async function main(argv = process.argv.slice(2)) {
-  const { values } = parseArgs({ args: argv, options: { source: { type: 'string' }, mode: { type: 'string', default: 'local' }, anchor: { type: 'string', default: '2026-10-25' }, apply: { type: 'boolean' }, help: { type: 'boolean' } } });
-  if (values.help) { console.log('node --import tsx scripts/create-dr-roof-demo.ts --source /private/path/sanitized-source.json [--mode local|aws] [--anchor YYYY-MM-DD] [--apply]\nDefault previews compact configuration. Never connects to iGEO. Applying is idempotent and refuses to replace real accounts.'); return; }
+  const { values } = parseArgs({ args: argv, options: { source: { type: 'string' }, mode: { type: 'string', default: 'local' },
+    'sync-reporting': { type: 'boolean' }, anchor: { type: 'string' }, apply: { type: 'boolean' }, help: { type: 'boolean' } } });
+  if (values.help) { console.log('npm run demo:dr-roof -- --source FILE [--mode local|aws] [--anchor YYYY-MM-DD] [--sync-reporting] [--apply]\nUse --sync-reporting with scripts/dr-roof-content.json to upgrade the saved account. Defaults to a preview.'); return; }
   if (!values.source || !['local', 'aws'].includes(values.mode)) throw new Error('Supply --source and choose --mode local|aws.');
-  const project = buildDrRoofDemo(JSON.parse(await readFile(resolve(values.source), 'utf8')), values.anchor);
+  const source = JSON.parse(await readFile(resolve(values.source), 'utf8'));
   const db = await openConfigurationDatabase(values.mode as 'local' | 'aws', resolve(process.env.LOCAL_DATA_DIR || '.local-data/real'));
-  try { console.log(JSON.stringify(await createDrRoofDemo(new PostgresRepository(db), project, values.apply), null, 2)); }
+  try {
+    const repository = new PostgresRepository(db);
+    const result = values['sync-reporting']
+      ? await syncDrRoofReporting(repository, source, values.apply, new Date(), values.anchor)
+      : await createDrRoofDemo(repository, buildDrRoofDemo(source, values.anchor), values.apply);
+    console.log(JSON.stringify(result, null, 2));
+  }
   finally { await db.close(); }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)

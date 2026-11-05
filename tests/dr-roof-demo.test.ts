@@ -1,6 +1,10 @@
+import type { DashboardOverview, MentionsSummary, Page, PromptMetricsResponse, SourceRow, TrackingRow } from '@citevia/core';
+import { createApi } from '../apps/api/src/app.js';
+import { testIdentity } from './fixtures/users.js';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, withDemoRuntime } from '@citevia/storage';
-import { buildDrRoofDemo, createDrRoofDemo, DR_ROOF_DEMO_ID, DR_ROOF_DEMO_PROFILE, DR_ROOF_SOURCE_ACCOUNT_ID } from '../scripts/create-dr-roof-demo.js';
+import { readFileSync } from 'node:fs';
+import { buildDrRoofDemo, createDrRoofDemo, syncDrRoofReporting, DR_ROOF_DEMO_ID, DR_ROOF_DEMO_PROFILE, DR_ROOF_SOURCE_ACCOUNT_ID } from '../scripts/create-dr-roof-demo.js';
 import { monitoringRoute } from '../apps/api/src/monitoring.js';
 
 const source = () => ({
@@ -34,6 +38,70 @@ describe('explicit compact Dr. Roof demo', () => {
     expect(p.scanProviders?.map(provider => provider.provider)).toEqual(['openai', 'perplexity', 'gemini']);
     expect(Buffer.byteLength(JSON.stringify(p))).toBeLessThan(250000);
   });
+
+  it('reconciles hourly and daily charts, peer rankings, and positive prompt comparisons for the upgraded roofing profile', async () => {
+    const at = new Date('2026-11-05T21:30:00Z');
+    const data = source(), stages = ['understand', 'prefer', 'convert', 'trust'];
+    const saved = buildDrRoofDemo({ ...data, prompts: data.prompts.map((row, i) => ({ ...row, stage: stages[i % stages.length] })) },
+      '2026-11-05', at.toISOString());
+    saved.demo!.reportingProfile = 'residential_roofing';
+    saved.demo!.publicationAlignment = 'scans';
+    saved.demo!.referenceSources = [{ url: 'https://www.nrca.net/roofingguidelines', title: 'Roofing guidelines' }];
+    const repository = new MemoryRepository(), identity = testIdentity('roofing-report-viewer');
+    await repository.saveProject(saved, null);
+    await repository.syncUser(identity);
+    await repository.putMembership({ projectId: saved.id, userId: identity.subject, role: 'viewer' });
+    const api = createApi({ repository, queue: new MemoryQueue(), artifacts: new MemoryArtifacts() }, { mode: 'live', now: () => at });
+    const get = async <T,>(path: string): Promise<T> => {
+      const response = await api(new Request(`https://test/v1/projects/${saved.id}/${path}`), identity);
+      expect(response.status, path).toBe(200);
+      return response.json();
+    };
+    const bands: Record<string, [number, number]> = { 'days=7': [2, 4], 'days=30': [7, 10], 'days=90': [20, 30] };
+    const citation = await get<Page<SourceRow>>('sources?q=nrca.net&limit=1');
+    expect(citation.items[0]?.domain).toBe('nrca.net');
+    for (const range of ['days=1', 'days=7', 'days=14', 'days=30', 'days=90',
+      'days=custom&start=2026-06-04&end=2026-06-11', 'days=custom&start=2027-04-29&end=2027-05-05']) {
+      const dashboard = await get<DashboardOverview>(`dashboard/overview?${range}`);
+      const mentions = await get<MentionsSummary>(`mentions/summary?${range}`);
+      const prompts = await get<PromptMetricsResponse>(`prompt-metrics?${range}`);
+      expect(dashboard.rankingComparison).toBe('modeled_period');
+      expect(dashboard.ranking.some(row => row.isTarget && row.mentions > 0)).toBe(true);
+      expect(dashboard.ranking.every(row => row.mentionChange! > 0 && row.sentimentChange! > 0)).toBe(true);
+      expect(mentions.comparison).toBe('modeled_period');
+      const counts = new Map<string, number>();
+      for (const row of mentions.providers) {
+        const provider = dashboard.providers.find(item => item.provider === row.provider)!;
+        expect(provider.count).toBe(row.count);
+        expect(provider.change).toBe(row.change);
+        expect(provider.change).toBeGreaterThan(0);
+        for (const point of row.points) counts.set(point.date, (counts.get(point.date) ?? 0) + point.count);
+      }
+      expect(dashboard.trend.map(point => [point.date, point.mentions[saved.brand.id]])).toEqual([...counts].sort());
+      if (range === 'days=1') {
+        expect(dashboard.trendGranularity).toBe('hourly');
+        expect(dashboard.trend.length).toBeGreaterThan(8);
+        // The Wednesday article was enrolled during Monday's still-open scan.
+        const tracked = await get<Page<TrackingRow>>('tracked-urls?days=1&pageSize=100');
+        const midweek = tracked.items.find(item => item.createdAt.startsWith('2026-11-04'));
+        expect(midweek?.periodAppearances).toBeGreaterThan(0);
+        expect(midweek!.firstCitedAt! >= midweek!.createdAt).toBe(true);
+      } else {
+        const from = Date.parse(dashboard.period.start.slice(0, 10)), to = Date.parse(dashboard.period.end.slice(0, 10));
+        expect(dashboard.trend).toHaveLength((to - from) / 86400000 + 1);
+      }
+      const measured = prompts.items.filter(row => row.measurementCount > 0);
+      expect(measured.length).toBeGreaterThan(0);
+      expect(measured.every(row => row.visibilityChange! > 0)).toBe(true);
+      const band = bands[range];
+      if (band) {
+        const changes = [...dashboard.stages.map(row => row.visibilityChange), ...dashboard.providers.map(row => row.change),
+          ...measured.map(row => row.visibilityChange)];
+        expect(changes.every(value => value !== null && value >= band[0] && value <= band[1])).toBe(true);
+        expect(measured.filter(row => row.avgVisibility! >= 60 && row.avgVisibility! <= 80).length).toBeGreaterThan(24);
+      }
+    }
+  }, 30000);
 
   it('rejects another account, an unrelated company and misleading website domains', () => {
     expect(() => buildDrRoofDemo({ ...source(), sourceAccountId: 'another-account' })).toThrow();
@@ -149,5 +217,74 @@ describe('explicit compact Dr. Roof demo', () => {
     await expect(createDrRoofDemo(another, p, true)).rejects.toThrow('existing real account');
     await expect(createDrRoofDemo({ getProject: async () => null, saveProject: async () => false }, p, true)).rejects.toThrow('concurrently');
     await expect(createDrRoofDemo(new MemoryRepository(), { ...p, id: 'real-account' }, true)).rejects.toThrow('demo identity');
+  });
+});
+
+
+describe('Dr. Roof reporting upgrade', () => {
+  const catalog = JSON.parse(readFileSync(new URL('../scripts/dr-roof-content.json', import.meta.url), 'utf8'));
+  const now = new Date('2026-11-05T21:30:00Z');
+
+  it('preserves saved records, respects article publication dates and adds every curated URL once', async () => {
+    const existing = project(), repository = new MemoryRepository(), save = vi.spyOn(repository, 'saveProject');
+    existing.version = 3;
+    const draft = {
+      url: `https://app.citevia.io/demo-content/${existing.id}/roof-inspection`, title: 'My inspection checklist',
+      body: 'Start with an attic inspection.', contentType: 'BLOG' as const, demoPost: true as const,
+      provenance: { kind: 'demo-draft' as const, sourceUrls: ['https://drroof.com/'] },
+      publishedAt: '2026-07-06T08:00:00.000Z', createdAt: '2026-07-06T08:00:00.000Z',
+    };
+    existing.demo!.trackedUrls!.push(draft);
+    await repository.saveProject(existing, null);
+    const old = (await repository.getProject(existing.id))!, count = old.demo!.trackedUrls!.length;
+    expect((await syncDrRoofReporting(repository, catalog, false, now)).status).toBe('preview');
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(await syncDrRoofReporting(repository, catalog, true, now)).toMatchObject({
+      status: 'updated', version: 4, anchorDate: '2026-11-05', startDate: '2026-05-05', endDate: '2027-05-05',
+      added: catalog.blogs.length + catalog.socialLinks.length, referenceSources: catalog.sources.length,
+    });
+    const updated = (await repository.getProject(existing.id))!;
+    expect({ ...updated, demo: old.demo, updatedAt: old.updatedAt, version: old.version }).toEqual(old);
+    expect(updated.demo).toMatchObject({ samples: old.demo!.samples, traffic: old.demo!.traffic,
+      profile: old.demo!.profile, sourceAccountId: old.demo!.sourceAccountId, sourceCopiedAt: old.demo!.sourceCopiedAt });
+    const urls = updated.demo!.trackedUrls!;
+    expect(urls.slice(0, count)).toEqual(old.demo!.trackedUrls);
+    const additions = urls.slice(count);
+    expect(additions.map(row => row.url).sort()).toEqual([...catalog.blogs, ...catalog.socialLinks].map(row => row.url).sort());
+    const reporting = withDemoRuntime({ repository, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() }, () => now);
+    const tracked = await reporting.repository.listTrackedUrls(existing.id);
+    const matches = await reporting.repository.listTrackingMatches(existing.id);
+    for (const blog of catalog.blogs) {
+      const row = additions.find(row => row.url === blog.url)!;
+      expect(row.sourcePublishedAt).toBe(blog.sourcePublishedAt);
+      expect(row.publishedAt >= blog.sourcePublishedAt && row.createdAt! >= row.publishedAt).toBe(true);
+      const id = tracked.find(url => url.url === blog.url)!.id;
+      const captures = matches.filter(match => match.trackedUrlId === id).map(match => match.capture.capturedAt);
+      expect(captures.length).toBeGreaterThan(0);
+      expect(captures.every(at => at >= row.createdAt! && at >= blog.sourcePublishedAt)).toBe(true);
+    }
+    for (const until of [updated.demo!.anchorDate, updated.demo!.endDate]) {
+      const end = Date.parse(until) + 86_400_000;
+      const hosts = new Set(additions.filter(row => Date.parse(row.publishedAt) < end && Date.parse(row.publishedAt) >= end - 7 * 86_400_000)
+        .map(row => new URL(row.url).hostname.replace(/^www\./, '')));
+      expect(hosts).toEqual(new Set(['drroof.com', 'youtube.com', 'reddit.com']));
+    }
+    expect((await syncDrRoofReporting(repository, catalog, true, new Date('2026-11-06'))).status).toBe('unchanged');
+    expect(await repository.getProject(existing.id)).toEqual(updated);
+    expect(save).toHaveBeenCalledTimes(2);
+    await expect(syncDrRoofReporting(repository, catalog, true, now, '2026-12-04')).rejects.toThrow('preserve');
+  });
+
+  it('guards identity, catalog ownership and concurrent edits', async () => {
+    const saved = project(), saveProject = vi.fn(async () => false);
+    for (const invalid of [{ ...saved, enabled: true }, { ...saved, demo: undefined },
+      { ...saved, demo: { ...saved.demo!, sourceAccountId: 'another-account' } }])
+      await expect(syncDrRoofReporting({ getProject: async () => invalid, saveProject }, catalog, true, now)).rejects.toThrow('matching disabled');
+    const repository = { getProject: async () => saved, saveProject };
+    await expect(syncDrRoofReporting(repository, { ...catalog, blogs: [{ url: 'https://unrelated.com/roof/', title: 'Other' }] }, true, now))
+      .rejects.toThrow('official company website');
+    expect(saveProject).not.toHaveBeenCalled();
+    await expect(syncDrRoofReporting(repository, catalog, true, now)).rejects.toThrow('concurrently');
+    expect(saveProject).toHaveBeenLastCalledWith(expect.objectContaining({ version: saved.version + 1 }), saved.version);
   });
 });

@@ -2,6 +2,7 @@ import { restoreReportFields } from './public-report.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
+  usesDetailedReporting,
   brandRank,
   brandSentimentScore,
   investingComparisonPeriod,
@@ -313,7 +314,7 @@ export async function monitoringRoute(
       return json({ ...page, items: await answers(runtime, page.items) });
     }
     const total = eligible.length;
-    const growthProfile = project.demo?.reportingProfile === 'merchant_payments' && !project.demo.presentation
+    const growthProfile = usesDetailedReporting(project.demo) && !project.demo.presentation
       ? project.demo : undefined;
     const comparisonPeriod = growthProfile && investingComparisonPeriod(growthProfile, period.start, period.end);
     const promptsByProvider = new Map<ScanProvider, Set<string>>();

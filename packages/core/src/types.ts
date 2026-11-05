@@ -96,7 +96,7 @@ export interface DemoConfig {
   dashboardComparison?: 'scenario_start';
   publicationAlignment?: 'scans';
   /** Enables daily collections, period growth, and a sector-specific source catalog. */
-  reportingProfile?: 'uk_investing' | 'merchant_payments';
+  reportingProfile?: 'uk_investing' | 'merchant_payments' | 'residential_roofing';
   /** An explicitly labeled illustration layered over preserved source observations. */
   presentation?: { label: string; targetRank: number; mentionCount: number; reportingOnly: true };
   anchorDate: string;
@@ -127,6 +127,8 @@ export interface DemoConfig {
     citations?: { url: string; title?: string }[];
     companies?: string[];
   }[];
+  /** Additional researched publications alongside the evidence attached to saved samples. */
+  referenceSources?: { url: string; title?: string }[];
   traffic?: { pages?: string[]; countries?: string[]; browsers?: string[]; devices?: string[] };
   trackedUrls?: {
     url: string;

@@ -33,14 +33,14 @@ function reconcile(traffic: TrafficAggregate) {
 }
 
 describe('growing virtual AI traffic', () => {
-  it('reconciles positive merchant referral growth over rolling and calendar windows', () => {
-    const merchant: Project = { ...project, demo: { ...project.demo!, reportingProfile: 'merchant_payments',
+  it.each(['merchant_payments', 'residential_roofing'] as const)('reconciles positive %s referral growth over rolling and calendar windows', reportingProfile => {
+    const scenario: Project = { ...project, demo: { ...project.demo!, reportingProfile,
       profile: { trafficScale: 8, monthlyGrowth: .09 } } };
     for (const days of [1, 7, 14, 30, 90]) {
       const period = monitoringPeriod(new URLSearchParams({ days: String(days) }), new Date('2026-11-05T15:30:00Z'));
       const start = Date.parse(period.start), duration = Date.parse(period.end) - start + 1;
       const previous = { ...period, start: new Date(start - duration).toISOString(), end: new Date(start - 1).toISOString() };
-      const traffic = aggregateScenarioTraffic(merchant, { period, previous, providers: [], countries: [] });
+      const traffic = aggregateScenarioTraffic(scenario, { period, previous, providers: [], countries: [] });
       expect(traffic.providers.every(row => (trafficChange(row.visits, row.previous, 1) ?? 0) > 0)).toBe(true);
       reconcile(traffic);
     }
