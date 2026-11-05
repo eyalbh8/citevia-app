@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { CapturedAnswer, DashboardOverview, MentionsSummary, Page, Project, PromptMetricsResponse, PromptResult, TrackingRow, TrackingSummary, TrafficDashboard } from '@citevia/core';
+import type { CapturedAnswer, DashboardOverview, MentionAnswer, MentionsSummary, Page, Project, PromptAnswerRow, PromptMetricsResponse, PromptResult, ResponseDetail, ScanRun, SourceRow, TrackingRow, TrackingSummary, TrafficDashboard } from '@citevia/core';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository } from '@citevia/storage';
 import { createApi } from '../apps/api/src/app.js';
 import { buildServiceDemo, createServiceDemo, expandServiceDemoTracking } from '../scripts/create-service-demo.js';
@@ -97,6 +97,34 @@ describe('complete eToro demo account', () => {
       const summary = await get<TrackingSummary>(`tracked-urls/summary?${range}`);
       expect(tracking.items.reduce((sum, row) => sum + row.periodAppearances, 0)).toBe(summary.appearances);
       const mentions = await get<MentionsSummary>(`mentions/summary?${range}`);
+      if (band) {
+        const dates = summary.series.map(point => point.date);
+        expect(dates).toHaveLength(Number(range.slice('days='.length)));
+        expect(dashboard.trend.map(point => point.date)).toEqual(dates);
+        for (const provider of mentions.providers) {
+          expect(provider.points.map(point => point.date)).toEqual(dates);
+          expect(provider.points.reduce((sum, point) => sum + point.count, 0))
+            .toBe(dashboard.providers.find(row => row.provider === provider.provider)!.count);
+        }
+        expect(summary.series.every(point => point.citations > 0)).toBe(true);
+        expect(summary.series.reduce((sum, point) => sum + point.citations, 0)).toBe(summary.appearances);
+        for (const [index, point] of dashboard.trend.entries()) {
+          expect(point.mentions[project.brand.id]).toBe(mentions.providers.reduce((sum, provider) => sum + provider.points[index].count, 0));
+        }
+        if (range === 'days=7' || range === 'days=90') {
+          const page = await get<Page<MentionAnswer>>(`mentions?${range}&pageSize=100`);
+          for (const provider of mentions.providers) {
+            const today = provider.points.at(-1)!;
+            expect(page.items.filter(row => row.provider === provider.provider && row.date.startsWith(today.date))).toHaveLength(today.count);
+          }
+          const latest = page.items[0];
+          expect(latest.date.slice(0, 10)).toBe(now().toISOString().slice(0, 10));
+          expect(latest.date <= now().toISOString()).toBe(true);
+          const detail = await get<ResponseDetail>(`responses/${encodeURIComponent(latest.responseId)}`);
+          expect(detail.answer?.createdAt).toBe(latest.date);
+          expect(detail.result.capturedAt).toBe(latest.date);
+        }
+      }
       if (range === 'days=7') {
         const pickupDays = tracking.items.map(row => row.daysToFirstCitation!);
         expect(Math.min(...pickupDays)).toBe(0);
@@ -131,4 +159,40 @@ describe('complete eToro demo account', () => {
     expect(artifacts.values.size).toBe(0);
     expect(queue.messages).toEqual([]);
   }, 30000);
+
+  it('keeps the ongoing collection and source drilldowns within the current time', async () => {
+    const project = buildServiceDemo(source, now().toISOString()), repository = new MemoryRepository();
+    const identity = testIdentity('etoro-scan-owner');
+    await repository.saveProject(project, null);
+    await repository.syncUser(identity);
+    await repository.putMembership({ projectId: project.id, userId: identity.subject, role: 'owner' });
+    const api = createApi({ repository, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() }, { mode: 'live', now });
+    const get = async <T,>(path: string): Promise<T> => {
+      const response = await api(new Request(`https://test/v1/projects/${project.id}/${path}`), identity);
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    const current = now().toISOString();
+    const latestMention = (await get<Page<MentionAnswer>>('mentions?days=7')).items[0];
+    const run = await get<ScanRun>(`runs/${latestMention.responseId.split('~')[0]}`);
+    expect(run.status).toBe('running');
+    expect(run.capturedCount).toBeGreaterThan(0);
+    expect(run.capturedCount).toBeLessThan(run.totalCount);
+    const responses = await get<Page<PromptResult>>(`responses?runId=${run.id}`);
+    expect(responses.total).toBe(run.capturedCount);
+    expect(responses.items.every(row => row.capturedAt! <= current)).toBe(true);
+    const promptHistory = await get<Page<PromptAnswerRow>>(`prompts/${responses.items[0].promptId}/responses`);
+    expect(promptHistory.items.every(row => row.date <= current)).toBe(true);
+
+    const sources = await get<Page<SourceRow>>('sources?limit=1');
+    expect(sources.total).toBeGreaterThan(1000);
+    for (const query of ['', `&runId=${run.id}`]) {
+      const owned = (await get<Page<SourceRow>>(`sources?owned=true${query}`)).items[0];
+      expect(owned.domain).toBe('etoro.com');
+      expect(owned.lastSeenAt <= current).toBe(true);
+      const evidence = await get<Page<PromptResult>>(`sources/${owned.id}/responses?limit=100${query}`);
+      expect(evidence.items.length).toBeGreaterThan(0);
+      expect(evidence.items.every(row => row.capturedAt! <= current)).toBe(true);
+    }
+  });
 });

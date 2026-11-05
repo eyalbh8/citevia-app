@@ -24,6 +24,7 @@ import {
   type MonitoringPeriod,
   type TrackingDetail,
   type TrackingSummary,
+  type TrackedUrl,
 } from '@citevia/core';
 import { AccessError, type Runtime } from '@citevia/storage';
 import {
@@ -43,6 +44,9 @@ const json = (data: unknown, status = 200) =>
 const fail = (message: string, status = 400): never => {
   throw new AccessError(status, 'MONITORING_REQUEST', message);
 };
+function publicationItem({ id, title, url, contentType, imageUrl, publishedAt }: TrackedUrl, appearances: number) {
+  return { id, title, url, contentType, imageUrl, publishedAt, appearances };
+}
 export function monitoringPeriod(
   query: URLSearchParams,
   now: Date,
@@ -362,18 +366,7 @@ export async function monitoringRoute(
             ? `${url.publishedAt.slice(0, 13)}:00:00.000Z`
             : url.publishedAt.slice(0, 10),
         list = markerGroups.get(date) || [];
-      list.push({
-        id: url.id,
-        url: url.url,
-        title: url.title,
-        contentType: url.contentType,
-        imageUrl: url.imageUrl,
-        publishedAt: url.publishedAt,
-        appearances: relevant.reduce(
-          (sum, m) => sum + m.evidence.appearances,
-          0,
-        ),
-      });
+      list.push(publicationItem(url, relevant.reduce((sum, match) => sum + match.evidence.appearances, 0)));
       markerGroups.set(date, list);
     }
     const summary: MentionsSummary = {
@@ -487,7 +480,9 @@ export async function monitoringRoute(
     for (const row of chosen) {
       if (row.publishedAt < period.start) continue;
       const point = series.get(bucket(row.publishedAt));
-      if (point) point.published++;
+      if (!point) continue;
+      point.published++;
+      (point.publications ??= []).push(publicationItem(row, row.periodAppearances));
     }
     const citedCount = chosen.filter((row) => row.matchingAnswers > 0).length;
     const summary: TrackingSummary = {

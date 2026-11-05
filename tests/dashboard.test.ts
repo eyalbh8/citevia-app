@@ -602,7 +602,7 @@ describe('dashboard overview measurement semantics', () => {
     },
   );
 
-  it('counts distinct cited pages per hostname separately from citation occurrences', () => {
+  it('combines owned hosts into one leading source and counts distinct pages like the Sources report', () => {
     const value = project(),
       item = observation(value, 'sources');
     item.answer = capture([
@@ -610,21 +610,24 @@ describe('dashboard overview measurement semantics', () => {
       'http://NORTHSTAR.example/Page?id=7#section',
       'https://northstar.example/Page?id=8',
       'https://kb.northstar.example/Page',
+      'https://www.northstar.example/guide?utm_campaign=email',
+      'https://www.northstar.example/guide',
+      ...Array(10).fill('https://news.market-wire.example/updates'),
       'javascript:alert(1)',
     ]);
     const result = aggregateDashboardOverview(value, period, filters, [item]);
     expect(result.sources).toEqual([
       {
         domain: 'northstar.example',
-        pageCount: 2,
-        citationCount: 3,
+        pageCount: 5,
+        citationCount: 6,
         owned: true,
       },
       {
-        domain: 'kb.northstar.example',
+        domain: 'market-wire.example',
         pageCount: 1,
-        citationCount: 1,
-        owned: true,
+        citationCount: 10,
+        owned: false,
       },
     ]);
   });
@@ -1025,14 +1028,8 @@ it.each(['memory', 'postgres'])(
       expect((await response.json()).sources).toEqual([
         {
           domain: 'northstar.example',
-          pageCount: 1,
-          citationCount: 2,
-          owned: true,
-        },
-        {
-          domain: 'kb.northstar.example',
-          pageCount: 1,
-          citationCount: 1,
+          pageCount: 3,
+          citationCount: 3,
           owned: true,
         },
       ]);
@@ -1053,14 +1050,8 @@ it.each(['memory', 'postgres'])(
       expect((await withLegacy.json()).sources).toEqual([
         {
           domain: 'northstar.example',
-          pageCount: 2,
-          citationCount: 3,
-          owned: true,
-        },
-        {
-          domain: 'kb.northstar.example',
-          pageCount: 1,
-          citationCount: 1,
+          pageCount: 4,
+          citationCount: 4,
           owned: true,
         },
         {

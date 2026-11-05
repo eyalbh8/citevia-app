@@ -104,13 +104,13 @@ describe('dashboard discovery reporting', () => {
       .toBe('Top brands by visibility across all prompts');
   });
 
-  it('labels presentation rankings as illustrative while retaining all prompts', async () => {
+  it('uses the same all-prompts ranking label for presentation accounts', async () => {
     await dashboard({ ...project, demo: { ...demo, presentation: {
       label: 'XTrade visibility scenario', targetRank: 8, mentionCount: 12, reportingOnly: true,
     } } });
     expect(latestQuery().has('branded')).toBe(false);
     expect(container.querySelector('.overview-ranking .card-description')?.textContent)
-      .toBe('Illustrative rankings across the selected prompts');
+      .toBe('Top brands by visibility across all prompts');
   });
 
   it('keeps non-branded discovery as an explicit filter choice', async () => {
@@ -158,6 +158,11 @@ describe('dashboard discovery reporting', () => {
     expect(lines).toHaveLength(6);
     expect(colors[5]).toMatch(/^#[\da-f]{6}$/i);
     expect(new Set(colors).size).toBe(6);
+    const axis = [...container.querySelectorAll('.overview-chart text[y="252"]')].map(label => label.textContent);
+    expect(axis[0]).toBe('Oct 19');
+    expect(axis.at(-1)).toBe('Oct 25');
+    const firstObservedX = Number(lines[0].getAttribute('points')!.split(',')[0]);
+    expect(firstObservedX).toBeGreaterThan(40);
     const legend = container.querySelectorAll<HTMLElement>('.overview-chart-legend i');
     expect(legend[5].style.background).not.toBe('');
   });

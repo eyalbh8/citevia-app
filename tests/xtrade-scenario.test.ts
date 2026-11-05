@@ -70,7 +70,7 @@ describe('explicit illustrative presentation measurements', () => {
     for (const result of [results.find(result => result.target!.mentioned)!, results.find(result => !result.target!.mentioned)!]) {
       const answer = (await runtime.artifacts.get<CapturedAnswer>(result.captureKey!))!;
       const analysis = (await runtime.artifacts.get<Analysis>(result.analysisKey!))!;
-      expect(answer.text).toContain('Illustrative scenario');
+      expect(answer.text).not.toContain('Illustrative scenario');
       expect(answer.raw).toMatchObject({ illustrative: true, presentation: project.demo!.presentation });
       expect(analysis.raw).toMatchObject({ illustrative: true, presentation: project.demo!.presentation });
       expect(analysis.companies!.map(company => company.rank)).toEqual(Array.from({ length: result.target!.mentioned ? 8 : 7 }, (_, index) => index + 1));

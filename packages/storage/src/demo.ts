@@ -5,6 +5,7 @@ import {
   investingVisibilityRate,
   projectProviders,
   trackedUrlKey,
+  trackedArticleUrl,
   type Analysis,
   type BrandAnalysis,
   type CapturedAnswer,
@@ -154,8 +155,49 @@ function scanTimes(project: Project): number[] {
       const at = week + slot * 60_000;
       if (at >= start && at <= end) times.push(at);
     }
+  if (config.reportingProfile === 'uk_investing' && times[0] !== start) times.unshift(start);
   scanTimeCache.set(project, times);
   return times;
+}
+
+interface CaptureSchedule {
+  times: Map<string, number>;
+  last: number;
+}
+const captureScheduleCache = new WeakMap<Project, Map<number, CaptureSchedule>>();
+
+/** Collect each prompt once per run, with answers arriving throughout its UTC collection window. */
+function captureSchedule(project: Project, at: number): CaptureSchedule {
+  let schedules = captureScheduleCache.get(project);
+  if (!schedules) {
+    schedules = new Map();
+    captureScheduleCache.set(project, schedules);
+  }
+  const cached = schedules.get(at);
+  if (cached) return cached;
+  const prompts = activePrompts(project);
+  const times = new Map<string, number>();
+  let last = at;
+  if (project.demo?.reportingProfile === 'uk_investing') {
+    const starts = scanTimes(project);
+    const until = starts[starts.indexOf(at) + 1] ?? day(project.demo.endDate) + DAY;
+    const ordered = [...prompts].sort((a, b) => hash(a.id) - hash(b.id) || a.id.localeCompare(b.id));
+    for (const [index, prompt] of ordered.entries()) {
+      const sample = at + Math.floor(index * (until - at) / ordered.length);
+      const utcDay = Math.floor(sample / DAY) * DAY;
+      // The first collection on a new date is available from the start of that reporting day.
+      last = utcDay > last ? utcDay : sample;
+      times.set(prompt.id, last);
+    }
+  } else {
+    for (const [index, prompt] of prompts.entries()) {
+      last = at + index * 1000;
+      times.set(prompt.id, last);
+    }
+  }
+  const schedule = { times, last };
+  schedules.set(at, schedule);
+  return schedule;
 }
 
 function progress(project: Project, at: number) {
@@ -185,6 +227,10 @@ function artifactKey(project: Project, run: ScanRun, prompt: Prompt, kind: 'capt
   return `${PREFIX}${encodeURIComponent(project.id)}/${run.id}/${encodeURIComponent(prompt.id)}/${kind}.json`;
 }
 
+function runCompletedAt(project: Project, at: number) {
+  return Math.max(at + 120_000, captureSchedule(project, at).last + 1000);
+}
+
 function createRun(project: Project, at: number, provider: ScanProvider): ScanRun {
   const prompts = activePrompts(project);
   const model = projectProviders(project).find((item) => item.provider === provider)!.model;
@@ -196,7 +242,7 @@ function createRun(project: Project, at: number, provider: ScanProvider): ScanRu
     scheduledAt: createdAt,
     createdAt,
     startedAt: createdAt,
-    completedAt: iso(at + 120_000),
+    completedAt: iso(runCompletedAt(project, at)),
     status: 'completed',
     trigger: 'scheduled',
     snapshot: {
@@ -222,7 +268,7 @@ function createRun(project: Project, at: number, provider: ScanProvider): ScanRu
     resultVersion: prompts.length,
     summaryVersion: prompts.length,
     summaryKey: `${PREFIX}${encodeURIComponent(project.id)}/${runId(at, provider)}/summary.json`,
-    deadlineAt: iso(at + HOUR),
+    deadlineAt: iso((project.demo?.reportingProfile === 'uk_investing' ? captureSchedule(project, at).last : at) + HOUR),
     expiresAt: Math.floor((day(configFor(project)!.endDate) + 366 * DAY) / 1000),
   };
 }
@@ -238,6 +284,15 @@ function findRun(project: Project, id: string): ScanRun | null {
   }
   const item = index.get(id);
   return item ? createRun(project, item.at, item.provider) : null;
+}
+
+/** Single-scan reads may reach the current collection through an answer's run ID. */
+function collectingPrompts(project: Project, run: ScanRun, asOf: number) {
+  const start = Date.parse(run.scheduledAt);
+  if (project.demo?.reportingProfile !== 'uk_investing' || start > asOf || Date.parse(run.completedAt!) <= asOf)
+    return null;
+  const schedule = captureSchedule(project, start);
+  return activePrompts(project).filter(prompt => schedule.times.get(prompt.id)! <= asOf);
 }
 
 const measurementPlans = new WeakMap<Project, Map<ScanProvider, {
@@ -438,6 +493,12 @@ const trackedCitationCache = new WeakMap<Project, {
   eligible: Map<string, NonNullable<DemoConfig['trackedUrls']>>;
 }>();
 const contentPickupCache = new WeakMap<Project, Map<string, { url: string; title: string }[]>>();
+type TrackedPublication = NonNullable<DemoConfig['trackedUrls']>[number];
+
+function enrolledForCapture(item: TrackedPublication, at: string) {
+  return (item.createdAt || item.publishedAt) <= at && item.publishedAt <= at &&
+    (!item.trackingPeriods || item.trackingPeriods.some(period => period.start <= at && (!period.end || at < period.end)));
+}
 
 /** Enroll each post at its first scan; aligned demos retain citations in subsequent scans. */
 function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
@@ -454,9 +515,21 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
       if (!eligible.length || !providers.length) continue;
       const provider = providers[index % providers.length].provider;
       for (const at of configFor(project)!.publicationAlignment === 'scans' ? eligible : eligible.slice(0, 1)) {
-        const plan = measurementPlan(project, provider), mentionCount = plan.scans.get(at)!.mentionCount;
-        const order = index % Math.max(1, mentionCount);
-        const promptId = [...plan.promptOrder].find(([, value]) => value === order)?.[0];
+        let promptId: string | undefined;
+        if (project.demo?.reportingProfile === 'uk_investing') {
+          const schedule = captureSchedule(project, at);
+          // Keep the initial pickup on its enrolled scan date. Later citations
+          // appear throughout each collection window, anchored to a real answer.
+          const candidates = [...schedule.times].filter(([, captured]) =>
+            (at !== eligible[0] || Math.floor(captured / DAY) === Math.floor(at / DAY)) &&
+            enrolledForCapture(item, iso(captured)));
+          if (!candidates.length) continue;
+          promptId = candidates[hash(`${item.url}:${at}`) % candidates.length][0];
+        } else {
+          const plan = measurementPlan(project, provider), mentionCount = plan.scans.get(at)!.mentionCount;
+          const order = index % Math.max(1, mentionCount);
+          promptId = [...plan.promptOrder].find(([, value]) => value === order)?.[0];
+        }
         if (!promptId) continue;
         const key = `${iso(at)}:${provider}:${promptId}`;
         const citations = pickups.get(key) || [];
@@ -493,10 +566,12 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     pools.set(prompt.id, unique);
   }
   const size = Math.min(unique.length, 1 + Math.floor(progress(project, Date.parse(run.scheduledAt)) * 5));
-  const at = iso(Date.parse(run.scheduledAt));
+  const at = project.demo?.reportingProfile === 'uk_investing'
+    ? iso(captureSchedule(project, Date.parse(run.scheduledAt)).times.get(prompt.id)!)
+    : run.scheduledAt;
   let eligible = trackedIndex.eligible.get(at);
   if (!eligible) {
-    eligible = tracked.filter(item => (item.createdAt || item.publishedAt) <= at && item.publishedAt <= at);
+    eligible = tracked.filter(item => enrolledForCapture(item, at));
     trackedIndex.eligible.set(at, eligible);
   }
   // Source tiers are encoded in answer citations, so the Sources rows, answer
@@ -526,7 +601,7 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     base.push({ url: item.url, title: item.title });
   }
   const citations: Citation[] = [...new Map(base.map(item => [item.url, item])).values()].map((citation, index) => ({
-    id: `citation_${index + 1}`, blockId: 'answer', url: citation.url,
+    id: `citation_${index + 1}`, blockId: 'answer', url: trackedArticleUrl(citation.url),
     title: citation.title || new URL(citation.url).hostname, start: null, end: null,
   }));
   return project.demo?.reportingProfile === 'uk_investing'
@@ -537,7 +612,7 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
 function resultFor(project: Project, run: ScanRun, prompt: Prompt): PromptResult {
   const brands = brandMeasurements(project, run, prompt);
   const citations = citationsFor(project, run, prompt);
-  const index = activePrompts(project).findIndex((item) => item.id === prompt.id);
+  const captured = captureSchedule(project, Date.parse(run.scheduledAt)).times.get(prompt.id)!;
   return {
     projectId: project.id, runId: run.id, promptId: prompt.id,
     responseId: `${run.id}~${prompt.id}`, prompt,
@@ -548,8 +623,8 @@ function resultFor(project: Project, run: ScanRun, prompt: Prompt): PromptResult
     target: brands[0], brands,
     citationCount: citations.length,
     sourceCount: new Set(citations.map((citation) => citation.url)).size,
-    capturedAt: iso(Date.parse(run.scheduledAt) + index * 1000),
-    completedAt: iso(Date.parse(run.scheduledAt) + index * 1000 + 1000),
+    capturedAt: iso(captured),
+    completedAt: iso(captured + 1000),
     model: run.snapshot.generationModel,
     usage: emptyUsage(), extractionUsage: emptyUsage(), expiresAt: run.expiresAt,
   };
@@ -580,7 +655,6 @@ function evidenceFor(project: Project, run: ScanRun, prompt: Prompt) {
   const presentation = configFor(project)!.presentation;
   const excerpt = !presentation && result.target?.mentioned ? sample?.answerText?.trim().slice(0, 1800) : undefined;
   const text = [
-    presentation ? 'Illustrative scenario. These generated examples are not captured provider responses.' : '',
     copy.introduction,
     selection || copy.fallback,
     excerpt || '',
@@ -628,13 +702,18 @@ function historyFor(project: Project, start: string, end: string, promptId?: str
   if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) return { runs, results };
   const prompts = activePrompts(project).filter((prompt) => !promptId || prompt.id === promptId);
   for (const at of scanTimes(project)) {
-    if (at + 50_000 < from || at > to) continue;
+    if (at > to) break;
+    const schedule = captureSchedule(project, at);
+    if (schedule.last < from) continue;
+    const observed = prompts.filter(prompt => {
+      const captured = schedule.times.get(prompt.id)!;
+      return captured >= from && captured <= to;
+    });
+    if (!observed.length) continue;
     for (const { provider } of projectProviders(project)) {
       const run = createRun(project, at, provider);
-      const measured = prompts.map((prompt) => resultFor(project, run, prompt)).filter((result) =>
-        Date.parse(result.capturedAt!) >= from && Date.parse(result.capturedAt!) <= to,
-      );
-      if (measured.length) { runs.push(run); results.push(...measured); }
+      runs.push(run);
+      results.push(...observed.map(prompt => resultFor(project, run, prompt)));
     }
   }
   return { runs, results };
@@ -703,21 +782,28 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
     async listRuns(projectId, limit = 60) {
       const project = await demoProject(projectId);
       if (!project) return runtime.repository.listRuns(projectId, limit);
-      return scanTimes(project).filter((at) => at <= now().getTime()).reverse()
+      const latest = now().getTime();
+      return scanTimes(project).filter(at => (project.demo?.reportingProfile === 'uk_investing'
+        ? runCompletedAt(project, at) : at) <= latest).reverse()
         .flatMap((at) => projectProviders(project).map(({ provider }) => createRun(project, at, provider)))
         .slice(0, Math.max(0, limit));
     },
     async getRun(projectId, id) {
       const project = await demoProject(projectId);
-      return project ? findRun(project, id) ?? (project.demo!.presentation && !id.startsWith('run_demo_') ? runtime.repository.getRun(projectId, id) : null)
-        : runtime.repository.getRun(projectId, id);
+      if (!project) return runtime.repository.getRun(projectId, id);
+      const run = findRun(project, id);
+      if (!run) return project.demo!.presentation && !id.startsWith('run_demo_') ? runtime.repository.getRun(projectId, id) : null;
+      const collected = collectingPrompts(project, run, now().getTime());
+      return collected ? { ...run, status: 'running', terminalCount: collected.length, succeededCount: collected.length,
+        capturedCount: collected.length, resultVersion: collected.length, completedAt: undefined, summaryKey: undefined,
+        summaryVersion: undefined } : run;
     },
     async listResults(projectId, id) {
       const project = await demoProject(projectId);
       if (!project) return runtime.repository.listResults(projectId, id);
       const run = findRun(project, id);
       if (!run && project.demo!.presentation && !id.startsWith('run_demo_')) return runtime.repository.listResults(projectId, id);
-      return run ? activePrompts(project).map((prompt) => resultFor(project, run, prompt)) : [];
+      return run ? (collectingPrompts(project, run, now().getTime()) ?? activePrompts(project)).map(prompt => resultFor(project, run, prompt)) : [];
     },
     async getResult(projectId, id, promptId) {
       const project = await demoProject(projectId);
@@ -766,22 +852,8 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
     },
     async aggregateTraffic(projectId, filters) {
       const project = await demoProject(projectId);
-      return project && !project.demo!.presentation?.reportingOnly ? aggregateScenarioTraffic(project, filters) : runtime.repository.aggregateTraffic(projectId, filters);
-    },
-    async trafficStatus(projectId, testId) {
-      const project = await demoProject(projectId);
-      if (!project || project.demo!.presentation?.reportingOnly) return runtime.repository.trafficStatus(projectId, testId);
-      const config = configFor(project)!;
-      const last = iso(Math.max(day(config.startDate), Math.min(now().getTime(), day(config.endDate) + DAY - 1)));
-      return {
-        installed: true, hasEvents: now().getTime() >= day(config.startDate), lastReceivedAt: last,
-        testReceived: false,
-        sites: project.brand.domains.slice(0, 3).flatMap((domain) => {
-          try { return [{ origin: new URL(/^https?:\/\//.test(domain) ? domain : `https://${domain}`).origin,
-            firstSeenAt: iso(day(config.startDate)), lastSeenAt: last, trackerVersion: 'citevia-v1' }]; }
-          catch { return []; }
-        }),
-      };
+      const observed = await runtime.repository.aggregateTraffic(projectId, filters);
+      return project && !project.demo!.presentation?.reportingOnly ? aggregateScenarioTraffic(project, filters, observed) : observed;
     },
   };
   const repository = new Proxy(runtime.repository, {

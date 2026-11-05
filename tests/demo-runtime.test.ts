@@ -239,7 +239,7 @@ describe('virtual demo measurements', () => {
       trafficFilters('2026-10-22T12:37:00.000Z', '2026-10-23T12:36:59.999Z', 'hourly'));
     expect(hourly.current).toBeGreaterThan(0);
     expect(hourly.series.reduce((sum, item) => sum + Object.values(item.values).reduce((total, visits) => total + visits, 0), 0)).toBe(hourly.current);
-    expect((await demo.repository.trafficStatus(project.id)).sites[0].trackerVersion).toBe('citevia-v1');
+    expect(await demo.repository.trafficStatus(project.id)).toMatchObject({ installed: false, hasEvents: false, sites: [] });
   });
 
   it('preserves source traffic category ordering across small hourly country and provider counts', async () => {

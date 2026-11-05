@@ -269,7 +269,7 @@ function BrandbookForm({
             <p className="scan-options">
               Generated {formatDate(draft.generatedAt)}
               <br />
-              Model: {draft.model}
+              {draft.model === 'public-website-demo' ? 'Source: Company website research' : `Model: ${draft.model}`}
               <br />
               Brandbook version: {draft.version}
             </p>

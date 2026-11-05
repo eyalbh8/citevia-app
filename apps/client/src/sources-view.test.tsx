@@ -66,6 +66,17 @@ afterEach(async () => {
 });
 
 describe('source domain pagination', () => {
+  it('gives each source a stable graphical mark even when no favicon exists', async () => {
+    await render();
+    const marks = () => [...container.querySelectorAll('summary .publisher-mark')].map(svg => svg.outerHTML);
+    const first = marks();
+    expect(first).toHaveLength(10);
+    expect(new Set(first).size).toBe(10);
+    expect(container.querySelectorAll('summary .domain-logo img')).toHaveLength(0);
+    await click('Next page');
+    await click('Previous page');
+    expect(marks()).toEqual(first);
+  });
   it('requests ten domains per page, visits the next page and returns without skipping sources', async () => {
     await render();
     expect(container.querySelectorAll('.source-card')).toHaveLength(10);

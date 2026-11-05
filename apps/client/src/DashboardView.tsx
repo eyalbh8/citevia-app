@@ -1,3 +1,4 @@
+import { axisTickIndices } from './chart-time';
 import {
   useEffect,
   useId,
@@ -96,7 +97,7 @@ function exportOverview(data: DashboardOverview, name: string) {
   add('Period', name, 'Start (UTC)', data.period.start);
   add('Period', name, 'End (UTC)', data.period.end);
   if (data.comparison === 'modeled_period')
-    add('Period', name, 'Growth basis', 'Modeled target mention and visibility growth over the selected dates');
+    add('Period', name, 'Growth basis', 'Estimated mention and visibility growth over the selected dates');
   for (const [key, value] of Object.entries(data.filters))
     if (
       Array.isArray(value) ? value.length : value !== '' && value !== undefined
@@ -161,7 +162,7 @@ export function DashboardView({
   );
   const data = overview.data;
   const growthLabel = data?.comparison === 'modeled_period'
-    ? 'Modeled growth over the selected period'
+    ? 'Estimated growth over the selected period'
     : data?.comparison === 'scenario_baseline' ? 'Growth since the first scan' : 'Change from first to last observed day';
   const periodCaption =
     selection.days === 'custom'
@@ -217,7 +218,7 @@ export function DashboardView({
                   <span className="overview-timezone"> · Growth since {dayLabel(data.comparisonPeriod.start, true)}</span>
                 )}
                 {data.comparison === 'modeled_period' && (
-                  <span className="overview-timezone"> · Modeled growth over this period</span>
+                  <span className="overview-timezone"> · Estimated growth over this period</span>
                 )}
               </span>
               <span role="status">
@@ -344,9 +345,7 @@ export function DashboardView({
                       Industry Ranking
                     </h2>
                     <p className="card-description">
-                      {project.demo?.presentation
-                        ? 'Illustrative rankings across the selected prompts'
-                        : selection.branded === 'false'
+                      {selection.branded === 'false'
                         ? 'Discovery visibility from non-branded prompts'
                         : selection.branded === 'true'
                           ? 'Visibility from prompts that name your brand'
@@ -491,7 +490,7 @@ export function DashboardView({
                   </div>
                 </div>
                 {data.ranking.length && data.trend.length ? (
-                  <BrandTrend ranking={data.ranking} points={data.trend} />
+                  <BrandTrend ranking={data.ranking} points={data.trend} period={data.period} />
                 ) : (
                   <Empty
                     title="Your visibility trend starts here"
@@ -532,6 +531,7 @@ export function DashboardView({
                         <th scope="row">
                           <span className="overview-source">
                             <DomainLogo
+                              publisher
                               domain={s.domain}
                               size={30}
                               className={`overview-source-icon ${s.owned ? 'owned' : ''}`}
@@ -555,8 +555,7 @@ export function DashboardView({
               )}
               {data.sources.length > 0 && (
                 <p className="overview-card-note">
-                  Top {data.sources.length} domains by citation frequency. Pages
-                  counts distinct cited URLs.
+                  Your cited domains appear first, followed by other domains by citation frequency. Pages counts distinct cited URLs.
                 </p>
               )}
             </section>
@@ -606,7 +605,9 @@ function OverviewSkeleton({ providers }: { providers: number }) {
 function BrandTrend({
   ranking,
   points,
+  period,
 }: {
+  period: DashboardOverview['period'];
   ranking: DashboardOverview['ranking'];
   points: DashboardOverview['trend'];
 }) {
@@ -628,15 +629,14 @@ function BrandTrend({
     right = width - 14,
     top = 20,
     bottom = 226;
-  const times = points.map((p) =>
-    Date.parse(`${p.date.slice(0, 10)}T12:00:00Z`),
-  );
-  const first = times[0],
-    last = times.at(-1)!;
-  const x = (i: number) =>
-    first === last
-      ? (left + right) / 2
-      : left + ((times[i] - first) / (last - first)) * (right - left);
+  const dayMs = 86400000;
+  const first = Date.parse(period.start.slice(0, 10));
+  const last = Date.parse(period.end.slice(0, 10));
+  const dayCount = Math.round((last - first) / dayMs) + 1;
+  const dayX = (offset: number) => dayCount === 1
+    ? (left + right) / 2
+    : left + offset / (dayCount - 1) * (right - left);
+  const x = (i: number) => dayX((Date.parse(points[i].date.slice(0, 10)) - first) / dayMs);
   const maximum = Math.max(
     1,
     ...points.flatMap((p) => ranking.map((b) => p.mentions[b.brandId] || 0)),
@@ -644,14 +644,7 @@ function BrandTrend({
   const step = Math.max(1, Math.ceil(maximum / 4));
   const ceiling = step * 4;
   const y = (count: number) => bottom - (count / ceiling) * (bottom - top);
-  const tickCount = Math.min(width < 400 ? 3 : 5, points.length);
-  const ticks = [
-    ...new Set(
-      Array.from({ length: tickCount }, (_, i) =>
-        Math.round((i * (points.length - 1)) / Math.max(1, tickCount - 1)),
-      ),
-    ),
-  ];
+  const ticks = axisTickIndices(dayCount, right - left);
   const visibleActive =
     active === null ? null : Math.min(active, points.length - 1);
   const selected = visibleActive === null ? null : points[visibleActive];
@@ -736,19 +729,19 @@ function BrandTrend({
           {ticks.map((i) => (
             <text
               key={i}
-              x={x(i)}
+              x={dayX(i)}
               y={bottom + 26}
               textAnchor={
-                points.length === 1
+                dayCount === 1
                   ? 'middle'
                   : i === 0
                     ? 'start'
-                    : i === points.length - 1
+                    : i === dayCount - 1
                       ? 'end'
                       : 'middle'
               }
             >
-              {dayLabel(points[i].date)}
+              {dayLabel(new Date(first + i * dayMs).toISOString().slice(0, 10))}
             </text>
           ))}
           {visibleActive !== null && (

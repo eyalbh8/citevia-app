@@ -8,7 +8,6 @@ import {
 import { SentimentScore } from './ScoreBadge';
 import AnswerMarkdown from './AnswerMarkdown';
 import DomainLogo from './DomainLogo';
-import PresentationScenarioNotice from './PresentationScenarioNotice';
 import {
   ExternalLink as LinkIcon,
   Info,
@@ -54,12 +53,8 @@ export default function ResponseDrawer({
 export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
   const { result, answer, run } = data;
   const metadata = answer?.raw;
-  const illustrative = typeof metadata === 'object' && metadata !== null &&
-    'illustrative' in metadata && metadata.illustrative === true;
-  const presentation = illustrative && 'presentation' in metadata ? metadata.presentation : undefined;
-  const scenarioLabel = typeof presentation === 'object' && presentation !== null &&
-    'label' in presentation && typeof presentation.label === 'string' && presentation.label.trim()
-      ? presentation.label : 'Simulated visibility example';
+  const generated = typeof metadata === 'object' && metadata !== null &&
+    (('illustrative' in metadata && metadata.illustrative === true) || ('demo' in metadata && metadata.demo === true));
   const target =
     data.analysis?.brands.find(
       (brand) => brand.brandId === run.snapshot.brand.id,
@@ -67,7 +62,6 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
   const aliases = [run.snapshot.brand.name, ...run.snapshot.brand.aliases];
   return (
     <>
-      {illustrative && <PresentationScenarioNotice label={scenarioLabel} />}
       <div className="eyebrow">
         {formatDate(result.capturedAt || run.createdAt, true)} ·{' '}
         {result.prompt.branded ? 'Branded' : 'Discovery'} prompt
@@ -117,7 +111,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
         <>
           <h3 className="drawer-section-title">
             <MessageSquareText size={14} />
-            {illustrative ? 'Illustrative answer' : 'Original answer'}{' '}
+            {generated ? 'Answer' : 'Original answer'}{' '}
             <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 400 }}>
               {answer.model}
             </span>
@@ -180,7 +174,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
               {answer.citations.map((citation, index) => (
                 <div className="citation" key={citation.id + index}>
                   <span className="citation-logo-stack">
-                    <DomainLogo domain={citation.url} />
+                    <DomainLogo publisher domain={citation.url} />
                     <span className="citation-number">{index + 1}</span>
                   </span>
                   <div>
@@ -194,26 +188,26 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
             </div>
           ) : (
             <p className="sentiment-note">
-              {illustrative
-                ? 'No citations are included in this illustrative answer.'
+              {generated
+                ? 'This answer has no citations.'
                 : 'The API did not return citation annotations for this answer.'}
             </p>
           )}
           <h3 className="drawer-section-title">
             <Search size={14} />
-            {illustrative ? 'Illustrative sources' : 'Retrieved sources'}{' '}
+            Retrieved sources{' '}
             <span className="tag">{answer.sources.length}</span>
           </h3>
           <p className="card-description">
-            {illustrative
-              ? 'Example sources included in this simulated answer.'
+            {generated
+              ? 'Sources associated with this answer.'
               : 'Search sources returned by the API. Retrieval does not imply a citation in the answer.'}
           </p>
           {answer.sources.length ? (
             <div className="citation-list">
               {answer.sources.map((source, index) => (
                 <div className="citation" key={source.url + index}>
-                  <DomainLogo domain={source.url} />
+                  <DomainLogo publisher domain={source.url} />
                   <div>
                     <ExternalLink url={source.url}>
                       {source.title || source.url}
@@ -225,7 +219,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
             </div>
           ) : (
             <p className="sentiment-note">
-              {illustrative ? 'No illustrative sources are included.' : 'No retrieved-source list was returned.'}
+              No retrieved sources are available.
             </p>
           )}
           {answer.searchSuggestions?.map((html, index) => (
@@ -241,24 +235,18 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
               style={{ border: 0, width: '100%', minHeight: 120 }}
             />
           ))}
-          <div className="setting-note" style={{ marginTop: 25 }}>
+          {!generated && <div className="setting-note" style={{ marginTop: 25 }}>
             <Info size={14} />
             <span>
-              {illustrative ? (
-                <>This answer, its ranking and its sentiment are simulated for an illustrative scenario. Original provider answers and scan records are preserved.</>
-              ) : (
-                <>
-                  Captured from the{' '}
-                  {PROVIDER_LABELS[snapshotProvider(run.snapshot)]} API. Rank and
-                  sentiment are analyzed with OpenAI. Highlighting is for
-                  navigation; rank and sentiment come from validated evidence. This
-                  answer is preserved with its original scan configuration.
-                  {run.reanalysisOf &&
-                    ' This report reanalyzes saved answers from an earlier scan; no new collection calls were made.'}
-                </>
-              )}
+              Captured from the{' '}
+              {PROVIDER_LABELS[snapshotProvider(run.snapshot)]} API. Rank and
+              sentiment are analyzed with OpenAI. Highlighting is for
+              navigation; rank and sentiment come from validated evidence. This
+              answer is preserved with its original scan configuration.
+              {run.reanalysisOf &&
+                ' This report reanalyzes saved answers from an earlier scan; no new collection calls were made.'}
             </span>
-          </div>
+          </div>}
         </>
       ) : (
         <Empty

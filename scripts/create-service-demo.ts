@@ -234,7 +234,7 @@ export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOStri
     toneOfVoice: raw.toneOfVoice || [], values: raw.values || [], personality: raw.personality || [], targetAudience: raw.targetAudience || source.audience,
     knowledgeSources, sitemapUrl: raw.sitemapUrl || null, caseStudiesSourceUrl: raw.caseStudiesSourceUrl || null, caseStudies: [],
     postGuidelines: raw.postGuidelines || { dos: ['Use the supplied public sources.', 'Explain services in clear, practical language.'],
-      donts: ['Invent credentials, guarantees, prices or customer testimonials.', 'Present illustrative measurements as actual business results.'] },
+      donts: ['Invent credentials, guarantees, prices or customer testimonials.', 'Publish estimates as verified business results.'] },
     evidence: source.sources.filter(item => item.quote).map(item => ({ field: item.field || 'about', quote: item.quote!, url: item.url })),
     unknowns: raw.unknowns || [], generatedAt: new Date(copiedAt).toISOString(), model: 'public-website-demo', version: 1,
     generationId: `website-demo:${official}`,

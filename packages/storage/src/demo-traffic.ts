@@ -1,6 +1,5 @@
 import {
-  TRAFFIC_PROVIDERS,
-  trafficBuckets,
+  aggregateTraffic,
   type DemoConfig,
   type Project,
   type TrafficAggregate,
@@ -92,7 +91,7 @@ function rows(counts: Map<string, number>): TrafficRow[] {
  * than an exact monthly quota, avoid artificial drops at month boundaries.
  * Stable events mean arbitrary subdivisions still reconcile exactly.
  */
-export function aggregateScenarioTraffic(project: Project, filters: TrafficFilters): TrafficAggregate {
+export function aggregateScenarioTraffic(project: Project, filters: TrafficFilters, observed = aggregateTraffic([], filters)): TrafficAggregate {
   const config = project.demo;
   if (!config) throw new Error('Scenario traffic requires a scenario project');
   const profile = demoNumericProfile(config);
@@ -102,12 +101,14 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
   const pages = clean(dimensions?.pages, ['/', '/solutions/', '/products/', '/contact/']);
   const browsers = clean(dimensions?.browsers, ['Chrome', 'Safari', 'Edge', 'Firefox']);
   const devices = clean(dimensions?.devices, ['desktop', 'mobile', 'tablet']);
-  const providers = TRAFFIC_PROVIDERS.filter((provider) => !filters.providers.length || filters.providers.includes(provider));
-  const totals = new Map(providers.map((provider) => [provider, { provider, visits: 0, previous: 0 }]));
-  const series = trafficBuckets(filters.period).map((date) => ({ date, values: {} as Partial<Record<TrafficProvider, number>> }));
+  const providers = observed.providers.map(({ provider }) => provider);
+  const totals = new Map(observed.providers.map(item => [item.provider, { ...item }]));
+  const series = observed.series.map(point => ({ date: point.date, values: { ...point.values } }));
   const seriesIndex = new Map(series.map((point) => [point.date, point.values]));
-  const sources = new Map<string, number>(), pageCounts = new Map<string, number>(), locations = new Map<string, number>();
-  const browserCounts = new Map<string, number>(), deviceCounts = new Map<string, number>(), availableCountries = new Set<string>();
+  const counts = (items: TrafficRow[]) => new Map(items.map(item => [item.label, item.visits]));
+  const sources = counts(observed.sources), pageCounts = counts(observed.pages), locations = counts(observed.locations);
+  const browserCounts = counts(observed.browsers), deviceCounts = counts(observed.devices);
+  const availableCountries = new Set(observed.countries);
   const currentStart = Date.parse(filters.period.start), currentEnd = Date.parse(filters.period.end);
   const previousStart = Date.parse(filters.previous.start), previousEnd = Date.parse(filters.previous.end);
   const from = Math.max(day(config.startDate), Math.min(previousStart, currentStart));

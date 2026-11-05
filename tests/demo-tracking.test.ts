@@ -10,6 +10,7 @@ import {
   type PromptResult,
   type ScanRun,
   type TrackingDetail,
+  type TrackingSummary,
 } from '@citevia/core';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, withDemoRuntime } from '@citevia/storage';
 import { createScenarioTracking } from '../packages/storage/src/demo-tracking.js';
@@ -274,6 +275,13 @@ describe('Nayax tracking integration', () => {
     expect(new Set(allProviders.providers.map((provider) => provider.count)).size).toBe(3);
     expect(summary.markers).toHaveLength(2);
     expect(summary.markers.every((marker) => marker.items.length === 4)).toBe(true);
+    const tracking = await call<TrackingSummary>('tracked-urls/summary');
+    const publications = tracking.series.filter(point => point.published > 0);
+    expect(publications.map(point => point.date)).toEqual(summary.markers.map(marker => marker.date));
+    for (const point of publications) {
+      expect(point.publications).toHaveLength(point.published);
+      expect(point.publications).toEqual(expect.arrayContaining(summary.markers.find(marker => marker.date === point.date)!.items));
+    }
     for (const marker of summary.markers) {
       for (const item of marker.items) {
         const detail = await call<TrackingDetail>(`tracked-urls/${item.id}`);

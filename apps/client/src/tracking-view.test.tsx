@@ -21,7 +21,9 @@ const row = {
 };
 const summary: TrackingSummary = {
   period, trackedCount: 1, trackedThisMonth: 0, appearances: 3, citedCount: 1, citedRate: 100, medianPickup: null, clicks: null,
-  series: Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.parse(period.start) + i * 86400000).toISOString().slice(0, 10), citations: i === 6 ? 3 : 0, mentions: 0, published: i === 3 ? 1 : 0 })),
+  series: Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.parse(period.start) + i * 86400000).toISOString().slice(0, 10), citations: i === 6 ? 3 : 0, mentions: 0, published: i === 3 ? 1 : 0,
+    publications: i === 3 ? [{ id: row.id, title: row.title, url: row.url, appearances: 3, publishedAt: '2026-11-01' }] : [],
+  })),
 };
 let root: Root, container: HTMLDivElement;
 let state: 'loading' | 'ready' | 'error';
@@ -86,11 +88,35 @@ describe('Tracking report', () => {
     expect(container.querySelectorAll('.tracking-month')).toHaveLength(7);
     expect(container.querySelector('.tracking-month')?.textContent).toContain('29 Oct');
     const chart = container.querySelector('.tracking-month-chart')!;
-    const markers = chart.querySelectorAll('.tracking-publication-mark');
+    const markers = chart.querySelectorAll<HTMLButtonElement>('.chart-publication-badge');
     expect(markers).toHaveLength(1);
-    expect(markers[0].getAttribute('aria-label')).toBe('2026-11-01: 1 URL published');
+    expect(markers[0].getAttribute('aria-label')).toContain('3 citations in the selected period');
+    expect(chart.querySelectorAll('.tracking-month-bar span')[3].textContent).toBe('0');
+    expect(markers[0].closest('.tracking-month')?.textContent).toContain('3 cites');
     expect(chart.textContent).not.toContain('published');
     expect(container.querySelector('.tracking-publication-key')?.textContent).toBe('1 URL published');
+    await act(async () => markers[0].click());
+    expect(chart.querySelector('.marker-content-citations b')?.textContent).toBe('3');
+    expect(chart.querySelector('.marker-content-url')?.textContent).toBe(row.url.replace('https://', ''));
+  });
+
+  it('fits a ninety-day range into the card, counting each citation and publication once', async () => {
+    const series = Array.from({ length: 90 }, (_, i) => ({
+      date: new Date(Date.UTC(2026, 7, 8 + i)).toISOString().slice(0, 10),
+      citations: 2, mentions: 1, published: i === 89 ? 1 : 0,
+      publications: i === 89 ? [{ id: row.id, title: row.title, url: row.url, appearances: 0 }] : [],
+    }));
+    useApi.mockImplementation((path: string) => ({
+      data: path.includes('/summary') ? { ...summary, series } : { items: [row], total: 1 },
+    }));
+    await render();
+    const chart = container.querySelector('.tracking-month-chart')!;
+    const bars = Array.from(chart.querySelectorAll('.tracking-month-bar span'), bar => Number(bar.textContent));
+    expect(bars.length).toBeLessThan(15);
+    expect(bars.reduce((a, b) => a + b, 0)).toBe(180);
+    expect(chart.querySelector('.tracking-month:first-child')?.textContent).toContain('8 Aug');
+    expect(chart.querySelector('.tracking-month:last-child')?.textContent).toContain('5 Nov');
+    expect(chart.querySelector('.chart-publication-badge')?.getAttribute('aria-label')).toContain('0 citations in the selected period');
   });
 
   it('can retry failed content and summary requests', async () => {

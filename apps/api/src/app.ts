@@ -1106,7 +1106,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         )
           throw new HttpError(400, 'INVALID_SORT', 'Invalid answer sort.');
         const { offset, limit } = paging(query);
-        const end = days === 'all' && stored.demo ? new Date(`${stored.demo.endDate}T23:59:59.999Z`) : now(),
+        const end = days === 'all' && stored.demo && stored.demo.reportingProfile !== 'uk_investing'
+          ? new Date(`${stored.demo.endDate}T23:59:59.999Z`) : now(),
           start =
             days === 'all'
               ? new Date(0)

@@ -19,6 +19,7 @@ import {
 import {
   TRAFFIC_LABELS,
   TRAFFIC_PROVIDERS,
+  matchesTrafficSite,
   trafficChange,
   trafficProvider,
   type Project,
@@ -422,7 +423,7 @@ function TrafficSettings({
   notify: (message: string) => void;
   onDashboard: () => void;
 }) {
-  const status = useApi<TrafficStatus>(project.demo ? null : `${path}/traffic/status`);
+  const status = useApi<TrafficStatus & { trackerId: string }>(`${path}/traffic/status`);
   const [testing, setTesting] = useState(false),
     [result, setResult] = useState(''),
     [error, setError] = useState<Error>();
@@ -434,7 +435,8 @@ function TrafficSettings({
   );
   const escape = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  const snippet = `<script async src="${escape(new URL('traffic/tracker.js', base).href)}" data-project-id="${escape(project.id)}"></script>`;
+  const trackerId = status.data?.trackerId;
+  const snippet = trackerId ? `<script async src="${escape(new URL('traffic/tracker.js', base).href)}" data-project-id="${escape(trackerId)}"></script>` : null;
   const domain = project.brand.domains[0];
   const [testUrl, setTestUrl] = useState(domain || '');
   const [urlEdited, setUrlEdited] = useState(false);
@@ -453,7 +455,8 @@ function TrafficSettings({
       if (
         ['http:', 'https:'].includes(parsed.protocol) &&
         !parsed.username &&
-        !parsed.password
+        !parsed.password &&
+        (!project.demo || matchesTrafficSite(parsed, project.brand.domains))
       )
         target = parsed;
     }
@@ -461,7 +464,7 @@ function TrafficSettings({
     /* No configured website. */
   }
   const test = async () => {
-    if (project.demo || !target || testing) return;
+    if (!snippet || !target || testing) return;
     const id = crypto.randomUUID();
     target.searchParams.set('utm_source', 'chatgpt');
     target.searchParams.set('citevia_test', id);
@@ -515,51 +518,6 @@ function TrafficSettings({
       if (!abort.signal.aborted) setTesting(false);
     }
   };
-  if (project.demo) {
-    return (
-      <div className="traffic-settings">
-        <section className="traffic-panel">
-          <header>
-            <div>
-              <span className="traffic-eyebrow">WEBSITE CONNECTION</span>
-              <h2>AI traffic settings</h2>
-              <p>Traffic is configured for {project.name || project.brand.name}.</p>
-            </div>
-            <span className="traffic-connection connected"><i />Demo configured</span>
-          </header>
-          <div className="traffic-install">
-            <p className="traffic-help">
-              {project.demo.presentation?.reportingOnly
-                ? 'This demo account reports its saved traffic.'
-                : 'This demo account uses generated traffic.'} Website tracking is read-only;
-              live script installation and connection tests are available on standard accounts.
-            </p>
-            <div className="traffic-detected-sites">
-              <h3>Configured websites</h3>
-              {project.brand.domains.map((website) => (
-                <div key={website}>
-                  <span>{website}</span>
-                </div>
-              ))}
-            </div>
-            <div className="traffic-step">
-              <Activity size={22} />
-              <div>
-                <h3>{project.demo.presentation?.reportingOnly ? 'AI providers' : 'Reporting period'}</h3>
-                {!project.demo.presentation?.reportingOnly && (
-                  <p>{project.demo.startDate} – {project.demo.endDate} · UTC</p>
-                )}
-                <p>{TRAFFIC_PROVIDERS.map((provider) => TRAFFIC_LABELS[provider]).join(', ')}</p>
-              </div>
-            </div>
-            <button className="button button-primary" onClick={onDashboard}>
-              View AI traffic
-            </button>
-          </div>
-        </section>
-      </div>
-    );
-  }
   return (
     <div className="traffic-settings">
       <section className="traffic-panel">
@@ -572,12 +530,12 @@ function TrafficSettings({
               referral visits.
             </p>
           </div>
-          <span
+          {status.data && <span
             className={`traffic-connection ${installed ? 'connected' : ''}`}
           >
             <i />
             {installed ? 'Tracker detected' : 'Awaiting first event'}
-          </span>
+          </span>}
         </header>
         <div className="traffic-install">
           <div className="traffic-step">
@@ -588,12 +546,12 @@ function TrafficSettings({
                 Paste this snippet inside the <code>&lt;head&gt;</code> of your
                 website, or add it as a custom HTML tag in your tag manager.
                 Publish it on every page you want to measure. This script
-                records visits under {project.name || project.brand.name} on any
-                website where you install it.
+                records visits under {project.name || project.brand.name}{project.demo
+                  ? ` on ${project.brand.domains.join(', ')}` : ' on any website where you install it'}.
               </p>
             </div>
           </div>
-          <div className="traffic-code">
+          {snippet ? <div className="traffic-code">
             <pre>
               <code>{snippet}</code>
             </pre>
@@ -615,7 +573,7 @@ function TrafficSettings({
               <Copy size={15} />
               Copy script
             </button>
-          </div>
+          </div> : status.loading ? <div className="traffic-code" role="status" aria-label="Tracking script"><span className="skeleton-shape skeleton-line" /></div> : null}
           <div className="traffic-step">
             <b>2</b>
             <div>
@@ -642,7 +600,7 @@ function TrafficSettings({
           <div className="traffic-test-actions">
             <button
               className="button button-primary"
-              disabled={testing || !target}
+              disabled={testing || !target || !snippet}
               onClick={() => void test()}
             >
               {testing ? (
@@ -658,7 +616,7 @@ function TrafficSettings({
           </div>
           {!target && (
             <p className="traffic-help">
-              Enter the website URL where you installed the script.
+              {project.demo ? `Enter a website URL on ${project.brand.domains.join(', ')}.` : 'Enter the website URL where you installed the script.'}
             </p>
           )}
           {result && (
@@ -853,7 +811,7 @@ export default function TrafficView({
           ) : (
             data && (
               <>
-                {!data.status.installed && !data.status.hasEvents && (
+                {!data.current && !data.status.installed && !data.status.hasEvents && (
                   <div className="traffic-setup-banner">
                     <span className="traffic-banner-icon">
                       <Activity size={22} />

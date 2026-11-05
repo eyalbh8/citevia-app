@@ -27,6 +27,7 @@ vi.mock('./api', () => ({
 vi.mock('./query-cache', () => ({ invalidateApiQueries: mocks.invalidate }));
 import TrafficView from './TrafficView';
 
+const trackerId = '607f45b5-e95f-52ea-a9b2-0e00ddf15abc';
 const project = {
   id: 'traffic-a',
   brand: { name: 'Northstar', domains: ['northstar.example'] },
@@ -105,7 +106,7 @@ beforeEach(() => {
   mocks.useApi.mockReset();
   mocks.downloadCsv.mockReset();
   mocks.useApi.mockImplementation((path: string | null) => ({
-    data: path ? path.includes('/status') ? report.status : report : undefined,
+    data: path ? path.includes('/status') ? { ...report.status, trackerId } : report : undefined,
     loading: false,
     error: undefined,
   }));
@@ -132,7 +133,7 @@ async function render(selectedProject = project) {
 }
 
 describe('AI Traffic screen interactions', () => {
-  it('opens demo settings while keeping live tracker setup unavailable and preserving date filters', async () => {
+  it('shows the scoped installation snippet and preserves date filters on read-only accounts', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-23T12:00:00Z'));
     await render({
@@ -155,13 +156,11 @@ describe('AI Traffic screen interactions', () => {
     expect(container.textContent).not.toMatch(/\bdemo\b|synthetic|projections/i);
     await click('Settings');
     expect(buttons('Settings')[0].getAttribute('aria-pressed')).toBe('true');
-    expect(container.textContent).toContain('AI traffic settings');
     expect(container.textContent).toContain('northstar.example');
-    expect(container.textContent).toContain('2026-04-23 – 2027-04-23');
-    expect(container.textContent).toContain('Website tracking is read-only');
-    expect(buttons('Test connection')).toHaveLength(0);
-    expect(buttons('Copy script')).toHaveLength(0);
-    expect(container.textContent).not.toContain('data-project-id');
+    expect(container.textContent).toContain(`data-project-id="${trackerId}"`);
+    expect(container.textContent).not.toMatch(/\bdemo\b|synthetic|simulated/i);
+    expect(buttons('Test connection')[0].disabled).toBe(false);
+    expect(buttons('Copy script')).toHaveLength(1);
     expect(mocks.request).not.toHaveBeenCalled();
     await click('View AI traffic');
     expect(container.querySelectorAll('.traffic-metric')).toHaveLength(7);
@@ -190,11 +189,11 @@ describe('AI Traffic screen interactions', () => {
       },
     });
     await click('Settings');
-    expect(container.textContent).toContain('reports its saved traffic');
-    expect(container.textContent).toContain('AI providers');
+    expect(container.textContent).toContain(`data-project-id="${trackerId}"`);
+    expect(container.textContent).not.toMatch(/\bdemo\b|scenario/i);
     expect(container.textContent).not.toContain('Reporting period');
     expect(container.textContent).not.toContain('2026-04-23');
-    expect(buttons('Test connection')).toHaveLength(0);
+    expect(buttons('Test connection')).toHaveLength(1);
   });
 
   it('renders all providers and breakdowns, pages lists, toggles chart series and exports the filtered report', async () => {
@@ -302,7 +301,7 @@ describe('AI Traffic screen interactions', () => {
       'Connect your website to see AI traffic',
     );
     await click('Set up tracking');
-    expect(container.textContent).toContain('data-project-id="traffic-a"');
+    expect(container.textContent).toContain(`data-project-id="${trackerId}"`);
     expect(container.textContent).toContain('/api/v1/traffic/tracker.js');
   });
 });

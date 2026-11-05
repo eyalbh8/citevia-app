@@ -1,3 +1,4 @@
+import { axisTickIndices } from './chart-time';
 import {
   useEffect,
   useRef,
@@ -295,7 +296,7 @@ function MentionPoint({ provider }: { provider: ScanProvider }) {
 
 type PublicationMarker = MentionsSummary['markers'][number];
 
-function TrackedPublicationMarker({
+export function TrackedPublicationMarker({
   marker,
   left,
   label,
@@ -305,7 +306,7 @@ function TrackedPublicationMarker({
   onTracked,
 }: {
   marker: PublicationMarker;
-  left: number;
+  left?: number;
   label: string;
   open: boolean;
   onToggle: () => void;
@@ -315,6 +316,11 @@ function TrackedPublicationMarker({
   const ref = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState<CSSProperties>();
+  const citations = marker.items.reduce((sum, item) => sum + item.appearances, 0);
+  const urlsLabel = `${marker.items.length} tracked ${marker.items.length === 1 ? 'URL' : 'URLs'}`;
+  const badgeLabel = left === undefined
+    ? `${urlsLabel} on ${label}, ${citations} citations in the selected period`
+    : `${urlsLabel} on ${label}`;
   const popupId = `tracked-publications-${marker.date.replace(/\W/g, '')}`;
   useEffect(() => {
     if (!open) return;
@@ -363,19 +369,21 @@ function TrackedPublicationMarker({
   return (
     <div
       ref={ref}
-      className="chart-publication-marker"
-      style={{ left: `${left}%` }}
+      className={left === undefined ? 'tracking-publication-marker' : 'chart-publication-marker'}
+      style={left === undefined ? undefined : { left: `${left}%` }}
     >
       <button
         ref={buttonRef}
         className="chart-publication-badge"
-        aria-label={`${marker.items.length} tracked URLs on ${label}`}
+        aria-label={badgeLabel}
+        title={badgeLabel}
         aria-expanded={open}
         aria-controls={open ? popupId : undefined}
         onClick={onToggle}
       >
         <Link2 size={12} aria-hidden="true" />
         {marker.items.length}
+        {left === undefined && <small>{citations.toLocaleString()} {citations === 1 ? 'cite' : 'cites'}</small>}
       </button>
       {open && position && (
         <div
@@ -543,16 +551,23 @@ export function MentionsChart({
     const index = dates.indexOf(date);
     return index >= 0 && items.size ? [{ date, items, index }] : [];
   }).sort((a, b) => a.index - b.index);
-  let plotWidth = viewportWidth - 90;
-  const badgeWidth = (count: number) => 28 + String(count).length * 8;
-  for (let index = 1; index < publications.length; index++) {
-    const previous = publications[index - 1], current = publications[index];
-    const spacing = Math.max(40, (badgeWidth(previous.items.size) + badgeWidth(current.items.size)) / 2 + 4);
-    plotWidth = Math.max(plotWidth, spacing * (dates.length - 1) / (current.index - previous.index));
+  const chartWidth = viewportWidth;
+  const plotWidth = chartWidth - 90;
+  const ticks = new Set(axisTickIndices(dates.length, plotWidth));
+  const clusters: { date: string; end: string; index: number; items: PublicationMarker['items'] }[] = [];
+  for (const entry of publications) {
+    const items = Array.from(entry.items.values(), item => ({
+      ...item, publishedAt: item.publishedAt ?? entry.date,
+    }));
+    const previous = clusters.at(-1);
+    const spacing = previous ? (entry.index - previous.index) / Math.max(1, dates.length - 1) * plotWidth : Infinity;
+    if (previous && spacing < 42) {
+      previous.end = entry.date;
+      previous.items.push(...items);
+    } else {
+      clusters.push({ date: entry.date, end: entry.date, index: entry.index, items });
+    }
   }
-  const denseTimeline = plotWidth > viewportWidth - 90, chartWidth = denseTimeline ? Math.ceil(plotWidth + 90) : viewportWidth;
-  plotWidth = chartWidth - 90;
-  const labelStep = Math.max(1, Math.ceil(dates.length / Math.max(1, Math.floor(plotWidth / 100))));
   const series = visible.map((p) => {
     const counts = new Map(p.points.map((point) => [point.date, point.count]));
     return {
@@ -620,13 +635,9 @@ export function MentionsChart({
         ref={chartBody}
         className="mentions-chart-body"
         role="region"
-        aria-label="Mentions chart; scroll horizontally to see the full timeline"
-        tabIndex={0}
+        aria-label="Mentions chart timeline"
       >
-        <div
-          className={`mentions-chart-canvas${denseTimeline ? ' mentions-chart-canvas-dense' : ''}`}
-          style={denseTimeline ? { width: chartWidth, minWidth: chartWidth } : undefined}
-        >
+        <div className="mentions-chart-canvas">
           <svg
             viewBox={`0 0 ${chartWidth} 260`}
             role="img"
@@ -706,8 +717,7 @@ export function MentionsChart({
             )}
             {dates.map((date, i) => (
               <g key={date}>
-                {(i % labelStep === 0 ||
-                  i === dates.length - 1) && (
+                {ticks.has(i) && (
                   <text x={x(i)} y="248" textAnchor="middle">
                     {format(date)}
                   </text>
@@ -761,13 +771,13 @@ export function MentionsChart({
           {publications.length > 0 && <div className="chart-publications" role="group" aria-label="Tracked publications">
             <div className="chart-publications-caption"><Link2 size={13} aria-hidden="true" />Published content<span>{publications.reduce((count, publication) => count + publication.items.size, 0)} tracked URLs</span></div>
             <div className="chart-markers">
-            {publications.map(({ date, items, index }) => {
+            {clusters.map(({ date, end, items, index }) => {
               return (
                 <TrackedPublicationMarker
                   key={date}
-                  marker={{ date, items: [...items.values()] }}
+                  marker={{ date, items }}
                   left={(x(index) / chartWidth) * 100}
-                  label={fullDate(date)}
+                  label={end === date ? fullDate(date) : `${fullDate(date)} – ${fullDate(end)}`}
                   open={openMarker === date}
                   onToggle={() => setOpenMarker(openMarker === date ? undefined : date)}
                   onClose={() => setOpenMarker(undefined)}
@@ -782,7 +792,6 @@ export function MentionsChart({
       <p className="mentions-chart-note">
         Points show measured mentions. Dashed lines connect scans across gaps;
         dates without a scan have no measured value. All times UTC.
-        {denseTimeline && ' Scroll horizontally to inspect each tracked publication.'}
       </p>
     </section>
   );

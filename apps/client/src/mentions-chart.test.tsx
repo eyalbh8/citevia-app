@@ -176,7 +176,7 @@ describe('Mentions chart', () => {
       .toBeCloseTo(Number(targets[1].getAttribute('x')));
   });
 
-  it('keeps all seventy-eight publication dates individually clickable on a fixed-height scrolling timeline', async () => {
+  it('fits a long history and both endpoints into one card and retains all seventy-eight publications', async () => {
     const value = summary();
     value.period.start = '2026-04-25T00:00:00.000Z';
     value.period.end = '2026-10-25T23:59:59.999Z';
@@ -188,26 +188,24 @@ describe('Mentions chart', () => {
     }
     await render(value);
     const canvas = container.querySelector<HTMLElement>('.mentions-chart-canvas')!;
-    const width = Number.parseFloat(canvas.style.width);
-    expect(canvas.classList.contains('mentions-chart-canvas-dense')).toBe(true);
-    expect(width).toBeGreaterThan(880);
-    expect(canvas.style.minWidth).toBe(`${width}px`);
-    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe(`0 0 ${width} 260`);
-    const markers = [...container.querySelectorAll<HTMLElement>('.chart-publication-marker')];
-    expect(markers).toHaveLength(78);
-    const centers = markers.map(marker => Number.parseFloat(marker.style.left) * width / 100);
-    for (let index = 1; index < centers.length; index++) expect(centers[index] - centers[index - 1]).toBeGreaterThanOrEqual(40 - 0.001);
-    const labels = container.querySelectorAll('svg text[y="248"]');
-    expect(labels.length).toBeGreaterThan(8);
-    expect(labels.length).toBeLessThan(60);
-    const selected = container.querySelector<HTMLButtonElement>('[aria-label="1 tracked URLs on Oct 21, 2026 UTC"]')!;
-    await act(async () => selected.click());
-    const popup = container.querySelector<HTMLElement>('[role="dialog"]')!;
-    expect(popup.getAttribute('aria-label')).toBe('Tracked URLs on Oct 21, 2026 UTC');
-    expect(popup.textContent).toContain('Post 2026-10-21');
-    expect(popup.textContent).not.toContain('Post 2026-10-23');
-    await act(async () => popup.querySelector<HTMLButtonElement>('[aria-label="Open tracking details for Post 2026-10-21"]')!.click());
-    expect(tracked).toHaveBeenCalledWith('2026-10-21');
+    expect(canvas.style.minWidth).toBe('');
+    expect(canvas.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 880 260');
+    const labels = [...canvas.querySelectorAll('svg text[y="248"]')].map(element => element.textContent);
+    expect(labels[0]).toBe('Apr 25');
+    expect(labels.at(-1)).toBe('Oct 25');
+    const markers = [...canvas.querySelectorAll<HTMLElement>('.chart-publication-marker')];
+    const centers = markers.map(marker => Number.parseFloat(marker.style.left) * 880 / 100);
+    for (let i = 1; i < centers.length; i++) expect(centers[i] - centers[i - 1]).toBeGreaterThanOrEqual(41.99);
+    const dates: string[] = [];
+    for (const marker of markers) {
+      await act(async () => marker.querySelector('button')!.click());
+      const popup = marker.querySelector('[role="dialog"]')!;
+      dates.push(...Array.from(popup.querySelectorAll('time'), time => time.dateTime));
+      const last = popup.querySelector<HTMLButtonElement>('[aria-label="Open tracking details for Post 2026-10-23"]');
+      if (last) await act(async () => last.click());
+    }
+    expect(dates).toEqual(value.markers.map(marker => marker.date));
+    expect(tracked).toHaveBeenCalledWith('2026-10-23');
   });
 
   it.each([7, 30])('preserves the responsive timeline and exact publication dates for a sparse %i-day view', async days => {

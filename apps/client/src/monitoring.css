@@ -318,9 +318,7 @@
 }
 .mentions-chart-body {
   padding: 0 16px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
+  min-width: 0;
   margin-block: 0;
 }
 #main-content:has(.mentions-screen):focus {
@@ -338,7 +336,7 @@
 .mentions-chart-canvas {
   position: relative;
   width: 100%;
-  min-width: 280px;
+  min-width: 0;
 }
 .mentions-chart-canvas > svg {
   display: block;
@@ -428,6 +426,7 @@
   color: white;
 }
 .marker-tooltip {
+  text-align: left;
   position: fixed;
   z-index: 40;
   display: flex;
@@ -831,7 +830,7 @@
 .tracking-trend {
   margin-bottom: 22px;
 }
-.tracking-trend header {
+.tracking-trend > header {
   background: var(--surface);
   padding: 19px 24px;
 }
@@ -863,21 +862,32 @@
   box-shadow: 0 1px 4px #16154312;
 }
 .tracking-month-chart {
-  display: flex;
-  justify-content: space-around;
-  gap: 12px;
+  display: grid;
+  align-items: start;
+  gap: 6px;
   padding: 25px 25px 20px;
   min-height: 230px;
-  overflow-x: auto;
-  scrollbar-width: thin;
 }
 .tracking-month {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   text-align: center;
   gap: 6px;
-  min-width: 50px;
-  flex: 1;
+}
+.tracking-publication-marker {
+  align-self: center;
+  max-width: 100%;
+}
+.tracking-publication-marker .chart-publication-badge {
+  flex-wrap: wrap;
+  gap: 2px;
+  transform: none;
+}
+.tracking-publication-marker .chart-publication-badge small {
+  flex-basis: 100%;
+  font-size: 10px;
+  color: inherit;
 }
 .tracking-month-bar {
   display: flex;
@@ -898,7 +908,7 @@
   font-size: 12px;
   color: var(--muted);
 }
-.tracking-month small {
+.tracking-bucket-date {
   font-size: 12px;
   color: var(--muted);
 }
@@ -1331,7 +1341,7 @@
   .tracking-intro h2 {
     font-size: 21px;
   }
-  .tracking-trend header {
+  .tracking-trend > header {
     flex-direction: column;
     align-items: flex-start;
   }

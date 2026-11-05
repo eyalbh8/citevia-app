@@ -310,6 +310,7 @@ export interface TrackingSummary {
     citations: number;
     mentions: number;
     published: number;
+    publications?: MentionsSummary['markers'][number]['items'];
   }[];
   clicks: null;
 }

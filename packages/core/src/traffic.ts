@@ -35,6 +35,18 @@ const aliases: Record<string, TrafficProvider> = {
   copilot: 'copilot',
   deepseek: 'deepseek',
 };
+export function matchesTrafficSite(target: URL, sites: string[]): boolean {
+  const host = target.hostname.replace(/\.$/, '');
+  return sites.some(site => {
+    try {
+      const configured = new URL(site.includes('://') ? site : `https://${site}`);
+      const domain = configured.hostname.replace(/\.$/, '').replace(/^www\./, '');
+      return !!domain && (host === domain || host.endsWith(`.${domain}`));
+    } catch {
+      return false;
+    }
+  });
+}
 export function trafficProvider(
   referrer: string | null,
   utmSource?: string | null,

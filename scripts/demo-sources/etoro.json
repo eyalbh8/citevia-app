@@ -31,7 +31,7 @@
     "Eligible UK copy-trading users",
     "Experienced UK CFD traders"
   ],
-  "description": "eToro is an online trading and investing platform offering access to stocks, ETFs, cryptoassets and CFDs, alongside CopyTrader, Smart Portfolios, virtual portfolio practice and the eToro Academy. This account focuses on company discovery by UK residents. The official UK help centre describes local product restrictions, including the prohibition on crypto CFDs for UK retail clients and eligibility checks for cryptoasset investing. Buying an underlying asset differs from trading a CFD, and product availability depends on the instrument, account and jurisdiction. Investments can lose value; copy trading and past performance do not guarantee future results. The group investor relations website reports 4.36 million funded accounts and $20.2 billion in assets under administration as of 31 August 2026. Those scale figures inform this illustrative account profile and do not measure AI referral traffic.",
+  "description": "eToro is an online trading and investing platform offering access to stocks, ETFs, cryptoassets and CFDs, alongside CopyTrader, Smart Portfolios, virtual portfolio practice and the eToro Academy. This account focuses on company discovery by UK residents. The official UK help centre describes local product restrictions, including the prohibition on crypto CFDs for UK retail clients and eligibility checks for cryptoasset investing. Buying an underlying asset differs from trading a CFD, and product availability depends on the instrument, account and jurisdiction. Investments can lose value; copy trading and past performance do not guarantee future results. The group investor relations website reports 4.36 million funded accounts and $20.2 billion in assets under administration as of 31 August 2026. Funded accounts and assets under administration are separate from AI referral traffic.",
   "criteria": [
     "UK eligibility and the responsible regulated legal entity",
     "Underlying asset ownership versus CFD exposure",
@@ -1091,14 +1091,14 @@
         "Promise returns, recommend a particular asset or imply investment suitability.",
         "Offer UK retail crypto CFDs or claim all products receive identical regulatory protection.",
         "Claim ISA features, fees, transfer support or compensation limits without current evidence.",
-        "Present illustrative AI traffic as measured platform analytics.",
+        "Publish unverified AI referral figures.",
         "Suggest virtual portfolio performance predicts live trading outcomes."
       ]
     },
     "unknowns": [
       "The Academy pages display an update date of 8 September 2026; original publication dates are not confirmed and are omitted.",
       "Financial services and protections vary by product, legal entity and client eligibility.",
-      "Traffic scale, visibility and growth are illustrative scenario choices informed by public company scale, not observed AI referrals.",
+      "Verify referral traffic against website analytics before publishing performance figures.",
       "Brand voice descriptors are editorial interpretations of public educational materials."
     ]
   },

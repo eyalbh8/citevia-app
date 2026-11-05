@@ -9,10 +9,9 @@ import type {
 import { projectProviders, snapshotProvider } from './providers.js';
 import { brandSentimentScore } from './scoring.js';
 import { isReportableRun } from './metrics.js';
-import { isOwnedDomain, normalizeDomain } from './urls.js';
+import { domainForUrl, isOwnedDomain, normalizeUrl } from './urls.js';
 import {
   matchesMonitoringFilters,
-  trackedUrlKey,
   type MonitoringFilters,
   type MonitoringPeriod,
 } from './tracking.js';
@@ -205,9 +204,11 @@ export function aggregateDashboardOverview(
   }
   // A long reporting period can cite the same page in thousands of captures.
   for (const [url, occurrences] of occurrencesByUrl) {
-    const page = trackedUrlKey(url);
+    const page = normalizeUrl(url);
     if (!page) continue;
-    const domain = new URL(url).hostname.toLowerCase();
+    // Use the same registrable domain and page identity as the Sources report.
+    // This merges www and other subdomains without merging distinct hosted sites.
+    const domain = domainForUrl(page)!;
     const source = sourceRows.get(domain) || { pages: new Set<string>(), citationCount: 0 };
     source.pages.add(page);
     source.citationCount += occurrences;
@@ -380,13 +381,11 @@ export function aggregateDashboardOverview(
         domain,
         pageCount: row.pages.size,
         citationCount: row.citationCount,
-        owned: isOwnedDomain(
-          normalizeDomain(domain) || domain,
-          project.brand.domains,
-        ),
+        owned: isOwnedDomain(domain, project.brand.domains),
       }))
       .sort(
         (a, b) =>
+          Number(b.owned) - Number(a.owned) ||
           b.citationCount - a.citationCount ||
           b.pageCount - a.pageCount ||
           a.domain.localeCompare(b.domain),

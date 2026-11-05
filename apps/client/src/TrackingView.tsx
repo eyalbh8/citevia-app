@@ -1,5 +1,5 @@
 import { Skeleton } from './Loading';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowUpRight,
   Check,
@@ -28,6 +28,7 @@ import {
   MonitoringHeader,
   PageControls,
   ProviderMark,
+  TrackedPublicationMarker,
   providerColors,
   selectionQuery,
   type AnswerPage,
@@ -60,6 +61,7 @@ function Sparkline({ values }: { values: number[] }) {
       aria-label="Citation trend"
       role="img"
     >
+      {values.length === 1 && <circle cx="50" cy={24 - (values[0] / max) * 20} r="2.5" fill="var(--primary)" />}
       <polyline
         fill="none"
         stroke="var(--primary, #3930cf)"
@@ -78,17 +80,50 @@ function Sparkline({ values }: { values: number[] }) {
     </svg>
   );
 }
-function TrackingTrend({ summary }: { summary: TrackingSummary }) {
-  const [metric, setMetric] = useState<'citations' | 'mentions' | 'clicks'>(
-    'citations',
-  );
-  const max = Math.max(
-    1,
-    ...summary.series.map((p) => (metric === 'clicks' ? 0 : p[metric])),
-  );
+function TrackingTrend({ summary, onTracked }: { summary: TrackingSummary; onTracked: (id: string) => void }) {
+  const [metric, setMetric] = useState<'citations' | 'mentions' | 'clicks'>('citations');
+  const [open, setOpen] = useState<string>();
+  const [width, setWidth] = useState(880);
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const measure = () => {
+      if (element.clientWidth) setWidth(element.clientWidth);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const hourly = summary.period.granularity === 'hourly';
+  const formatDate = (value: string) => hourly
+    ? new Date(value).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })
+    : new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const publicationDate = (value: string) => hourly ? `${date(value)} ${formatDate(value)} UTC` : date(value);
+  const capacity = Math.max(4, Math.floor((width - 50) / 72));
+  const groupSize = summary.series.length <= 7 ? 1 : Math.max(1, Math.ceil(summary.series.length / capacity));
+  const groups = [];
+  for (let index = 0; index < summary.series.length; index += groupSize) {
+    const points = summary.series.slice(index, index + groupSize);
+    groups.push({
+      date: points[0].date,
+      end: points[points.length - 1].date,
+      citations: points.reduce((total, point) => total + point.citations, 0),
+      mentions: points.reduce((total, point) => total + point.mentions, 0),
+      published: points.reduce((total, point) => total + point.published, 0),
+      publications: points.flatMap(point => point.publications ?? []),
+    });
+  }
+  const max = Math.max(1, ...groups.map(point => metric === 'clicks' ? 0 : point[metric]));
+  const interval = groupSize === 1 ? (hourly ? 'Hourly' : 'Daily') : `${groupSize}-${hourly ? 'hour' : 'day'}`;
   const publicationCount = summary.series.reduce((total, point) => total + point.published, 0);
   return (
-    <section className="monitor-card tracking-trend">
+    <section className="monitor-card tracking-trend" ref={ref}>
       <header>
         <div>
           <h2>
@@ -99,7 +134,7 @@ function TrackingTrend({ summary }: { summary: TrackingSummary }) {
                 : 'Clicks from AI answers over time'}
           </h2>
           <p className="tracking-trend-caption">
-            {summary.period.granularity === 'hourly' ? 'Hourly' : 'Daily'} totals · Selected period
+            {interval} totals · Selected period
             {metric !== 'clicks' && publicationCount > 0 && (
               <span className="tracking-publication-key"><Link2 size={13} aria-hidden="true" />
                 {publicationCount.toLocaleString()} {publicationCount === 1 ? 'URL' : 'URLs'} published
@@ -127,33 +162,36 @@ function TrackingTrend({ summary }: { summary: TrackingSummary }) {
           description="AI referrals require a connected website analytics source. Scan citations do not measure clicks."
         />
       ) : (
-        <div className="tracking-month-chart">
-          {summary.series.map((point) => (
+        <div className="tracking-month-chart" style={{ gridTemplateColumns: `repeat(${groups.length || 1}, minmax(0, 1fr))` }}>
+          {groups.map((point) => (
             <div key={point.date} className="tracking-month">
               <div
                 className="tracking-month-bar"
                 title={`${point[metric].toLocaleString()} ${metric}`}
               >
-                {point[metric] > 0 && <span>{point[metric].toLocaleString()}</span>}
+                <span>{point[metric].toLocaleString()}</span>
                 <i
                   style={{
                     height: `${Math.max(1, (point[metric] / max) * 140)}px`,
                   }}
                 />
               </div>
-              <small>
-                {summary.period.granularity === 'hourly'
-                  ? new Date(point.date).toLocaleTimeString('en-GB', {
-                      hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
-                    })
-                  : new Date(`${point.date}T12:00:00Z`).toLocaleDateString('en-GB', {
-                      day: 'numeric', month: 'short', timeZone: 'UTC',
-                    })}
+              <small className="tracking-bucket-date">
+                {formatDate(point.date)}
+                {point.end !== point.date && <> – {formatDate(point.end)}</>}
               </small>
-              {point.published > 0 && (
+              {point.publications.length > 0 ? (
+                <TrackedPublicationMarker
+                  marker={{ date: point.date, items: point.publications }}
+                  label={point.date === point.end ? publicationDate(point.date) : `${publicationDate(point.date)} – ${publicationDate(point.end)}`}
+                  open={open === point.date}
+                  onToggle={() => setOpen(open === point.date ? undefined : point.date)}
+                  onClose={() => setOpen(undefined)}
+                  onTracked={onTracked}
+                />
+              ) : point.published > 0 && (
                 <span className="tracking-publication-mark" role="img"
-                  aria-label={`${point.date}: ${point.published} ${point.published === 1 ? 'URL' : 'URLs'} published`}
-                  title={`${point.published} ${point.published === 1 ? 'URL' : 'URLs'} published`}>
+                  aria-label={`${point.date}: ${point.published} ${point.published === 1 ? 'URL' : 'URLs'} published`}>
                   <Link2 size={12} aria-hidden="true" />{point.published}
                 </span>
               )}
@@ -307,7 +345,7 @@ export default function TrackingView({
                 <span>Publication to first citation</span>
               </div>
             </div>
-            <TrackingTrend summary={summary.data} />
+            <TrackingTrend summary={summary.data} onTracked={setSelected} />
           </>
         )
       )}

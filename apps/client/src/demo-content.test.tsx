@@ -23,13 +23,14 @@ describe('Authenticated demo articles', () => {
     expect(api.use).toHaveBeenCalledWith(`/projects/${projectId}/settings`);
     expect(container.querySelector('h1')?.textContent).toBe('Planning smart lock installation');
     expect(container.querySelectorAll('.demo-article-body p')).toHaveLength(2);
-    expect(container.querySelector('.demo-article-note')?.textContent).toContain('demo scenario');
+    expect(container.textContent).not.toMatch(/demo|sample|scenario/i);
+    expect(document.title).toBe('Planning smart lock installation · Citevia');
     expect(container.querySelectorAll('.demo-article-references a')).toHaveLength(1);
     expect(container.querySelector('.demo-article-references a')?.getAttribute('href')).toBe('https://www.acmelocksmith.com/');
   });
   it('does not expose a normal account or an official article through the demo route', async () => {
     api.value.data!.demo!.source = 'igeo-dr-roof'; await render();
-    expect(container.textContent).toContain('Demo article unavailable');
+    expect(container.textContent).toContain('Article unavailable');
     api.value.data = project(); delete api.value.data.demo!.trackedUrls![0].demoPost; await render();
     expect(container.querySelector('h1')).toBeNull();
   });
@@ -45,6 +46,7 @@ describe('Authenticated demo articles', () => {
   });
   it('rejects malformed routes and encoded traversal segments', () => {
     expect(readDemoContentPath(`/demo-content/${projectId}/${slug}`)).toEqual({ projectId, slug });
+    expect(readDemoContentPath(`/articles/${btoa(projectId).replace(/=+$/, '')}/${slug}`)).toEqual({ projectId, slug });
     for (const path of ['/demo-content/a/../b','/demo-content/a/%2fother','/demo-content/a/%ZZ','/demo-content/a/a?x=1','/demo-content/a/a/b']) expect(readDemoContentPath(path)).toBeNull();
   });
 });

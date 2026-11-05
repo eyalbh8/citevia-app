@@ -108,7 +108,44 @@ describe('explicit Nayax demo account', () => {
     expect(await repository.listRuns(p.id)).toHaveLength(0);
   });
 
-  it('ignores public traffic collection for a demo account', async () => {
+  it.each(['memory', 'postgres'])('installs a scoped tracker and reconciles actual referrals with account history (%s)', async backend => {
+    const db = backend === 'postgres' ? await localPostgres() : null;
+    try {
+      const repository = db ? new PostgresRepository(db) : new MemoryRepository(), p = project();
+      p.brand.domains = ['investing.nayax.com'];
+      const identity = testIdentity('traffic-viewer'), runtime = { repository, artifacts: new MemoryArtifacts(), queue: new MemoryQueue() };
+      await repository.saveProject(p, null);
+      await repository.syncUser(identity);
+      await repository.putMembership({ projectId: p.id, userId: identity.subject, role: 'viewer' });
+      const api = createApi(runtime, { mode: 'live', now, providerConfigured: true });
+      const report = async (tail: string) => {
+        const response = await api(new Request(`https://citevia.test/v1/projects/${p.id}/traffic${tail}`), identity);
+        expect(response.status).toBe(200);
+        return response.json();
+      };
+      const setup = await report('/status');
+      expect(setup).toMatchObject({ installed: false, sites: [], hasEvents: false });
+      expect(setup.trackerId).toMatch(/^[a-f0-9-]{36}$/);
+      const before = await report('?days=7');
+      const testId = crypto.randomUUID();
+      const send = (origin: string, connectionTest?: string) => publicTrafficRoute(runtime, new Request('https://citevia.test/v1/traffic/collect', {
+        method: 'POST', headers: { Origin: origin },
+        body: JSON.stringify({ id: crypto.randomUUID(), projectId: setup.trackerId, url: origin + '/new-visit', referrer: 'https://chatgpt.com/', testId: connectionTest }),
+      }), now());
+      expect((await send('https://nayax.com.unrelated.test'))?.status).toBe(403);
+      expect((await send('https://other.nayax.com'))?.status).toBe(403);
+      expect((await send('https://www.investing.nayax.com', testId))?.status).toBe(204);
+      expect(await report(`/status?testId=${testId}`)).toMatchObject({ testReceived: true, hasEvents: false, installed: true });
+      expect((await report('?days=7')).current).toBe(before.current);
+      expect((await send('https://investing.nayax.com'))?.status).toBe(204);
+      const after = await report('?days=7');
+      expect(after.current).toBe(before.current + 1);
+      expect(after.pages).toContainEqual({ label: '/new-visit', visits: 1 });
+      expect(after.status).toMatchObject({ installed: true, hasEvents: true });
+    } finally { await db?.close(); }
+  });
+
+  it('keeps legacy internal scenario IDs unavailable to public tracking', async () => {
     const repository = new MemoryRepository(), p = project();
     await repository.saveProject(p, null);
     const collect = vi.spyOn(repository, 'collectTrafficEvent'), install = vi.spyOn(repository, 'recordTrafficInstallation');

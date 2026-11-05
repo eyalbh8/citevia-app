@@ -35,3 +35,13 @@ export function sourceId(value: string): string {
 export function isOwnedDomain(domain: string, owned: string[]): boolean {
   return owned.some(value => normalizeDomain(value) === domain);
 }
+
+/** Existing saved publications and bookmarks use the original internal path. */
+export function trackedArticleUrl(url: string): string {
+  const prefix = 'https://app.citevia.io/demo-content/';
+  if (!url.startsWith(prefix)) return url;
+  const match = /^([a-zA-Z0-9_-]{1,160})\/([a-z0-9][a-z0-9-]{0,180})$/.exec(url.slice(prefix.length));
+  if (!match) return url;
+  const account = btoa(match[1]).replace(/=+$/, '');
+  return `https://app.citevia.io/articles/${account}/${match[2]}`;
+}

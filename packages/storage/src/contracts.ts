@@ -116,6 +116,7 @@ export interface Repository extends UserRepository, McpRepository, GeoBacklinkRe
     options?: { force?: boolean },
   ): Promise<void>;
   getProject(id: string): Promise<Project | null>;
+  getTrafficProject(trackerId: string): Promise<Project | null>;
   /** Assign stable fleet slots once, atomically across accounts. Custom legacy cron is preserved. */
   ensureProjectScanSchedule(id: string, options?: { migrateCustom?: boolean }): Promise<Project | null>;
   listProjects(userId: string): Promise<Project[]>;

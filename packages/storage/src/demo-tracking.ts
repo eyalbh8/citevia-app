@@ -1,6 +1,7 @@
 import {
   citationMeasurement,
   trackedUrlKey,
+  trackedArticleUrl,
   trackedUrlMetadata,
   trackingEnabledAt,
   type Analysis,
@@ -37,14 +38,15 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
     return normalizedKeys.get(url)!;
   };
   for (const item of project.demo?.trackedUrls || []) {
-    const normalizedUrl = urlKey(item.url);
+    const publicUrl = trackedArticleUrl(item.url.trim());
+    const normalizedUrl = urlKey(publicUrl);
     if (!normalizedUrl || urls.has(normalizedUrl)) continue;
     const createdAt = new Date(item.createdAt || item.publishedAt).toISOString();
     const publishedAt = new Date(item.publishedAt).toISOString();
     urls.set(normalizedUrl, {
-      id: uuidFor(`scenario-tracked-url:${project.id}:${normalizedUrl}`),
+      id: uuidFor(`scenario-tracked-url:${project.id}:${urlKey(item.url)}`),
       projectId: project.id,
-      url: item.url.trim(),
+      url: publicUrl,
       normalizedUrl,
       title: item.title || trackedUrlMetadata(item.url).title,
       contentType: item.contentType || trackedUrlMetadata(item.url).contentType,

@@ -40,7 +40,6 @@ export default function SourcesView({
   const [selected, setSelected] = useState<SourceRow>();
   const [location, setLocation] = useState({ scope: '', page: 0 });
   const runId = dashboard.run?.id;
-  const investingDemo = dashboard.project?.demo?.reportingProfile === 'uk_investing';
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(search), 250);
     return () => clearTimeout(timer);
@@ -127,12 +126,8 @@ export default function SourcesView({
         </div>
         <div className="inline-notice">
           {kind === 'cited'
-            ? investingDemo
-              ? 'Domains cited in simulated answers, including illustrative UK investing publications. Coverage is the share of answers that cite each domain.'
-              : 'Domains explicitly cited in the original answers. Coverage counts distinct answers, so repeated citations do not inflate it.'
-            : investingDemo
-              ? 'Sources retrieved for the simulated answers, including illustrative UK investing publications.'
-              : 'Sources returned by the search tool. These may have been retrieved without being cited in the answer.'}
+            ? 'Coverage is the share of answers that cite each domain.'
+            : 'Sources associated with the selected answers. Some may appear without a citation.'}
         </div>
       </div>
       <ErrorNotice error={error} />
@@ -212,11 +207,11 @@ function DomainCard({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary className="source-card-summary">
-        <DomainLogo domain={source.domain} name={source.domain.split('.')[0].replaceAll('-', ' ')} size={30} className="domain-icon" />
+        <DomainLogo publisher domain={source.domain} size={30} className="domain-icon" />
         <div className="domain-info">
           <span className="domain-name">{source.domain}</span>
           <span className="domain-meta">
-            {source.owned ? 'Your domain' : source.domain.endsWith('.example') ? 'Illustrative source' : 'Third-party source'} ·{' '}
+            {source.owned ? 'Your domain' : 'Third-party source'} ·{' '}
             {source.uniqueUrlCount}{' '}
             {source.uniqueUrlCount === 1 ? 'page' : 'pages'}
           </span>
@@ -274,7 +269,7 @@ function DomainCard({
           ) : (
             data?.items.map((url) => (
               <div className="source-url" key={url.id}>
-                <DomainLogo domain={url.domain || url.url} size={24} />
+                <DomainLogo publisher domain={url.domain || url.url} size={24} />
                 <div>
                   <ExternalLink url={url.url || ''}>
                     {url.title || url.url}
@@ -343,7 +338,7 @@ function SourceAnswers({
       </h3>
       {source.url && (
         <div className="source-url">
-          <DomainLogo domain={source.domain || source.url} size={24} />
+          <DomainLogo publisher domain={source.domain || source.url} size={24} />
           <ExternalLink url={source.url}>{source.url}</ExternalLink>
         </div>
       )}

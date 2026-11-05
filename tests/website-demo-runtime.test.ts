@@ -121,7 +121,7 @@ describe('public website service scenarios', () => {
     expect(domains.items.some(source => source.owned && source.domain === services[0].domain)).toBe(true);
     expect(domains.items.some(source => source.domain === 'bbb.org' && !source.owned)).toBe(true);
     const urls = await call<Page<SourceRow>>('sources?kind=cited&groupBy=url&limit=100');
-    expect(urls.items.some(source => source.url?.startsWith('https://app.citevia.io/demo-content/'))).toBe(true);
+    expect(urls.items.some(source => source.url?.startsWith('https://app.citevia.io/articles/'))).toBe(true);
     const source = urls.items.find(source => source.url === `https://${services[0].domain}/public-resource`)!;
     expect(source.citationCount).toBeGreaterThan(0);
     const responses = await call<Page<PromptResult>>(`sources/${source.id}/responses?limit=100`);

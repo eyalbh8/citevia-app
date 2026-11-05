@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from 'react';
 import { domainLogoSources, logoInitials } from './domain-logos';
+import PublisherMark from './PublisherMark';
 import './domain-logo.css';
 
 type DomainLogoProps = {
@@ -8,6 +9,7 @@ type DomainLogoProps = {
   size?: number;
   className?: string;
   style?: CSSProperties;
+  publisher?: boolean;
 };
 
 /** Decorative beside the visible source/brand name; reserves space while loading. */
@@ -25,6 +27,7 @@ function LogoImage({
   size = 28,
   className = '',
   style,
+  publisher,
   sources,
 }: DomainLogoProps & { sources: string[] }) {
   const [attempt, setAttempt] = useState(0);
@@ -36,7 +39,9 @@ function LogoImage({
       style={{ width: size, height: size, ...style }}
       aria-hidden="true"
     >
-      <span className="domain-logo-fallback">{logoInitials(name, domain)}</span>
+      {publisher
+        ? <PublisherMark domain={domain} />
+        : <span className="domain-logo-fallback">{logoInitials(name, domain)}</span>}
       {src && (
         <img
           key={src}

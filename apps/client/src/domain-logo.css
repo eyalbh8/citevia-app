@@ -28,6 +28,12 @@
 .domain-logo.is-loaded img {
   opacity: 1;
 }
+.domain-logo .publisher-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.domain-logo.is-loaded .publisher-mark,
 .domain-logo.is-loaded .domain-logo-fallback {
   visibility: hidden;
 }

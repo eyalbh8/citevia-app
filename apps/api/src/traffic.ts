@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   TRAFFIC_PROVIDERS,
+  matchesTrafficSite,
   trafficProvider,
   trafficBrowser,
   trafficDevice,
@@ -8,7 +9,7 @@ import {
   type TrafficProvider,
   type TrafficPeriod,
 } from '@citevia/core';
-import { AccessError, type Runtime } from '@citevia/storage';
+import { AccessError, uuidFor, type Runtime } from '@citevia/storage';
 import { monitoringPeriod } from './monitoring.js';
 import { trafficTracker } from './traffic-tracker.js';
 import { readRequestText } from './request-body.js';
@@ -71,12 +72,16 @@ export async function publicTrafficRoute(
     const parsed = eventSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) return json({ error: 'Invalid traffic event' }, 400);
     const payload = parsed.data;
-    const project = await runtime.repository.getProject(payload.projectId);
+    const isTrackerId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(payload.projectId);
+    const project = isTrackerId
+      ? await runtime.repository.getTrafficProject(payload.projectId)
+      : await runtime.repository.getProject(payload.projectId);
     if (!project) return json({ error: 'Unknown website' }, 404);
-    if (project.demo) return new Response(null, { status: 204 });
+    if (project.demo && !isTrackerId) return new Response(null, { status: 204 });
     const url = siteUrl(payload.url),
       origin = siteUrl(request.headers.get('origin') || '');
-    if (!url || !origin || origin.origin !== url.origin)
+    if (!url || !origin || origin.origin !== url.origin ||
+      (project.demo && !matchesTrafficSite(url, project.brand.domains)))
       return json({ error: 'Website origin does not match this account' }, 403);
     // UA and receipt time come from the request; never accept supplied provider/browser/country fields.
     const ua = (request.headers.get('user-agent') || '').slice(0, 1024);
@@ -147,7 +152,7 @@ export async function trafficRoute(
     const testId = query.get('testId') || undefined;
     if (testId && !z.string().uuid().safeParse(testId).success)
       fail('Invalid connection test ID.');
-    return json(await runtime.repository.trafficStatus(project.id, testId));
+    return json({ ...await runtime.repository.trafficStatus(project.id, testId), trackerId: uuidFor(project.id) });
   }
   const period = monitoringPeriod(query, now);
   const duration = Date.parse(period.end) - Date.parse(period.start) + 1;

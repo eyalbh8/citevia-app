@@ -83,7 +83,6 @@ import McpConsent from './McpConsent';
 import AgentsView from './AgentsView';
 import IntegrationsView from './IntegrationsView';
 import DemoContentView, { readDemoContentPath } from './DemoContentView';
-import PresentationScenarioNotice from './PresentationScenarioNotice';
 import './onboarding.css';
 
 type View =
@@ -893,7 +892,6 @@ function Workspace() {
             path &&
             project && (
               <>
-                <PresentationScenarioNotice demo={project.demo} />
                 {!['dashboard', 'settings', 'competitors', 'brandbook', 'prompts', 'mentions', 'tracking', 'traffic', 'website-health', 'geo-backlinks', 'agents', 'integrations'].includes(view) &&
                   run && (
                     <div className="status-strip">
@@ -986,15 +984,11 @@ function Workspace() {
                 {!['agents', 'website-health'].includes(view) && <footer className="page-footer">
                   <span>
                     <Cloud size={11} />
-                    {project.demo?.presentation
-                      ? 'Illustrative answers and rankings'
-                      : project.demo ? 'ChatGPT, Perplexity and Gemini results' : 'Native ChatGPT, Perplexity and Gemini API answers'}
+                    {project.demo ? 'ChatGPT, Perplexity and Gemini results' : 'Native ChatGPT, Perplexity and Gemini API answers'}
                   </span>
                   <span>
                     <ShieldCheck size={11} />
-                    {project.demo?.presentation
-                      ? 'Simulated scenario · Original scan records preserved'
-                      : project.demo ? 'Twice-weekly scans · Answer history' : 'Weekly snapshots · Original answers preserved'}
+                    {project.demo ? 'Answer history · UTC' : 'Weekly snapshots · Original answers preserved'}
                   </span>
                 </footer>}
               </>

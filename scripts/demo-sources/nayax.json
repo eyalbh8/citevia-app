@@ -24,7 +24,7 @@
     "Laundromat and car wash owners",
     "Office coffee service operators"
   ],
-  "description": "Nayax provides cashless payment acceptance, telemetry, management software, and consumer engagement tools for unattended retail businesses. Operators use VPOS Touch and Onyx card readers, the Nayax Core management platform, the MoMa mobile app, and Monyx Wallet payment and loyalty tools. The Nova Market kiosk supports self-checkout in micro markets. This source supports the existing Nayax demonstration account and its global unattended retail content; service availability, accepted payment methods, compatibility, and commercial terms depend on the market and merchant agreement.",
+  "description": "Nayax provides cashless payment acceptance, telemetry, management software, and consumer engagement tools for unattended retail businesses. Operators use VPOS Touch and Onyx card readers, the Nayax Core management platform, the MoMa mobile app, and Monyx Wallet payment and loyalty tools. The Nova Market kiosk supports self-checkout in micro markets. This account covers global unattended retail; service availability, accepted payment methods, compatibility, and commercial terms depend on the market and merchant agreement.",
   "criteria": [
     "Machine and protocol compatibility",
     "Accepted payment methods in the deployment market",
@@ -281,16 +281,16 @@
       "dos": [
         "Use verified Nayax product information.",
         "Confirm country-specific payment and product availability with Nayax.",
-        "Describe demonstration content and measurements as illustrative."
+        "Verify measurements and article sources before publication."
       ],
       "donts": [
         "Invent prices, compatibility guarantees, customer results or security certifications.",
-        "Present illustrative traffic or visibility as observed company performance."
+        "Publish estimates as verified company performance."
       ]
     },
     "unknowns": [
       "Commercial terms, device compatibility and market availability require direct confirmation.",
-      "Official blog publication dates are preserved separately from demonstration publication dates.",
+      "Check publication dates against the original articles.",
       "Brand voice descriptors come from the existing account profile."
     ]
   },

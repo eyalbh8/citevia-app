@@ -18,7 +18,7 @@
     "Recurring payments and dispute management"
   ],
   "audience": ["Ecommerce merchants", "Retail and hospitality businesses", "Subscription businesses", "Merchant finance and payments teams"],
-  "description": "payabl. provides payment acceptance and business account services for merchants. Its products cover online checkout, card acquiring, local payment methods, in-store acceptance and recurring payments. The payabl.one platform brings payment, settlement and account information into a shared workspace. This scenario focuses on UK and European merchant procurement.",
+  "description": "payabl. provides payment acceptance and business account services for merchants. Its products cover online checkout, card acquiring, local payment methods, in-store acceptance and recurring payments. The payabl.one platform brings payment, settlement and account information into a shared workspace. This account covers UK and European merchant procurement.",
   "criteria": ["Supported merchant countries and payment methods", "Integration and reporting requirements", "Settlement terms and total pricing", "Fraud and dispute workflows", "Merchant eligibility and support"],
   "competitors": [
     {"name": "Checkout.com", "website": "https://www.checkout.com/", "aliases": ["Checkout"], "sourceUrls": ["https://www.checkout.com/"]},
@@ -118,12 +118,12 @@
     "targetAudience": ["UK and European ecommerce merchants", "Retail and hospitality operators", "Merchant finance, payments and risk teams"],
     "postGuidelines": {
       "dos": ["Use verified product pages and dated company announcements.", "Distinguish merchant eligibility, supported markets and contracting entities.", "Discuss payment operations and procurement in practical terms."],
-      "donts": ["Promise merchant approval, authorisation rates, guaranteed settlement or fraud elimination.", "Invent processing prices, customer testimonials or regulatory permissions.", "Present scenario traffic or future measurements as actual results."]
+      "donts": ["Promise merchant approval, authorisation rates, guaranteed settlement or fraud elimination.", "Invent processing prices, customer testimonials or regulatory permissions.", "Publish projected traffic as actual results."]
     },
     "unknowns": [
-      "GB selects the UK merchant market for this scenario; the group also operates through other European entities.",
+      "Coverage focuses on the UK merchant market; the group also operates through other European entities.",
       "The published 500-plus business figure is dated September 2024 and is not a current merchant count.",
-      "Traffic scale and 8% monthly growth are illustrative scenario assumptions, not measured payabl. analytics or forecasts.",
+      "Verify referral volumes and growth against website analytics before publishing performance figures.",
       "Product eligibility, pricing, reserve terms and settlement conditions depend on the merchant and contract."
     ]
   },

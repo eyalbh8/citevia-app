@@ -702,6 +702,9 @@ export class MemoryRepository implements Repository {
   getProject(id: string) {
     return this.operation(() => this.state.projects[id] || null);
   }
+  getTrafficProject(trackerId: string) {
+    return this.operation(() => Object.values(this.state.projects).find(project => uuidFor(project.id) === trackerId) || null);
+  }
   listProjects(userId: string) {
     return this.operation(() => {
       const user = this.state.users?.[userId];
