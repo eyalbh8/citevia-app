@@ -227,7 +227,66 @@ const locksmithGuides = [
   'Choosing a lock service', 'Preparing for an appointment', 'Comparing rekeying and replacement', 'Understanding a written estimate',
   'Checking door hardware compatibility', 'Maintaining access records', 'Planning a commercial installation', 'Questions for a locksmith',
 ];
+const solarMarkets = [
+  'Abilene', 'Allen', 'Amarillo', 'Arlington', 'Austin', 'Beaumont',
+  'Brownsville', 'Bryan', 'Carrollton', 'Cedar Park', 'College Station', 'Corpus Christi',
+  'Dallas', 'Denton', 'El Paso', 'Fort Worth', 'Frisco', 'Galveston',
+  'Georgetown', 'Houston', 'Irving', 'Katy', 'Killeen', 'Round Rock',
+  'San Antonio', 'Waco', 'Boca Raton', 'Bradenton', 'Cape Coral', 'Clearwater',
+  'Daytona Beach', 'Fort Lauderdale', 'Fort Myers', 'Gainesville', 'Hialeah', 'Hollywood',
+  'Jacksonville', 'Kissimmee', 'Lakeland', 'Melbourne', 'Miami', 'Naples',
+  'Ocala', 'Orlando', 'Pensacola', 'Sarasota', 'St Petersburg', 'Tampa',
+];
+const chicagoMarkets = [
+  'Addison', 'Algonquin', 'Arlington Heights', 'Aurora', 'Barrington', 'Bartlett',
+  'Batavia', 'Berwyn', 'Bolingbrook', 'Buffalo Grove', 'Carol Stream', 'Chicago',
+  'Crystal Lake', 'Deerfield', 'Des Plaines', 'Downers Grove', 'Elgin', 'Elk Grove Village',
+  'Elmhurst', 'Evanston', 'Frankfort', 'Geneva', 'Glen Ellyn', 'Glenview',
+  'Highland Park', 'Hinsdale', 'Hoffman Estates', 'Joliet', 'La Grange', 'Lake Forest',
+  'Libertyville', 'Lisle', 'Lombard', 'Mount Prospect', 'Naperville', 'Northbrook',
+  'Oak Lawn', 'Oak Park', 'Orland Park', 'Palatine', 'Park Ridge', 'Plainfield',
+  'Schaumburg', 'Skokie', 'St Charles', 'Tinley Park', 'Wheaton', 'Wilmette',
+];
+const gutterPublications = [
+  'Gutter Guard Review', 'Roof Drainage Journal', 'Rainwater Design Bulletin', 'Downspout Digest',
+  'Residential Gutter Report', 'Water Management Quarterly', 'Seamless Gutter Review', 'Runoff Research Letter',
+  'Leaf Guard Journal', 'Roof Edge Review', 'Fascia and Soffit Digest', 'Exterior Drainage Bulletin',
+  'Rain Garden Observer', 'Residential Envelope Ledger', 'Stormwater Journal', 'Roofline Maintenance Review',
+  'Gutter Materials Journal', 'Gutter Installation Review', 'Downspout Design Weekly', 'Home Drainage Monitor',
+  'Storm Preparedness Review', 'Building Moisture Digest', 'Roof Drainage Retrofit Journal', 'Exterior Water Control Report',
+];
+const gutterGuides = [
+  'Comparing gutter guard designs', 'Reviewing a drainage layout', 'Planning a downspout outlet', 'Reading a workmanship warranty',
+  'Inspecting fascia before replacement', 'Checking slope and capacity', 'Questions for a gutter installer', 'Seasonal gutter maintenance',
+];
+const solarPublications = [
+  'Residential Solar Review', 'Battery Storage Journal', 'Home Energy Bulletin', 'Rooftop PV Digest',
+  'Backup Power Quarterly', 'Solar Design Review', 'Distributed Energy Journal', 'Inverter Technology Report',
+  'PV Service Observer', 'Grid Connection Review', 'Standby Generator Digest', 'Solar Installer Journal',
+  'Commercial Solar Review', 'Electric Load Planning Letter', 'Energy Resilience Journal', 'Battery System Review',
+  'Solar Warranty Digest', 'Home Electrification Review', 'Building Energy Report', 'Solar Equipment Bulletin',
+  'Storage Retrofit Journal', 'Power Reliability Observer', 'Residential HVAC Review', 'Solar Operations Journal',
+];
+const solarGuides = [
+  'Preparing for a site assessment', 'Comparing battery capacity', 'Reading an installation estimate', 'Planning for critical loads',
+  'Checking inverter compatibility', 'Comparing maintenance options', 'Understanding interconnection steps', 'Choosing a backup power system',
+];
+const replacementPublications = [
+  'Window Design Review', 'Exterior Door Journal', 'Residential Glazing Digest', 'Fenestration Research Bulletin',
+  'Window Installation Quarterly', 'Entry Systems Review', 'Glass Performance Journal', 'Insulated Glass Report',
+  'Window Frame Observer', 'Weatherization Review', 'Patio Door Digest', 'Window Retrofit Journal',
+  'Envelope Design Review', 'Door Hardware Letter', 'Residential Energy Journal', 'Window Materials Review',
+  'Cold Climate Retrofit Digest', 'Sash and Frame Review', 'Glass Specification Report', 'Home Renovation Bulletin',
+  'Air Sealing Journal', 'Storm Door Observer', 'Residential Window Review', 'Architectural Glass Journal',
+];
+const replacementGuides = [
+  'Comparing window frame materials', 'Choosing glass for a cold climate', 'Preparing for installation', 'Reading performance labels',
+  'Assessing an entry door seal', 'Understanding a labor warranty', 'Planning a patio door replacement', 'Questions about flashing and drainage',
+];
 const industries = {
+  gutter_protection: { places: usMarkets, publications: gutterPublications, guides: gutterGuides, fallback: 'Gutter and drainage systems', idPrefix: 'gutter_protection' },
+  solar_and_storage: { places: solarMarkets, publications: solarPublications, guides: solarGuides, fallback: 'Solar installation and home backup power', idPrefix: 'solar_and_storage' },
+  replacement_windows: { places: chicagoMarkets, publications: replacementPublications, guides: replacementGuides, fallback: 'Replacement windows and exterior doors in Chicagoland', idPrefix: 'replacement_windows' },
   uk_investing: { places, publications: investingPublications, guides: investingGuides, fallback: 'UK investing platforms', idPrefix: 'demo_investing' },
   merchant_payments: { places, publications: paymentPublications, guides: paymentGuides, fallback: 'Merchant payments', idPrefix: 'merchant_payments' },
   residential_roofing: { places: roofingPlaces, publications: roofingPublications, guides: roofingGuides, fallback: 'Residential roofing', idPrefix: 'residential_roofing' },
@@ -245,6 +304,9 @@ const industries = {
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const caches = {
+  gutter_protection: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  solar_and_storage: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  replacement_windows: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   uk_investing: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   merchant_payments: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   residential_roofing: new WeakMap<Prompt[], Map<string, Citation[]>>(),

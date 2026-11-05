@@ -98,7 +98,8 @@ export interface DemoConfig {
   /** Enables daily collections, period growth, and a sector-specific source catalog. */
   reportingProfile?: 'uk_investing' | 'merchant_payments' | 'residential_roofing' | 'unattended_payments'
     | 'home_bedding' | 'yacht_chartering' | 'hair_restoration' | 'luxury_hospitality' | 'immigration_law' | 'fertility_care'
-    | 'luxury_real_estate' | 'dental_care' | 'locksmith_services';
+    | 'luxury_real_estate' | 'dental_care' | 'locksmith_services'
+    | 'gutter_protection' | 'solar_and_storage' | 'replacement_windows';
   /** An explicitly labeled illustration layered over preserved source observations. */
   presentation?: { label: string; targetRank: number; mentionCount: number; reportingOnly: true };
   anchorDate: string;

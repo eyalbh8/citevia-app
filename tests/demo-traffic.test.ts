@@ -34,7 +34,8 @@ function reconcile(traffic: TrafficAggregate) {
 
 describe('growing virtual AI traffic', () => {
   it.each(['merchant_payments', 'residential_roofing', 'unattended_payments', 'home_bedding', 'yacht_chartering', 'hair_restoration',
-  'luxury_hospitality', 'immigration_law', 'fertility_care', 'luxury_real_estate', 'dental_care', 'locksmith_services'] as const)('reconciles positive %s referral growth over rolling and calendar windows', reportingProfile => {
+  'luxury_hospitality', 'immigration_law', 'fertility_care', 'luxury_real_estate', 'dental_care', 'locksmith_services',
+  'gutter_protection', 'solar_and_storage', 'replacement_windows'] as const)('reconciles positive %s referral growth over rolling and calendar windows', reportingProfile => {
     const scenario: Project = { ...project, demo: { ...project.demo!, reportingProfile,
       profile: { trafficScale: 8, monthlyGrowth: .09 } } };
     for (const days of [1, 7, 14, 30, 90]) {

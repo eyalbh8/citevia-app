@@ -6,6 +6,7 @@ const promptSeed: Record<NonNullable<DemoConfig['reportingProfile']>, string> = 
   yacht_chartering: ':yachts', hair_restoration: ':hair',
   luxury_hospitality: ':hospitality', immigration_law: ':immigration', fertility_care: ':fertility',
   luxury_real_estate: ':property', dental_care: ':dental', locksmith_services: ':locksmith',
+  gutter_protection: ':gutters', solar_and_storage: ':solar', replacement_windows: ':windows',
 };
 const providerOffset: Record<ScanProvider, number> = { openai: 1, perplexity: .5, gemini: 0 };
 

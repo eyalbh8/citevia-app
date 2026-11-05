@@ -3,6 +3,7 @@ import { expect, it } from 'vitest';
 import { MemoryRepository } from '@citevia/storage';
 import { newProject } from './fixtures/scanner.js';
 import { buildServiceDemo, expandServiceDemoTracking, restoreServiceReporting, syncBrooklinenReporting, syncEquinoxeReporting,
+  syncAllAmericanGutterReporting, syncFreedomPowerReporting, syncWindowWorksReporting,
   syncAcmeLocksmithReporting, syncSerhantReporting, syncTendDentalReporting, syncEsteperaReporting, syncFourSeasonsReporting, syncKanTorReporting, syncPacificFertilityReporting, syncServiceDemoReporting, type ServiceDemoSource } from '../scripts/create-service-demo.js';
 
 const source = JSON.parse(readFileSync(new URL('../scripts/demo-sources/etoro.json', import.meta.url), 'utf8'));
@@ -112,25 +113,29 @@ it.each(selected)('preserves and can restore the selected $slug import with opti
   expect((await restoreServiceReporting(repo, target.slug, catalog, before, true)).status).toBe('unchanged');
 });
 
-it('merges the ACME website import into its saved article history and restores the previous account version', async () => {
+it.each([
+  { slug: 'acme-locksmith', id: 'account_acme_locksmith_demo_v1', name: 'ACME Locksmith', domain: 'acmelocksmith.com', count: 65, upgrade: syncAcmeLocksmithReporting },
+  { slug: 'all-american-gutter', id: 'account_all_american_gutter_demo_v1', name: 'All American Gutter Protection', domain: 'allamericangutterprotection.com', count: 43, upgrade: syncAllAmericanGutterReporting },
+  { slug: 'freedom-power', id: 'account_freedom_power_demo_v1', name: 'Freedom Power', domain: 'gofreedompower.com', count: 35, upgrade: syncFreedomPowerReporting },
+  { slug: 'window-works', id: 'account_windowworks_demo_v1', name: 'WindowWorks', domain: 'mywindowworks.com', count: 128, upgrade: syncWindowWorksReporting },
+] as const)('merges the $name catalog into existing article history and restores the previous version', async ({ slug, id, name, domain, count, upgrade }) => {
   const repo = new MemoryRepository();
-  const content = JSON.parse(readFileSync(new URL('../scripts/acme-locksmith-content.json', import.meta.url), 'utf8'));
+  const content = JSON.parse(readFileSync(new URL(`../scripts/${slug}-content.json`, import.meta.url), 'utf8'));
   const now = new Date('2026-11-05T12:00:00Z');
-  const original = newProject({ id: 'account_acme_locksmith_demo_v1', name: 'ACME Locksmith', brand: 'ACME Locksmith',
-    domain: 'acmelocksmith.com', prompts: ['What does a lock rekey involve?'] });
-  const originalArticles = content.blogs.filter((row: { contentType?: string }) => !row.contentType);
+  const original = newProject({ id, name, brand: name, domain, prompts: [`What services does ${name} offer?`] });
+  const originalArticles = content.blogs.slice(0, count);
   original.enabled = false;
-  original.demo = { version: 1, source: 'website-demo', sourceAccountId: 'website:acmelocksmith.com', sourceCopiedAt: now.toISOString(),
+  original.demo = { version: 1, source: 'website-demo', sourceAccountId: `website:${domain}`, sourceCopiedAt: now.toISOString(),
     startDate: '2026-04-25', endDate: '2027-04-25', anchorDate: '2026-10-25',
     trackedUrls: originalArticles.map(({ url, title }: { url: string; title: string }) => ({ url, title, publishedAt: '2026-04-27T08:00:00.000Z' })) };
-  expect(originalArticles.length).toBeGreaterThan(60);
+  expect(originalArticles).toHaveLength(count);
   await repo.saveProject(original, null);
   const saved = (await repo.getProject(original.id))!;
-  expect((await syncAcmeLocksmithReporting(repo, content, false, now)).status).toBe('preview');
-  const updated = await syncAcmeLocksmithReporting(repo, content, true, now);
+  expect((await upgrade(repo, content, false, now)).status).toBe('preview');
+  const updated = await upgrade(repo, content, true, now);
   expect(updated.status).toBe('updated');
   expect((await repo.getProject(original.id))?.demo?.trackedUrls?.slice(0, originalArticles.length)).toEqual(saved.demo?.trackedUrls);
-  expect((await syncAcmeLocksmithReporting(repo, content, true, now)).status).toBe('unchanged');
-  expect((await restoreServiceReporting(repo, 'acme-locksmith', content, saved, true, now)).status).toBe('restored');
+  expect((await upgrade(repo, content, true, now)).status).toBe('unchanged');
+  expect((await restoreServiceReporting(repo, slug, content, saved, true, now)).status).toBe('restored');
   expect(await repo.getProject(original.id)).toEqual({ ...saved, version: saved.version + 2, updatedAt: now.toISOString() });
 });

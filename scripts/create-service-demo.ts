@@ -235,6 +235,9 @@ type ImportedReportIdentity = {
 };
 
 const selectedServices = {
+  'all-american-gutter': { id: 'account_all_american_gutter_demo_v1', name: 'All American Gutter Protection', domain: 'allamericangutterprotection.com', reportingProfile: 'gutter_protection' },
+  'freedom-power': { id: 'account_freedom_power_demo_v1', name: 'Freedom Power', domain: 'gofreedompower.com', reportingProfile: 'solar_and_storage' },
+  'window-works': { id: 'account_windowworks_demo_v1', name: 'WindowWorks', domain: 'mywindowworks.com', reportingProfile: 'replacement_windows' },
   serhant: { id: 'account_serhant_demo_v1', name: 'SERHANT.', domain: 'serhant.com', reportingProfile: 'luxury_real_estate' },
   'tend-dental': { id: 'account_tend_nyc_demo_v1', name: 'Tend Dental', domain: 'hellotend.com', reportingProfile: 'dental_care' },
   'acme-locksmith': { id: 'account_acme_locksmith_demo_v1', name: 'ACME Locksmith', domain: 'acmelocksmith.com', reportingProfile: 'locksmith_services' },
@@ -255,6 +258,9 @@ function serviceUpgrade(account: SelectedService) {
       catalog, apply, now, requestedAnchor);
 }
 export const syncSerhantReporting = serviceUpgrade('serhant');
+export const syncAllAmericanGutterReporting = serviceUpgrade('all-american-gutter');
+export const syncFreedomPowerReporting = serviceUpgrade('freedom-power');
+export const syncWindowWorksReporting = serviceUpgrade('window-works');
 export const syncTendDentalReporting = serviceUpgrade('tend-dental');
 export const syncAcmeLocksmithReporting = serviceUpgrade('acme-locksmith');
 export const syncFourSeasonsReporting = serviceUpgrade('four-seasons');
