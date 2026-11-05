@@ -106,6 +106,28 @@ describe('public website service scenarios', () => {
     expect(await base.repository.listTrackingMatches(project.id)).toEqual([]);
   });
 
+  it('includes ACME’s existing locksmith publications in daily, hourly and full-year reports without company discovery', async () => {
+    const project = fixture(services[1]);
+    project.demo!.reportingProfile = 'locksmith_services';
+    const publishedAt = '2026-10-21T08:00:00.000Z';
+    const url = 'https://www.acmelocksmith.com/articles/ansi-lock-grades-explained/';
+    project.demo!.trackedUrls = [{ url, title: 'ANSI Lock Grades Explained', publishedAt, createdAt: publishedAt }];
+    const { runtime } = await setup(project);
+    const [article] = await runtime.repository.listTrackedUrls(project.id);
+    expect(article.url).toBe(url);
+    expect(project.demo!.companyDiscovery).toBeUndefined();
+    for (const [start, end] of [
+      ['2026-10-24T12:00:00.000Z', now().toISOString()],
+      ['2026-10-19T00:00:00.000Z', now().toISOString()],
+      ['2026-04-25T00:00:00.000Z', '2027-04-25T23:59:59.999Z'],
+    ]) {
+      const matches = await runtime.repository.listTrackingMatches(project.id, article.id, { start, end });
+      expect(matches.length).toBeGreaterThan(0);
+      expect(matches.every(row => row.capture.capturedAt >= publishedAt && row.capture.capturedAt >= start && row.capture.capturedAt <= end)).toBe(true);
+      expect(new Set(matches.map(row => row.capture.capturedAt)).size).toBeGreaterThan(1);
+    }
+  });
+
   it('populates Sources domains, URLs and linked answers from the same native captures', async () => {
     const { project, base } = await setup();
     const identity = testIdentity('website-demo-owner');

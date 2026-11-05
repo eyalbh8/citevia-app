@@ -235,6 +235,9 @@ type ImportedReportIdentity = {
 };
 
 const selectedServices = {
+  serhant: { id: 'account_serhant_demo_v1', name: 'SERHANT.', domain: 'serhant.com', reportingProfile: 'luxury_real_estate' },
+  'tend-dental': { id: 'account_tend_nyc_demo_v1', name: 'Tend Dental', domain: 'hellotend.com', reportingProfile: 'dental_care' },
+  'acme-locksmith': { id: 'account_acme_locksmith_demo_v1', name: 'ACME Locksmith', domain: 'acmelocksmith.com', reportingProfile: 'locksmith_services' },
   'four-seasons': { id: 'account_four_seasons_firenze_demo_v1', name: 'Four Seasons Hotel Firenze', domain: 'fourseasons.com', reportingProfile: 'luxury_hospitality' },
   'kan-tor': { id: 'account_kan_tor_acco_demo_v1', name: 'Kan-Tor & Acco', domain: 'ktalegal.com', reportingProfile: 'immigration_law' },
   'pacific-fertility': { id: 'account_pfcla_la_demo_v1', name: 'Pacific Fertility Center Los Angeles', domain: 'pfcla.com', reportingProfile: 'fertility_care' },
@@ -251,6 +254,9 @@ function serviceUpgrade(account: SelectedService) {
     syncImportedReporting(repository, { ...target, source: 'website-demo', sourceAccountId: `website:${target.domain}` },
       catalog, apply, now, requestedAnchor);
 }
+export const syncSerhantReporting = serviceUpgrade('serhant');
+export const syncTendDentalReporting = serviceUpgrade('tend-dental');
+export const syncAcmeLocksmithReporting = serviceUpgrade('acme-locksmith');
 export const syncFourSeasonsReporting = serviceUpgrade('four-seasons');
 export const syncKanTorReporting = serviceUpgrade('kan-tor');
 export const syncPacificFertilityReporting = serviceUpgrade('pacific-fertility');

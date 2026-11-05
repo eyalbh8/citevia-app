@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { MemoryRepository } from '@citevia/storage';
+import { newProject } from './fixtures/scanner.js';
 import { buildServiceDemo, expandServiceDemoTracking, restoreServiceReporting, syncBrooklinenReporting, syncEquinoxeReporting,
-  syncEsteperaReporting, syncFourSeasonsReporting, syncKanTorReporting, syncPacificFertilityReporting, syncServiceDemoReporting, type ServiceDemoSource } from '../scripts/create-service-demo.js';
+  syncAcmeLocksmithReporting, syncSerhantReporting, syncTendDentalReporting, syncEsteperaReporting, syncFourSeasonsReporting, syncKanTorReporting, syncPacificFertilityReporting, syncServiceDemoReporting, type ServiceDemoSource } from '../scripts/create-service-demo.js';
 
 const source = JSON.parse(readFileSync(new URL('../scripts/demo-sources/etoro.json', import.meta.url), 'utf8'));
 
@@ -49,6 +50,8 @@ it('upgrades the existing merchant reporting year once and keeps the saved accou
 });
 
 const selected = [
+  { slug: 'serhant', source: 'business', id: 'account_serhant_demo_v1', profile: 'luxury_real_estate', sync: syncSerhantReporting },
+  { slug: 'tend-dental', source: 'medical', id: 'account_tend_nyc_demo_v1', profile: 'dental_care', sync: syncTendDentalReporting },
   { slug: 'four-seasons', source: 'luxury', id: 'account_four_seasons_firenze_demo_v1', profile: 'luxury_hospitality', sync: syncFourSeasonsReporting },
   { slug: 'kan-tor', source: 'business', id: 'account_kan_tor_acco_demo_v1', profile: 'immigration_law', sync: syncKanTorReporting },
   { slug: 'pacific-fertility', source: 'medical', id: 'account_pfcla_la_demo_v1', profile: 'fertility_care', sync: syncPacificFertilityReporting },
@@ -107,4 +110,27 @@ it.each(selected)('preserves and can restore the selected $slug import with opti
   expect((await restoreServiceReporting(repo, target.slug, catalog, before, true, now)).status).toBe('restored');
   expect(await repo.getProject(previous.id)).toEqual({ ...before, updatedAt: now.toISOString(), version: before.version + 2 });
   expect((await restoreServiceReporting(repo, target.slug, catalog, before, true)).status).toBe('unchanged');
+});
+
+it('merges the ACME website import into its saved article history and restores the previous account version', async () => {
+  const repo = new MemoryRepository();
+  const content = JSON.parse(readFileSync(new URL('../scripts/acme-locksmith-content.json', import.meta.url), 'utf8'));
+  const now = new Date('2026-11-05T12:00:00Z');
+  const original = newProject({ id: 'account_acme_locksmith_demo_v1', name: 'ACME Locksmith', brand: 'ACME Locksmith',
+    domain: 'acmelocksmith.com', prompts: ['What does a lock rekey involve?'] });
+  const originalArticles = content.blogs.filter((row: { contentType?: string }) => !row.contentType);
+  original.enabled = false;
+  original.demo = { version: 1, source: 'website-demo', sourceAccountId: 'website:acmelocksmith.com', sourceCopiedAt: now.toISOString(),
+    startDate: '2026-04-25', endDate: '2027-04-25', anchorDate: '2026-10-25',
+    trackedUrls: originalArticles.map(({ url, title }: { url: string; title: string }) => ({ url, title, publishedAt: '2026-04-27T08:00:00.000Z' })) };
+  expect(originalArticles.length).toBeGreaterThan(60);
+  await repo.saveProject(original, null);
+  const saved = (await repo.getProject(original.id))!;
+  expect((await syncAcmeLocksmithReporting(repo, content, false, now)).status).toBe('preview');
+  const updated = await syncAcmeLocksmithReporting(repo, content, true, now);
+  expect(updated.status).toBe('updated');
+  expect((await repo.getProject(original.id))?.demo?.trackedUrls?.slice(0, originalArticles.length)).toEqual(saved.demo?.trackedUrls);
+  expect((await syncAcmeLocksmithReporting(repo, content, true, now)).status).toBe('unchanged');
+  expect((await restoreServiceReporting(repo, 'acme-locksmith', content, saved, true, now)).status).toBe('restored');
+  expect(await repo.getProject(original.id)).toEqual({ ...saved, version: saved.version + 2, updatedAt: now.toISOString() });
 });

@@ -175,6 +175,58 @@ const fertilityGuides = [
   'Questions for a fertility consultation', 'Preparing for a first visit', 'Discussing treatment options', 'Understanding the care team',
   'Planning for monitoring appointments', 'Asking about laboratory standards', 'Interpreting clinic statistics', 'Finding patient support',
 ];
+const newYorkMarkets = [
+  'Astoria', 'Battery Park City', 'Bay Ridge', 'Bedford Stuyvesant', 'Boerum Hill', 'Brooklyn Heights', 'Bushwick', 'Carnegie Hill',
+  'Carroll Gardens', 'Chelsea', 'Chinatown', 'Clinton Hill', 'Cobble Hill', 'Columbus Circle', 'Crown Heights', 'Dumbo',
+  'East Village', 'Financial District', 'Flatbush', 'Flatiron', 'Forest Hills', 'Fort Greene', 'Gramercy', 'Greenpoint',
+  'Greenwich Village', 'Hamilton Heights', 'Harlem', 'Hudson Heights', 'Hudson Square', 'Hudson Yards', 'Inwood', 'Jackson Heights',
+  'Kips Bay', 'Lenox Hill', 'Lincoln Square', 'Long Island City', 'Lower East Side', 'Midtown', 'Murray Hill', 'Park Slope',
+  'Prospect Heights', 'Soho', 'Sutton Place', 'Tribeca', 'Upper East Side', 'Upper West Side', 'West Village', 'Williamsburg',
+];
+const realEstatePublications = [
+  'Residential Market Review', 'Manhattan Property Journal', 'Condominium Digest', 'New Development Bulletin',
+  'Property Transactions Review', 'Townhouse Journal', 'Brokerage Report', 'Luxury Homes Observer',
+  'Apartment Market Quarterly', 'Buyer Advisory Review', 'Cooperative Housing Journal', 'Property Finance Digest',
+  'Residential Architecture Review', 'Home Appraisal Journal', 'Neighborhood Sales Report', 'Building Amenities Review',
+  'Property Management Letter', 'Residential Design Review', 'Closing Costs Digest', 'Broker Practice Journal',
+  'Apartment Listings Review', 'Urban Homes Journal', 'Open House Bulletin', 'Housing Research Review',
+];
+const realEstateGuides = [
+  'Reading comparable sales', 'Preparing for a first viewing', 'Comparing condos and co-ops', 'Getting ready to list',
+  'Questions for a real estate broker', 'Checking building documents', 'Understanding closing costs', 'Reviewing neighborhood inventory',
+];
+const dentalPublications = [
+  'Dental Care Review', 'Oral Health Journal', 'Preventive Dentistry Digest', 'Patient Education Bulletin',
+  'Restorative Dentistry Review', 'Hygiene Practice Journal', 'Dental Materials Report', 'Oral Care Observer',
+  'Clinical Dentistry Quarterly', 'Dental Benefits Review', 'Patient Experience Journal', 'Practice Access Digest',
+  'Dental Imaging Review', 'Family Dentistry Journal', 'Periodontal Care Report', 'Restorative Care Review',
+  'Dental Practice Letter', 'Smile Care Review', 'Alignment Care Digest', 'Community Dentistry Journal',
+  'Patient Safety Review', 'Oral Hygiene Journal', 'Dental Health Bulletin', 'Appointment Planning Review',
+];
+const dentalGuides = [
+  'Preparing for a first visit', 'Questions about preventive care', 'Discussing treatment options', 'Understanding a treatment plan',
+  'Checking network participation', 'Discussing follow-up visits', 'Choosing a dental practice', 'Understanding cost estimates',
+];
+const arizonaPlaces = [
+  'Ahwatukee', 'Anthem', 'Apache Junction', 'Arcadia', 'Avondale', 'Buckeye', 'Carefree', 'Casa Grande',
+  'Cave Creek', 'Chandler', 'Chandler Heights', 'Coolidge', 'Deer Valley', 'Desert Hills', 'Douglas', 'El Mirage',
+  'Eloy', 'Flagstaff', 'Florence', 'Fountain Hills', 'Gilbert', 'Glendale', 'Gold Canyon', 'Goodyear',
+  'Guadalupe', 'Kingman', 'Lake Havasu City', 'Laveen', 'Litchfield Park', 'Maricopa', 'Mesa', 'Oro Valley',
+  'Paradise Valley', 'Payson', 'Peoria', 'Phoenix', 'Prescott', 'Queen Creek', 'San Tan Valley', 'Scottsdale',
+  'Sedona', 'Sun City', 'Sun City West', 'Surprise', 'Tempe', 'Tolleson', 'Tucson', 'Wickenburg',
+];
+const locksmithPublications = [
+  'Lock and Key Review', 'Access Control Journal', 'Door Hardware Digest', 'Building Security Bulletin',
+  'Locksmith Practice Review', 'Electronic Access Journal', 'Property Security Report', 'Commercial Doors Observer',
+  'Safe and Vault Quarterly', 'Facility Protection Review', 'Automotive Keys Journal', 'Residential Hardware Digest',
+  'Building Access Review', 'Key Systems Journal', 'Door Closer Report', 'Security Hardware Review',
+  'Property Manager Letter', 'Entry Systems Review', 'Lock Maintenance Digest', 'Safe Service Journal',
+  'Hardware Installer Review', 'Master Key Journal', 'Home Security Bulletin', 'Business Entry Review',
+];
+const locksmithGuides = [
+  'Choosing a lock service', 'Preparing for an appointment', 'Comparing rekeying and replacement', 'Understanding a written estimate',
+  'Checking door hardware compatibility', 'Maintaining access records', 'Planning a commercial installation', 'Questions for a locksmith',
+];
 const industries = {
   uk_investing: { places, publications: investingPublications, guides: investingGuides, fallback: 'UK investing platforms', idPrefix: 'demo_investing' },
   merchant_payments: { places, publications: paymentPublications, guides: paymentGuides, fallback: 'Merchant payments', idPrefix: 'merchant_payments' },
@@ -186,6 +238,9 @@ const industries = {
   luxury_hospitality: { places: italyPlaces, publications: hospitalityPublications, guides: hospitalityGuides, fallback: 'Luxury hotel stays in Florence', idPrefix: 'luxury_hospitality' },
   immigration_law: { places: mobilityMarkets, publications: immigrationPublications, guides: immigrationGuides, fallback: 'Immigration and global mobility', idPrefix: 'immigration_law' },
   fertility_care: { places: usMarkets, publications: fertilityPublications, guides: fertilityGuides, fallback: 'Fertility care and family building', idPrefix: 'fertility_care' },
+  luxury_real_estate: { places: newYorkMarkets, publications: realEstatePublications, guides: realEstateGuides, fallback: 'New York luxury real estate', idPrefix: 'luxury_real_estate' },
+  dental_care: { places: newYorkMarkets, publications: dentalPublications, guides: dentalGuides, fallback: 'Dental care in New York City', idPrefix: 'dental_care' },
+  locksmith_services: { places: arizonaPlaces, publications: locksmithPublications, guides: locksmithGuides, fallback: 'Arizona locksmith services', idPrefix: 'locksmith_services' },
 } satisfies Record<Profile, { places: string[]; publications: string[]; guides: string[]; fallback: string; idPrefix: string }>;
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -200,6 +255,9 @@ const caches = {
   luxury_hospitality: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   immigration_law: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   fertility_care: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  luxury_real_estate: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  dental_care: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  locksmith_services: new WeakMap<Prompt[], Map<string, Citation[]>>(),
 } satisfies Record<Profile, WeakMap<Prompt[], Map<string, Citation[]>>>;
 const noSources: Citation[] = [];
 

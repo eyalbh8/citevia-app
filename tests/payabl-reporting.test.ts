@@ -16,6 +16,8 @@ const accounts = [
   { name: 'Four Seasons Hotel Firenze', source: websiteSource('luxury', 'Four Seasons Hotel Firenze'), profile: 'luxury_hospitality' },
   { name: 'Kan-Tor & Acco', source: websiteSource('business', 'Kan-Tor & Acco'), profile: 'immigration_law' },
   { name: 'Pacific Fertility Center Los Angeles', source: websiteSource('medical', 'Pacific Fertility Center Los Angeles'), profile: 'fertility_care' },
+  { name: 'SERHANT.', source: websiteSource('business', 'SERHANT.'), profile: 'luxury_real_estate' },
+  { name: 'Tend Dental', source: websiteSource('medical', 'Tend Dental'), profile: 'dental_care' },
 ] as const;
 const now = () => new Date('2026-11-05T21:30:00Z');
 
