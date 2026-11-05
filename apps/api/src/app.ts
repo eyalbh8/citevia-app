@@ -30,6 +30,7 @@ import {
   sameMethod,
   settingsSchema,
   projectProviders,
+  usesModeledReporting,
   analysisProvider,
   DEFAULT_ANALYSIS_MODEL,
   snapshotProvider,
@@ -1110,7 +1111,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         )
           throw new HttpError(400, 'INVALID_SORT', 'Invalid answer sort.');
         const { offset, limit } = paging(query);
-        const end = days === 'all' && stored.demo && stored.demo.reportingProfile !== 'uk_investing'
+        const end = days === 'all' && stored.demo && !usesModeledReporting(stored.demo)
           ? new Date(`${stored.demo.endDate}T23:59:59.999Z`) : now(),
           start =
             days === 'all'

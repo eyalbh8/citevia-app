@@ -60,7 +60,7 @@ export const serviceDemoSourceSchema = z.object({
   companyDiscovery: z.literal(true).optional(),
   dashboardComparison: z.literal('scenario_start').optional(),
   publicationAlignment: z.literal('scans').optional(),
-  reportingProfile: z.literal('uk_investing').optional(),
+  reportingProfile: z.enum(['uk_investing', 'merchant_payments']).optional(),
   industry: z.string().trim().min(2).max(150), serviceArea: z.string().trim().min(2).max(150),
   services: z.array(z.string().trim().min(2).max(100)).min(5).max(30), audience: textList.min(1),
   description: z.string().trim().min(20).max(4000), criteria: textList.optional(),
@@ -141,10 +141,10 @@ function weeklyPublicationDates(window = serviceDemoDates()) {
 }
 
 export function alignDemoTrackingToScans(items: NonNullable<DemoConfig['trackedUrls']>,
-  window: Pick<DemoConfig, 'startDate' | 'endDate'>, slots = [600, 5640]): NonNullable<DemoConfig['trackedUrls']> {
+  window: Pick<DemoConfig, 'startDate' | 'endDate'>, slots = [600, 5640], includeOpeningScan = false): NonNullable<DemoConfig['trackedUrls']> {
   const start = Date.parse(`${window.startDate}T00:00:00Z`), end = Date.parse(`${window.endDate}T23:59:59Z`);
   const monday = start - ((new Date(start).getUTCDay() + 6) % 7) * 86400000;
-  const scans: number[] = [];
+  const scans: number[] = includeOpeningScan ? [start] : [];
   for (let week = monday; week <= end; week += 7 * 86400000)
     for (const slot of slots) { const at = week + slot * 60000; if (at >= start && at <= end) scans.push(at); }
   scans.sort((a, b) => a - b);
@@ -202,8 +202,8 @@ function trackedContent(source: ParsedSource, existing: NonNullable<DemoConfig['
       publishedAt, createdAt: publishedAt };
   }))];
   const window = serviceDemoDates(source.anchorDate);
-  const aligned = source.publicationAlignment === 'scans' ? alignDemoTrackingToScans(additions, window) : additions;
-  return [...existing, ...(source.reportingProfile === 'uk_investing' ? withDemoPublicationLeadTimes(aligned, window) : aligned)];
+  const aligned = source.publicationAlignment === 'scans' ? alignDemoTrackingToScans(additions, window, undefined, source.reportingProfile === 'merchant_payments') : additions;
+  return [...existing, ...(source.reportingProfile ? withDemoPublicationLeadTimes(aligned, window) : aligned)];
 }
 
 /** Public website metadata creates a compact synthetic scenario, never historical customer measurements. */
@@ -347,33 +347,52 @@ export async function expandServiceDemoTracking(
     paidCalls: 0 };
 }
 
-/** Upgrade the report presentation on an existing scan-aligned demo without reenrolling its URLs. */
+/** Synchronize a curated report profile using the saved project version. */
 export async function syncServiceDemoReporting(
   repository: Pick<Repository, 'getProject' | 'saveProject'>, value: unknown, apply = false, now = new Date(),
 ) {
   const source = serviceDemoSourceSchema.parse(value), existing = await repository.getProject(source.id);
-  const demo = existing?.demo, dates = serviceDemoDates(source.anchorDate);
-  if (source.reportingProfile !== 'uk_investing' || source.publicationAlignment !== 'scans' || !demo ||
-    !existing || existing.enabled || demo.presentation || demo.source !== 'website-demo' || demo.publicationAlignment !== 'scans' ||
+  const demo = existing?.demo;
+  if (!existing || !demo || existing.enabled || demo.presentation || demo.source !== 'website-demo' ||
+    !source.reportingProfile || !source.anchorDate || source.publicationAlignment !== 'scans' ||
     demo.sourceAccountId !== `website:${domain(source.website)}` || existing.brand.domains[0] !== domain(source.website) ||
-    source.anchorDate !== demo.anchorDate || dates.startDate !== demo.startDate || dates.endDate !== demo.endDate)
-    throw new Error('Reporting updates require the matching scan-aligned website demo and its saved timeline.');
+    (demo.reportingProfile && demo.reportingProfile !== source.reportingProfile))
+    throw new Error('Reporting updates require the matching disabled website account and reporting profile.');
   validateServiceDemo(existing);
-  const trackedUrls = withDemoPublicationLeadTimes(demo.trackedUrls!, demo);
-  const unchanged = demo.reportingProfile === source.reportingProfile && isDeepStrictEqual(demo.trackedUrls, trackedUrls);
-  const desired: Project = unchanged ? existing : { ...existing, updatedAt: now.toISOString(), version: existing.version + 1,
-    demo: { ...demo, reportingProfile: source.reportingProfile, trackedUrls } };
+
+  // Older payment accounts enrolled a few articles on a sparse timeline. Adopt the
+  // curated reporting year once; subsequent syncs must respect its saved dates.
+  const firstPaymentUpgrade = source.reportingProfile === 'merchant_payments' && !demo.reportingProfile && !demo.publicationAlignment;
+  if (!firstPaymentUpgrade && (demo.publicationAlignment !== 'scans' || source.anchorDate !== demo.anchorDate))
+    throw new Error('Reporting updates require a matching saved scenario timeline.');
+  const configured = firstPaymentUpgrade ? buildServiceDemo(source, now.toISOString()).demo! : demo;
+  const trackedUrls = firstPaymentUpgrade ? configured.trackedUrls! : withDemoPublicationLeadTimes(demo.trackedUrls!, demo);
+  const keys = new Set(trackedUrls.map(row => trackedUrlKey(row.url)));
+  if (demo.trackedUrls!.some(row => !keys.has(trackedUrlKey(row.url))))
+    throw new Error('The updated tracking catalog must retain every previously enrolled URL.');
+
+  // JSON storage omits optional undefined fields. Compare the same representation on retries.
+  const reporting = JSON.parse(JSON.stringify({
+    ...demo, ...serviceDemoDates(source.anchorDate), reportingProfile: source.reportingProfile,
+    publicationAlignment: source.publicationAlignment, dashboardComparison: source.dashboardComparison ?? demo.dashboardComparison,
+    profile: configured.profile, traffic: configured.traffic, samples: configured.samples, trackedUrls,
+  })) as DemoConfig;
+  const unchanged = isDeepStrictEqual(demo, reporting);
+  const desired: Project = unchanged ? existing : { ...existing, updatedAt: now.toISOString(), version: existing.version + 1, demo: reporting };
+  validateServiceDemo(desired);
+  if (Buffer.byteLength(JSON.stringify(desired)) > 250000) throw new Error('Compact demo configuration exceeds 250 KB.');
   if (apply && !unchanged && !await repository.saveProject(desired, existing.version))
     throw new Error('Account changed concurrently; retry to inspect it.');
+  const previousDates = new Map(demo.trackedUrls!.map(row => [trackedUrlKey(row.url), row.publishedAt]));
   return { status: unchanged ? 'unchanged' : apply ? 'updated' : 'preview', projectId: source.id, version: desired.version,
-    reportingProfile: source.reportingProfile, trackedUrls: trackedUrls.length,
-    updatedPublicationDates: trackedUrls.filter((row, index) => row.publishedAt !== demo.trackedUrls![index].publishedAt).length };
+    reportingProfile: source.reportingProfile, trackedUrls: trackedUrls.length, added: trackedUrls.length - previousDates.size,
+    updatedPublicationDates: trackedUrls.filter(row => previousDates.has(trackedUrlKey(row.url)) && previousDates.get(trackedUrlKey(row.url)) !== row.publishedAt).length };
 }
 
 export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: { source: { type: 'string' }, mode: { type: 'string', default: 'local' },
     apply: { type: 'boolean' }, 'expand-tracking': { type: 'boolean' }, 'sync-reporting': { type: 'boolean' }, help: { type: 'boolean' } } });
-  if (values.help) { console.log('npm run demo:service -- --source /private/path/public-website-sources.json --mode local|aws [--expand-tracking | --sync-reporting] [--apply]\nSource accepts one account, an array, or {accounts:[...]}. Defaults to preview. Both update modes preserve saved enrollment dates. Never calls iGEO or an AI provider.'); return; }
+  if (values.help) { console.log('npm run demo:service -- --source /private/path/public-website-sources.json --mode local|aws [--expand-tracking | --sync-reporting] [--apply]\nSource accepts one account, an array, or {accounts:[...]}. Defaults to preview. First-time payment reporting upgrades adopt the source timeline. Later updates preserve enrollments. Never calls iGEO or an AI provider.'); return; }
   if (values['expand-tracking'] && values['sync-reporting']) throw new Error('Choose one update mode.');
   if (!values.source || !['local', 'aws'].includes(values.mode)) throw new Error('Supply --source and choose --mode local|aws.');
   const value = JSON.parse(await readFile(resolve(values.source), 'utf8'));

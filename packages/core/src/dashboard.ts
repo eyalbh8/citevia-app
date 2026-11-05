@@ -45,8 +45,9 @@ export interface DashboardOverview {
     sentiment: number | null;
     sentimentChange: number | null;
   }[];
-  /** Daily UTC mention counts. Missing capture days are not fabricated. */
+  /** Observed UTC dates, or UTC hour timestamps when trendGranularity is hourly. */
   trend: { date: string; mentions: Record<string, number> }[];
+  trendGranularity?: 'hourly';
   sources: {
     domain: string;
     pageCount: number;
@@ -54,6 +55,8 @@ export interface DashboardOverview {
     owned: boolean;
   }[];
   comparison: 'first_to_last_observed_day' | 'scenario_baseline' | 'modeled_period';
+  /** Set when rank, sentiment and mention changes for every ranked brand use the period model. */
+  rankingComparison?: 'modeled_period';
   comparisonPeriod?: { start: string; end: string };
 }
 
@@ -126,6 +129,8 @@ export function aggregateDashboardOverview(
   );
   const brands = [project.brand, ...project.competitors];
   const days = new Set<string>();
+  const hourly = period.granularity === 'hourly' && project.demo?.reportingProfile === 'merchant_payments'
+    ? new Map<string, Map<string, number>>() : undefined;
   const providerDays = new Map<ScanProvider, Set<string>>();
   const activePrompts = new Map(
     project.prompts
@@ -137,7 +142,7 @@ export function aggregateDashboardOverview(
     string,
     Map<
       string,
-      { day: string; sentiment: number | null; provider: ScanProvider }
+      { day: string; hourCounts?: Map<string, number>; sentiment: number | null; provider: ScanProvider }
     >
   >();
   const promptResults = new Map<
@@ -153,6 +158,12 @@ export function aggregateDashboardOverview(
   for (const { result, run, answer } of observations) {
     const provider = snapshotProvider(run.snapshot);
     const day = result.capturedAt!.slice(0, 10);
+    let hourCounts: Map<string, number> | undefined;
+    if (hourly) {
+      const hour = `${result.capturedAt!.slice(0, 13)}:00:00.000Z`;
+      hourCounts = hourly.get(hour) ?? new Map<string, number>();
+      hourly.set(hour, hourCounts);
+    }
     days.add(day);
     const observed = providerDays.get(provider) || new Set<string>();
     observed.add(day);
@@ -194,6 +205,7 @@ export function aggregateDashboardOverview(
       ]);
       events.set(key, {
         day,
+        hourCounts,
         provider,
         sentiment: brandSentimentScore(measurement),
       });
@@ -222,6 +234,7 @@ export function aggregateDashboardOverview(
       scores = new Map<string, number[]>();
     for (const event of events.values()) {
       counts.set(event.day, (counts.get(event.day) || 0) + 1);
+      if (event.hourCounts) event.hourCounts.set(brandId, (event.hourCounts.get(brandId) || 0) + 1);
       if (event.sentiment !== null)
         scores.set(event.day, [
           ...(scores.get(event.day) || []),
@@ -367,12 +380,13 @@ export function aggregateDashboardOverview(
         (a, b) => b.visibility - a.visibility || a.key.localeCompare(b.key),
       ),
     ranking,
-    trend: observedDays.map((date) => ({
+    ...(hourly ? { trendGranularity: 'hourly' as const } : {}),
+    trend: (hourly ? [...hourly.keys()].sort() : observedDays).map((date) => ({
       date,
       mentions: Object.fromEntries(
         ranking.map((brand) => [
           brand.brandId,
-          daily.get(brand.brandId)?.get(date) || 0,
+          (hourly ? hourly.get(date)?.get(brand.brandId) : daily.get(brand.brandId)?.get(date)) || 0,
         ]),
       ),
     })),

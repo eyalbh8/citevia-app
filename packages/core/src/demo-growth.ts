@@ -3,6 +3,12 @@ import type { DemoConfig, ScanProvider } from './types.js';
 const DAY = 86_400_000;
 const providerOffset: Record<ScanProvider, number> = { openai: 1, perplexity: .5, gemini: 0 };
 
+export function usesModeledReporting(
+  config: DemoConfig | undefined,
+): config is DemoConfig & { reportingProfile: NonNullable<DemoConfig['reportingProfile']> } {
+  return config?.reportingProfile === 'uk_investing' || config?.reportingProfile === 'merchant_payments';
+}
+
 function fraction(value: string) {
   let hash = 2166136261;
   for (const char of value) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
@@ -13,7 +19,8 @@ function fraction(value: string) {
 export function investingVisibilityRate(demo: DemoConfig, promptId: string, provider: ScanProvider, at: number) {
   const anchor = Date.parse(demo.anchorDate) + DAY;
   const daysBeforeAnchor = (anchor - at) / DAY;
-  const strength = fraction(promptId);
+  // A sector suffix disperses sequential prompt IDs across the payments cohort.
+  const strength = fraction(demo.reportingProfile === 'merchant_payments' ? promptId + ':payments' : promptId);
   const pace = (strength + providerOffset[provider]) / 2;
   const anchorRate = .59 + .17 * strength + .07 * providerOffset[provider];
   if (daysBeforeAnchor <= 0) {
@@ -27,6 +34,11 @@ export function investingVisibilityRate(demo: DemoConfig, promptId: string, prov
   else if (daysBeforeAnchor <= 30) increase = week + (month - week) * (daysBeforeAnchor - 7) / 23;
   else increase = month + (quarter - month) * (daysBeforeAnchor - 30) / 60;
   return anchorRate / (1 + increase);
+}
+
+// Peer mentions can grow alongside the target: one answer may name several providers.
+export function paymentBrandRate(targetRate: number, peerIndex: number) {
+  return peerIndex < 0 ? targetRate : .04 + targetRate * (.60 - .06 * peerIndex);
 }
 
 export type InvestingCohort = { promptId: string; provider: ScanProvider };
@@ -62,6 +74,7 @@ export function investingTrend(demo: DemoConfig, cohorts: InvestingCohort[], per
   const round = (value: number) => Number(value.toFixed(2));
   // Target sentiment is positive with probability p (otherwise neutral).
   return {
+    before, after,
     visibility: round(100 * (after - before) / before),
     sentiment: round(100 * (after - before) / (1 + before)),
     rank: round(100 * (priorRank - currentRank) / priorRank),

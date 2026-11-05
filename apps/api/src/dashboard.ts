@@ -2,7 +2,9 @@ import {
   aggregateDashboardOverview,
   dashboardObservations,
   investingComparisonPeriod,
+  usesModeledReporting,
   investingTrend,
+  paymentBrandRate,
   isReportableRun,
   matchesMonitoringFilters,
   snapshotProvider,
@@ -87,7 +89,7 @@ export async function dashboardOverviewRoute(
   }
   const report = aggregateDashboardOverview(project, period, filters,
     await historicalCompetitorMentions(runtime, project, observations));
-  if (project.demo?.reportingProfile === 'uk_investing' && !project.demo.presentation && observations.length) {
+  if (usesModeledReporting(project.demo) && !project.demo.presentation && observations.length) {
     const demo = project.demo, comparison = investingComparisonPeriod(demo, period.start, period.end);
     const unique = new Map<string, InvestingCohort & { stage: string }>();
     for (const { result, run } of observations) {
@@ -98,8 +100,27 @@ export async function dashboardOverviewRoute(
     const growth = (group: InvestingCohort[]) => investingTrend(demo, group, comparison)?.visibility ?? null;
     for (const row of report.providers) row.change = growth(cohorts.filter(pair => pair.provider === row.provider));
     for (const row of report.stages) row.visibilityChange = growth(cohorts.filter(pair => pair.stage === row.key));
+    const trend = investingTrend(demo, cohorts, comparison);
     const target = report.ranking.find(row => row.isTarget);
-    if (target) target.mentionChange = growth(cohorts);
+    if (target) target.mentionChange = trend?.visibility ?? null;
+    if (trend && demo.reportingProfile === 'merchant_payments') {
+      const brands = [project.brand, ...project.competitors].map((brand, index) => ({
+        id: brand.id,
+        before: paymentBrandRate(trend.before, index - 1),
+        after: paymentBrandRate(trend.after, index - 1),
+      }));
+      // Use the same prompt/provider cohort at both ends of the period.
+      for (const row of report.ranking) {
+        const brand = brands.find(item => item.id === row.brandId)!;
+        const priorRank = 1 + brands.filter(peer => peer.before > brand.before).length;
+        const currentRank = 1 + brands.filter(peer => peer.after > brand.after).length;
+        row.rankChange = row.rank === null ? null : priorRank - currentRank;
+        row.mentionChange = Number((100 * (brand.after - brand.before) / brand.before).toFixed(2));
+        // A neutral mention scores 50 and a positive mention scores 100.
+        row.sentimentChange = row.sentiment === null ? null : Number((50 * (brand.after - brand.before)).toFixed(2));
+      }
+      report.rankingComparison = 'modeled_period';
+    }
     report.comparison = 'modeled_period';
     report.comparisonPeriod = comparison;
   } else if (project.demo?.dashboardComparison === 'scenario_start' && !project.demo.presentation && observations.length) {

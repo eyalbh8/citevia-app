@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TRAFFIC_PROVIDERS, type Project, type TrafficAggregate, type TrafficFilters } from '@citevia/core';
+import { TRAFFIC_PROVIDERS, trafficChange, type Project, type TrafficAggregate, type TrafficFilters } from '@citevia/core';
 import { aggregateScenarioTraffic } from '../packages/storage/src/demo-traffic.js';
 import { monitoringPeriod } from '../apps/api/src/monitoring.js';
 import { newProject } from './fixtures/scanner.js';
@@ -33,6 +33,19 @@ function reconcile(traffic: TrafficAggregate) {
 }
 
 describe('growing virtual AI traffic', () => {
+  it('reconciles positive merchant referral growth over rolling and calendar windows', () => {
+    const merchant: Project = { ...project, demo: { ...project.demo!, reportingProfile: 'merchant_payments',
+      profile: { trafficScale: 8, monthlyGrowth: .09 } } };
+    for (const days of [1, 7, 14, 30, 90]) {
+      const period = monitoringPeriod(new URLSearchParams({ days: String(days) }), new Date('2026-11-05T15:30:00Z'));
+      const start = Date.parse(period.start), duration = Date.parse(period.end) - start + 1;
+      const previous = { ...period, start: new Date(start - duration).toISOString(), end: new Date(start - 1).toISOString() };
+      const traffic = aggregateScenarioTraffic(merchant, { period, previous, providers: [], countries: [] });
+      expect(traffic.providers.every(row => (trafficChange(row.visits, row.previous, 1) ?? 0) > 0)).toBe(true);
+      reconcile(traffic);
+    }
+  });
+
   it('keeps niche providers visible with a daily baseline without losing reconciliation', () => {
     const niche: Project = { ...project, demo: { ...project.demo!, profile: { trafficScale: .035, monthlyGrowth: .065 } } };
     const traffic = aggregateScenarioTraffic(niche, monthFilters(2026, 9));

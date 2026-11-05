@@ -23,3 +23,26 @@ it('upgrades only the matching demo and preserves enrollments across retries', a
   await expect(syncServiceDemoReporting({ getProject: async () => ({ ...saved, demo: undefined }), saveProject: async () => true }, source, true)).rejects.toThrow('matching');
   await expect(syncServiceDemoReporting({ getProject: async () => saved, saveProject: async () => false }, source, true)).rejects.toThrow('concurrently');
 });
+
+it('upgrades the existing merchant reporting year once and keeps the saved account and every enrolled page', async () => {
+  const payments = JSON.parse(readFileSync(new URL('../scripts/demo-sources/payabl.json', import.meta.url), 'utf8'));
+  const old = buildServiceDemo({ ...payments, anchorDate: '2026-10-28', reportingProfile: undefined,
+    publicationAlignment: undefined, blogs: payments.blogs.slice(0, 15), socialLinks: [] });
+  old.prompts[0].topic = 'Saved merchant topic';
+  const repo = new MemoryRepository();
+  await repo.saveProject(old, null);
+  expect((await syncServiceDemoReporting(repo, payments)).status).toBe('preview');
+  expect((await repo.getProject(old.id))?.version).toBe(old.version);
+  await expect(syncServiceDemoReporting(repo, { ...payments, blogs: payments.blogs.slice(1) }, true))
+    .rejects.toThrow('previously enrolled');
+  expect((await syncServiceDemoReporting(repo, payments, true)).status).toBe('updated');
+  const saved = (await repo.getProject(old.id))!;
+  expect(saved.prompts).toEqual(old.prompts);
+  expect(saved.brandbook).toEqual(old.brandbook);
+  expect(saved.demo).toMatchObject({ reportingProfile: 'merchant_payments', anchorDate: payments.anchorDate, publicationAlignment: 'scans',
+    profile: payments.profile, traffic: payments.traffic });
+  expect(saved.demo!.trackedUrls!.map(row => row.url)).toEqual(expect.arrayContaining(old.demo!.trackedUrls!.map(row => row.url)));
+  expect(saved.demo!.trackedUrls!.length).toBe(payments.blogs.length + payments.socialLinks.length);
+  expect((await syncServiceDemoReporting(repo, payments, true)).status).toBe('unchanged');
+  expect((await repo.getProject(old.id))?.version).toBe(saved.version);
+});

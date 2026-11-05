@@ -164,12 +164,13 @@ export interface TrafficDashboard extends TrafficAggregate {
 export function trafficChange(
   current: number,
   previous: number,
+  fractionDigits: 0 | 1 = 0,
 ): number | null {
   return previous === 0
     ? current > 0
       ? null
       : 0
-    : Math.round(((current - previous) / previous) * 100);
+    : Math.round(((current - previous) / previous) * 100 * 10 ** fractionDigits) / 10 ** fractionDigits;
 }
 export function trafficBuckets(period: TrafficPeriod): string[] {
   const step = period.granularity === 'hourly' ? 3600000 : 86400000;

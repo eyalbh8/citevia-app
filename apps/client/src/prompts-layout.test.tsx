@@ -9,8 +9,9 @@ const { useApi, downloadCsv } = vi.hoisted(() => ({ useApi: vi.fn(), downloadCsv
 vi.mock('./api', async original => ({ ...await original<object>(), useApi, downloadCsv }));
 import PromptsView from './PromptsView';
 
-it('keeps prompt metrics and actions aligned after removing the Created column', () => {
+it.each([undefined, 'uk_investing', 'merchant_payments'])('aligns prompt metrics and explains the comparison for profile %s', reportingProfile => {
   const project = { id: 'prompt-layout', name: 'Example', country: 'GB', language: 'en', role: 'viewer',
+    demo: reportingProfile && { reportingProfile, startDate: '2026-05-05', endDate: '2027-05-05' },
     brand: { id: 'target', name: 'Example', aliases: [], domains: ['example.com'] },
     scanProviders: [{ provider: 'openai', model: 'saved' }],
     prompts: [{ id: 'p1', text: 'Which investing platforms should I compare?', version: 1, active: true,
@@ -23,6 +24,9 @@ it('keeps prompt metrics and actions aligned after removing the Created column',
   expect(headings).toHaveLength(8);
   expect(container.querySelectorAll('tbody tr:first-child td')).toHaveLength(8);
   expect(container.querySelector('[aria-label^="View all answers"]')).not.toBeNull();
+  expect(container.querySelector('.prompt-comparison-note')?.textContent).toContain(
+    reportingProfile ? 'Changes show estimated growth' : 'Changes compare matching analysis settings',
+  );
 });
 
 it('exports a stable public reference for a selected account prompt', async () => {

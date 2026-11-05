@@ -253,8 +253,8 @@ describe('Mentions chart', () => {
     expect(center).toBeCloseTo(Number(target.getAttribute('x')) + Number(target.getAttribute('width')) / 2);
   });
 
-  it('shows provider names, mention counts and shares beside the balanced donut summary', async () => {
-    await act(async () => root.render(<ProviderDonut summary={summary()} />));
+  it.each(['first_to_last_observed_day', 'modeled_period'] as const)('shows counts, shares and the %s comparison in the provider summary', async comparison => {
+    await act(async () => root.render(<ProviderDonut summary={{ ...summary(), comparison }} />));
     const providers = container.querySelectorAll<HTMLButtonElement>('.donut-provider-list button');
     expect(providers).toHaveLength(3);
     expect(providers[0].textContent).toBe('ChatGPT3135.2%');
@@ -263,6 +263,9 @@ describe('Mentions chart', () => {
     await act(async () => providers[0].dispatchEvent(new FocusEvent('focusin', { bubbles: true })));
     expect(container.querySelector('.donut-tooltip')?.textContent).toContain('ChatGPT');
     expect(container.querySelector('.donut-tooltip')?.textContent).toContain('Total mentions 31');
+    expect(container.querySelector('.donut-tooltip')?.textContent).toContain(
+      comparison === 'modeled_period' ? 'Estimated visibility growth +6.67%' : 'Change +6.67%',
+    );
   });
 
   it('fits a sparse seven-day chart into a narrow card with readable date ticks', async () => {

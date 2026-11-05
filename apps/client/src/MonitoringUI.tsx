@@ -1,6 +1,6 @@
 import { publicSourceUrl } from '@citevia/core';
 import { reportExcerpt } from './report-excerpt';
-import { axisTickIndices } from './chart-time';
+import { axisTickIndices, timeBuckets } from './chart-time';
 import {
   useEffect,
   useRef,
@@ -26,7 +26,6 @@ import {
   type Project,
   type ScanProvider,
   type MentionAnswer,
-  type MonitoringPeriod,
   type MentionsSummary,
 } from '@citevia/core';
 import { query } from './api';
@@ -251,8 +250,8 @@ export function ProviderDonut({ summary }: { summary: MentionsSummary }) {
                 <span>
                   Share <b>{p.share}%</b>
                 </span>
-                <span title="First to last observed day in this range">
-                  Change{' '}
+                <span title={summary.comparison === 'modeled_period' ? 'Estimated change in visibility over the selected period' : 'First to last observed day in this range'}>
+                  {summary.comparison === 'modeled_period' ? 'Estimated visibility growth' : 'Change'}{' '}
                   <b
                     className={
                       p.change === null
@@ -272,21 +271,6 @@ export function ProviderDonut({ summary }: { summary: MentionsSummary }) {
           })()}
       </div>
     </section>
-  );
-}
-function buckets(period: MonitoringPeriod) {
-  const step = period.granularity === 'hourly' ? 3600000 : 86400000;
-  const start = new Date(period.start);
-  if (step === 3600000) start.setUTCMinutes(0, 0, 0);
-  else start.setUTCHours(0, 0, 0, 0);
-  return Array.from(
-    {
-      length: Math.ceil((Date.parse(period.end) - start.getTime() + 1) / step),
-    },
-    (_, i) => {
-      const at = new Date(start.getTime() + i * step).toISOString();
-      return step === 3600000 ? at : at.slice(0, 10);
-    },
   );
 }
 function MentionPoint({ provider }: { provider: ScanProvider }) {
@@ -535,7 +519,7 @@ export function MentionsChart({
     observer.observe(element);
     return () => observer.disconnect();
   }, [expanded]);
-  const dates = buckets(summary.period),
+  const dates = timeBuckets(summary.period),
     visible = summary.providers.filter((p) => !hidden.includes(p.provider));
   const markerGroups = new Map<string, Map<string, PublicationMarker['items'][number]>>();
   for (const marker of summary.markers) {

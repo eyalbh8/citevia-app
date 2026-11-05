@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  aggregateDashboardOverview, metricsFromResults, promptPeriodMetrics,
+  usesModeledReporting, aggregateDashboardOverview, metricsFromResults, promptPeriodMetrics,
   type DemoConfig, type Project, type PromptResult, type RunSummary,
 } from '@citevia/core';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, withDemoRuntime } from '@citevia/storage';
@@ -52,7 +52,7 @@ async function setup(project: Project) {
 }
 
 describe('successful demo histories and Reddit source coverage', () => {
-  it.each(projects.filter(project => project.demo?.reportingProfile !== 'uk_investing'))('$name retains every gained mention and improves comparable measurements throughout its year', async project => {
+  it.each(projects.filter(project => !usesModeledReporting(project.demo)))('$name retains every gained mention and improves comparable measurements throughout its year', async project => {
     const { history, repository, artifacts, queue } = await setup(project);
     const byRun = new Map<string, PromptResult[]>();
     for (const result of history.results) {
@@ -107,8 +107,7 @@ describe('successful demo histories and Reddit source coverage', () => {
     expect(queue.messages).toEqual([]);
   }, 30_000);
 
-  it('rotates investing prompt coverage between scans while more answers mention the brand over the year', async () => {
-    const project = projects.find(item => item.demo?.reportingProfile === 'uk_investing')!;
+  it.each(projects.filter(project => usesModeledReporting(project.demo)))('$name rotates prompt coverage between scans while more answers mention the brand over the year', async project => {
     const { history } = await setup(project);
     const byRun = new Map<string, Set<string>>();
     for (const result of history.results) {

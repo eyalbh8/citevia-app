@@ -2,7 +2,9 @@ import {
   buildSummary,
   domainForUrl,
   investingExpectedRank,
+  usesModeledReporting,
   investingVisibilityRate,
+  paymentBrandRate,
   projectProviders,
   trackedUrlKey,
   trackedArticleUrl,
@@ -21,7 +23,7 @@ import {
 import type { Repository, Runtime, SavedAnalysisRef } from './contracts.js';
 import { aggregateScenarioTraffic, demoNumericProfile } from './demo-traffic.js';
 import { createScenarioTracking } from './demo-tracking.js';
-import { investingSources } from './demo-investing-sources.js';
+import { industrySources } from './demo-investing-sources.js';
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -155,7 +157,7 @@ function scanTimes(project: Project): number[] {
       const at = week + slot * 60_000;
       if (at >= start && at <= end) times.push(at);
     }
-  if (config.reportingProfile === 'uk_investing' && times[0] !== start) times.unshift(start);
+  if (usesModeledReporting(config) && times[0] !== start) times.unshift(start);
   scanTimeCache.set(project, times);
   return times;
 }
@@ -178,10 +180,24 @@ function captureSchedule(project: Project, at: number): CaptureSchedule {
   const prompts = activePrompts(project);
   const times = new Map<string, number>();
   let last = at;
-  if (project.demo?.reportingProfile === 'uk_investing') {
+  if (usesModeledReporting(project.demo)) {
     const starts = scanTimes(project);
     const until = starts[starts.indexOf(at) + 1] ?? day(project.demo.endDate) + DAY;
     const ordered = [...prompts].sort((a, b) => hash(a.id) - hash(b.id) || a.id.localeCompare(b.id));
+    if (project.demo.reportingProfile === 'merchant_payments') {
+      // Interleave the funnel stages so a short collection window samples each stage.
+      const byStage = new Map<Prompt['stage'], Prompt[]>();
+      for (const prompt of ordered) {
+        const group = byStage.get(prompt.stage) ?? [];
+        group.push(prompt);
+        byStage.set(prompt.stage, group);
+      }
+      const position = new Map<string, number>();
+      for (const group of byStage.values()) {
+        group.forEach((prompt, index) => position.set(prompt.id, index / group.length));
+      }
+      ordered.sort((a, b) => position.get(a.id)! - position.get(b.id)!);
+    }
     for (const [index, prompt] of ordered.entries()) {
       const sample = at + Math.floor(index * (until - at) / ordered.length);
       const utcDay = Math.floor(sample / DAY) * DAY;
@@ -268,7 +284,7 @@ function createRun(project: Project, at: number, provider: ScanProvider): ScanRu
     resultVersion: prompts.length,
     summaryVersion: prompts.length,
     summaryKey: `${PREFIX}${encodeURIComponent(project.id)}/${runId(at, provider)}/summary.json`,
-    deadlineAt: iso((project.demo?.reportingProfile === 'uk_investing' ? captureSchedule(project, at).last : at) + HOUR),
+    deadlineAt: iso((usesModeledReporting(project.demo) ? captureSchedule(project, at).last : at) + HOUR),
     expiresAt: Math.floor((day(configFor(project)!.endDate) + 366 * DAY) / 1000),
   };
 }
@@ -289,7 +305,7 @@ function findRun(project: Project, id: string): ScanRun | null {
 /** Single-scan reads may reach the current collection through an answer's run ID. */
 function collectingPrompts(project: Project, run: ScanRun, asOf: number) {
   const start = Date.parse(run.scheduledAt);
-  if (project.demo?.reportingProfile !== 'uk_investing' || start > asOf || Date.parse(run.completedAt!) <= asOf)
+  if (!usesModeledReporting(project.demo) || start > asOf || Date.parse(run.completedAt!) <= asOf)
     return null;
   const schedule = captureSchedule(project, start);
   return activePrompts(project).filter(prompt => schedule.times.get(prompt.id)! <= asOf);
@@ -414,9 +430,10 @@ function presentationMeasurements(project: Project, run: ScanRun, prompt: Prompt
     ...project.competitors.map((brand, index) => measurement(brand.id, index < presentation.targetRank - 1, index + 1))];
 }
 
-function visibleCompetitorsFor(project: Project, provider: ScanProvider, prompt: Prompt, phase: number) {
+function visibleCompetitorsFor(project: Project, provider: ScanProvider, prompt: Prompt, phase: number, paymentTargetRate?: number) {
   return project.competitors.filter((brand, index) =>
-    (hash(`${prompt.id}:${brand.id}:${provider}`) % 1000) / 1000 < 0.50 - 0.30 * phase - index * 0.025);
+    (hash(`${prompt.id}:${brand.id}:${provider}`) % 1000) / 1000 <
+      (paymentTargetRate === undefined ? .50 - .30 * phase - index * .025 : paymentBrandRate(paymentTargetRate, index)));
 }
 
 /** The target, competitors and answer evidence all use these per-scan measurements. */
@@ -428,10 +445,11 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
   let mentioned = index < mentionCount;
   let positive = index >= positiveStart;
   let rank = ranks.get(prompt.id) ?? 1;
-  const visibleCompetitors = visibleCompetitorsFor(project, run.snapshot.provider!, prompt, phase);
-  if (project.demo?.reportingProfile === 'uk_investing') {
-    const at = Date.parse(run.scheduledAt), provider = run.snapshot.provider!;
-    const rate = investingVisibilityRate(project.demo, prompt.id, provider, at);
+  const at = Date.parse(run.scheduledAt), provider = run.snapshot.provider!;
+  const rate = usesModeledReporting(project.demo) ? investingVisibilityRate(project.demo, prompt.id, provider, at) : undefined;
+  const paymentTargetRate = project.demo?.reportingProfile === 'merchant_payments' ? rate : undefined;
+  const visibleCompetitors = visibleCompetitorsFor(project, provider, prompt, phase, paymentTargetRate);
+  if (rate !== undefined) {
     const scan = scanTimes(project).indexOf(at);
     const providerPhase = { openai: 0, perplexity: 1 / 3, gemini: 2 / 3 }[provider];
     // Space providers evenly across a scan, then rotate from one scan to the next.
@@ -459,11 +477,12 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
     sentimentEvidence: null,
   };
   let nextPosition = 1;
-  return [target, ...project.competitors.map((brand): BrandAnalysis => {
+  return [target, ...project.competitors.map((brand, index): BrandAnalysis => {
     // Competitors remain credible references as the target's annual share grows.
     const visible = visibleCompetitors.includes(brand);
     if (mentioned && nextPosition === rank) nextPosition++;
     const position = nextPosition;
+    const positiveRate = paymentTargetRate === undefined ? .24 + phase * .12 : paymentBrandRate(paymentTargetRate, index);
     if (visible) nextPosition++;
     return {
       brandId: brand.id,
@@ -472,7 +491,7 @@ function brandMeasurements(project: Project, run: ScanRun, prompt: Prompt): Bran
       appearanceRank: visible ? position : null,
       mentionOrder: visible ? position : null,
       sentiment: visible
-        ? (hash(`${prompt.id}:${brand.id}:${run.snapshot.provider}:sentiment`) % 1000) / 1000 < .24 + phase * .12
+        ? (hash(`${prompt.id}:${brand.id}:${run.snapshot.provider}:sentiment`) % 1000) / 1000 < positiveRate
           ? 'positive' : 'neutral'
         : 'not_applicable',
       evidence: [], rankEvidence: null, sentimentEvidence: null,
@@ -500,6 +519,21 @@ function enrolledForCapture(item: TrackedPublication, at: string) {
     (!item.trackingPeriods || item.trackingPeriods.some(period => period.start <= at && (!period.end || at < period.end)));
 }
 
+function modeledPickupPrompts(project: Project, item: TrackedPublication, scanAt: number, first: boolean): string[] {
+  const merchant = project.demo?.reportingProfile === 'merchant_payments';
+  const windows = new Map<number, string[]>();
+  for (const [promptId, captured] of captureSchedule(project, scanAt).times) {
+    if (!enrolledForCapture(item, iso(captured))) continue;
+    if (!merchant && first && Math.floor(captured / DAY) !== Math.floor(scanAt / DAY)) continue;
+    // One actual answer in each half-day keeps enrolled merchant content visible in a rolling 24-hour report.
+    const window = merchant ? Math.floor(captured / (12 * HOUR)) : scanAt;
+    const candidates = windows.get(window) || [];
+    candidates.push(promptId);
+    windows.set(window, candidates);
+  }
+  return [...windows].map(([window, candidates]) => candidates[hash(`${item.url}:${window}`) % candidates.length]);
+}
+
 /** Enroll each post at its first scan; aligned demos retain citations in subsequent scans. */
 function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
   let pickups = contentPickupCache.get(project);
@@ -515,26 +549,21 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
       if (!eligible.length || !providers.length) continue;
       const provider = providers[index % providers.length].provider;
       for (const at of configFor(project)!.publicationAlignment === 'scans' ? eligible : eligible.slice(0, 1)) {
-        let promptId: string | undefined;
-        if (project.demo?.reportingProfile === 'uk_investing') {
-          const schedule = captureSchedule(project, at);
-          // Keep the initial pickup on its enrolled scan date. Later citations
-          // appear throughout each collection window, anchored to a real answer.
-          const candidates = [...schedule.times].filter(([, captured]) =>
-            (at !== eligible[0] || Math.floor(captured / DAY) === Math.floor(at / DAY)) &&
-            enrolledForCapture(item, iso(captured)));
-          if (!candidates.length) continue;
-          promptId = candidates[hash(`${item.url}:${at}`) % candidates.length][0];
+        let promptIds: string[];
+        if (usesModeledReporting(project.demo)) {
+          promptIds = modeledPickupPrompts(project, item, at, at === eligible[0]);
         } else {
           const plan = measurementPlan(project, provider), mentionCount = plan.scans.get(at)!.mentionCount;
           const order = index % Math.max(1, mentionCount);
-          promptId = [...plan.promptOrder].find(([, value]) => value === order)?.[0];
+          const prompt = [...plan.promptOrder].find(([, value]) => value === order);
+          promptIds = prompt ? [prompt[0]] : [];
         }
-        if (!promptId) continue;
-        const key = `${iso(at)}:${provider}:${promptId}`;
-        const citations = pickups.get(key) || [];
-        citations.push({ url: item.url, title: item.title });
-        pickups.set(key, citations);
+        for (const id of promptIds) {
+          const key = `${iso(at)}:${provider}:${id}`;
+          const citations = pickups.get(key) || [];
+          citations.push({ url: item.url, title: item.title });
+          pickups.set(key, citations);
+        }
       }
     }
     contentPickupCache.set(project, pickups);
@@ -566,7 +595,7 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     pools.set(prompt.id, unique);
   }
   const size = Math.min(unique.length, 1 + Math.floor(progress(project, Date.parse(run.scheduledAt)) * 5));
-  const at = project.demo?.reportingProfile === 'uk_investing'
+  const at = usesModeledReporting(project.demo)
     ? iso(captureSchedule(project, Date.parse(run.scheduledAt)).times.get(prompt.id)!)
     : run.scheduledAt;
   let eligible = trackedIndex.eligible.get(at);
@@ -604,8 +633,8 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
     id: `citation_${index + 1}`, blockId: 'answer', url: trackedArticleUrl(citation.url),
     title: citation.title || new URL(citation.url).hostname, start: null, end: null,
   }));
-  return project.demo?.reportingProfile === 'uk_investing'
-    ? citations.concat(investingSources(activePrompts(project), prompt.id))
+  return project.demo?.reportingProfile
+    ? citations.concat(industrySources(project.demo.reportingProfile, activePrompts(project), prompt.id))
     : citations;
 }
 
@@ -783,7 +812,7 @@ export function withDemoRuntime(runtime: Runtime, now: () => Date = () => new Da
       const project = await demoProject(projectId);
       if (!project) return runtime.repository.listRuns(projectId, limit);
       const latest = now().getTime();
-      return scanTimes(project).filter(at => (project.demo?.reportingProfile === 'uk_investing'
+      return scanTimes(project).filter(at => (usesModeledReporting(project.demo)
         ? runCompletedAt(project, at) : at) <= latest).reverse()
         .flatMap((at) => projectProviders(project).map(({ provider }) => createRun(project, at, provider)))
         .slice(0, Math.max(0, limit));

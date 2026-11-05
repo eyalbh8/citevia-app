@@ -74,8 +74,8 @@ function Mark({ provider }: { provider: TrafficProvider }) {
     />
   );
 }
-function Change({ current, previous }: { current: number; previous: number }) {
-  const change = trafficChange(current, previous);
+function Change({ current, previous, fractionDigits }: { current: number; previous: number; fractionDigits: 0 | 1 }) {
+  const change = trafficChange(current, previous, fractionDigits);
   return (
     <span
       className={`traffic-change ${change !== null && change < 0 ? 'negative' : change === 0 ? 'unchanged' : ''}`}
@@ -687,6 +687,7 @@ export default function TrafficView({
   project: Project;
   notify: (message: string) => void;
 }) {
+  const fractionDigits = project.demo?.reportingProfile === 'merchant_payments' ? 1 : 0;
   const [tab, setTab] = useState<'traffic' | 'settings'>('traffic');
   const [range, setRange] = useState<DateRangeSelection>(() => initialDateRange());
   const [providers, setProviders] = useState<TrafficProvider[]>([]),
@@ -860,7 +861,7 @@ export default function TrafficView({
                     </div>
                     <section>
                       <strong>{number(data.current)}</strong>
-                      <Change current={data.current} previous={data.previous} />
+                      <Change current={data.current} previous={data.previous} fractionDigits={fractionDigits} />
                     </section>
                     <p>Visits in the selected period</p>
                   </article>
@@ -872,7 +873,7 @@ export default function TrafficView({
                       </div>
                       <section>
                         <strong>{number(p.visits)}</strong>
-                        <Change current={p.visits} previous={p.previous} />
+                        <Change current={p.visits} previous={p.previous} fractionDigits={fractionDigits} />
                       </section>
                       <p>Visits in the selected period</p>
                     </article>

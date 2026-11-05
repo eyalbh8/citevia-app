@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  brandSentimentScore, promptPeriodMetrics,
+  usesModeledReporting, brandSentimentScore, promptPeriodMetrics,
   type Analysis, type CapturedAnswer, type DemoConfig, type Project, type PromptResult,
 } from '@citevia/core';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, withDemoRuntime } from '@citevia/storage';
@@ -108,9 +108,9 @@ describe('demo sentiment progression', () => {
         }
       }
       expect(regressions, `${provider} positive cohorts must stay positive`).toEqual([]);
-      // A fixed-cohort demo expands with positive entrants. In the investing
-      // scenario a first mention can be neutral as individual answers rotate.
-      if (project.demo?.reportingProfile !== 'uk_investing')
+      // A fixed-cohort demo expands with positive entrants. In modeled
+      // scenarios a first mention can be neutral as individual answers rotate.
+      if (!usesModeledReporting(project.demo))
         expect(diluted, `${provider} new mention cohorts must enter positive`).toEqual([]);
 
       const monthly: number[] = [];
@@ -120,7 +120,7 @@ describe('demo sentiment progression', () => {
         monthly.push(sentimentMean(providerRuns.filter(run => run.scheduledAt.startsWith(month))
           .flatMap(run => rowsByRun.get(run.id)!)));
       }
-      if (project.demo?.reportingProfile === 'uk_investing') {
+      if (usesModeledReporting(project.demo)) {
         const quarters = [0, 3, 6].map(index => monthly.slice(index, index + 3).reduce((sum, value) => sum + value, 0) / 3);
         expect(quarters[1]).toBeGreaterThan(quarters[0]);
         expect(quarters[2]).toBeGreaterThan(quarters[1]);

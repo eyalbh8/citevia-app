@@ -270,7 +270,7 @@ export interface MentionsSummary {
   period: MonitoringPeriod;
   total: number;
   providers: MentionProvider[];
-  comparison: 'first_to_last_observed_day';
+  comparison: 'first_to_last_observed_day' | 'modeled_period';
   markers: {
     date: string;
     items: { id: string; url: string; title: string; appearances: number; contentType?: TrackedUrl['contentType']; imageUrl?: string; publishedAt?: string }[];

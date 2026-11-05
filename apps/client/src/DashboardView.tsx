@@ -1,5 +1,5 @@
 import { reportExcerpt } from './report-excerpt';
-import { axisTickIndices } from './chart-time';
+import { axisTickIndices, timeBuckets } from './chart-time';
 import {
   useEffect,
   useId,
@@ -99,6 +99,8 @@ function exportOverview(data: DashboardOverview, name: string) {
   add('Period', name, 'End (UTC)', data.period.end);
   if (data.comparison === 'modeled_period')
     add('Period', name, 'Growth basis', 'Estimated mention and visibility growth over the selected dates');
+  if (data.rankingComparison === 'modeled_period')
+    add('Industry ranking', name, 'Comparison basis', 'Estimated change in rank, mentions and sentiment over the selected dates');
   for (const [key, value] of Object.entries(data.filters))
     if (
       Array.isArray(value) ? value.length : value !== '' && value !== undefined
@@ -132,9 +134,10 @@ function exportOverview(data: DashboardOverview, name: string) {
       b.sentimentChange,
     );
   }
+  const trendSection = data.trendGranularity === 'hourly' ? 'Hourly mentions' : 'Daily mentions';
   for (const d of data.trend)
     for (const b of data.ranking)
-      rows.push(['Daily mentions', b.name, d.date, d.mentions[b.brandId] ?? 0]);
+      rows.push([trendSection, b.name, d.date, d.mentions[b.brandId] ?? 0]);
   for (const s of data.sources) {
     add('Sources', s.domain, 'Distinct pages', s.pageCount);
     add('Sources', s.domain, 'Citations', s.citationCount);
@@ -162,9 +165,12 @@ export function DashboardView({
     retry,
   );
   const data = overview.data;
+  const hourlyTrend = data?.trendGranularity === 'hourly';
   const growthLabel = data?.comparison === 'modeled_period'
     ? 'Estimated growth over the selected period'
     : data?.comparison === 'scenario_baseline' ? 'Growth since the first scan' : 'Change from first to last observed day';
+  const rankingPeriod = data?.rankingComparison === 'modeled_period' ? 'over the selected period'
+    : data?.comparison === 'scenario_baseline' ? 'since the first scan' : 'from first to last observed day';
   const periodCaption =
     selection.days === 'custom'
       ? 'Mentions in the selected period'
@@ -212,8 +218,8 @@ export function DashboardView({
           <div className="overview-content" aria-busy={overview.loading}>
             <div className="overview-period-note">
               <span>
-                {dayLabel(data.period.start)} –{' '}
-                {dayLabel(data.period.end, true)}{' '}
+                {dayLabel(data.period.start)}{hourlyTrend && ` ${data.period.start.slice(11, 16)}`} –{' '}
+                {dayLabel(data.period.end, true)}{hourlyTrend && ` ${data.period.end.slice(11, 16)}`}{' '}
                 <span className="overview-timezone">UTC</span>
                 {data.comparison === 'scenario_baseline' && data.comparisonPeriod && (
                   <span className="overview-timezone"> · Growth since {dayLabel(data.comparisonPeriod.start, true)}</span>
@@ -423,7 +429,7 @@ export function DashboardView({
                                 <Change
                                   value={b.rankChange}
                                   unit=""
-                                  label={data.comparison === 'scenario_baseline' ? 'Rank improvement since the first scan' : 'Rank improvement from first to last observed day'}
+                                  label={data.rankingComparison ? `Estimated rank improvement in positions ${rankingPeriod}` : `Rank improvement ${rankingPeriod}`}
                                 />
                               </div>
                             </td>
@@ -432,7 +438,8 @@ export function DashboardView({
                                 <strong>{formatNumber(b.mentions)}</strong>
                                 <Change
                                   value={b.mentionChange}
-                                  label={b.isTarget || data.comparison === 'scenario_baseline' ? `Mentions: ${growthLabel}` : 'Mention change from first to last observed day'}
+                                  label={data.rankingComparison ? `Estimated mention growth ${rankingPeriod}`
+                                    : b.isTarget || data.comparison === 'scenario_baseline' ? `Mentions: ${growthLabel}` : `Mention change ${rankingPeriod}`}
                                 />
                               </div>
                             </td>
@@ -451,7 +458,7 @@ export function DashboardView({
                                 <Change
                                   value={b.sentimentChange}
                                   unit=" pts"
-                                  label={data.comparison === 'scenario_baseline' ? 'Sentiment improvement since the first scan' : 'Sentiment change from first to last observed day'}
+                                  label={`${data.rankingComparison ? 'Estimated sentiment change' : 'Sentiment change'} ${rankingPeriod}`}
                                 />
                               </div>
                             </td>
@@ -486,16 +493,16 @@ export function DashboardView({
                       Brand Visibility Over Time
                     </h2>
                     <p className="card-description">
-                      Daily brand mentions compared with your competitors
+                      {hourlyTrend ? 'Hourly' : 'Daily'} brand mentions compared with your competitors
                     </p>
                   </div>
                 </div>
                 {data.ranking.length && data.trend.length ? (
-                  <BrandTrend ranking={data.ranking} points={data.trend} period={data.period} />
+                  <BrandTrend ranking={data.ranking} points={data.trend} period={data.period} hourly={hourlyTrend} />
                 ) : (
                   <Empty
                     title="Your visibility trend starts here"
-                    description="Daily mentions will appear after a completed scan includes your brand or a competitor."
+                    description={`${hourlyTrend ? 'Hourly' : 'Daily'} mentions will appear after a completed scan includes your brand or a competitor.`}
                   />
                 )}
               </section>
@@ -607,10 +614,12 @@ function BrandTrend({
   ranking,
   points,
   period,
+  hourly,
 }: {
   period: DashboardOverview['period'];
   ranking: DashboardOverview['ranking'];
   points: DashboardOverview['trend'];
+  hourly: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartId = useId();
@@ -630,14 +639,17 @@ function BrandTrend({
     right = width - 14,
     top = 20,
     bottom = 226;
-  const dayMs = 86400000;
-  const first = Date.parse(period.start.slice(0, 10));
-  const last = Date.parse(period.end.slice(0, 10));
-  const dayCount = Math.round((last - first) / dayMs) + 1;
-  const dayX = (offset: number) => dayCount === 1
+  const dates = timeBuckets({ ...period, granularity: hourly ? 'hourly' : 'daily' });
+  const positions = new Map(dates.map((date, i) => [date, i]));
+  const bucketX = (offset: number) => dates.length === 1
     ? (left + right) / 2
-    : left + offset / (dayCount - 1) * (right - left);
-  const x = (i: number) => dayX((Date.parse(points[i].date.slice(0, 10)) - first) / dayMs);
+    : left + offset / (dates.length - 1) * (right - left);
+  const x = (i: number) => bucketX(positions.get(points[i].date)!);
+  const frequency = hourly ? 'Hourly' : 'Daily';
+  const unit = hourly ? 'hour' : 'day';
+  const timestamp = (date: string) => hourly
+    ? `${dayLabel(date, true)} ${date.slice(11, 16)} UTC`
+    : dayLabel(date, true);
   const maximum = Math.max(
     1,
     ...points.flatMap((p) => ranking.map((b) => p.mentions[b.brandId] || 0)),
@@ -645,13 +657,13 @@ function BrandTrend({
   const step = Math.max(1, Math.ceil(maximum / 4));
   const ceiling = step * 4;
   const y = (count: number) => bottom - (count / ceiling) * (bottom - top);
-  const ticks = axisTickIndices(dayCount, right - left, dayCount <= 7 ? 52 : 80);
+  const ticks = axisTickIndices(dates.length, right - left, dates.length <= 7 ? 52 : 80);
   const visibleActive =
     active === null ? null : Math.min(active, points.length - 1);
   const selected = visibleActive === null ? null : points[visibleActive];
   const activeDescription = selected
-    ? `${dayLabel(selected.date, true)}. ${ranking.map((b) => `${b.name}: ${selected.mentions[b.brandId] || 0} mentions`).join('. ')}`
-    : 'Use left and right arrow keys to explore daily mentions.';
+    ? `${timestamp(selected.date)}. ${ranking.map((b) => `${b.name}: ${selected.mentions[b.brandId] || 0} mentions`).join('. ')}`
+    : `Use left and right arrow keys to explore ${frequency.toLowerCase()} mentions.`;
   return (
     <div className="overview-trend-body">
       <div className="overview-chart-legend">
@@ -667,7 +679,7 @@ function BrandTrend({
         ref={ref}
         tabIndex={0}
         role="group"
-        aria-label="Daily brand mentions chart"
+        aria-label={`${frequency} brand mentions chart`}
         aria-describedby={`${chartId}-hint`}
         onFocus={() => setActive((value) => value ?? points.length - 1)}
         onBlur={() => setActive(null)}
@@ -701,7 +713,7 @@ function BrandTrend({
           width="100%"
           height={height}
           role="img"
-          aria-label="Mention counts for the top brands on each observed day"
+          aria-label={`Mention counts for the top brands on each observed ${unit}`}
           onPointerMove={(event) => {
             const bounds = event.currentTarget.getBoundingClientRect();
             const pointerX =
@@ -730,19 +742,19 @@ function BrandTrend({
           {ticks.map((i) => (
             <text
               key={i}
-              x={dayX(i)}
+              x={bucketX(i)}
               y={bottom + 26}
               textAnchor={
-                dayCount === 1
+                dates.length === 1
                   ? 'middle'
                   : i === 0
                     ? 'start'
-                    : i === dayCount - 1
+                    : i === dates.length - 1
                       ? 'end'
                       : 'middle'
               }
             >
-              {dayLabel(new Date(first + i * dayMs).toISOString().slice(0, 10))}
+              {hourly ? dates[i].slice(11, 16) : dayLabel(dates[i])}
             </text>
           ))}
           {visibleActive !== null && (
@@ -776,7 +788,7 @@ function BrandTrend({
                   stroke="white"
                   strokeWidth="1.5"
                 >
-                  <title>{`${b.name}, ${dayLabel(p.date)}: ${formatNumber(p.mentions[b.brandId] || 0)} mentions`}</title>
+                  <title>{`${b.name}, ${timestamp(p.date)}: ${formatNumber(p.mentions[b.brandId] || 0)} mentions`}</title>
                 </circle>
               ))}
             </g>
@@ -793,7 +805,7 @@ function BrandTrend({
             }}
             aria-hidden="true"
           >
-            <strong>{dayLabel(selected.date, true)}</strong>
+            <strong>{timestamp(selected.date)}</strong>
             {ranking.map((b, i) => (
               <span key={b.brandId}>
                 <i style={{ background: brandColors[i] }} />
@@ -813,9 +825,9 @@ function BrandTrend({
       </div>
       <details className="overview-chart-data">
         <summary>
-          View daily data{' '}
+          View {frequency.toLowerCase()} data{' '}
           <span>
-            {points.length} observed {points.length === 1 ? 'day' : 'days'} ·
+            {points.length} observed {unit}{points.length === 1 ? '' : 's'} ·
             UTC
           </span>
         </summary>
@@ -823,12 +835,12 @@ function BrandTrend({
           className="overview-table-scroll"
           tabIndex={0}
           role="region"
-          aria-label="Daily mention values"
+          aria-label={`${frequency} mention values`}
         >
           <table>
             <thead>
               <tr>
-                <th scope="col">Date</th>
+                <th scope="col">{hourly ? 'Hour (UTC)' : 'Date'}</th>
                 {ranking.map((b) => (
                   <th scope="col" key={b.brandId}>
                     {b.name}
@@ -839,7 +851,7 @@ function BrandTrend({
             <tbody>
               {points.map((p) => (
                 <tr key={p.date}>
-                  <th scope="row">{dayLabel(p.date, true)}</th>
+                  <th scope="row">{timestamp(p.date)}</th>
                   {ranking.map((b) => (
                     <td key={b.brandId}>
                       {formatNumber(p.mentions[b.brandId] || 0)}

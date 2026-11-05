@@ -111,7 +111,8 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
   const availableCountries = new Set(observed.countries);
   const currentStart = Date.parse(filters.period.start), currentEnd = Date.parse(filters.period.end);
   const previousStart = Date.parse(filters.previous.start), previousEnd = Date.parse(filters.previous.end);
-  const from = Math.max(day(config.startDate), Math.min(previousStart, currentStart));
+  const scenarioStart = day(config.startDate);
+  const from = Math.max(scenarioStart, Math.min(previousStart, currentStart));
   const to = Math.min(day(config.endDate) + DAY - 1, Math.max(previousEnd, currentEnd));
   const step = filters.period.granularity === 'hourly' ? HOUR : DAY;
   const anchor = new Date(day(config.anchorDate));
@@ -127,7 +128,11 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
     for (let date = Math.floor(from / DAY) * DAY; date <= to; date += DAY) {
       const months = (date + DAY / 2 - anchorMiddle) / (MONTH_DAYS * DAY);
       const rate = ANCHOR_VISITS[provider] * profile.trafficScale / anchorDays * (1 + profile.monthlyGrowth) ** months;
-      const pairs = Math.floor(rate / 2);
+      // The merchant report adds one recurring morning/evening referral pair per provider
+      // each day. Even a rolling 24-hour comparison includes a new visit, and the
+      // actual events still reconcile across the chart, sources and page breakdowns.
+      const recurringPairs = config.reportingProfile === 'merchant_payments' ? (date - scenarioStart) / DAY : 0;
+      const pairs = Math.floor(rate / 2) + recurringPairs;
       for (let ordinal = -1; ordinal < pairs; ordinal++) {
         // Inclusive millisecond bounds mirror around DAY - 1. Put the singleton
         // on the earlier center millisecond so a half-day boundary cannot lose it.

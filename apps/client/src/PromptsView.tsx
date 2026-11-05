@@ -21,6 +21,7 @@ import {
   journeyGoal,
   MAX_BRANDED_PROMPTS,
   PROMPT_INTENTS,
+  usesModeledReporting,
   type ScanProvider,
   type JourneyStage,
   type Project,
@@ -189,6 +190,7 @@ export default function PromptsView({
       </div>
     );
   const active = project.prompts.filter((prompt) => prompt.active).length;
+  const modeledGrowth = usesModeledReporting(project.demo) && !project.demo.presentation;
   const pendingSetup = Boolean(
     project.onboardingJobId && !project.onboardingAppliedJobId,
   );
@@ -482,7 +484,7 @@ export default function PromptsView({
         </div>
         <p className="prompt-comparison-note">
           {filtered.filter((prompt) => prompt.measurementCount > 0).length} of {filtered.length} matching prompts have answers.
-          {' '}{project.demo?.reportingProfile === 'uk_investing'
+          {' '}{modeledGrowth
             ? 'Scores summarize those answers. Changes show estimated growth over the selected period.'
             : 'Values summarize saved analyses in the selected period. Changes compare matching analysis settings in the previous period, or the first and latest comparable scan days.'}
           {filtered.some((prompt) => prompt.historicalAnalysis) && ' Some scores use earlier saved analysis settings.'}
@@ -791,7 +793,7 @@ export default function PromptsView({
         {dateRange.days === 'custom'
           ? `Averages from ${dateRange.start} through ${dateRange.end} (UTC).`
           : `Averages for the last ${dateRange.days} days.`}{' '}
-        {project.demo?.reportingProfile === 'uk_investing' ? 'Changes reflect estimated growth.' : 'Changes compare the preceding equal-length period.'}{' '}
+        {modeledGrowth ? 'Changes reflect estimated growth.' : 'Changes compare the preceding equal-length period.'}{' '}
         <span>— means no measurement or comparable baseline.</span>
       </p>
       {answerPrompt && (

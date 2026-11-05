@@ -166,6 +166,35 @@ describe('dashboard discovery reporting', () => {
     const legend = container.querySelectorAll<HTMLElement>('.overview-chart-legend i');
     expect(legend[5].style.background).not.toBe('');
   });
+
+  it('places hourly observations across midnight with UTC labels and matching CSV values', async () => {
+    data.period = { start: '2026-10-24T21:30:00.001Z', end: '2026-10-25T21:30:00.000Z', granularity: 'hourly', timezone: 'UTC' };
+    data.trendGranularity = 'hourly';
+    data.ranking = ranking().slice(-1);
+    data.trend = [
+      { date: '2026-10-24T22:00:00.000Z', mentions: { target: 1 } },
+      { date: '2026-10-25T04:00:00.000Z', mentions: { target: 4 } },
+      { date: '2026-10-25T20:00:00.000Z', mentions: { target: 2 } },
+    ];
+    await dashboard();
+    const chart = container.querySelector<HTMLElement>('[aria-label="Hourly brand mentions chart"]')!;
+    const xs = [...chart.querySelectorAll('circle')].map(point => Number(point.getAttribute('cx')));
+    expect(xs[0]).toBeGreaterThan(40);
+    expect(xs[1]).toBeGreaterThan(xs[0]);
+    expect(xs[2] - xs[1]).toBeCloseTo((xs[1] - xs[0]) * 16 / 6);
+    expect(chart.querySelector('text[y="252"]')?.textContent).toBe('21:00');
+    expect(container.querySelector('.overview-period-note')?.textContent).toContain('Oct 24 21:30 – Oct 25, 2026 21:30 UTC');
+    expect(container.querySelector('.overview-chart-data summary')?.textContent).toContain('View hourly data 3 observed hours');
+    expect(container.querySelector('.overview-chart-data th[scope="row"]')?.textContent).toBe('Oct 24, 2026 22:00 UTC');
+    await act(async () => chart.focus());
+    await act(async () => chart.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+    expect(chart.querySelector('.overview-chart-tooltip strong')?.textContent).toBe('Oct 25, 2026 04:00 UTC');
+    const exportButton = [...container.querySelectorAll('button')].find(button => button.textContent === 'Export')!;
+    await act(async () => exportButton.click());
+    const rows = mocks.downloadCsv.mock.lastCall![2];
+    expect(rows.filter(([section]: string[]) => section === 'Hourly mentions'))
+      .toEqual(data.trend.map(point => ['Hourly mentions', 'XTrade', point.date, point.mentions.target]));
+  });
 });
 
 describe('saved prompt measurement context', () => {

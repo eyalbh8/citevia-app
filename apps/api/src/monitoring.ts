@@ -4,6 +4,8 @@ import { z } from 'zod';
 import {
   brandRank,
   brandSentimentScore,
+  investingComparisonPeriod,
+  investingTrend,
   reportingCompanies,
   snapshotProvider,
   projectProviders,
@@ -16,6 +18,7 @@ import {
   JOURNEY_STAGES,
   type Project,
   type PromptResult,
+  type ScanProvider,
   type ScanRun,
   type Analysis,
   type CapturedAnswer,
@@ -309,11 +312,20 @@ export async function monitoringRoute(
       const page = paginate(eligible, q);
       return json({ ...page, items: await answers(runtime, page.items) });
     }
+    const growthProfile = project.demo?.reportingProfile === 'merchant_payments' && !project.demo.presentation
+      ? project.demo : undefined;
+    const comparisonPeriod = growthProfile && investingComparisonPeriod(growthProfile, period.start, period.end);
+    const promptsByProvider = new Map<ScanProvider, Set<string>>();
     const dates = new Map<string, Map<string, number>>(),
       daily = new Map<string, Map<string, number>>();
     for (const { result, run } of observed) {
       const provider = snapshotProvider(run.snapshot),
         at = result.capturedAt || run.createdAt;
+      if (growthProfile) {
+        const prompts = promptsByProvider.get(provider) ?? new Set<string>();
+        prompts.add(result.promptId);
+        promptsByProvider.set(provider, prompts);
+      }
       const date =
         period.granularity === 'hourly'
           ? `${at.slice(0, 13)}:00:00.000Z`
@@ -373,7 +385,7 @@ export async function monitoringRoute(
     const summary: MentionsSummary = {
       period,
       total: eligible.length,
-      comparison: 'first_to_last_observed_day',
+      comparison: growthProfile ? 'modeled_period' : 'first_to_last_observed_day',
       providers: filters.providers
         .map((provider) => {
           const points = [...(dates.get(provider) || [])]
@@ -382,23 +394,22 @@ export async function monitoringRoute(
           const days = [...(daily.get(provider) || [])].sort(([a], [b]) =>
             a.localeCompare(b),
           );
-          const count = points.reduce((sum, p) => sum + p.count, 0),
-            first = days[0]?.[1],
-            last = days.at(-1)?.[1];
+          const count = points.reduce((sum, p) => sum + p.count, 0);
+          let change: number | null = null;
+          if (growthProfile && comparisonPeriod) {
+            const cohort = Array.from(promptsByProvider.get(provider) ?? [], promptId => ({ provider, promptId }));
+            change = investingTrend(growthProfile, cohort, comparisonPeriod)?.visibility ?? null;
+          } else if (days.length) {
+            const first = days[0][1], last = days[days.length - 1][1];
+            change = first ? Math.round(((last - first) / first) * 10000) / 100 : last ? 100 : 0;
+          }
           return {
             provider,
             count,
             share: eligible.length
               ? Math.round((count / eligible.length) * 10000) / 100
               : 0,
-            change:
-              first === undefined || last === undefined
-                ? null
-                : first
-                  ? Math.round(((last - first) / first) * 10000) / 100
-                  : last
-                    ? 100
-                    : 0,
+            change,
             points,
           };
         })

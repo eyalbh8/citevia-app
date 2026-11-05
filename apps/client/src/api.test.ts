@@ -40,14 +40,14 @@ describe('scan request idempotency', () => {
   });
 });
 
-it('uses public account handles for navigation and restores only the profile fields needed by report views', async () => {
+it.each(['uk_investing', 'merchant_payments'])('restores the %s reporting profile and keeps public account handles for navigation', async reportingProfile => {
   const id = 'cvh_6163636f756e745f64656d6f';
   const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [{ id, reportingProfile: {
-    source: 'website-history', reportingProfile: 'uk_investing', trackedUrls: [{ workspacePost: true, provenance: { kind: 'report-draft' } }],
+    source: 'website-history', reportingProfile, trackedUrls: [{ workspacePost: true, provenance: { kind: 'report-draft' } }],
   } }] })));
   vi.stubGlobal('fetch', fetcher);
   const result = await request<{ items: { id: string; demo?: unknown }[] }>(`/projects/${id}/settings`);
   expect(fetcher.mock.calls[0][0]).toContain(id);
-  expect(result.items[0]).toEqual({ id, demo: { source: 'website-demo', reportingProfile: 'uk_investing',
+  expect(result.items[0]).toEqual({ id, demo: { source: 'website-demo', reportingProfile,
     trackedUrls: [{ demoPost: true, provenance: { kind: 'demo-draft' } }] } });
 });

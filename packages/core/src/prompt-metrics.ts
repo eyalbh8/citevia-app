@@ -8,7 +8,7 @@ import type {
 import { isReportableRun, sameTargetMethod } from './metrics.js';
 import { brandRank, brandSentimentScore } from './scoring.js';
 import { projectProviders, snapshotProvider } from './providers.js';
-import { investingComparisonPeriod, investingTrend } from './demo-growth.js';
+import { investingComparisonPeriod, investingTrend, usesModeledReporting } from './demo-growth.js';
 
 export interface PromptMetricComparison {
   mode: 'previous_period' | 'first_last_day' | 'modeled_period';
@@ -402,7 +402,7 @@ export function promptPeriodMetrics(
         comparison ? previous : [],
         comparison,
       );
-      if (project.demo?.reportingProfile === 'uk_investing' && !project.demo.presentation && current.length) {
+      if (usesModeledReporting(project.demo) && !project.demo.presentation && current.length) {
         const period = investingComparisonPeriod(project.demo, start, end);
         const providers = [...currentProviders].sort();
         const trend = investingTrend(project.demo, providers.map(provider => ({ provider, promptId: prompt.id })), period);

@@ -105,4 +105,18 @@ describe('dashboard stage visibility comparisons', () => {
     expect(rows).toContainEqual(['Stages', 'Trust', 'Active prompts', 2]);
     expect(rows).toContainEqual(['Stages', 'Convert', 'Visibility change (%)', null]);
   });
+
+  it('labels modeled rank, mention and sentiment changes for every ranked brand', async () => {
+    data.comparison = 'modeled_period';
+    data.rankingComparison = 'modeled_period';
+    data.ranking.push({ brandId: 'competitor', name: 'Competitor', domain: null, isTarget: false,
+      rank: 2, rankChange: 0, mentions: 14, mentionChange: 3, sentiment: 68, sentimentChange: 0.4 });
+    await render();
+    const titles = [...container.querySelectorAll('.overview-measurement .overview-change')].map(node => node.getAttribute('title'));
+    expect(titles).toEqual([
+      'Estimated rank improvement in positions over the selected period: 0.0',
+      'Estimated mention growth over the selected period: +3.0%',
+      'Estimated sentiment change over the selected period: +0.4 pts',
+    ]);
+  });
 });
