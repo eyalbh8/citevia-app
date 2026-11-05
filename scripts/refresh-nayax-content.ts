@@ -5,10 +5,8 @@ import { isDeepStrictEqual, parseArgs } from 'node:util';
 import type { DemoConfig, Project } from '@citevia/core';
 import { PostgresRepository, type Repository } from '@citevia/storage';
 import { openConfigurationDatabase } from './configure-analysis.js';
-import { NAYAX_DEMO_ID } from './create-nayax-demo.js';
+import { NAYAX_DEMO_ID, NAYAX_SOURCE_ACCOUNT_ID } from './create-nayax-demo.js';
 import { buildServiceDemo } from './create-service-demo.js';
-
-const NAYAX_SOURCE_ACCOUNT_ID = '333d2ee5-e99c-4e69-a59d-43656f6d8244';
 
 /** Replace only Nayax's compact publication catalog, retaining its saved account and scenario. */
 export async function refreshNayaxContent(
@@ -19,7 +17,7 @@ export async function refreshNayaxContent(
 ) {
   const existing = await repository.getProject(NAYAX_DEMO_ID);
   if (!existing?.demo || existing.demo.source !== 'igeo-nayax' ||
-    existing.demo.sourceAccountId !== NAYAX_SOURCE_ACCOUNT_ID || existing.enabled ||
+    existing.demo.sourceAccountId !== NAYAX_SOURCE_ACCOUNT_ID || existing.enabled || existing.demo.reportingProfile || existing.demo.presentation ||
     existing.brand.name.trim().toLowerCase() !== 'nayax' ||
     !existing.brand.domains.some(domain => /(^|\.)nayax\.com$/i.test(domain)))
     throw new Error('Refusing to change an account without the expected disabled Nayax scenario identity.');

@@ -6,8 +6,10 @@ import { z } from 'zod';
 import { DEFAULT_GEMINI_MODEL, DEFAULT_PERPLEXITY_PRESET, isBrandedPrompt, PARSER_VERSION, STAGE_INTENTS, type Brandbook, type JourneyStage, type Project } from '@citevia/core';
 import { PostgresRepository, type Repository } from '@citevia/storage';
 import { openConfigurationDatabase } from './configure-analysis.js';
+import { syncImportedReporting } from './create-service-demo.js';
 
 export const NAYAX_DEMO_ID = 'account_nayax_demo_v1';
+export const NAYAX_SOURCE_ACCOUNT_ID = '333d2ee5-e99c-4e69-a59d-43656f6d8244';
 const providers = () => [
   { provider: 'openai' as const, model: 'gpt-4.1-2025-04-14' },
   { provider: 'perplexity' as const, model: DEFAULT_PERPLEXITY_PRESET },
@@ -93,7 +95,7 @@ export function buildNayaxDemo(value: unknown, anchorDate: string, copiedAt = ne
     brandbook, createdAt: at, updatedAt: copiedAt,
     demo: {
       version: 1, source: 'igeo-nayax', anchorDate, startDate, endDate,
-      sourceAccountId: '333d2ee5-e99c-4e69-a59d-43656f6d8244', sourceCopiedAt: copiedAt,
+      sourceAccountId: NAYAX_SOURCE_ACCOUNT_ID, sourceCopiedAt: copiedAt,
       samples: source.samples.slice(0, 12).map((sample, index) => ({
         promptText: String(sample.promptText || ''), answerText: String(sample.answerText || sample.text || '').slice(0, 2500),
         citations: Array.isArray(sample.citations) ? sample.citations.filter(c => c && typeof c.url === 'string').slice(0, 8).map(c => ({ url: c.url, title: c.title })) : [],
@@ -141,7 +143,8 @@ export function enrollNayaxBlogs(project: Project, value: unknown): NonNullable<
 
 export async function refreshNayaxAccount(repository: Pick<Repository, 'getProject' | 'saveProject'>, blogs: unknown, apply = false, now = new Date()) {
   const existing = await repository.getProject(NAYAX_DEMO_ID);
-  if (!existing?.demo || existing.demo.sourceAccountId !== '333d2ee5-e99c-4e69-a59d-43656f6d8244')
+  if (!existing?.demo || existing.demo.source !== 'igeo-nayax' || existing.enabled || existing.demo.reportingProfile ||
+    existing.demo.presentation || existing.demo.sourceAccountId !== NAYAX_SOURCE_ACCOUNT_ID)
     throw new Error('Refusing to change an account without the expected Nayax source identity.');
   const desired: Project = {
     ...existing, name: existing.brand.name, enabled: false,
@@ -160,17 +163,29 @@ export async function refreshNayaxAccount(repository: Pick<Repository, 'getProje
     configurationBytes: bytes, enabled: false, paidCalls: 0 };
 }
 
+export function syncNayaxReporting(repository: Pick<Repository, 'getProject' | 'saveProject'>,
+  value: unknown, apply = false, now = new Date(), requestedAnchor?: string) {
+  return syncImportedReporting(repository, {
+    id: NAYAX_DEMO_ID, name: 'Nayax', domain: 'nayax.com', source: 'igeo-nayax',
+    sourceAccountId: NAYAX_SOURCE_ACCOUNT_ID, reportingProfile: 'unattended_payments',
+  }, value, apply, now, requestedAnchor);
+}
+
 export async function main(argv = process.argv.slice(2)) {
-  const { values } = parseArgs({ args: argv, options: { source: { type: 'string' }, blogs: { type: 'string' }, refresh: { type: 'boolean' }, mode: { type: 'string', default: 'local' }, anchor: { type: 'string', default: '2026-10-23' }, apply: { type: 'boolean' }, help: { type: 'boolean' } } });
-  if (values.help) { console.log('npm run demo:nayax -- --source /private/path/sanitized-source.json --mode local|aws [--anchor YYYY-MM-DD] [--apply]\nnpm run demo:nayax -- --refresh --blogs /private/path/nayax-blogs.json --mode local|aws [--apply]\nDefault previews configuration only. Never connects to or writes iGEO. Refresh requires the saved Nayax source identity. Local server must be stopped.'); return; }
-  if ((!values.refresh && !values.source) || (values.refresh && !values.blogs) || !['local', 'aws'].includes(values.mode)) throw new Error('Supply --source, or --refresh --blogs; choose --mode local|aws.');
-  const project = values.refresh ? null : buildNayaxDemo(JSON.parse(await readFile(resolve(values.source!), 'utf8')), values.anchor);
+  const { values } = parseArgs({ args: argv, options: { source: { type: 'string' }, blogs: { type: 'string' }, refresh: { type: 'boolean' },
+    'sync-reporting': { type: 'boolean' }, mode: { type: 'string', default: 'local' }, anchor: { type: 'string' }, apply: { type: 'boolean' }, help: { type: 'boolean' } } });
+  if (values.help) { console.log('npm run demo:nayax -- --source FILE [--mode local|aws] [--anchor YYYY-MM-DD] [--sync-reporting] [--apply]\nUse --sync-reporting with scripts/nayax-content.json to upgrade the saved account. The original blog refresh accepts --refresh --blogs FILE. Defaults to a preview.'); return; }
+  if (values.refresh && values['sync-reporting']) throw new Error('Choose one update mode.');
+  const input = values.refresh ? values.blogs : values.source;
+  if (!input || !['local', 'aws'].includes(values.mode)) throw new Error('Supply --source, or --refresh --blogs; choose --mode local|aws.');
+  const value = JSON.parse(await readFile(resolve(input), 'utf8'));
   const db = await openConfigurationDatabase(values.mode as 'local' | 'aws', resolve(process.env.LOCAL_DATA_DIR || '.local-data/real'));
   try {
     const repository = new PostgresRepository(db);
-    console.log(JSON.stringify(values.refresh
-      ? await refreshNayaxAccount(repository, JSON.parse(await readFile(resolve(values.blogs!), 'utf8')), values.apply)
-      : await createNayaxDemo(repository, project!, values.apply), null, 2));
+    const result = values['sync-reporting'] ? await syncNayaxReporting(repository, value, values.apply, new Date(), values.anchor)
+      : values.refresh ? await refreshNayaxAccount(repository, value, values.apply)
+      : await createNayaxDemo(repository, buildNayaxDemo(value, values.anchor ?? '2026-10-23'), values.apply);
+    console.log(JSON.stringify(result, null, 2));
   }
   finally { await db.close(); }
 }

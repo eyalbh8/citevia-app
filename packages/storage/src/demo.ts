@@ -168,14 +168,20 @@ interface CaptureSchedule {
   times: Map<string, number>;
   last: number;
 }
-const captureScheduleCache = new WeakMap<Project, Map<number, CaptureSchedule>>();
+const captureScheduleCache = new WeakMap<Project, Map<ScanProvider, Map<number, CaptureSchedule>>>();
 
 /** Collect each prompt once per run, with answers arriving throughout its UTC collection window. */
-function captureSchedule(project: Project, at: number): CaptureSchedule {
-  let schedules = captureScheduleCache.get(project);
+function captureSchedule(project: Project, at: number, provider: ScanProvider = 'openai'): CaptureSchedule {
+  const rotation = project.demo?.reportingProfile === 'unattended_payments' ? provider : 'openai';
+  let providers = captureScheduleCache.get(project);
+  if (!providers) {
+    providers = new Map();
+    captureScheduleCache.set(project, providers);
+  }
+  let schedules = providers.get(rotation);
   if (!schedules) {
     schedules = new Map();
-    captureScheduleCache.set(project, schedules);
+    providers.set(rotation, schedules);
   }
   const cached = schedules.get(at);
   if (cached) return cached;
@@ -194,9 +200,12 @@ function captureSchedule(project: Project, at: number): CaptureSchedule {
         group.push(prompt);
         byStage.set(prompt.stage, group);
       }
+      // Offset each engine within its stage. For a stage containing just two
+      // prompts, this distributes six distinct captures across the collection.
+      const shift = { openai: 0, perplexity: 1 / 3, gemini: 2 / 3 }[rotation];
       const position = new Map<string, number>();
       for (const group of byStage.values()) {
-        group.forEach((prompt, index) => position.set(prompt.id, index / group.length));
+        group.forEach((prompt, index) => position.set(prompt.id, (index + shift) / group.length));
       }
       ordered.sort((a, b) => position.get(a.id)! - position.get(b.id)!);
     }
@@ -309,7 +318,7 @@ function collectingPrompts(project: Project, run: ScanRun, asOf: number) {
   const start = Date.parse(run.scheduledAt);
   if (!usesModeledReporting(project.demo) || start > asOf || Date.parse(run.completedAt!) <= asOf)
     return null;
-  const schedule = captureSchedule(project, start);
+  const schedule = captureSchedule(project, start, run.snapshot.provider);
   return activePrompts(project).filter(prompt => schedule.times.get(prompt.id)! <= asOf);
 }
 
@@ -522,10 +531,10 @@ function enrolledForCapture(item: TrackedPublication, at: string) {
     (!item.trackingPeriods || item.trackingPeriods.some(period => period.start <= at && (!period.end || at < period.end)));
 }
 
-function pickupWindows(project: Project, scanAt: number, firstDayOnly: boolean, item?: TrackedPublication) {
+function pickupWindows(project: Project, provider: ScanProvider, scanAt: number, firstDayOnly: boolean, item?: TrackedPublication) {
   const twiceDaily = usesDetailedReporting(project.demo);
   const windows = new Map<number, string[]>();
-  for (const [promptId, captured] of captureSchedule(project, scanAt).times) {
+  for (const [promptId, captured] of captureSchedule(project, scanAt, provider).times) {
     if (item && !enrolledForCapture(item, iso(captured))) continue;
     if (firstDayOnly && Math.floor(captured / DAY) !== Math.floor(scanAt / DAY)) continue;
     // One actual answer in each half-day keeps enrolled content visible in a rolling 24-hour report.
@@ -546,12 +555,12 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
     const commonWindows = new Map<string, ReturnType<typeof pickupWindows>>();
     const tracked = [...(configFor(project)!.trackedUrls || [])]
       .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt) || a.url.localeCompare(b.url));
-    const roofCollections = project.demo?.reportingProfile === 'residential_roofing';
+    const importedCollections = project.demo?.reportingProfile === 'residential_roofing' || project.demo?.reportingProfile === 'unattended_payments';
     for (const [index, item] of tracked.entries()) {
       const enrolledAt = Math.max(Date.parse(item.createdAt || item.publishedAt), Date.parse(item.publishedAt));
       const eligible = times.filter(at => {
-        // Imported roofing articles can start tracking in an open collection.
-        const last = roofCollections ? captureSchedule(project, at).last : at;
+        // Imported articles can start tracking in an open collection.
+        const last = importedCollections ? captureSchedule(project, at).last : at;
         return last >= enrolledAt && (!item.trackingPeriods || item.trackingPeriods.some(period =>
           last >= Date.parse(period.start) && (!period.end || at < Date.parse(period.end))));
       });
@@ -561,12 +570,12 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
         let promptIds: string[];
         if (usesModeledReporting(project.demo)) {
           const firstDayOnly = !usesDetailedReporting(project.demo) && at === eligible[0];
-          const key = `${at}:${firstDayOnly}`;
+          const key = `${at}:${firstDayOnly}:${project.demo.reportingProfile === 'unattended_payments' ? provider : ''}`;
           const partialWindow = item.trackingPeriods || at < enrolledAt;
           let windows = partialWindow ? undefined : commonWindows.get(key);
           if (!windows) {
             // Captures after an eligible scan remain enrolled unless the URL has an explicit pause.
-            windows = pickupWindows(project, at, firstDayOnly, partialWindow ? item : undefined);
+            windows = pickupWindows(project, provider, at, firstDayOnly, partialWindow ? item : undefined);
             if (!partialWindow) commonWindows.set(key, windows);
           }
           promptIds = [...windows].map(([window, candidates]) => candidates[hash(`${item.url}:${window}`) % candidates.length]);
@@ -619,7 +628,7 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
   }
   const size = Math.min(unique.length, 1 + Math.floor(progress(project, Date.parse(run.scheduledAt)) * 5));
   const at = usesModeledReporting(project.demo)
-    ? iso(captureSchedule(project, Date.parse(run.scheduledAt)).times.get(prompt.id)!)
+    ? iso(captureSchedule(project, Date.parse(run.scheduledAt), run.snapshot.provider).times.get(prompt.id)!)
     : run.scheduledAt;
   let eligible = trackedIndex.eligible.get(at);
   if (!eligible) {
@@ -664,7 +673,7 @@ function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[
 
 function resultFor(project: Project, run: ScanRun, prompt: Prompt, citations = citationsFor(project, run, prompt)): PromptResult {
   const brands = brandMeasurements(project, run, prompt);
-  const captured = captureSchedule(project, Date.parse(run.scheduledAt)).times.get(prompt.id)!;
+  const captured = captureSchedule(project, Date.parse(run.scheduledAt), run.snapshot.provider).times.get(prompt.id)!;
   return {
     projectId: project.id, runId: run.id, promptId: prompt.id,
     responseId: `${run.id}~${prompt.id}`, prompt,
@@ -753,14 +762,14 @@ function* observedRuns(project: Project, start: string, end: string, promptId?: 
   const prompts = activePrompts(project).filter((prompt) => !promptId || prompt.id === promptId);
   for (const at of scanTimes(project)) {
     if (at > to) break;
-    const schedule = captureSchedule(project, at);
-    if (schedule.last < from) continue;
-    const observed = prompts.filter(prompt => {
-      const captured = schedule.times.get(prompt.id)!;
-      return captured >= from && captured <= to;
-    });
-    if (!observed.length) continue;
+    if (captureSchedule(project, at).last < from) continue;
     for (const { provider } of projectProviders(project)) {
+      const schedule = captureSchedule(project, at, provider);
+      const observed = prompts.filter(prompt => {
+        const captured = schedule.times.get(prompt.id)!;
+        return captured >= from && captured <= to;
+      });
+      if (!observed.length) continue;
       const run = createRun(project, at, provider);
       yield { run, observed, schedule };
     }

@@ -50,11 +50,32 @@ const roofingGuides = [
   'A guide for homeowners', 'Comparing written estimates', 'What to ask a roofing contractor', 'Planning an inspection',
   'A homeowner checklist', 'Materials and workmanship', 'Understanding warranties', 'Signs of storm damage',
 ];
+const unattendedMarkets = [
+  'Atlanta', 'Austin', 'Baltimore', 'Birmingham', 'Boston', 'Buffalo', 'Charlotte', 'Chicago',
+  'Cincinnati', 'Cleveland', 'Columbus', 'Dallas', 'Denver', 'Detroit', 'El Paso', 'Fort Worth',
+  'Fresno', 'Houston', 'Indianapolis', 'Jacksonville', 'Kansas City', 'Las Vegas', 'Long Beach', 'Los Angeles',
+  'Louisville', 'Memphis', 'Miami', 'Milwaukee', 'Minneapolis', 'Nashville', 'New Orleans', 'New York',
+  'Oklahoma City', 'Omaha', 'Orlando', 'Philadelphia', 'Phoenix', 'Pittsburgh', 'Portland', 'Raleigh',
+  'Sacramento', 'Salt Lake City', 'San Antonio', 'San Diego', 'San Francisco', 'Seattle', 'Tampa', 'Tucson',
+];
+const unattendedPublications = [
+  'Vending Operator Journal', 'Unattended Retail Review', 'Cashless Acceptance Report', 'Micro Market Bulletin',
+  'Self Service Kiosk Digest', 'Route Operations Weekly', 'Machine Telemetry Review', 'Retail Automation Wire',
+  'Parking Payments Journal', 'Smart Cooler Digest', 'Coin Laundry Ledger', 'Contactless Retail Review',
+  'Amusement Payments Weekly', 'Office Coffee Journal', 'Automated Merchandising Report', 'Fuel Retail Bulletin',
+  'Merchant Acquiring Digest', 'Point of Sale Journal', 'Car Wash Operator Review', 'Retail Hardware Chronicle',
+  'EV Charging Report', 'Foodservice Technology Ledger', 'Payment Terminal Review', 'Convenience Retail Observer',
+];
+const unattendedGuides = [
+  'An operator guide', 'Choosing a card reader', 'Planning a rollout', 'Comparing processing costs',
+  'A route operator checklist', 'Terminal integration options', 'Managing a machine fleet', 'Evaluating a payment provider',
+];
 type Profile = NonNullable<DemoConfig['reportingProfile']>;
 const industries = {
   uk_investing: { places, publications: investingPublications, guides: investingGuides, fallback: 'UK investing platforms', idPrefix: 'demo_investing' },
   merchant_payments: { places, publications: paymentPublications, guides: paymentGuides, fallback: 'Merchant payments', idPrefix: 'merchant_payments' },
   residential_roofing: { places: roofingPlaces, publications: roofingPublications, guides: roofingGuides, fallback: 'Residential roofing', idPrefix: 'residential_roofing' },
+  unattended_payments: { places: unattendedMarkets, publications: unattendedPublications, guides: unattendedGuides, fallback: 'Unattended payments', idPrefix: 'unattended_payments' },
 } satisfies Record<Profile, { places: string[]; publications: string[]; guides: string[]; fallback: string; idPrefix: string }>;
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -62,6 +83,7 @@ const caches = {
   uk_investing: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   merchant_payments: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   residential_roofing: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  unattended_payments: new WeakMap<Prompt[], Map<string, Citation[]>>(),
 } satisfies Record<Profile, WeakMap<Prompt[], Map<string, Citation[]>>>;
 const noSources: Citation[] = [];
 

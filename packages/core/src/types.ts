@@ -96,7 +96,7 @@ export interface DemoConfig {
   dashboardComparison?: 'scenario_start';
   publicationAlignment?: 'scans';
   /** Enables daily collections, period growth, and a sector-specific source catalog. */
-  reportingProfile?: 'uk_investing' | 'merchant_payments' | 'residential_roofing';
+  reportingProfile?: 'uk_investing' | 'merchant_payments' | 'residential_roofing' | 'unattended_payments';
   /** An explicitly labeled illustration layered over preserved source observations. */
   presentation?: { label: string; targetRank: number; mentionCount: number; reportingOnly: true };
   anchorDate: string;

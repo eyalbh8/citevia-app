@@ -183,10 +183,10 @@ type TrackingCatalog = Pick<ParsedSource, 'blogs' | 'socialLinks' | 'website' | 
 
 export function trackedContent(source: TrackingCatalog, existing: NonNullable<DemoConfig['trackedUrls']> = []): NonNullable<DemoConfig['trackedUrls']> {
   const window = serviceDemoDates(source.anchorDate), dates = weeklyPublicationDates(window), official = domain(source.website);
-  const roofing = source.reportingProfile === 'residential_roofing';
+  const imported = source.reportingProfile === 'residential_roofing' || source.reportingProfile === 'unattended_payments';
   const anchorSlot = dates.filter(date => date.slice(0, 10) <= window.anchorDate).length - 1;
   const dateFor = (index: number, count: number) => {
-    if (!roofing) return dates[Math.floor(index * dates.length / count)];
+    if (!imported) return dates[Math.floor(index * dates.length / count)];
     // Each new channel has a publication in the anchor week and spans both halves of the reporting year.
     const middle = Math.floor(count / 2);
     if (index === middle) return dates[anchorSlot];
@@ -216,14 +216,64 @@ export function trackedContent(source: TrackingCatalog, existing: NonNullable<De
       sourcePublishedAt: isoDate(link.sourcePublishedAt), sourceTrackedAt: isoDate(link.sourceTrackedAt),
       publishedAt, createdAt: publishedAt };
   }))];
-  const aligned = source.publicationAlignment === 'scans' ? alignDemoTrackingToScans(additions, window, undefined, roofing || source.reportingProfile === 'merchant_payments') : additions;
-  const scheduled = source.reportingProfile ? withDemoPublicationLeadTimes(aligned, window, roofing ? window.endDate : undefined) : aligned;
+  const aligned = source.publicationAlignment === 'scans' ? alignDemoTrackingToScans(additions, window, undefined, imported || source.reportingProfile === 'merchant_payments') : additions;
+  const scheduled = source.reportingProfile ? withDemoPublicationLeadTimes(aligned, window, imported ? window.endDate : undefined) : aligned;
   return [...existing, ...scheduled.map(item => {
-    if (!roofing || !item.sourcePublishedAt || item.sourcePublishedAt <= item.publishedAt) return item;
+    if (!imported || !item.sourcePublishedAt || item.sourcePublishedAt <= item.publishedAt) return item;
     if (item.sourcePublishedAt.slice(0, 10) > window.endDate) throw new Error('A source was published after the reporting year.');
     const createdAt = item.createdAt && item.createdAt >= item.sourcePublishedAt ? item.createdAt : item.sourcePublishedAt;
     return { ...item, publishedAt: item.sourcePublishedAt, createdAt };
   })];
+}
+
+const catalogSchema = serviceDemoSourceSchema.pick({ blogs: true, socialLinks: true, sources: true });
+
+type ImportedReportIdentity = {
+  id: string; name: string; domain: string; sourceAccountId: string;
+  source: 'igeo-dr-roof' | 'igeo-nayax';
+  reportingProfile: 'residential_roofing' | 'unattended_payments';
+};
+
+/** Upgrade an explicitly identified import, keeping its original measurements, settings and enrollments. */
+export async function syncImportedReporting(repository: Pick<Repository, 'getProject' | 'saveProject'>,
+  identity: ImportedReportIdentity, value: unknown, apply: boolean, now: Date, requestedAnchor?: string) {
+  const catalog = catalogSchema.parse(value);
+  const project = await repository.getProject(identity.id), config = project?.demo;
+  const brandMatches = project?.brand.domains.some(value => {
+    try {
+      const url = new URL(value.includes('://') ? value : `https://${value}`);
+      return !url.username && !url.password && url.hostname.toLowerCase().replace(/^www\./, '') === identity.domain;
+    } catch { return false; }
+  });
+  if (!project || project.id !== identity.id || project.enabled || !config || config.source !== identity.source ||
+    config.version !== 1 || config.sourceAccountId !== identity.sourceAccountId || config.presentation ||
+    (config.reportingProfile && config.reportingProfile !== identity.reportingProfile) || !brandMatches ||
+    (identity.source === 'igeo-nayax' && normalized(project.brand.name) !== 'nayax'))
+    throw new Error(`Reporting updates require the matching disabled ${identity.name} account.`);
+  const dates = serviceDemoDates(requestedAnchor ?? (config.reportingProfile ? config.anchorDate : now.toISOString().slice(0, 10)));
+  if (config.reportingProfile && (config.anchorDate !== dates.anchorDate || config.startDate !== dates.startDate ||
+    config.endDate !== dates.endDate || config.publicationAlignment !== 'scans'))
+    throw new Error('Reporting updates must preserve the saved reporting year.');
+  const enrolled = config.trackedUrls ?? [];
+  const trackedUrls = trackedContent({ ...catalog, website: `https://${identity.domain}`, anchorDate: dates.anchorDate,
+    publicationAlignment: 'scans', reportingProfile: identity.reportingProfile }, enrolled);
+  const keys = new Set(trackedUrls.map(item => trackedUrlKey(item.url)));
+  if ([...catalog.blogs, ...catalog.socialLinks].some(item => !keys.has(trackedUrlKey(item.url))))
+    throw new Error('The reporting year has too few publication slots for this catalog.');
+  const references = new Map(config.referenceSources?.map(row => [trackedUrlKey(row.url), row]));
+  for (const { url, title } of catalog.sources) references.set(trackedUrlKey(url), { url, title });
+  // Compare JSON as stored. Absent optional properties must not cause a write on retries.
+  const desiredConfig: DemoConfig = { ...config, ...dates, reportingProfile: identity.reportingProfile,
+    publicationAlignment: 'scans', referenceSources: [...references.values()], trackedUrls };
+  const unchanged = isDeepStrictEqual(JSON.parse(JSON.stringify(config)), JSON.parse(JSON.stringify(desiredConfig)));
+  const desired: Project = unchanged ? project : { ...project, demo: desiredConfig, version: project.version + 1, updatedAt: now.toISOString() };
+  const configurationBytes = Buffer.byteLength(JSON.stringify(desired));
+  if (configurationBytes > 250000) throw new Error('Compact reporting configuration exceeds 250 KB.');
+  if (apply && !unchanged && !await repository.saveProject(desired, project.version))
+    throw new Error('Account changed concurrently; retry to inspect it.');
+  return { status: unchanged ? 'unchanged' : apply ? 'updated' : 'preview', projectId: project.id, version: desired.version,
+    ...dates, trackedUrls: trackedUrls.length, added: trackedUrls.length - enrolled.length,
+    referenceSources: references.size, configurationBytes };
 }
 
 /** Public website metadata creates a compact synthetic scenario, never historical customer measurements. */

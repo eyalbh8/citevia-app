@@ -2,12 +2,15 @@ import type { DemoConfig, ScanProvider } from './types.js';
 
 const DAY = 86_400_000;
 const promptSeed: Record<NonNullable<DemoConfig['reportingProfile']>, string> = {
-  merchant_payments: ':payments', residential_roofing: ':roofing', uk_investing: '',
+  merchant_payments: ':payments', residential_roofing: ':roofing', unattended_payments: ':unattended', uk_investing: '',
 };
 const providerOffset: Record<ScanProvider, number> = { openai: 1, perplexity: .5, gemini: 0 };
 
-export function usesDetailedReporting(config: DemoConfig | undefined): config is DemoConfig & { reportingProfile: 'merchant_payments' | 'residential_roofing' } {
-  return config?.reportingProfile === 'merchant_payments' || config?.reportingProfile === 'residential_roofing';
+export function usesDetailedReporting(
+  config: DemoConfig | undefined,
+): config is DemoConfig & { reportingProfile: 'merchant_payments' | 'residential_roofing' | 'unattended_payments' } {
+  return config?.reportingProfile === 'merchant_payments' || config?.reportingProfile === 'residential_roofing' ||
+    config?.reportingProfile === 'unattended_payments';
 }
 
 export function usesModeledReporting(
