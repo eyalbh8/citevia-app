@@ -59,7 +59,7 @@
     "@types/jsdom": "^30.0.0",
     "@types/node": "^22.15.0",
     "@types/pg": "^8.23.1",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.2",
     "eslint": "10.14.0",
     "eslint-plugin-security": "4.2.1",
     "jsdom": "^26.1.0",
