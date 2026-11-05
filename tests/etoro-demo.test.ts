@@ -83,6 +83,7 @@ describe('complete eToro demo account', () => {
       expect(traffic.current).toBeGreaterThan(0);
       expect(traffic.providers.reduce((sum, row) => sum + row.visits, 0)).toBe(traffic.current);
       const tracking = await get<Page<TrackingRow>>(`tracked-urls?${range}&pageSize=100`);
+      expect(tracking.items.every(row => row.periodAppearances > 0)).toBe(true);
       const summary = await get<TrackingSummary>(`tracked-urls/summary?${range}`);
       expect(tracking.items.reduce((sum, row) => sum + row.periodAppearances, 0)).toBe(summary.appearances);
       const mentions = await get<MentionsSummary>(`mentions/summary?${range}`);

@@ -423,7 +423,7 @@ const trackedCitationCache = new WeakMap<Project, {
 }>();
 const contentPickupCache = new WeakMap<Project, Map<string, { url: string; title: string }[]>>();
 
-/** Enroll each tracked post in one scenario capture at its first subsequent scan. */
+/** Enroll each post at its first scan; aligned demos retain citations in subsequent scans. */
 function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
   let pickups = contentPickupCache.get(project);
   if (!pickups) {
@@ -433,18 +433,20 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
       .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt) || a.url.localeCompare(b.url));
     for (const [index, item] of tracked.entries()) {
       const enrolledAt = Math.max(Date.parse(item.createdAt || item.publishedAt), Date.parse(item.publishedAt));
-      const at = times.find(at => at >= enrolledAt && (!item.trackingPeriods || item.trackingPeriods.some(period =>
+      const eligible = times.filter(at => at >= enrolledAt && (!item.trackingPeriods || item.trackingPeriods.some(period =>
         at >= Date.parse(period.start) && (!period.end || at < Date.parse(period.end)))));
-      if (at === undefined || !providers.length) continue;
+      if (!eligible.length || !providers.length) continue;
       const provider = providers[index % providers.length].provider;
-      const plan = measurementPlan(project, provider), mentionCount = plan.scans.get(at)!.mentionCount;
-      const order = index % Math.max(1, mentionCount);
-      const promptId = [...plan.promptOrder].find(([, value]) => value === order)?.[0];
-      if (!promptId) continue;
-      const key = `${iso(at)}:${provider}:${promptId}`;
-      const citations = pickups.get(key) || [];
-      citations.push({ url: item.url, title: item.title });
-      pickups.set(key, citations);
+      for (const at of configFor(project)!.publicationAlignment === 'scans' ? eligible : eligible.slice(0, 1)) {
+        const plan = measurementPlan(project, provider), mentionCount = plan.scans.get(at)!.mentionCount;
+        const order = index % Math.max(1, mentionCount);
+        const promptId = [...plan.promptOrder].find(([, value]) => value === order)?.[0];
+        if (!promptId) continue;
+        const key = `${iso(at)}:${provider}:${promptId}`;
+        const citations = pickups.get(key) || [];
+        citations.push({ url: item.url, title: item.title });
+        pickups.set(key, citations);
+      }
     }
     contentPickupCache.set(project, pickups);
   }
