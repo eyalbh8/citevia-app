@@ -7,6 +7,7 @@ import {
   type Analysis,
   type CapturedAnswer,
   type Citation,
+  type DemoConfig,
   type Project,
   type Prompt,
   type PromptHistory,
@@ -30,6 +31,24 @@ interface ScenarioTrackingHooks {
   };
 }
 
+const publicationCache = new WeakMap<Project, NonNullable<DemoConfig['trackedUrls']>>();
+
+/** Older website enrollments can precede the date an article actually went live. */
+export function reportingPublications(project: Project) {
+  const stored = project.demo?.trackedUrls || [];
+  const profile = project.demo?.reportingProfile;
+  if (profile !== 'home_bedding' && profile !== 'yacht_chartering' && profile !== 'hair_restoration') return stored;
+  let publications = publicationCache.get(project);
+  if (!publications) {
+    publications = stored.map(item => {
+      const actual = Date.parse(item.sourcePublishedAt || '');
+      return actual > Date.parse(item.publishedAt) ? { ...item, publishedAt: new Date(actual).toISOString() } : item;
+    });
+    publicationCache.set(project, publications);
+  }
+  return publications;
+}
+
 function* historyCaptures(history: PromptHistory) {
   const runs = new Map(history.runs.map(run => [run.id, run]));
   for (const result of history.results) {
@@ -46,7 +65,7 @@ export function createScenarioTracking(project: Project, hooks: ScenarioTracking
     if (!normalizedKeys.has(url)) normalizedKeys.set(url, trackedUrlKey(url));
     return normalizedKeys.get(url)!;
   };
-  for (const item of project.demo?.trackedUrls || []) {
+  for (const item of reportingPublications(project)) {
     const publicUrl = trackedArticleUrl(item.url.trim());
     const normalizedUrl = urlKey(publicUrl);
     if (!normalizedUrl || urls.has(normalizedUrl)) continue;

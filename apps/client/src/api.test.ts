@@ -40,7 +40,7 @@ describe('scan request idempotency', () => {
   });
 });
 
-it.each(['uk_investing', 'merchant_payments', 'residential_roofing', 'unattended_payments'])('restores the %s reporting profile and keeps public account handles for navigation', async reportingProfile => {
+it.each(['uk_investing', 'merchant_payments', 'residential_roofing', 'unattended_payments', 'home_bedding', 'yacht_chartering', 'hair_restoration'])('restores the %s reporting profile and keeps public account handles for navigation', async reportingProfile => {
   const id = 'cvh_6163636f756e745f64656d6f';
   const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [{ id, reportingProfile: {
     source: 'website-history', reportingProfile, trackedUrls: [{ workspacePost: true, provenance: { kind: 'report-draft' } }],

@@ -1,16 +1,24 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import type { DashboardOverview, MentionsSummary, PromptMetricsResponse } from '@citevia/core';
+import type { DashboardOverview, MentionsSummary, Page, PromptMetricsResponse, TrackingRow } from '@citevia/core';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository } from '@citevia/storage';
 import { createApi } from '../apps/api/src/app.js';
 import { buildServiceDemo } from '../scripts/create-service-demo.js';
 import { testIdentity } from './fixtures/users.js';
 
-const source = JSON.parse(readFileSync(new URL('../scripts/demo-sources/payabl.json', import.meta.url), 'utf8'));
+const readSource = (file: string) => JSON.parse(readFileSync(new URL(`../scripts/demo-sources/${file}.json`, import.meta.url), 'utf8'));
+const websiteSource = (file: string, name: string) => readSource(file).find((item: { name: string }) => item.name === name);
+const accounts = [
+  { name: 'payabl.', source: readSource('payabl'), profile: 'merchant_payments' },
+  { name: 'Brooklinen', source: websiteSource('business', 'Brooklinen'), profile: 'home_bedding' },
+  { name: 'Equinoxe Yachts', source: websiteSource('luxury', 'Equinoxe Yachts'), profile: 'yacht_chartering' },
+  { name: 'Estepera Hair Transplant Clinic', source: websiteSource('medical', 'Estepera Hair Transplant Clinic'), profile: 'hair_restoration' },
+] as const;
 const now = () => new Date('2026-11-05T21:30:00Z');
 
-it('reconciles payabl. brand and provider charts and measures positive growth across reporting ranges', async () => {
-  const project = buildServiceDemo(source, now().toISOString());
+it.each(accounts)('reconciles $name brand and provider charts and measures positive growth across reporting ranges', async ({ source, profile }) => {
+  const project = buildServiceDemo({ ...source, anchorDate: '2026-11-05' }, now().toISOString());
+  project.demo!.reportingProfile = profile;
   const repository = new MemoryRepository();
   const identity = testIdentity('merchant-report-viewer');
   await repository.saveProject(project, null);
@@ -23,6 +31,15 @@ it('reconciles payabl. brand and provider charts and measures positive growth ac
     return response.json();
   };
   const bands: Record<string, [number, number]> = { 'days=7': [2, 4], 'days=30': [7, 10], 'days=90': [20, 30] };
+  if (profile === 'home_bedding') {
+    const article = project.demo!.trackedUrls![0];
+    const reported = await get<Page<TrackingRow>>('tracked-urls?days=30');
+    const row = reported.items.find(item => item.url === article.url);
+    expect(Date.parse(article.sourcePublishedAt!)).toBeGreaterThan(Date.parse(article.publishedAt));
+    expect(row).toMatchObject({ publishedAt: article.sourcePublishedAt, createdAt: article.createdAt });
+    expect(row?.periodAppearances).toBeGreaterThan(0);
+    expect(row!.firstCitedAt! >= row!.publishedAt).toBe(true);
+  }
   for (const range of [
     'days=1', 'days=7', 'days=14', 'days=30', 'days=90',
     'days=custom&start=2026-07-12&end=2026-07-26',

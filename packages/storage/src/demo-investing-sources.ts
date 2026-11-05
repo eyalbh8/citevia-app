@@ -50,7 +50,7 @@ const roofingGuides = [
   'A guide for homeowners', 'Comparing written estimates', 'What to ask a roofing contractor', 'Planning an inspection',
   'A homeowner checklist', 'Materials and workmanship', 'Understanding warranties', 'Signs of storm damage',
 ];
-const unattendedMarkets = [
+const usMarkets = [
   'Atlanta', 'Austin', 'Baltimore', 'Birmingham', 'Boston', 'Buffalo', 'Charlotte', 'Chicago',
   'Cincinnati', 'Cleveland', 'Columbus', 'Dallas', 'Denver', 'Detroit', 'El Paso', 'Fort Worth',
   'Fresno', 'Houston', 'Indianapolis', 'Jacksonville', 'Kansas City', 'Las Vegas', 'Long Beach', 'Los Angeles',
@@ -71,11 +71,66 @@ const unattendedGuides = [
   'A route operator checklist', 'Terminal integration options', 'Managing a machine fleet', 'Evaluating a payment provider',
 ];
 type Profile = NonNullable<DemoConfig['reportingProfile']>;
+const beddingPublications = [
+  'Bedding Journal', 'Textile Design Review', 'Linen Closet Quarterly', 'Bath and Home Digest',
+  'Cotton Weave Review', 'Bedroom Design Weekly', 'Home Fabrics Journal', 'Sleep Comfort Report',
+  'Household Textile Ledger', 'Interior Design Chronicle', 'Linen Care Bulletin', 'Guest Room Review',
+  'Soft Furnishings Journal', 'Bath Linen Observer', 'Everyday Interiors Review', 'Quilt and Coverlet Digest',
+  'Natural Fiber Journal', 'Home Goods Almanac', 'Bedroom Styling Weekly', 'Fabric Testing Report',
+  'Home Design Letter', 'Pillow and Duvet Review', 'Household Essentials Digest', 'Textile Sourcing Monitor',
+];
+const beddingGuides = [
+  'Choosing a fabric', 'Comparing weaves and finishes', 'A bedding care guide', 'What to look for in a set',
+  'Understanding fill and weight', 'A guide to fit and sizing', 'Matching fabrics to the season', 'A material checklist',
+];
+const yachtPlaces = [
+  'Alghero', 'Amalfi', 'Ancona', 'Antibes', 'Athens', 'Barcelona', 'Bari', 'Bastia',
+  'Bodrum', 'Bonifacio', 'Brindisi', 'Cagliari', 'Cannes', 'Capri', 'Catania', 'Civitavecchia',
+  'Corfu', 'Dubrovnik', 'Elba', 'Gallipoli', 'Genoa', 'Ibiza', 'Imperia', 'Ischia',
+  'Kotor', 'La Maddalena', 'La Spezia', 'Livorno', 'Mallorca', 'Marseille', 'Messina', 'Monaco',
+  'Naples', 'Nice', 'Olbia', 'Palermo', 'Palma', 'Porto Cervo', 'Portofino', 'Ravenna',
+  'Salerno', 'Sanremo', 'Sicily', 'Sorrento', 'Split', 'Trieste', 'Valletta', 'Venice',
+];
+const yachtPublications = [
+  'Yachting Review', 'Charter Journal', 'Mediterranean Cruising Digest', 'Marina Bulletin',
+  'Yacht Brokerage Report', 'Superyacht Ledger', 'Sailing Almanac', 'Marine Survey Review',
+  'Crewed Charter Weekly', 'Yacht Design Observer', 'Motor Yacht Quarterly', 'Coastal Itinerary Journal',
+  'Boat Ownership Review', 'Harbour Guide', 'Marine Refit Chronicle', 'Yacht Management Digest',
+  'Charter Operations Report', 'Sailing Routes Letter', 'Marine Engineering Review', 'Classic Yacht Journal',
+  'Luxury Charter Digest', 'Port Services Review', 'Yacht Market Monitor', 'Fleet Management Journal',
+];
+const yachtGuides = [
+  'Planning a Mediterranean itinerary', 'A charterer’s checklist', 'Comparing yachts', 'Working with a broker',
+  'Choosing a departure port', 'Preparing for a viewing', 'Understanding running costs', 'Questions about crew and service',
+];
+const restorationPlaces = [
+  'Istanbul', 'Ankara', 'Izmir', 'Bursa', 'Antalya', 'Adana', 'Konya', 'Kayseri',
+  'Samsun', 'Trabzon', 'Eskisehir', 'Denizli', 'Athens', 'Barcelona', 'Belgrade', 'Berlin',
+  'Bologna', 'Brussels', 'Bucharest', 'Budapest', 'Copenhagen', 'Dublin', 'Frankfurt', 'Geneva',
+  'Hamburg', 'Helsinki', 'Lisbon', 'London', 'Lyon', 'Madrid', 'Manchester', 'Milan',
+  'Munich', 'Naples', 'Oslo', 'Paris', 'Porto', 'Prague', 'Rome', 'Rotterdam',
+  'Sofia', 'Stockholm', 'Stuttgart', 'Turin', 'Valencia', 'Vienna', 'Warsaw', 'Zurich',
+];
+const restorationPublications = [
+  'Hair Restoration Review', 'Scalp Health Journal', 'Follicular Surgery Digest', 'Patient Education Bulletin',
+  'Hair Loss Review', 'Donor Assessment Journal', 'Dermatology Care Report', 'Restoration Outcomes Monitor',
+  'Hair Transplant Quarterly', 'Aftercare Review', 'Hairline Design Journal', 'Patient Consultation Digest',
+  'Follicular Unit Review', 'Scalp Surgery Journal', 'Hair Density Report', 'Clinical Follow Up Review',
+  'Patient Safety Letter', 'Surgical Planning Review', 'Hair Science Digest', 'Dermatology Practice Journal',
+  'Restoration Techniques Review', 'Recovery Journal', 'Hair Care Research Bulletin', 'Patient Information Review',
+];
+const restorationGuides = [
+  'Questions for a consultation', 'Preparing for a clinical assessment', 'Comparing treatment approaches', 'Understanding donor areas',
+  'Talking through potential risks', 'Planning follow-up appointments', 'Discussing graft estimates', 'Considering aftercare needs',
+];
 const industries = {
   uk_investing: { places, publications: investingPublications, guides: investingGuides, fallback: 'UK investing platforms', idPrefix: 'demo_investing' },
   merchant_payments: { places, publications: paymentPublications, guides: paymentGuides, fallback: 'Merchant payments', idPrefix: 'merchant_payments' },
   residential_roofing: { places: roofingPlaces, publications: roofingPublications, guides: roofingGuides, fallback: 'Residential roofing', idPrefix: 'residential_roofing' },
-  unattended_payments: { places: unattendedMarkets, publications: unattendedPublications, guides: unattendedGuides, fallback: 'Unattended payments', idPrefix: 'unattended_payments' },
+  unattended_payments: { places: usMarkets, publications: unattendedPublications, guides: unattendedGuides, fallback: 'Unattended payments', idPrefix: 'unattended_payments' },
+  home_bedding: { places: usMarkets, publications: beddingPublications, guides: beddingGuides, fallback: 'Home bedding and bath linens', idPrefix: 'home_bedding' },
+  yacht_chartering: { places: yachtPlaces, publications: yachtPublications, guides: yachtGuides, fallback: 'Mediterranean yacht charter and brokerage', idPrefix: 'yacht_chartering' },
+  hair_restoration: { places: restorationPlaces, publications: restorationPublications, guides: restorationGuides, fallback: 'Hair restoration consultations', idPrefix: 'hair_restoration' },
 } satisfies Record<Profile, { places: string[]; publications: string[]; guides: string[]; fallback: string; idPrefix: string }>;
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -84,6 +139,9 @@ const caches = {
   merchant_payments: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   residential_roofing: new WeakMap<Prompt[], Map<string, Citation[]>>(),
   unattended_payments: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  home_bedding: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  yacht_chartering: new WeakMap<Prompt[], Map<string, Citation[]>>(),
+  hair_restoration: new WeakMap<Prompt[], Map<string, Citation[]>>(),
 } satisfies Record<Profile, WeakMap<Prompt[], Map<string, Citation[]>>>;
 const noSources: Citation[] = [];
 

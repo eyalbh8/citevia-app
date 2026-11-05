@@ -23,7 +23,7 @@ import {
 } from '@citevia/core';
 import type { Repository, Runtime, SavedAnalysisRef } from './contracts.js';
 import { aggregateScenarioTraffic, demoNumericProfile } from './demo-traffic.js';
-import { createScenarioTracking } from './demo-tracking.js';
+import { createScenarioTracking, reportingPublications } from './demo-tracking.js';
 import { industrySources } from './demo-investing-sources.js';
 
 const DAY = 86_400_000;
@@ -170,9 +170,15 @@ interface CaptureSchedule {
 }
 const captureScheduleCache = new WeakMap<Project, Map<ScanProvider, Map<number, CaptureSchedule>>>();
 
+function captureRotation(project: Project, provider: ScanProvider) {
+  if (!usesDetailedReporting(project.demo)) return 'openai';
+  const profile = project.demo.reportingProfile;
+  return profile === 'merchant_payments' || profile === 'residential_roofing' ? 'openai' : provider;
+}
+
 /** Collect each prompt once per run, with answers arriving throughout its UTC collection window. */
 function captureSchedule(project: Project, at: number, provider: ScanProvider = 'openai'): CaptureSchedule {
-  const rotation = project.demo?.reportingProfile === 'unattended_payments' ? provider : 'openai';
+  const rotation = captureRotation(project, provider);
   let providers = captureScheduleCache.get(project);
   if (!providers) {
     providers = new Map();
@@ -553,14 +559,14 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
     pickups = new Map();
     const providers = projectProviders(project), times = scanTimes(project);
     const commonWindows = new Map<string, ReturnType<typeof pickupWindows>>();
-    const tracked = [...(configFor(project)!.trackedUrls || [])]
+    const tracked = [...reportingPublications(project)]
       .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt) || a.url.localeCompare(b.url));
-    const importedCollections = project.demo?.reportingProfile === 'residential_roofing' || project.demo?.reportingProfile === 'unattended_payments';
+    const partialCollections = usesDetailedReporting(project.demo) && project.demo.reportingProfile !== 'merchant_payments';
     for (const [index, item] of tracked.entries()) {
       const enrolledAt = Math.max(Date.parse(item.createdAt || item.publishedAt), Date.parse(item.publishedAt));
       const eligible = times.filter(at => {
-        // Imported articles can start tracking in an open collection.
-        const last = importedCollections ? captureSchedule(project, at).last : at;
+        // Articles enrolled during a collection are eligible for subsequent captures in that run.
+        const last = partialCollections ? captureSchedule(project, at).last : at;
         return last >= enrolledAt && (!item.trackingPeriods || item.trackingPeriods.some(period =>
           last >= Date.parse(period.start) && (!period.end || at < Date.parse(period.end))));
       });
@@ -570,7 +576,7 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
         let promptIds: string[];
         if (usesModeledReporting(project.demo)) {
           const firstDayOnly = !usesDetailedReporting(project.demo) && at === eligible[0];
-          const key = `${at}:${firstDayOnly}:${project.demo.reportingProfile === 'unattended_payments' ? provider : ''}`;
+          const key = `${at}:${firstDayOnly}:${captureRotation(project, provider)}`;
           const partialWindow = item.trackingPeriods || at < enrolledAt;
           let windows = partialWindow ? undefined : commonWindows.get(key);
           if (!windows) {
@@ -599,7 +605,7 @@ function contentPickups(project: Project, run: ScanRun, prompt: Prompt) {
 }
 
 function citationsFor(project: Project, run: ScanRun, prompt: Prompt): Citation[] {
-  const tracked = configFor(project)!.trackedUrls || [];
+  const tracked = reportingPublications(project);
   let trackedIndex = trackedCitationCache.get(project);
   if (!trackedIndex) {
     const keys = new Set(tracked.map(item => trackedUrlKey(item.url)));

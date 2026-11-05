@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { MemoryRepository } from '@citevia/storage';
-import { buildServiceDemo, syncServiceDemoReporting } from '../scripts/create-service-demo.js';
+import { buildServiceDemo, expandServiceDemoTracking, restoreServiceReporting, syncBrooklinenReporting, syncEquinoxeReporting,
+  syncEsteperaReporting, syncServiceDemoReporting, type ServiceDemoSource } from '../scripts/create-service-demo.js';
 
 const source = JSON.parse(readFileSync(new URL('../scripts/demo-sources/etoro.json', import.meta.url), 'utf8'));
 
@@ -45,4 +46,60 @@ it('upgrades the existing merchant reporting year once and keeps the saved accou
   expect(saved.demo!.trackedUrls!.length).toBe(payments.blogs.length + payments.socialLinks.length);
   expect((await syncServiceDemoReporting(repo, payments, true)).status).toBe('unchanged');
   expect((await repo.getProject(old.id))?.version).toBe(saved.version);
+});
+
+const selected = [
+  { slug: 'brooklinen', source: 'business', id: 'account_brooklinen_demo_v1', profile: 'home_bedding', sync: syncBrooklinenReporting },
+  { slug: 'equinoxe', source: 'luxury', id: 'account_equinoxe_yachts_demo_v1', profile: 'yacht_chartering', sync: syncEquinoxeReporting },
+  { slug: 'estepera', source: 'medical', id: 'account_estepera_demo_v1', profile: 'hair_restoration', sync: syncEsteperaReporting },
+] as const;
+
+it.each(selected)('preserves and can restore the selected $slug import with optimistic concurrency', async target => {
+  const sources: ServiceDemoSource[] = JSON.parse(readFileSync(new URL(`../scripts/demo-sources/${target.source}.json`, import.meta.url), 'utf8'));
+  const source = sources.find(item => item.id === target.id)!;
+  const previous = buildServiceDemo(source);
+  const repo = new MemoryRepository();
+  const anchor = '2026-11-05', now = new Date(`${anchor}T19:00:00Z`);
+  const catalog = {
+    blogs: [{ url: new URL('/new-article', source.website).href, title: 'Additional article', sourcePublishedAt: '2026-11-04T15:15:15Z' }],
+    socialLinks: [{ url: 'https://www.youtube.com/watch?v=aBcdEfgHiJ1', title: 'New video' }], sources: source.sources,
+  };
+  await repo.saveProject(previous, null);
+  const before = (await repo.getProject(previous.id))!;
+  expect((await target.sync(repo, catalog, false, now, anchor)).status).toBe('preview');
+  expect(await repo.getProject(previous.id)).toEqual(before);
+  expect((await target.sync(repo, catalog, true, now, anchor)).status).toBe('updated');
+  const after = (await repo.getProject(previous.id))!;
+  expect(after.demo).toMatchObject({ reportingProfile: target.profile, startDate: '2026-05-05', endDate: '2027-05-05' });
+  expect({ ...after, version: before.version, updatedAt: before.updatedAt, demo: before.demo }).toEqual(before);
+  const config = after.demo!, original = before.demo!;
+  const { trackedUrls, referenceSources, reportingProfile, publicationAlignment, ...savedFields } = config;
+  expect(referenceSources?.length).toBeGreaterThan(0);
+  expect(reportingProfile).toBe(target.profile);
+  expect(publicationAlignment).toBe('scans');
+  expect({ ...savedFields, startDate: original.startDate, endDate: original.endDate,
+    anchorDate: original.anchorDate, trackedUrls: original.trackedUrls }).toEqual(original);
+  expect(trackedUrls!.slice(0, original.trackedUrls!.length)).toEqual(original.trackedUrls);
+  const added = trackedUrls!.find(row => row.url === catalog.blogs[0].url)!;
+  expect(added.publishedAt >= added.sourcePublishedAt!).toBe(true);
+  expect(added.createdAt! >= added.sourcePublishedAt!).toBe(true);
+  expect((await target.sync(repo, catalog, true, new Date('2027-01-01'))).status).toBe('unchanged');
+  await expect(expandServiceDemoTracking(repo, source, true)).rejects.toThrow('selected account');
+  const neverWrite = async () => { throw new Error('Unexpected write'); };
+  for (const foreign of [{ ...before, id: 'account_other' }, { ...before, enabled: true },
+    { ...before, brand: { ...before.brand, domains: ['foreign.org'] } }, { ...before, brand: { ...before.brand, name: 'Other' } },
+    { ...before, demo: { ...original, reportingProfile: 'merchant_payments' as const } }])
+    await expect(target.sync({ getProject: async () => foreign, saveProject: neverWrite }, catalog, true)).rejects.toThrow('matching disabled');
+  await expect(target.sync({ getProject: async () => before, saveProject: async () => false }, catalog, true)).rejects.toThrow('concurrently');
+
+  expect((await restoreServiceReporting(repo, target.slug, catalog, before)).status).toBe('preview');
+  expect(await repo.getProject(previous.id)).toEqual(after);
+  await expect(restoreServiceReporting(repo, target.slug, { ...catalog, socialLinks: [] }, before, true)).rejects.toThrow('reproduce');
+  await expect(restoreServiceReporting({ getProject: async () => ({ ...after, version: after.version + 1 }), saveProject: neverWrite },
+    target.slug, catalog, before, true)).rejects.toThrow('latest');
+  await expect(restoreServiceReporting({ getProject: async () => after, saveProject: async () => false }, target.slug, catalog, before, true))
+    .rejects.toThrow('concurrently');
+  expect((await restoreServiceReporting(repo, target.slug, catalog, before, true, now)).status).toBe('restored');
+  expect(await repo.getProject(previous.id)).toEqual({ ...before, updatedAt: now.toISOString(), version: before.version + 2 });
+  expect((await restoreServiceReporting(repo, target.slug, catalog, before, true)).status).toBe('unchanged');
 });

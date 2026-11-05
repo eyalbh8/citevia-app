@@ -183,7 +183,7 @@ type TrackingCatalog = Pick<ParsedSource, 'blogs' | 'socialLinks' | 'website' | 
 
 export function trackedContent(source: TrackingCatalog, existing: NonNullable<DemoConfig['trackedUrls']> = []): NonNullable<DemoConfig['trackedUrls']> {
   const window = serviceDemoDates(source.anchorDate), dates = weeklyPublicationDates(window), official = domain(source.website);
-  const imported = source.reportingProfile === 'residential_roofing' || source.reportingProfile === 'unattended_payments';
+  const imported = !!source.reportingProfile && !['uk_investing', 'merchant_payments'].includes(source.reportingProfile);
   const anchorSlot = dates.filter(date => date.slice(0, 10) <= window.anchorDate).length - 1;
   const dateFor = (index: number, count: number) => {
     if (!imported) return dates[Math.floor(index * dates.length / count)];
@@ -230,9 +230,52 @@ const catalogSchema = serviceDemoSourceSchema.pick({ blogs: true, socialLinks: t
 
 type ImportedReportIdentity = {
   id: string; name: string; domain: string; sourceAccountId: string;
-  source: 'igeo-dr-roof' | 'igeo-nayax';
-  reportingProfile: 'residential_roofing' | 'unattended_payments';
+  source: DemoConfig['source'];
+  reportingProfile: Exclude<NonNullable<DemoConfig['reportingProfile']>, 'uk_investing' | 'merchant_payments'>;
 };
+
+const selectedServices = {
+  brooklinen: { id: 'account_brooklinen_demo_v1', name: 'Brooklinen', domain: 'brooklinen.com', reportingProfile: 'home_bedding' },
+  equinoxe: { id: 'account_equinoxe_yachts_demo_v1', name: 'Equinoxe Yachts', domain: 'equinoxeyachts.com', reportingProfile: 'yacht_chartering' },
+  estepera: { id: 'account_estepera_demo_v1', name: 'Estepera Hair Transplant Clinic', domain: 'estepera.com', reportingProfile: 'hair_restoration' },
+} as const;
+type SelectedService = keyof typeof selectedServices;
+type ReportingRepository = Pick<Repository, 'getProject' | 'saveProject'>;
+
+function serviceUpgrade(account: SelectedService) {
+  const target = selectedServices[account];
+  return (repository: ReportingRepository, catalog: unknown, apply = false, now = new Date(), requestedAnchor?: string) =>
+    syncImportedReporting(repository, { ...target, source: 'website-demo', sourceAccountId: `website:${target.domain}` },
+      catalog, apply, now, requestedAnchor);
+}
+export const syncBrooklinenReporting = serviceUpgrade('brooklinen');
+export const syncEquinoxeReporting = serviceUpgrade('equinoxe');
+export const syncEsteperaReporting = serviceUpgrade('estepera');
+
+/** Restore an exact saved snapshot only while the selected upgrade is the latest change. */
+export async function restoreServiceReporting(repository: ReportingRepository, account: SelectedService, catalog: unknown,
+  backup: Project, apply = false, now = new Date()) {
+  const target = selectedServices[account];
+  if (!backup || backup.id !== target.id || !Number.isSafeInteger(backup.version) || backup.version < 1 ||
+    backup.demo?.reportingProfile)
+    throw new Error('Supply the original saved project for the selected account.');
+  const current = await repository.getProject(target.id);
+  if (!current) throw new Error('The selected account does not exist.');
+  const same = (a: Project, b: Project) => isDeepStrictEqual(JSON.parse(JSON.stringify(a)), JSON.parse(JSON.stringify(b)));
+  if (same({ ...backup, version: current.version, updatedAt: current.updatedAt }, current))
+    return { status: 'unchanged', projectId: target.id, version: current.version };
+  if (current.version !== backup.version + 1 || current.demo?.reportingProfile !== target.reportingProfile)
+    throw new Error('Only the latest matching reporting upgrade can be restored.');
+  // Reproduce the exact post-upgrade snapshot before accepting a restore.
+  let expected: Project | undefined;
+  await serviceUpgrade(account)({ getProject: async () => backup,
+    saveProject: async project => { expected = project; return true; } }, catalog, true, new Date(current.updatedAt), current.demo.anchorDate);
+  if (!expected || !same(expected, current)) throw new Error('The backup and catalog do not reproduce the saved upgrade.');
+  const restored = { ...backup, version: current.version + 1, updatedAt: now.toISOString() };
+  if (apply && !await repository.saveProject(restored, current.version))
+    throw new Error('Account changed concurrently; retry to inspect it.');
+  return { status: apply ? 'restored' : 'preview', projectId: target.id, version: restored.version };
+}
 
 /** Upgrade an explicitly identified import, keeping its original measurements, settings and enrollments. */
 export async function syncImportedReporting(repository: Pick<Repository, 'getProject' | 'saveProject'>,
@@ -248,7 +291,7 @@ export async function syncImportedReporting(repository: Pick<Repository, 'getPro
   if (!project || project.id !== identity.id || project.enabled || !config || config.source !== identity.source ||
     config.version !== 1 || config.sourceAccountId !== identity.sourceAccountId || config.presentation ||
     (config.reportingProfile && config.reportingProfile !== identity.reportingProfile) || !brandMatches ||
-    (identity.source === 'igeo-nayax' && normalized(project.brand.name) !== 'nayax'))
+    (identity.source !== 'igeo-dr-roof' && normalized(project.brand.name) !== normalized(identity.name)))
     throw new Error(`Reporting updates require the matching disabled ${identity.name} account.`);
   const dates = serviceDemoDates(requestedAnchor ?? (config.reportingProfile ? config.anchorDate : now.toISOString().slice(0, 10)));
   if (config.reportingProfile && (config.anchorDate !== dates.anchorDate || config.startDate !== dates.startDate ||
@@ -397,6 +440,8 @@ export async function expandServiceDemoTracking(
   if (!existing?.demo || existing.enabled || existing.demo.presentation || existing.demo.source !== 'website-demo' ||
     existing.demo.sourceAccountId !== built.demo!.sourceAccountId || existing.brand.domains[0] !== built.brand.domains[0])
     throw new Error('Tracking expansion requires the matching disabled website demo account.');
+  if (Object.values(selectedServices).some(target => target.reportingProfile === existing.demo?.reportingProfile))
+    throw new Error('Use the selected account reporting catalog to add tracked content.');
   if (source.anchorDate !== existing.demo.anchorDate || built.demo!.startDate !== existing.demo.startDate ||
     built.demo!.endDate !== existing.demo.endDate)
     throw new Error('Tracking expansion must preserve the explicitly supplied saved scenario timeline.');
@@ -461,13 +506,21 @@ export async function syncServiceDemoReporting(
 
 export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: { source: { type: 'string' }, mode: { type: 'string', default: 'local' },
+    account: { type: 'string' }, anchor: { type: 'string' }, 'restore-reporting': { type: 'string' },
     apply: { type: 'boolean' }, 'expand-tracking': { type: 'boolean' }, 'sync-reporting': { type: 'boolean' }, help: { type: 'boolean' } } });
-  if (values.help) { console.log('npm run demo:service -- --source /private/path/public-website-sources.json --mode local|aws [--expand-tracking | --sync-reporting] [--apply]\nSource accepts one account, an array, or {accounts:[...]}. Defaults to preview. First-time payment reporting upgrades adopt the source timeline. Later updates preserve enrollments. Never calls iGEO or an AI provider.'); return; }
-  if (values['expand-tracking'] && values['sync-reporting']) throw new Error('Choose one update mode.');
+  if (values.help) { console.log('npm run demo:service -- --source FILE --mode local|aws [--expand-tracking | --sync-reporting] [--apply]\nFor a saved service account, pass --account brooklinen|equinoxe|estepera and either --sync-reporting [--anchor YYYY-MM-DD] or --restore-reporting BACKUP. Use the verified content catalog as FILE. Defaults to preview.'); return; }
+  if ([values['expand-tracking'], values['sync-reporting'], values['restore-reporting']].filter(Boolean).length > 1)
+    throw new Error('Choose one update mode.');
+  if (values.account !== undefined && (!Object.hasOwn(selectedServices, values.account) || !(values['sync-reporting'] || values['restore-reporting'])))
+    throw new Error('Choose a supported account and either --sync-reporting or --restore-reporting BACKUP.');
+  if ((values.anchor && !(values.account && values['sync-reporting'])) || (values['restore-reporting'] && !values.account))
+    throw new Error('Specify a selected account for a reporting restore or an explicit anchor.');
   if (!values.source || !['local', 'aws'].includes(values.mode)) throw new Error('Supply --source and choose --mode local|aws.');
   const value = JSON.parse(await readFile(resolve(values.source), 'utf8'));
-  const sources = Array.isArray(value) ? value : Array.isArray(value?.accounts) ? value.accounts : [value];
-  if (!sources.length) throw new Error('Supply at least one public website account source.');
+  const account = values.account as SelectedService | undefined;
+  const backup = values['restore-reporting'] ? JSON.parse(await readFile(resolve(values['restore-reporting']), 'utf8')) : undefined;
+  const sources = account ? [] : Array.isArray(value) ? value : Array.isArray(value?.accounts) ? value.accounts : [value];
+  if (!account && !sources.length) throw new Error('Supply at least one public website account source.');
   const copiedAt = new Date().toISOString(), projects = sources.map((source: unknown) => buildServiceDemo(source, copiedAt));
   if (new Set(projects.map((project: Project) => project.id)).size !== projects.length ||
     new Set(projects.map((project: Project) => project.demo!.sourceAccountId)).size !== projects.length)
@@ -475,6 +528,12 @@ export async function main(argv = process.argv.slice(2)) {
   const db = await openConfigurationDatabase(values.mode as 'local' | 'aws', resolve(process.env.LOCAL_DATA_DIR || '.local-data/real'));
   try {
     const repository = new PostgresRepository(db), results = [];
+    if (account) {
+      const result = values['restore-reporting'] ? await restoreServiceReporting(repository, account, value, backup, values.apply)
+        : await serviceUpgrade(account)(repository, value, values.apply, new Date(), values.anchor);
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     for (const [index, project] of projects.entries()) results.push(values['sync-reporting']
       ? await syncServiceDemoReporting(repository, sources[index], values.apply) : values['expand-tracking']
       ? await expandServiceDemoTracking(repository, sources[index], values.apply)
