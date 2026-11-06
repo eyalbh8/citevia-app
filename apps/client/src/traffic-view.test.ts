@@ -276,6 +276,58 @@ describe('AI Traffic screen interactions', () => {
     expect(deepseek).toHaveLength(30);
     expect(deepseek.every(row => row[2] === 0)).toBe(true);
   });
+  it.each([
+    { days: 7, total: 2.7, percentages: [2.9, 2.4, 2.7, 2.6, 2.2, 2.1] },
+    { days: 30, total: 7.6, percentages: [7.8, 6.8, 7.5, 7.2, 6.5, 6.2] },
+    { days: 90, total: 13.8, percentages: [14.6, 12, 13.8, 13, 11.4, 10.5] },
+  ])('shows and exports the supplied $days-day traffic trend without changing sparse visit counts', async ({ days, total, percentages }) => {
+    const visits = [444, 17, 43, 26, 11, 0], previous = [439, 18, 44, 26, 11, 1];
+    report.current = visits.reduce((sum, n) => sum + n, 0);
+    report.previous = previous.reduce((sum, n) => sum + n, 0);
+    report.providers = TRAFFIC_PROVIDERS.map((provider, index) => ({ provider, visits: visits[index], previous: previous[index] }));
+    report.period = { ...report.period, start: '2026-08-01T00:00:00.000Z', end: new Date(Date.UTC(2026, 7, days + 1) - 1).toISOString() };
+    report.growth = { basis: 'trend', percent: total, providers: Object.fromEntries(TRAFFIC_PROVIDERS.map((provider, index) => [provider, percentages[index]])) };
+    await render();
+    const cards = [...container.querySelectorAll('.traffic-metric')];
+    expect(cards.map(card => card.querySelector('strong')?.textContent)).toEqual([String(report.current), ...visits.map(String)]);
+    expect(cards.map(card => card.querySelector('.traffic-change')?.textContent)).toEqual([total, ...percentages].map(percent => `+${percent}%`));
+    expect(container.querySelectorAll('.traffic-change.negative, .traffic-change.unchanged')).toHaveLength(0);
+    expect(cards.every(card => card.querySelector('.traffic-change')?.getAttribute('title') === 'Traffic trend over the selected period')).toBe(true);
+    expect(container.querySelector('.traffic-period-note')?.textContent).toContain('Traffic trend · Aug 1');
+    expect(container.querySelector('.traffic-period-note')?.textContent).not.toContain('Compared with');
+    expect(container.textContent).not.toMatch(/\bdemo\b|synthetic|simulated/i);
+    await click('Export traffic CSV');
+    expect(mocks.downloadCsv.mock.calls[0][1]).toEqual(['Breakdown', 'Name', 'Visits', 'Previous period visits', 'Traffic trend (%)']);
+    const rows = mocks.downloadCsv.mock.calls[0][2] as (string | number)[][];
+    expect(rows).toContainEqual(['Total', 'All selected providers', report.current, report.previous, total]);
+    expect(rows).toContainEqual(['Provider', 'Claude', 17, 18, percentages[1]]);
+    expect(rows).toContainEqual(['Provider', 'DeepSeek', 0, 1, percentages[5]]);
+    expect(rows.every(row => row.length === 5)).toBe(true);
+  });
+  it('preserves negative, unchanged, and new measured-visit comparisons without trend metadata', async () => {
+    const visits = [4, 1, 0, 2, 1, 0], previous = [2, 2, 1, 2, 0, 0];
+    report.current = 8;
+    report.previous = 8;
+    report.providers = TRAFFIC_PROVIDERS.map((provider, index) => ({ provider, visits: visits[index], previous: previous[index] }));
+    await render();
+    expect([...container.querySelectorAll('.traffic-change')].map(badge => badge.textContent)).toEqual(['0%', '+100%', '-50%', '-100%', '0%', 'New', '0%']);
+    expect(container.querySelector('.traffic-period-note')?.textContent).toContain('Compared with Oct 8 – Oct 14');
+    await click('Export traffic CSV');
+    expect(mocks.downloadCsv.mock.calls[0][1]).toEqual(['Breakdown', 'Name', 'Visits', 'Previous period visits']);
+  });
+  it('falls back to visit comparisons for invalid trend metadata', async () => {
+    report.growth = { basis: 'trend', percent: Number.NaN, providers: { openai: 2.5 } };
+    await render();
+    expect(container.querySelector('.traffic-change')?.textContent).toBe('+100%');
+    expect(container.querySelector('.traffic-period-note')?.textContent).toContain('Compared with');
+    report.growth = { basis: 'trend', percent: 2.6, providers: { openai: Number.POSITIVE_INFINITY, claude: 2.2 } };
+    await render();
+    const badges = [...container.querySelectorAll('.traffic-change')];
+    expect(badges.slice(0, 3).map(badge => badge.textContent)).toEqual(['+2.6%', '+100%', '+2.2%']);
+    expect(badges[1].getAttribute('title')).toBe('2 visits in the previous period');
+    await click('Export traffic CSV');
+    expect(mocks.downloadCsv.mock.calls[0][2]).toContainEqual(['Provider', 'ChatGPT', 4, 2, '']);
+  });
   it('verifies a new test ID rather than treating historical events as a successful connection', async () => {
     await render();
     await click('Settings');

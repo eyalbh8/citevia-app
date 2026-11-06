@@ -81,6 +81,43 @@ function rows(counts: Map<string, number>): TrafficRow[] {
 }
 
 /**
+ * Presentation trends for configured business scenarios. Keep this separate
+ * from the event stream: forcing each sparse provider's integer count to grow
+ * every day would exceed small-business budgets and break additive ranges.
+ */
+function scenarioGrowth(project: Project, filters: TrafficFilters, providers: TrafficProvider[]): TrafficAggregate['growth'] {
+  const config = project.demo!;
+  if (config.traffic?.monthlyVisits === undefined ||
+    (config.traffic.monthlyGrowth ?? demoNumericProfile(config).monthlyGrowth) <= 0 ||
+    !providers.length || Date.parse(filters.period.end) < day(config.startDate) ||
+    Date.parse(filters.period.start) >= day(config.endDate) + DAY) return;
+  const countries = clean(config.traffic.countries?.map(country => country.toUpperCase())
+    .filter(country => /^[A-Z]{2}$/.test(country)), ['US', 'GB', 'DE', 'IL']);
+  if (filters.countries.length && !filters.countries.some(country => countries.includes(country))) return;
+
+  // Presets include the current partial day: calendar span keeps their trend
+  // band stable from midnight to midnight. Custom ranges use the same rule.
+  const days = Math.max(1, Math.ceil((Date.parse(filters.period.end) - Date.parse(filters.period.start) + 1) / DAY));
+  const bands = [[1, .3, .7], [7, 2, 3], [14, 3.5, 5], [30, 6, 8], [90, 10, 15], [366, 18, 25]] as const;
+  const upper = bands.findIndex(band => days <= band[0]);
+  const after = bands[upper === -1 ? bands.length - 1 : upper];
+  const before = bands[Math.max(0, upper === -1 ? bands.length - 1 : upper - 1)];
+  const progress = after[0] === before[0] ? 0 : (days - before[0]) / (after[0] - before[0]);
+  const low = before[1] + (after[1] - before[1]) * progress;
+  const high = before[2] + (after[2] - before[2]) * progress;
+  const order: Record<TrafficProvider, number> = { openai: 5, perplexity: 4, gemini: 3, claude: 2, copilot: 1, deepseek: 0 };
+  const offset = .2 + .5 * hash(`${project.id}/traffic/growth`);
+  const changes = Object.fromEntries(providers.map(provider => [provider,
+    Math.round((low + (high - low) * (order[provider] + offset) / 6) * 10) / 10,
+  ])) as Partial<Record<TrafficProvider, number>>;
+  // Weight by the same fixed provider shares as visits, so filtering does not
+  // change a provider's trend or introduce rounding noise from tiny counts.
+  const weight = providers.reduce((sum, provider) => sum + PROVIDER_SHARES[provider], 0);
+  const percent = Math.round(providers.reduce((sum, provider) => sum + changes[provider]! * PROVIDER_SHARES[provider], 0) / weight * 10) / 10;
+  return { basis: 'trend', percent, providers: changes };
+}
+
+/**
  * Integrate a business-sized referral rate into stable, integer visits. The
  * budget describes the 30 days ending on the anchor date; the saved monthly
  * growth controls earlier and later dates. Inverting the cumulative rate gives
@@ -125,6 +162,7 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
   // A shared phase keeps nearby low-volume streams ordered at the reference
   // boundary, without rounding or changing any requested window afterwards.
   const timeSeed = hash(`${project.id}/traffic/time`);
+  const growthTrend = scenarioGrowth(project, filters, providers);
 
   for (const provider of providers) {
     const key = `${project.id}/${provider}`;
@@ -164,6 +202,7 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
     }
   }
   return {
+    ...(growthTrend ? { growth: growthTrend } : {}),
     current: [...totals.values()].reduce((sum, item) => sum + item.visits, 0),
     previous: [...totals.values()].reduce((sum, item) => sum + item.previous, 0),
     providers: [...totals.values()], series,

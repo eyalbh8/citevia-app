@@ -418,6 +418,8 @@ export function buildServiceDemo(value: unknown, copiedAt = new Date().toISOStri
             source.blogs.find(item => item.url === url)?.title || source.competitors.find(item => item.website === url)?.name })),
         companies: index === 0 ? [source.name, ...source.competitors.map(item => item.name)] : undefined })),
       traffic: { pages: source.traffic?.pages || unique(['/', ...source.blogs.slice(0, 5).map(item => new URL(item.url).pathname)]),
+        ...(source.traffic?.monthlyVisits === undefined ? {} : { monthlyVisits: source.traffic.monthlyVisits }),
+        ...(source.traffic?.monthlyGrowth === undefined ? {} : { monthlyGrowth: source.traffic.monthlyGrowth }),
         countries: source.traffic?.countries || [source.country.toUpperCase(), 'GB', 'CA', 'AU'],
         devices: source.traffic?.devices || ['desktop', 'mobile', 'tablet'], browsers: source.traffic?.browsers || ['Chrome', 'Safari', 'Edge', 'Firefox'] },
       trackedUrls: trackedContent(source),

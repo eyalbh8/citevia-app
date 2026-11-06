@@ -124,6 +124,12 @@ export interface TrafficRow {
 export interface TrafficAggregate {
   current: number;
   previous: number;
+  /** Configured reporting trend, separate from the change in integer visit counts. */
+  growth?: {
+    basis: 'trend';
+    percent: number;
+    providers: Partial<Record<TrafficProvider, number>>;
+  };
   providers: { provider: TrafficProvider; visits: number; previous: number }[];
   series: { date: string; values: Partial<Record<TrafficProvider, number>> }[];
   sources: TrafficRow[];

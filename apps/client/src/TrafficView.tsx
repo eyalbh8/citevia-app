@@ -74,12 +74,16 @@ function Mark({ provider }: { provider: TrafficProvider }) {
     />
   );
 }
-function Change({ current, previous, fractionDigits }: { current: number; previous: number; fractionDigits: 0 | 1 }) {
-  const change = trafficChange(current, previous, fractionDigits);
+function finitePercent(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+function Change({ current, previous, fractionDigits, growthPercent }: { current: number; previous: number; fractionDigits: 0 | 1; growthPercent?: number }) {
+  const trend = finitePercent(growthPercent);
+  const change = trend ?? trafficChange(current, previous, fractionDigits);
   return (
     <span
       className={`traffic-change ${change !== null && change < 0 ? 'negative' : change === 0 ? 'unchanged' : ''}`}
-      title={`${number(previous)} visits in the previous period`}
+      title={trend === undefined ? `${number(previous)} visits in the previous period` : 'Traffic trend over the selected period'}
     >
       {change === null ? (
         'New'
@@ -701,6 +705,9 @@ export default function TrafficView({
   });
   const report = useApi<TrafficDashboard>(`${path}/traffic${filters}`);
   const data = report.data;
+  const growth = data?.growth?.basis === 'trend' && finitePercent(data.growth.percent) !== undefined
+    ? data.growth : undefined;
+  const comparisonPeriod = growth ? data!.period : data?.previousPeriod;
   const exportReport = () => {
     if (!data) return;
     const rows: (string | number)[][] = data.providers.map((p) => [
@@ -708,7 +715,9 @@ export default function TrafficView({
       TRAFFIC_LABELS[p.provider],
       p.visits,
       p.previous,
+      ...(growth ? [finitePercent(growth.providers?.[p.provider]) ?? ''] : []),
     ]);
+    if (growth) rows.unshift(['Total', 'All selected providers', data.current, data.previous, growth.percent]);
     for (const [label, items] of [
       ['Source', data.sources],
       ['Page', data.pages],
@@ -716,7 +725,7 @@ export default function TrafficView({
       ['Device', data.devices],
       ['Browser', data.browsers],
     ] as const)
-      rows.push(...items.map((r) => [label, r.label, r.visits, '']));
+      rows.push(...items.map((r) => [label, r.label, r.visits, '', ...(growth ? [''] : [])]));
     for (const point of data.series)
       for (const provider of data.providers)
         rows.push([
@@ -724,10 +733,11 @@ export default function TrafficView({
           `${point.date} ${TRAFFIC_LABELS[provider.provider]}`,
           point.values[provider.provider] || 0,
           '',
+          ...(growth ? [''] : []),
         ]);
     downloadCsv(
       `citevia-ai-traffic-${data.period.start.slice(0, 10)}.csv`,
-      ['Breakdown', 'Name', 'Visits', 'Previous period visits'],
+      ['Breakdown', 'Name', 'Visits', 'Previous period visits', ...(growth ? ['Traffic trend (%)'] : [])],
       rows,
     );
   };
@@ -861,7 +871,7 @@ export default function TrafficView({
                     </div>
                     <section>
                       <strong>{number(data.current)}</strong>
-                      <Change current={data.current} previous={data.previous} fractionDigits={fractionDigits} />
+                      <Change current={data.current} previous={data.previous} fractionDigits={fractionDigits} growthPercent={growth?.percent} />
                     </section>
                     <p>Visits in the selected period</p>
                   </article>
@@ -873,7 +883,7 @@ export default function TrafficView({
                       </div>
                       <section>
                         <strong>{number(p.visits)}</strong>
-                        <Change current={p.visits} previous={p.previous} fractionDigits={fractionDigits} />
+                        <Change current={p.visits} previous={p.previous} fractionDigits={fractionDigits} growthPercent={growth?.providers?.[p.provider]} />
                       </section>
                       <p>Visits in the selected period</p>
                     </article>
@@ -881,13 +891,13 @@ export default function TrafficView({
                 </div>
                 <div className="traffic-period-note">
                   <span>
-                    Compared with{' '}
-                    {new Date(data.previousPeriod.start).toLocaleDateString(
+                    {growth ? 'Traffic trend · ' : 'Compared with '}
+                    {new Date(comparisonPeriod!.start).toLocaleDateString(
                       'en-US',
                       { month: 'short', day: 'numeric', timeZone: 'UTC' },
                     )}{' '}
                     –{' '}
-                    {new Date(data.previousPeriod.end).toLocaleDateString(
+                    {new Date(comparisonPeriod!.end).toLocaleDateString(
                       'en-US',
                       { month: 'short', day: 'numeric', timeZone: 'UTC' },
                     )}{' '}
