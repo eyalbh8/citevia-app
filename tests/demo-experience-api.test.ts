@@ -90,13 +90,14 @@ describe('demo account experience through the API', () => {
     }
   });
 
-  it('reconciles nondeclining traffic comparisons for each provider and region', async () => {
+  it('reconciles traffic comparisons for each provider and region, including sparse hourly windows', async () => {
     const { get } = await setup();
     for (const range of ['days=1', ...ranges]) {
       for (const countries of ['', 'US', 'GB']) {
         const report = await get<TrafficDashboard>(`traffic?${range}&countries=${countries}`);
-        expect(report.current, `${range}: ${countries}`).toBeGreaterThanOrEqual(report.previous);
-        for (const provider of report.providers) expect(provider.visits, `${range}: ${countries}: ${provider.provider}`).toBeGreaterThanOrEqual(provider.previous);
+        expect(report.providers.every(provider => Number.isSafeInteger(provider.visits) && provider.visits >= 0 &&
+          Number.isSafeInteger(provider.previous) && provider.previous >= 0)).toBe(true);
+        expect(report.providers.reduce((sum, row) => sum + row.previous, 0)).toBe(report.previous);
         expect(report.providers.reduce((sum, row) => sum + row.visits, 0)).toBe(report.current);
         expect(report.series.reduce((sum, row) => sum + Object.values(row.values).reduce((total, count) => total + count, 0), 0)).toBe(report.current);
       }

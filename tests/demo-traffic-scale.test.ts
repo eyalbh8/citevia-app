@@ -24,7 +24,7 @@ function range(start: string, end: string): TrafficFilters {
     providers: [], countries: [],
   };
 }
-const anchorMonth = () => range('2026-10-01T00:00:00.000Z', '2026-10-31T23:59:59.999Z');
+const anchorMonth = () => range('2026-09-29T00:00:00.000Z', '2026-10-28T23:59:59.999Z');
 function reconcile(traffic: TrafficAggregate) {
   expect(traffic.providers.reduce((sum, provider) => sum + provider.visits, 0)).toBe(traffic.current);
   expect(traffic.providers.reduce((sum, provider) => sum + provider.previous, 0)).toBe(traffic.previous);
@@ -34,16 +34,14 @@ function reconcile(traffic: TrafficAggregate) {
 }
 
 describe('company-size scenario traffic scales', () => {
-  it.each([[10, 20_000], [.6, 1_200]] as const)('supports a scale of %s near %s ChatGPT visits in the anchor month', (scale, expected) => {
+  it.each([[10, 21_740], [.6, 1304.4]] as const)('supports a legacy scale of %s near %s total visits in its reference window', (scale, expected) => {
     const project = buildServiceDemo(source(scale), '2026-10-28T12:00:00.000Z');
     const traffic = aggregateScenarioTraffic(project, anchorMonth());
     expect(project.demo!.profile!.trafficScale).toBe(scale);
-    expect(Math.abs(traffic.providers.find(provider => provider.provider === 'openai')!.visits - expected)).toBeLessThan(31);
-    const references = [2000, 36, 54, 42, 24, 18];
-    for (let index = 0; index < references.length; index++) {
-      expect(traffic.providers[index].visits).toBeGreaterThanOrEqual(31);
-      expect(Math.abs(traffic.providers[index].visits - Math.max(31, references[index] * scale))).toBeLessThan(32);
-    }
+    expect(Math.abs(traffic.current - expected)).toBeLessThanOrEqual(6);
+    expect(traffic.providers[0].visits).toBeGreaterThan(traffic.current * .75);
+    expect(new Set(traffic.providers.map(provider => provider.visits)).size).toBe(TRAFFIC_PROVIDERS.length);
+    expect(traffic.providers.every(provider => provider.visits > 0)).toBe(true);
     expect(traffic.current).toBeGreaterThan(traffic.previous);
     expect(project.prompts).toHaveLength(50);
     expect(project.demo!.trackedUrls).toHaveLength(1);
@@ -58,12 +56,28 @@ describe('company-size scenario traffic scales', () => {
     expect(() => aggregateScenarioTraffic(project, anchorMonth())).toThrow('Invalid demo numeric profile: trafficScale');
   });
 
+  it.each([0, -1, .5, 100001, NaN, Infinity])('rejects invalid explicit monthly volume %s at creation and runtime', monthlyVisits => {
+    const input = { ...source(1), traffic: { ...source(1).traffic, monthlyVisits } };
+    expect(() => buildServiceDemo(input)).toThrow();
+    const project = buildServiceDemo(source(1));
+    project.demo!.traffic = { ...project.demo!.traffic, monthlyVisits };
+    expect(() => aggregateScenarioTraffic(project, anchorMonth())).toThrow('monthly traffic volume');
+  });
+
+  it.each([-.001, .251, NaN, Infinity])('rejects invalid traffic-only monthly growth %s at creation and runtime', monthlyGrowth => {
+    const input = { ...source(1), traffic: { ...source(1).traffic, monthlyVisits: 550, monthlyGrowth } };
+    expect(() => buildServiceDemo(input)).toThrow();
+    const project = buildServiceDemo(source(1));
+    project.demo!.traffic = { ...project.demo!.traffic, monthlyGrowth };
+    expect(() => aggregateScenarioTraffic(project, anchorMonth())).toThrow('monthly traffic growth');
+  });
+
   it('retains the .01 lower bound and original default profile', () => {
     const project = buildServiceDemo(source(.01));
     expect(demoNumericProfile(project.demo!).trafficScale).toBe(.01);
     delete project.demo!.profile;
     expect(demoNumericProfile(project.demo!)).toEqual({ visibilityAdjustment: 0, growthCurve: 1, trafficScale: 1, monthlyGrowth: .1 });
-    expect(Math.abs(aggregateScenarioTraffic(project, anchorMonth()).providers.find(provider => provider.provider === 'openai')!.visits - 2000)).toBeLessThan(31);
+    expect(Math.abs(aggregateScenarioTraffic(project, anchorMonth()).current - 2174)).toBeLessThanOrEqual(6);
   });
 
   it('reconciles a large full-year scenario across date subdivisions, providers and countries without mutating its configuration', () => {

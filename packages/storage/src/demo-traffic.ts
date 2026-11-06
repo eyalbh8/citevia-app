@@ -1,5 +1,4 @@
 import {
-  usesDetailedReporting,
   aggregateTraffic,
   type DemoConfig,
   type Project,
@@ -11,10 +10,11 @@ import {
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-/** Reference monthly volumes, converted to daily rates in the anchor month. */
-const ANCHOR_VISITS: Record<TrafficProvider, number> = {
-  openai: 2_000, claude: 36, perplexity: 54, gemini: 42, copilot: 24, deepseek: 18,
+/** Shares of one business budget, rather than a growing baseline per provider. */
+const PROVIDER_SHARES: Record<TrafficProvider, number> = {
+  openai: .81, claude: .032, perplexity: .08, gemini: .048, copilot: .02, deepseek: .01,
 };
+const LEGACY_MONTHLY_VISITS = 2_174;
 const DEFAULT_PROFILE = {
   visibilityAdjustment: 0, growthCurve: 1, trafficScale: 1, monthlyGrowth: .1,
 };
@@ -62,7 +62,7 @@ function clean(values: string[] | undefined, fallback: string[]) {
 /** Ranked source dimensions retain their order without rounding each tiny hourly cell. */
 function dimension(labels: string[], ordinal: number, seed: number, stride: number) {
   // Give every saved dimension a stable slot before weighting the extra slots.
-  if (ordinal < labels.length) return labels[ordinal];
+  if (ordinal >= 0 && ordinal < labels.length) return labels[ordinal];
   let position = fraction(ordinal * stride + seed) * labels.length * (labels.length + 1) / 2;
   for (let index = 0; index < labels.length; index++) {
     position -= labels.length - index;
@@ -81,21 +81,24 @@ function rows(counts: Map<string, number>): TrafficRow[] {
 }
 
 /**
- * Derive a growing referral scenario without storing analytics rows. Daily
- * visits are nested: a later day retains every earlier slot and may add pairs.
- * Every pair has matching dimensions and timestamps mirrored around noon. This
- * keeps country/provider slices nondecreasing even when a preset ends partway
- * through today and its equally long comparison starts partway through a day.
- * A noon visit gives even niche providers a visible, stable daily baseline.
- * The saved anchor volume is a reference rate; integer daily visits, rather
- * than an exact monthly quota, avoid artificial drops at month boundaries.
- * Stable events mean arbitrary subdivisions still reconcile exactly.
+ * Integrate a business-sized referral rate into stable, integer visits. The
+ * budget describes the 30 days ending on the anchor date; the saved monthly
+ * growth controls earlier and later dates. Inverting the cumulative rate gives
+ * every visit a fixed timestamp and dimension assignment, independent of the
+ * requested range or filter. Small providers can have days without a visit;
+ * their totals must not be inflated to force a daily increase.
  */
 export function aggregateScenarioTraffic(project: Project, filters: TrafficFilters, observed = aggregateTraffic([], filters)): TrafficAggregate {
   const config = project.demo;
   if (!config) throw new Error('Scenario traffic requires a scenario project');
   const profile = demoNumericProfile(config);
   const dimensions = config.traffic;
+  const monthlyVisits = dimensions?.monthlyVisits === undefined ? Math.round(LEGACY_MONTHLY_VISITS * profile.trafficScale) : dimensions.monthlyVisits;
+  if (typeof monthlyVisits !== 'number' || !Number.isSafeInteger(monthlyVisits) || monthlyVisits < 1 || monthlyVisits > 100_000)
+    throw new Error('Invalid scenario monthly traffic volume');
+  const monthlyGrowth = dimensions?.monthlyGrowth === undefined ? profile.monthlyGrowth : dimensions.monthlyGrowth;
+  if (typeof monthlyGrowth !== 'number' || !Number.isFinite(monthlyGrowth) || monthlyGrowth < 0 || monthlyGrowth > .25)
+    throw new Error('Invalid scenario monthly traffic growth');
   const countries = clean(dimensions?.countries?.map((country) => country.toUpperCase())
     .filter((country) => /^[A-Z]{2}$/.test(country)), ['US', 'GB', 'DE', 'IL']);
   const pages = clean(dimensions?.pages, ['/', '/solutions/', '/products/', '/contact/']);
@@ -115,51 +118,49 @@ export function aggregateScenarioTraffic(project: Project, filters: TrafficFilte
   const from = Math.max(scenarioStart, Math.min(previousStart, currentStart));
   const to = Math.min(day(config.endDate) + DAY - 1, Math.max(previousEnd, currentEnd));
   const step = filters.period.granularity === 'hourly' ? HOUR : DAY;
-  const anchor = new Date(day(config.anchorDate));
-  const anchorStart = Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1);
-  const anchorEnd = Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 1);
-  const anchorDays = (anchorEnd - anchorStart) / DAY;
-  const anchorMiddle = (anchorStart + anchorEnd) / 2;
+  const anchorEnd = day(config.anchorDate) + DAY;
+  const growth = Math.log1p(monthlyGrowth) / MONTH_DAYS;
+  // The exponential's integral over the reference 30 days is monthlyVisits.
+  const anchorRate = monthlyVisits * (growth ? growth / -Math.expm1(-30 * growth) : 1 / 30);
+  // A shared phase keeps nearby low-volume streams ordered at the reference
+  // boundary, without rounding or changing any requested window afterwards.
+  const timeSeed = hash(`${project.id}/traffic/time`);
 
   for (const provider of providers) {
     const key = `${project.id}/${provider}`;
-    const timeSeed = hash(`${key}/time`), countrySeed = hash(`${key}/country`), pageSeed = hash(`${key}/page`);
+    const countrySeed = hash(`${key}/country`), pageSeed = hash(`${key}/page`);
     const browserSeed = hash(`${key}/browser`), deviceSeed = hash(`${key}/device`);
-    for (let date = Math.floor(from / DAY) * DAY; date <= to; date += DAY) {
-      const months = (date + DAY / 2 - anchorMiddle) / (MONTH_DAYS * DAY);
-      const rate = ANCHOR_VISITS[provider] * profile.trafficScale / anchorDays * (1 + profile.monthlyGrowth) ** months;
-      // Detailed reports add one recurring morning/evening referral pair per provider
-      // each day. Even a rolling 24-hour comparison includes a new visit, and the
-      // actual events still reconcile across the chart, sources and page breakdowns.
-      const recurringPairs = usesDetailedReporting(config) ? (date - scenarioStart) / DAY : 0;
-      const pairs = Math.floor(rate / 2) + recurringPairs;
-      for (let ordinal = -1; ordinal < pairs; ordinal++) {
-        // Inclusive millisecond bounds mirror around DAY - 1. Put the singleton
-        // on the earlier center millisecond so a half-day boundary cannot lose it.
-        const offset = ordinal < 0 ? DAY / 2 - 1 : 1 + Math.floor(fraction((ordinal + 1) * .6180339887498949 + timeSeed) * (DAY / 2 - 2));
-        const country = ordinal < 0 ? countries[0] : dimension(countries, ordinal, countrySeed, .6180339887498949);
-        const page = ordinal < 0 ? pages[0] : dimension(pages, ordinal, pageSeed, .4142135623730951);
-        const browser = ordinal < 0 ? browsers[0] : dimension(browsers, ordinal, browserSeed, .7320508075688772);
-        const device = ordinal < 0 ? devices[0] : dimension(devices, ordinal, deviceSeed, .2360679774997897);
-        for (const at of ordinal < 0 ? [date + offset] : [date + offset, date + DAY - 1 - offset]) {
-          if (at < from || at > to) continue;
-          const current = at >= currentStart && at <= currentEnd;
-          const previous = at >= previousStart && at <= previousEnd;
-          if (current) availableCountries.add(country);
-          if (filters.countries.length && !filters.countries.includes(country)) continue;
-          const total = totals.get(provider)!;
-          if (previous) total.previous++;
-          if (!current) continue;
-          total.visits++;
-          const bucket = seriesIndex.get(Math.floor(at / step) * step);
-          if (bucket) bucket[provider] = (bucket[provider] || 0) + 1;
-          add(sources, HOSTS[provider]);
-          add(locations, country);
-          add(pageCounts, page);
-          add(browserCounts, browser);
-          add(deviceCounts, device);
-        }
-      }
+    const rate = anchorRate * PROVIDER_SHARES[provider];
+    const cumulative = (at: number) => {
+      const elapsed = (at - anchorEnd) / DAY;
+      return rate * (growth ? Math.expm1(growth * elapsed) / growth : elapsed);
+    };
+    // Include one guard event on either side before applying exact millisecond
+    // bounds, so rounding the inverse cannot lose a boundary visit.
+    const first = Math.floor(cumulative(from) + timeSeed) - 1;
+    const last = Math.ceil(cumulative(to + 1) + timeSeed);
+    for (let ordinal = first; ordinal <= last; ordinal++) {
+      const threshold = ordinal + 1 - timeSeed;
+      if (growth && threshold * growth / rate <= -1) continue;
+      const elapsed = growth ? Math.log1p(threshold * growth / rate) / growth : threshold / rate;
+      const at = Math.floor(anchorEnd + elapsed * DAY);
+      if (at < from || at > to) continue;
+      const current = at >= currentStart && at <= currentEnd;
+      const previous = at >= previousStart && at <= previousEnd;
+      const country = dimension(countries, ordinal, countrySeed, .6180339887498949);
+      if (current) availableCountries.add(country);
+      if (filters.countries.length && !filters.countries.includes(country)) continue;
+      const total = totals.get(provider)!;
+      if (previous) total.previous++;
+      if (!current) continue;
+      total.visits++;
+      const bucket = seriesIndex.get(Math.floor(at / step) * step);
+      if (bucket) bucket[provider] = (bucket[provider] || 0) + 1;
+      add(sources, HOSTS[provider]);
+      add(locations, country);
+      add(pageCounts, dimension(pages, ordinal, pageSeed, .4142135623730951));
+      add(browserCounts, dimension(browsers, ordinal, browserSeed, .7320508075688772));
+      add(deviceCounts, dimension(devices, ordinal, deviceSeed, .2360679774997897));
     }
   }
   return {

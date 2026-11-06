@@ -76,7 +76,9 @@ describe('public website service scenarios', () => {
     for (const company of analysis.companies || [])
       expect(answer.text.slice(company.evidence.start, company.evidence.end)).toBe(company.evidence.quote);
     const anchor = aggregateScenarioTraffic(project, month(9));
-    expect(Math.abs(anchor.providers[0].visits - 2000 * service.profile.trafficScale)).toBeLessThan(31);
+    expect(anchor.current).toBeGreaterThan(1800 * service.profile.trafficScale);
+    expect(anchor.current).toBeLessThan(2600 * service.profile.trafficScale);
+    expect(anchor.providers[0].visits).toBeGreaterThan(anchor.current * .75);
     let previous = 0;
     for (let calendarMonth = 5; calendarMonth <= 14; calendarMonth++) {
       const traffic = aggregateScenarioTraffic(project, month(calendarMonth));

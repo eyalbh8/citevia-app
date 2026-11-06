@@ -134,7 +134,13 @@ export interface DemoConfig {
   referenceSources?: { url: string; title?: string }[];
   /** Verified release dates for legacy enrollments which lacked that metadata when saved. */
   sourcePublicationDates?: Record<string, string>;
-  traffic?: { pages?: string[]; countries?: string[]; browsers?: string[]; devices?: string[] };
+  traffic?: {
+    /** Modeled entries over the 30 days ending at the anchor date. */
+    monthlyVisits?: number;
+    /** Optional traffic-only growth override, independent of visibility and rank. */
+    monthlyGrowth?: number;
+    pages?: string[]; countries?: string[]; browsers?: string[]; devices?: string[];
+  };
   trackedUrls?: {
     url: string;
     title: string;

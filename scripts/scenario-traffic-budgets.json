@@ -1,0 +1,114 @@
+[
+  {
+    "id": "account_etoro_demo_v1",
+    "name": "eToro",
+    "domain": "etoro.com",
+    "monthlyVisits": 12500,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_payabl_demo_v1",
+    "name": "payabl.",
+    "domain": "payabl.com",
+    "monthlyVisits": 2400,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_brooklinen_demo_v1",
+    "name": "Brooklinen",
+    "domain": "brooklinen.com",
+    "monthlyVisits": 3600,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_equinoxe_yachts_demo_v1",
+    "name": "Equinoxe Yachts",
+    "domain": "equinoxeyachts.com",
+    "monthlyVisits": 420,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_estepera_demo_v1",
+    "name": "Estepera Hair Transplant Clinic",
+    "domain": "estepera.com",
+    "monthlyVisits": 850,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_four_seasons_firenze_demo_v1",
+    "name": "Four Seasons Hotel Firenze",
+    "domain": "fourseasons.com",
+    "monthlyVisits": 950,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_kan_tor_acco_demo_v1",
+    "name": "Kan-Tor & Acco",
+    "domain": "ktalegal.com",
+    "monthlyVisits": 450,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_pfcla_la_demo_v1",
+    "name": "Pacific Fertility Center Los Angeles",
+    "domain": "pfcla.com",
+    "monthlyVisits": 600,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_serhant_demo_v1",
+    "name": "SERHANT.",
+    "domain": "serhant.com",
+    "monthlyVisits": 1200,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_tend_nyc_demo_v1",
+    "name": "Tend Dental",
+    "domain": "hellotend.com",
+    "monthlyVisits": 555,
+    "monthlyGrowth": 0.008
+  },
+  {
+    "id": "account_acme_locksmith_demo_v1",
+    "name": "ACME Locksmith",
+    "domain": "acmelocksmith.com",
+    "monthlyVisits": 535,
+    "monthlyGrowth": 0.008
+  },
+  {
+    "id": "account_all_american_gutter_demo_v1",
+    "name": "All American Gutter Protection",
+    "domain": "allamericangutterprotection.com",
+    "monthlyVisits": 560,
+    "monthlyGrowth": 0.008
+  },
+  {
+    "id": "account_dr_roof_demo_v1",
+    "name": "Dr. Roof",
+    "domain": "drroof.com",
+    "monthlyVisits": 545,
+    "monthlyGrowth": 0.008
+  },
+  {
+    "id": "account_freedom_power_demo_v1",
+    "name": "Freedom Power",
+    "domain": "gofreedompower.com",
+    "monthlyVisits": 900,
+    "monthlyGrowth": 0.02
+  },
+  {
+    "id": "account_windowworks_demo_v1",
+    "name": "WindowWorks",
+    "domain": "mywindowworks.com",
+    "monthlyVisits": 550,
+    "monthlyGrowth": 0.008
+  },
+  {
+    "id": "account_nayax_demo_v1",
+    "name": "Nayax",
+    "domain": "nayax.com",
+    "monthlyVisits": 3200,
+    "monthlyGrowth": 0.02
+  }
+]

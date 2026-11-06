@@ -244,6 +244,38 @@ describe('AI Traffic screen interactions', () => {
     expect(mocks.useApi.mock.calls.at(-1)?.[0]).not.toContain('providers=');
     expect(mocks.useApi.mock.calls.at(-1)?.[0]).not.toContain('countries=');
   });
+  it('renders and exports distinct low-volume providers without adding visits to empty series', async () => {
+    const visits = [430, 25, 45, 30, 12, 0], previous = [400, 20, 35, 25, 0, 0];
+    report.current = visits.reduce((sum, n) => sum + n, 0);
+    report.previous = previous.reduce((sum, n) => sum + n, 0);
+    report.providers = TRAFFIC_PROVIDERS.map((provider, index) => ({ provider, visits: visits[index], previous: previous[index] }));
+    report.period = { ...report.period, start: '2026-10-01T00:00:00.000Z', end: '2026-10-30T23:59:59.999Z' };
+    report.series = Array.from({ length: 30 }, (_, day) => ({
+      date: new Date(Date.UTC(2026, 9, day + 1)).toISOString(),
+      values: Object.fromEntries(TRAFFIC_PROVIDERS.map((provider, index) =>
+        [provider, Math.floor(visits[index] * (day + 1) / 30) - Math.floor(visits[index] * day / 30)])),
+    }));
+    report.sources = report.providers.map(({ provider, visits }) => ({ label: `${provider}.example`, visits }));
+    report.pages = [{ label: '/', visits: report.current }];
+    report.locations = [{ label: 'US', visits: report.current }];
+    report.devices = [{ label: 'mobile', visits: report.current }];
+    report.browsers = [{ label: 'Safari', visits: report.current }];
+    await render();
+    const cards = [...container.querySelectorAll('.traffic-metric')];
+    expect(cards.map(card => card.querySelector('strong')?.textContent)).toEqual(['542', '430', '25', '45', '30', '12', '0']);
+    expect(cards[5].querySelector('.traffic-change')?.textContent).toBe('New');
+    expect(cards[6].querySelector('.traffic-change')?.textContent).toBe('0%');
+    expect(container.querySelector('.traffic-chart svg')?.innerHTML).not.toMatch(/NaN|Infinity/);
+    await click('Export traffic CSV');
+    const exported = mocks.downloadCsv.mock.calls[0][2] as (string | number)[][];
+    expect(exported).toContainEqual(['Provider', 'ChatGPT', 430, 400]);
+    expect(exported).toContainEqual(['Provider', 'DeepSeek', 0, 0]);
+    for (const kind of ['Provider', 'Trend', 'Page', 'Location', 'Device', 'Browser'])
+      expect(exported.filter(row => row[0] === kind).reduce((sum, row) => sum + Number(row[2]), 0)).toBe(542);
+    const deepseek = exported.filter(row => row[0] === 'Trend' && String(row[1]).endsWith(' DeepSeek'));
+    expect(deepseek).toHaveLength(30);
+    expect(deepseek.every(row => row[2] === 0)).toBe(true);
+  });
   it('verifies a new test ID rather than treating historical events as a successful connection', async () => {
     await render();
     await click('Settings');

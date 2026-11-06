@@ -80,7 +80,8 @@ describe('compact Dr. Roof scenario runtime', () => {
     expect(initial).toEqual([21, 17, 14]);
     expect(aggregateScenarioTraffic(unchanged, trafficMonth(2026, 9)))
       .toEqual(aggregateScenarioTraffic(explicit, trafficMonth(2026, 9)));
-    expect(Math.abs(aggregateScenarioTraffic(unchanged, trafficMonth(2026, 9)).providers[0].visits - 2000)).toBeLessThan(31);
+    const defaultTraffic = aggregateScenarioTraffic(unchanged, trafficMonth(2026, 9));
+    expect(defaultTraffic.providers[0].visits).toBeGreaterThan(defaultTraffic.current * .75);
   });
 
   it('allows weekly movement while monthly provider visibility, sentiment and rank improve', async () => {
@@ -117,11 +118,14 @@ describe('compact Dr. Roof scenario runtime', () => {
     expect([...weeks.values()].slice(1, -1).every(slots => slots.size === 2)).toBe(true);
   });
 
-  it('keeps ChatGPT near 1,840 and preserves growing daily rates and consistent dimensions', () => {
+  it('keeps Dr. Roof at a local-business volume and preserves monthly growth and consistent dimensions', () => {
     const saved = project();
+    saved.demo!.traffic = { ...saved.demo!.traffic, monthlyVisits: 550 };
     const anchor = aggregateScenarioTraffic(saved, trafficMonth(2026, 9));
-    expect(Math.abs(anchor.providers[0].visits - 1840)).toBeLessThan(31);
-    expect(anchor.providers.slice(1).every(provider => provider.visits >= 31)).toBe(true);
+    expect(anchor.current).toBeGreaterThanOrEqual(500);
+    expect(anchor.current).toBeLessThanOrEqual(600);
+    expect(anchor.providers[0].visits).toBeGreaterThanOrEqual(400);
+    expect(new Set(anchor.providers.map(provider => provider.visits)).size).toBe(6);
     let previous = 0;
     for (let month = 4; month <= 14; month++) {
       const report = aggregateScenarioTraffic(saved, trafficMonth(2026, month));

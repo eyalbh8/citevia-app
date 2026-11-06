@@ -84,7 +84,8 @@ export const serviceDemoSourceSchema = z.object({
     sitemapUrl: publicUrl.nullable().optional(), caseStudiesSourceUrl: publicUrl.nullable().optional(),
     postGuidelines: z.object({ dos: textList, donts: textList }).optional(), unknowns: textList.optional(),
   }).default({}), copy: copySchema.optional(), profile: profileSchema.optional(),
-  traffic: z.object({ pages: textList.optional(), countries: textList.optional(), browsers: textList.optional(), devices: textList.optional() }).optional(),
+  traffic: z.object({ monthlyVisits: z.number().int().min(1).max(100000).optional(), monthlyGrowth: z.number().min(0).max(.25).optional(),
+    pages: textList.optional(), countries: textList.optional(), browsers: textList.optional(), devices: textList.optional() }).optional(),
 });
 export type ServiceDemoSource = z.input<typeof serviceDemoSourceSchema>;
 type ParsedSource = z.output<typeof serviceDemoSourceSchema>;
