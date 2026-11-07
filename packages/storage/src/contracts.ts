@@ -168,6 +168,8 @@ export interface Repository extends UserRepository, McpRepository, GeoBacklinkRe
 export interface ArtifactStore {
   get<T>(key: string): Promise<T | null>;
   put(key: string, value: unknown): Promise<void>;
+  /** Atomically reserve an immutable artifact key. A duplicate returns false. */
+  putIfAbsent?(key: string, value: unknown): Promise<boolean>;
 }
 export interface JobQueue {
   send(messages: ScanMessage[], delaySeconds?: number): Promise<void>;

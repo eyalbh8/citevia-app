@@ -4,7 +4,7 @@ import {
   SecretsManagerClient,
 } from '@aws-sdk/client-secrets-manager';
 import { createAwsRuntime, PostgresCallLedger, SqlProviderAdmissionStore, productionDatabase, type AnswerProvider, type CallLedger } from '@citevia/storage';
-import type { Analysis, CapturedAnswer, ScanRun } from '@citevia/core';
+import { IDENTITY_PARSER_VERSION, type Analysis, type CapturedAnswer, type ScanRun } from '@citevia/core';
 import { analysisRequest, parseAnalysisReceipt } from './analysis-request.js';
 import { normalizeAnswer } from './normalize.js';
 import { observeResponseProvider } from './cost-observer.js';
@@ -88,7 +88,7 @@ export class OpenAIAnswerProvider implements AnswerProvider {
       }
       if (error instanceof ProviderError)
         throw new ExtractionError(
-          snapshot.parserVersion === SCORED_PARSER_VERSION
+          [SCORED_PARSER_VERSION, IDENTITY_PARSER_VERSION].includes(snapshot.parserVersion)
             ? new ProviderError(error.code, error.message, false, error.requestId, {...error,safeToRetry:false})
             : error,
           receipt,

@@ -9,6 +9,16 @@ export class S3Artifacts implements ArtifactStore {
   constructor(private client: S3Client, private bucket: string) {}
   async get<T>(key: string): Promise<T | null> { try { const result = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key:key })); if (!result.Body) throw new Error('Empty artifact'); return JSON.parse(await result.Body.transformToString()); } catch (error) { if (['NoSuchKey','NotFound'].includes((error as Error).name)) return null; throw error; } }
   async put(key: string, value: unknown) { await this.client.send(new PutObjectCommand({ Bucket:this.bucket, Key:key, Body: JSON.stringify(value), ContentType:'application/json', ServerSideEncryption:'AES256' })); }
+  async putIfAbsent(key: string, value: unknown): Promise<boolean> {
+    try {
+      await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, IfNoneMatch: '*',
+        Body: JSON.stringify(value), ContentType: 'application/json', ServerSideEncryption: 'AES256' }));
+      return true;
+    } catch (error) {
+      if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 412) return false;
+      throw error;
+    }
+  }
 }
 export class SqsQueue implements JobQueue {
   constructor(private client: SQSClient, private url: string) {}

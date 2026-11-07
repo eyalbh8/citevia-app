@@ -51,6 +51,7 @@ export interface EvaluationSample {
 }
 export interface EvaluationOptions {
   candidate?: string;
+  candidateParser?: string;
   baseline?: string;
   execute?: boolean;
   estimatedOutputTokens?: number;
@@ -245,11 +246,16 @@ export async function evaluateAnalysis(
   providerFactory: () => Promise<ResponseProvider> = evaluationProvider,
 ) {
   const candidate = options.candidate ?? DEFAULT_ANALYSIS_MODEL;
+  const methods = (sample: EvaluationSample) => {
+    const baseline = { model: options.baseline ?? sample.snapshot.extractionModel, parser: sample.snapshot.parserVersion };
+    const proposed = { model: candidate, parser: options.candidateParser ?? sample.snapshot.parserVersion };
+    return new Map([baseline, proposed].map(method => [JSON.stringify(method), method]));
+  };
   const outputTokens = options.estimatedOutputTokens ?? 400;
   const planned = new Map<string, { model: string; requests: number; estimatedInputTokens: number; assumedOutputTokens: number; estimatedUsd: number | null }>();
   for (const sample of samples) {
-    for (const model of new Set([options.baseline ?? sample.snapshot.extractionModel, candidate])) {
-      const request = analysisRequest(sample.answer, { ...sample.snapshot, extractionModel: model });
+    for (const { model, parser } of methods(sample).values()) {
+      const request = analysisRequest(sample.answer, { ...sample.snapshot, extractionModel: model, parserVersion: parser });
       const inputTokens = Math.ceil(Buffer.byteLength(JSON.stringify(request)) / 4);
       const cost = estimateProviderCost(analysisProvider(model), model, { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens });
       const previous = planned.get(model) ?? { model, requests: 0, estimatedInputTokens: 0, assumedOutputTokens: 0, estimatedUsd: 0 };
@@ -264,17 +270,18 @@ export async function evaluateAnalysis(
     mode: options.execute ? 'execute' : 'dry-run', samples: samples.length,
     labelledSamples: samples.filter((sample) => sample.expected).length,
     candidate, baseline: options.baseline ?? 'saved snapshot extractionModel (per sample)',
+    candidateParser: options.candidateParser ?? 'saved snapshot parser (per sample)',
     priceVersion: PRICE_VERSION, models: [...planned.values()],
     costCaveat: 'Planning uses UTF-8 bytes / 4 as a token heuristic and assumed output tokens, not a spend cap or measured usage. Unknown model prices are null. Provider invoices are authoritative.',
-    calls: 'Extraction only: no answer collection, web search, automatic retry, or production writes. Identical baseline/candidate models share one request per sample.',
+    calls: 'Extraction only: no answer collection, web search, automatic retry, or production writes. Identical model and parser combinations share one request per sample.',
   };
   if (!options.execute) return { plan, qualityProven: false };
   const provider = await providerFactory();
   const evaluated: { sample: EvaluationSample; baseline: Outcome; candidate: Outcome }[] = [];
   for (const sample of samples) {
-    const results = new Map<string, Outcome>();
-    for (const model of new Set([options.baseline ?? sample.snapshot.extractionModel, candidate])) {
-      const snapshot = { ...sample.snapshot, extractionModel: model };
+    const results: Outcome[] = [];
+    for (const { model, parser } of methods(sample).values()) {
+      const snapshot = { ...sample.snapshot, extractionModel: model, parserVersion: parser };
       let outcome: Outcome = { status: 'request_failed' };
       try {
         const receipt = await provider.extract(analysisRequest(sample.answer, snapshot));
@@ -286,9 +293,9 @@ export async function evaluateAnalysis(
       } catch (error) {
         outcome.errorCode = error instanceof ProviderError ? error.code : 'evaluation_error';
       }
-      results.set(model, outcome);
+      results.push(outcome);
     }
-    evaluated.push({ sample, baseline: results.get(options.baseline ?? sample.snapshot.extractionModel)!, candidate: results.get(candidate)! });
+    evaluated.push({ sample, baseline: results[0], candidate: results[1] ?? results[0] });
   }
   const summarize = (kind: 'baseline' | 'candidate') => ({
     valid: evaluated.filter((row) => row[kind].status === 'valid').length,
@@ -304,6 +311,11 @@ export async function evaluateAnalysis(
     baselineAgreement: agreement(evaluated),
     samples: evaluated.map((row) => ({
       id: row.sample.id,
+      differingBrandIds: row.sample.expected?.brands.filter(label => {
+        const actual = row.candidate.analysis?.brands.find(brand => brand.brandId === label.brandId);
+        return !actual || actual.mentioned !== label.mentioned ||
+          (label.appearanceRank !== undefined && actual.appearanceRank !== label.appearanceRank);
+      }).map(label => label.brandId),
       baseline: { model: options.baseline ?? row.sample.snapshot.extractionModel, status: row.baseline.status, errorCode: row.baseline.errorCode, usage: row.baseline.usage, estimatedUsd: row.baseline.estimatedUsd },
       candidate: { model: candidate, status: row.candidate.status, errorCode: row.candidate.errorCode, usage: row.candidate.usage, estimatedUsd: row.candidate.estimatedUsd },
     })),
@@ -313,17 +325,17 @@ export async function evaluateAnalysis(
 export async function runEvaluationCli(argv: string[], providerFactory = evaluationProvider) {
   const { values } = parseArgs({ args: argv, options: {
     input: { type: 'string' }, output: { type: 'string' }, baseline: { type: 'string' }, candidate: { type: 'string' },
-    limit: { type: 'string', default: '300' }, 'estimated-output-tokens': { type: 'string', default: '400' },
+    'candidate-parser': { type: 'string' }, limit: { type: 'string', default: '300' }, 'estimated-output-tokens': { type: 'string', default: '400' },
     execute: { type: 'boolean', default: false }, help: { type: 'boolean', default: false },
   } });
-  if (values.help) return 'Usage: npm run analysis:eval -- --input saved-answers.jsonl [--candidate gemini-3.8-flash] [--baseline MODEL] [--limit 300] [--estimated-output-tokens 400] [--output report.json] [--execute]\nDefault is a local dry run without credentials or paid calls. --execute explicitly authorizes up to two paid extraction calls per sample; no collection or search. Each JSONL row: {id?,answer:CapturedAnswer,snapshot:RunSnapshot,expected?:{brands:[{brandId,mentioned,sentiment?,explicitRank?,appearanceRank?,evidence?}],companies?:[{name,rank?,sentiment?,evidence?}]}}. Omit unknown labels; companies, when present, must be the complete labelled inventory.';
+  if (values.help) return 'Usage: npm run analysis:eval -- --input saved-answers.jsonl [--candidate gemini-3.8-flash] [--candidate-parser VERSION] [--baseline MODEL] [--limit 300] [--estimated-output-tokens 400] [--output report.json] [--execute]\nDefault is a local dry run without credentials or paid calls. --execute explicitly authorizes up to two paid extraction calls per sample; no collection or search. Each JSONL row: {id?,answer:CapturedAnswer,snapshot:RunSnapshot,expected?:{brands:[{brandId,mentioned,sentiment?,explicitRank?,appearanceRank?,evidence?}],companies?:[{name,rank?,sentiment?,evidence?}]}}. Omit unknown labels; companies, when present, must be the complete labelled inventory.';
   const limit = Number(values.limit), estimatedOutputTokens = Number(values['estimated-output-tokens']);
   if (!values.input || !Number.isInteger(limit) || limit < 1 || limit > 1000 || !Number.isInteger(estimatedOutputTokens) || estimatedOutputTokens < 1)
     throw new Error('Supply --input, --limit 1–1000 and a positive integer --estimated-output-tokens; use --help.');
   if (values.output && resolve(values.output) === resolve(values.input))
     throw new Error('The report output must differ from the saved-answer input.');
   const samples = parseEvaluationSamples(await readFile(resolve(values.input), 'utf8'), limit);
-  const report = await evaluateAnalysis(samples, { candidate: values.candidate, baseline: values.baseline, execute: values.execute, estimatedOutputTokens }, providerFactory);
+  const report = await evaluateAnalysis(samples, { candidate: values.candidate, candidateParser: values['candidate-parser'], baseline: values.baseline, execute: values.execute, estimatedOutputTokens }, providerFactory);
   const text = JSON.stringify(report, null, 2);
   if (values.output) await writeFile(resolve(values.output), `${text}\n`, { mode: 0o600 });
   return text;

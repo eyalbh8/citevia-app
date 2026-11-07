@@ -1,4 +1,9 @@
 import type { BrandAnalysis } from './types.js';
+import { IDENTITY_PARSER_VERSION } from './types.js';
+
+export function usesCompanyAppearanceRank(parserVersion: string) {
+  return parserVersion === 'igeo-evidence-v2' || parserVersion === IDENTITY_PARSER_VERSION;
+}
 
 /** Matches iGEO's 50 + 50 * (positive - negative) / classified mentions. */
 export function brandSentimentScore(

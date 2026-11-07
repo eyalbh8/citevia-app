@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  IDENTITY_PARSER_VERSION,
   promptMetricChange,
   promptPeriodMetrics,
   promptMetrics,
@@ -109,6 +110,19 @@ function fixture() {
 }
 
 describe('iGEO prompt period metrics', () => {
+  it('keeps the previous scored method available until a prompt has new measurements and excludes cross-method changes', () => {
+    const f = fixture();
+    f.observation('2026-10-13T12:00:00Z');
+    f.observation('2026-10-16T12:00:00Z');
+    f.project.parserVersion = IDENTITY_PARSER_VERSION;
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      measurementCount: 1, historicalAnalysis: true, avgVisibility: 100,
+    });
+    f.observation('2026-10-20T12:00:00Z', { mentioned: false });
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      measurementCount: 1, historicalAnalysis: false, avgVisibility: 0, visibilityChange: null, comparison: null,
+    });
+  });
   it('includes successful answers from a running scan while excluding cancelled and failed scans', () => {
     const f = fixture();
     f.observation('2026-10-16T09:00:00Z').run.status = 'running';

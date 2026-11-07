@@ -83,7 +83,7 @@ export async function dashboardOverviewRoute(
   }
   const report = aggregateDashboardOverview(project, period, filters,
     await historicalCompetitorMentions(runtime, project, observations), occurrences);
-  if (usesModeledReporting(project.demo) && !project.demo.presentation && observations.length) {
+  if (!report.mixedScoringMethods && usesModeledReporting(project.demo) && !project.demo.presentation && observations.length) {
     const demo = project.demo, comparison = investingComparisonPeriod(demo, period.start, period.end);
     const unique = new Map<string, InvestingCohort & { stage: string }>();
     for (const { result, run } of observations) {
@@ -117,7 +117,7 @@ export async function dashboardOverviewRoute(
     }
     report.comparison = 'modeled_period';
     report.comparisonPeriod = comparison;
-  } else if (project.demo?.dashboardComparison === 'scenario_start' && !project.demo.presentation && observations.length) {
+  } else if (!report.mixedScoringMethods && project.demo?.dashboardComparison === 'scenario_start' && !project.demo.presentation && observations.length) {
     const baselineStart = `${project.demo.startDate}T00:00:00.000Z`;
     const baselineEnd = new Date(Math.min(Date.parse(period.end), Date.parse(baselineStart) + 7 * 86400000)).toISOString();
     const baselineHistory = await runtime.repository.listPromptHistory(project.id, baselineStart, baselineEnd);

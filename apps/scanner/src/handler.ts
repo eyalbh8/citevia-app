@@ -29,6 +29,7 @@ import { AnalysisBatchCoordinator } from './analysis-batch.js';
 import { OpenAIBatchClient, type BatchClient } from './openai-batch.js';
 import { providerApiKey } from './provider-http.js';
 import { configureAnalysis } from './analysis-configuration.js';
+import { configureIdentityPilot, dispatchIdentityShadow, inspectIdentityShadow } from './identity-pilot.js';
 
 const id = z
   .string()
@@ -36,6 +37,8 @@ const id = z
   .max(200)
   .regex(/^[a-zA-Z0-9_-]+$/);
 const messageSchema = z.discriminatedUnion('kind', [
+  z.object({kind: z.literal('identity-shadow'), projectId: id, runId: id, promptId: id,
+    attempt: z.number().int().min(0).max(32).optional()}).strict(),
   z.object({ kind: z.literal('geo-backlinks-reconcile') }).strict(),
   z.object({ kind: z.literal('geo-backlinks'), projectId: id, month: z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/) }).strict(),
   z.object({ kind: z.literal('geo-backlinks-progress'), projectId: id, date: z.string().regex(/^20\d{2}-\d{2}-\d{2}$/) }).strict(),
@@ -133,6 +136,19 @@ function awsScanner(): Scanner {
     // Keep the port available for already-frozen Batch runs even if new batch admission is disabled.
     analysisBatch: new AnalysisBatchCoordinator({ store: new SqlAnalysisBatchStore(productionDatabase()), artifacts: runtime.artifacts, client: lazyBatchClient, ledger: new PostgresCallLedger(productionDatabase(), runtime.artifacts), admission: new SqlProviderAdmissionStore(productionDatabase()) }),
     maintenance: { reconcile: async () => {
+      // A Lambda can stop between finalizing a public report and dispatching its private
+      // comparison. Only armed accounts and their one frozen schedule minute are eligible.
+      const pilots = await productionDatabase().query<{id:string;project_id:string}>(`SELECT r.id,r.project_id
+        FROM citevia_projects p JOIN citevia_runs r ON r.project_id=p.id
+        AND r.scheduled_at=(p.data->>'identityPilotScheduledAt')::timestamptz
+        WHERE p.data ? 'identityPilotScheduledAt' AND r.scheduled_at > now()-interval '48 hours'
+        AND r.status IN ('completed','partial','failed') AND r.data->'snapshot' ? 'identityPilotParserVersion'`);
+      for (const row of pilots.rows) {
+        try {
+          const run = await runtime.repository.getRun(row.project_id, row.id);
+          if (run) await dispatchIdentityShadow(runtime, run);
+        } catch { console.error(JSON.stringify({ event: 'identity_shadow_dispatch_pending', projectId: row.project_id, runId: row.id })); }
+      }
       const socialPending = await productionDatabase().query<{ id: string }>(`SELECT id FROM citevia_projects
         WHERE data->'socialAutomation'->>'scheduleStatus' IN ('pending','error')
         ORDER BY data->>'updatedAt',id LIMIT 3`);
@@ -194,6 +210,7 @@ export const handler = async (
     | ScanMessage
     | { kind: 'database:migrate' }
     | { kind: 'analysis:configure'; projectId?: string; model?: string; apply?: boolean }
+    | {kind:'analysis:identity-pilot';projectId:string;mode:'arm'|'disable'|'promote'|'rollback'|'inspect'|'resume';runId?:string;apply?:boolean;expectedVersion?:number;reviewedDigests?:Record<string,string>}
     | { kind: 'prompts:refresh'; projectId: string; requestId: string }
     | {
         kind: 'scan:reanalyze';
@@ -206,6 +223,24 @@ export const handler = async (
   // Includes direct migrations/admin/reanalysis invocations; no source database writer bypasses the freeze.
   const paused = maintenanceResult(event);
   if (paused) return paused;
+  if ('kind' in event && event.kind === 'analysis:identity-pilot') {
+    // IAM-only maintenance. Account-wide configuration cannot be requested through the job queue.
+    const input = z.object({ kind: z.literal('analysis:identity-pilot'), projectId: id,
+      mode: z.enum(['arm','disable','promote','rollback','inspect','resume']), runId: id.optional(),
+      expectedVersion: z.number().int().positive().optional(), reviewedDigests: z.record(id,z.string().regex(/^[0-9a-f]{64}$/)).optional(),
+      apply: z.boolean().default(false) }).strict().parse(event);
+    const runtime = createAwsRuntime();
+    if (input.mode === 'inspect' || input.mode === 'resume') {
+      if (!input.runId) throw Error('A pilot run ID is required');
+      if (input.mode === 'resume' && input.apply) {
+        const run = await runtime.repository.getRun(input.projectId, input.runId);
+        if (!run) throw Error('Pilot run not found');
+        await dispatchIdentityShadow(runtime, run, undefined, true);
+      }
+      return inspectIdentityShadow(runtime, input.projectId, input.runId);
+    }
+    return configureIdentityPilot(runtime, input.projectId, input.mode, input.apply, new Date(), input.expectedVersion, input.reviewedDigests);
+  }
   if ('kind' in event && event.kind === 'analysis:configure') {
     // IAM-only maintenance: queue validation deliberately rejects this payload.
     const input = z.object({

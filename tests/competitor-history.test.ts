@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  IDENTITY_PARSER_VERSION,
   aggregateDashboardOverview,
   type Analysis,
   type BrandAnalysis,
@@ -149,6 +150,18 @@ async function fixture(repository: Repository = new MemoryRepository()) {
 }
 
 describe('observed competitor suggestions', () => {
+  it('keeps a previously disambiguated namesake untracked when a matching display name is later assigned', async () => {
+    const { project, runtime, save } = await fixture();
+    const answer = observation(project, 'identity', ['Visa Law']);
+    answer.run.snapshot.parserVersion = answer.analysis.parserVersion = IDENTITY_PARSER_VERSION;
+    answer.analysis.validationVersion = 'exact-evidence-v3.0';
+    answer.analysis.companies![0].brandId = null;
+    await save(answer);
+    expect((await competitorSuggestions(runtime, project, now)).items.map(row => row.name)).toContain('Visa Law');
+    const otherFirm = { id: 'visa-law', name: 'Visa Law', aliases: [], domains: ['visalaw.co.il'] };
+    const [projected] = await historicalCompetitorMentions(runtime, { ...project, competitors: [otherFirm] }, [answer]);
+    expect(projected.result.brands?.some(row => row.brandId === otherFirm.id)).toBe(false);
+  });
   it('uses verified company appearances, deduplicates captures and names, and excludes assigned identities', async () => {
     const { project, runtime, save } = await fixture();
     const first = observation(project, 'first', [

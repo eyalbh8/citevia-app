@@ -234,6 +234,7 @@ export function DashboardView({
                     : `${formatNumber(data.analyzed)} analyzed answers`}
               </span>
             </div>
+            {data.mixedScoringMethods && <p className="overview-card-note">Scoring changed during this period. Select dates within one scoring method to compare changes.</p>}
             {(data.scanInProgress || !data.analyzed) && (
               <div className="overview-empty-note" role="status">
                 <Info size={16} />
@@ -498,7 +499,7 @@ export function DashboardView({
                   </div>
                 </div>
                 {data.ranking.length && data.trend.length ? (
-                  <BrandTrend ranking={data.ranking} points={data.trend} period={data.period} hourly={hourlyTrend} />
+                  <BrandTrend ranking={data.ranking} points={data.trend} period={data.period} hourly={hourlyTrend} mixedScoringMethods={data.mixedScoringMethods} />
                 ) : (
                   <Empty
                     title="Your visibility trend starts here"
@@ -615,11 +616,13 @@ function BrandTrend({
   points,
   period,
   hourly,
+  mixedScoringMethods,
 }: {
   period: DashboardOverview['period'];
   ranking: DashboardOverview['ranking'];
   points: DashboardOverview['trend'];
   hourly: boolean;
+  mixedScoringMethods?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartId = useId();
@@ -768,7 +771,7 @@ function BrandTrend({
           )}
           {ranking.map((b, i) => (
             <g key={b.brandId}>
-              <polyline
+              {!mixedScoringMethods && <polyline
                 points={points
                   .map((p, j) => `${x(j)},${y(p.mentions[b.brandId] || 0)}`)
                   .join(' ')}
@@ -777,7 +780,7 @@ function BrandTrend({
                 strokeWidth="2.5"
                 strokeLinejoin="round"
                 strokeLinecap="round"
-              />
+              />}
               {points.map((p, j) => (
                 <circle
                   key={p.date}
