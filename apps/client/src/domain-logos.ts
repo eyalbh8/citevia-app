@@ -1,6 +1,12 @@
 import { hasRestrictedDestination } from '@citevia/core';
 import { normalizeDomain, normalizeUrl } from '@citevia/core';
 
+// Official logo from https://e2visasusa.com/wp-content/uploads/2023/11/logo-1.jpeg.
+// Serve verified brand assets locally before trying third-party logo indexes.
+const verifiedLogoAssets: Readonly<Record<string, string>> = {
+  'e2visasusa.com': '/brand-logos/e2visasusa.jpeg',
+};
+
 /** Only public hostnames are sent to image services, never paths or URL tokens. */
 export function logoDomain(value?: string | null): string | null {
   const raw = value?.trim();
@@ -25,7 +31,7 @@ export function logoDomain(value?: string | null): string | null {
   return domain;
 }
 
-/** iGEO's Logo.dev domain lookup, with a favicon fallback when unavailable. */
+/** Verified brand assets, then Logo.dev and favicon fallbacks. */
 export function domainLogoSources(
   value?: string | null,
   token?: string,
@@ -33,7 +39,9 @@ export function domainLogoSources(
   const domain = logoDomain(value);
   if (!domain || hasRestrictedDestination(domain)) return [];
   const publicToken = token?.trim();
-  const sources: string[] = [];
+  const sources: string[] = verifiedLogoAssets[domain]
+    ? [verifiedLogoAssets[domain]]
+    : [];
   if (publicToken?.startsWith('pk_')) {
     const params = new URLSearchParams({
       token: publicToken,
