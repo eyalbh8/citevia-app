@@ -37,7 +37,8 @@ import {
 import type {
   ArtifactStore, JobQueue, Repository, SavedAnalysisRef, SavedAnalysis, TrackingMatchOptions,
 } from './contracts.js';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { link, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State extends geoBacklinks.GeoBacklinkMemoryState {
@@ -985,6 +986,11 @@ export class MemoryArtifacts implements ArtifactStore {
   async put(key: string, value: unknown) {
     this.values.set(key, copy(value));
   }
+  async putIfAbsent(key: string, value: unknown) {
+    if (this.values.has(key)) return false;
+    this.values.set(key, copy(value));
+    return true;
+  }
 }
 export class FileArtifacts implements ArtifactStore {
   constructor(private root: string) {}
@@ -1007,6 +1013,21 @@ export class FileArtifacts implements ArtifactStore {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(`${path}.tmp`, JSON.stringify(value), { mode: 0o600 });
     await rename(`${path}.tmp`, path);
+  }
+  async putIfAbsent(key: string, value: unknown) {
+    const path = this.path(key);
+    await mkdir(dirname(path), { recursive: true });
+    const temporary = `${path}.${randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify(value), { flag: 'wx', mode: 0o600 });
+    try {
+      await link(temporary, path);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+      throw error;
+    } finally {
+      await unlink(temporary);
+    }
   }
 }
 export class MemoryQueue implements JobQueue {

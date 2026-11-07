@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   usesDetailedReporting,
   brandRank,
+  hasMixedScoringMethods,
   brandSentimentScore,
   investingComparisonPeriod,
   investingTrend,
@@ -314,6 +315,7 @@ export async function monitoringRoute(
       return json({ ...page, items: await answers(runtime, page.items) });
     }
     const total = eligible.length;
+    const mixedScoringMethods = hasMixedScoringMethods(observed);
     const growthProfile = usesDetailedReporting(project.demo) && !project.demo.presentation
       ? project.demo : undefined;
     const comparisonPeriod = growthProfile && investingComparisonPeriod(growthProfile, period.start, period.end);
@@ -382,6 +384,7 @@ export async function monitoringRoute(
     const summary: MentionsSummary = {
       period,
       total,
+      ...(mixedScoringMethods && { mixedScoringMethods: true }),
       comparison: growthProfile ? 'modeled_period' : 'first_to_last_observed_day',
       providers: filters.providers
         .map((provider) => {
@@ -406,7 +409,7 @@ export async function monitoringRoute(
             share: total
               ? Math.round((count / total) * 10000) / 100
               : 0,
-            change,
+            change: mixedScoringMethods ? null : change,
             points,
           };
         })

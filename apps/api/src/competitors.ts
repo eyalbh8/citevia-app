@@ -1,4 +1,5 @@
 import {
+  IDENTITY_PARSER_VERSION,
   promptFingerprint,
   normalizeDomain,
   brandSentimentScore,
@@ -46,7 +47,9 @@ function verifiedCompanies(analysis: Analysis | null, run: ScanRun) {
   if (
     !analysis ||
     analysis.parserVersion !== run.snapshot.parserVersion ||
-    !/^exact-evidence-v2(?:\.|$)/.test(analysis.validationVersion || '')
+    !(analysis.parserVersion === IDENTITY_PARSER_VERSION
+      ? /^exact-evidence-v3(?:\.|$)/
+      : /^exact-evidence-v2(?:\.|$)/).test(analysis.validationVersion || '')
   )
     return [];
   return (analysis.companies || []).filter((company) => {
@@ -60,6 +63,10 @@ function verifiedCompanies(analysis: Analysis | null, run: ScanRun) {
       !validEvidence(span)
     )
       return false;
+    // The identity scorer validated the first substantive passage, which can
+    // refer back to a name in another sentence.
+    if (analysis.parserVersion === IDENTITY_PARSER_VERSION)
+      return company.brandId === null || typeof company.brandId === 'string';
     // A bare URL is not evidence that the answer discusses a company.
     return containsAlias(visible(span.quote), {
       id: 'candidate',
@@ -171,6 +178,7 @@ export async function competitorSuggestions(
   observations.forEach(({ result, run }, index) => {
     const seen = new Set<string>();
     for (const company of verifiedCompanies(analyses[index], run)) {
+      if (typeof company.brandId === 'string') continue;
       const key = promptFingerprint(company.name);
       if (!key || excluded.has(key) || seen.has(key)) continue;
       seen.add(key);
@@ -228,7 +236,10 @@ export async function historicalCompetitorMentions(
     const retained = brands.filter(brand => !missing.some(row => row.brand.id === brand.brandId));
     if (retained.length !== brands.length)
       projected[index] = { ...original, result: { ...original.result, brands: retained } };
-    if (original.result.analysisKey) pending.push({ item: projected[index], index, missing });
+    // An explicit identity decision describes the brand roster at capture time.
+    // A new or reassigned competitor needs a new analysis before it can get credit.
+    if (original.result.analysisKey && original.run.snapshot.parserVersion !== IDENTITY_PARSER_VERSION)
+      pending.push({ item: projected[index], index, missing });
   }
   const analyses = await savedAnalyses(
     runtime,
@@ -241,6 +252,7 @@ export async function historicalCompetitorMentions(
     for (const { brand, excludedNames } of missing) {
       const matches = companies.filter(
         (company) =>
+          company.brandId === undefined &&
           currentNames.get(brand.id)!.has(promptFingerprint(company.name)) &&
           !excludedNames.has(promptFingerprint(company.name)),
       );

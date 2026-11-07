@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   buildSummary,
+  IDENTITY_PARSER_VERSION,
   isTerminal,
   RETENTION_DAYS,
   projectProviders,
@@ -17,6 +18,8 @@ import {
 } from '@citevia/core';
 import type { ScannerDependencies, ScanDispatchReservation } from '@citevia/storage';
 import { ExtractionError } from './openai.js';
+import { matchesIdentityReceipt } from './analysis-request.js';
+import { dispatchIdentityShadow, recordShadowDeadLetter, scoreIdentityShadow } from './identity-pilot.js';
 import {
   object,
   ProviderError,
@@ -106,6 +109,8 @@ export class Scanner {
       return this.dispatch();
     }
     switch (message.kind) {
+      case 'identity-shadow':
+        return scoreIdentityShadow(this.dependencies, this.dependencies.provider, message, this.now());
       case 'geo-backlinks-reconcile':
         if (!this.dependencies.geoBacklinks) throw new Error('GEO backlink worker is not configured');
         return this.dependencies.geoBacklinks.reconcile();
@@ -299,6 +304,10 @@ export class Scanner {
         ...(fallbackModel && fallbackModel !== project.extractionModel && analysisProvider(fallbackModel) === analysisProvider(project.extractionModel)
           ? { extractionFallbackModel: fallbackModel } : {}),
         parserVersion: project.parserVersion,
+        ...(message.trigger !== 'manual' && project.parserVersion !== IDENTITY_PARSER_VERSION &&
+          project.identityPilotModel === project.extractionModel &&
+          project.identityPilotScheduledAt && Date.parse(project.identityPilotScheduledAt) === Date.parse(message.scheduledAt)
+          ? { identityPilotScheduledAt: project.identityPilotScheduledAt, identityPilotParserVersion: IDENTITY_PARSER_VERSION } : {}),
         configVersion: project.version,
       });
       primary = {
@@ -615,6 +624,11 @@ export class Scanner {
       current = extracting;
       const analysisKey = current.analysisKey ?? analysisKeyFor(current);
       let analysis = await artifacts.get<Analysis>(analysisKey);
+      const analysisSnapshot = { ...run.snapshot, projectId: run.projectId, analysisPromptId: current.promptId };
+      if (analysis && analysisSnapshot.parserVersion === IDENTITY_PARSER_VERSION &&
+        !matchesIdentityReceipt(analysis, answer, analysisSnapshot)) {
+        throw new ProviderError('analysis_receipt_mismatch', 'Saved analysis does not match this answer or its identity policy.', false);
+      }
       if (!analysis) {
         if (run.snapshot.analysisMode === 'batch') {
           if (!this.dependencies.analysisBatch)
@@ -631,7 +645,7 @@ export class Scanner {
           return;
         }
         if (!(await beginCall('analysis'))) return;
-        analysis = await provider.extract(answer, { ...run.snapshot, projectId: run.projectId, execution: { runId: run.id, promptId: current.promptId, attempt: current.analysisAttempts! } });
+        analysis = await provider.extract(answer, { ...analysisSnapshot, execution: { runId: run.id, promptId: current.promptId, attempt: current.analysisAttempts! } });
         await artifacts.put(analysisKey, analysis);
       }
       const target = analysis.brands.find(
@@ -943,6 +957,7 @@ export class Scanner {
   }
 
   async handleDeadLetter(message: ScanMessage): Promise<void> {
+    if (message.kind === 'identity-shadow') return recordShadowDeadLetter(this.dependencies, message);
     if (message.kind === 'geo-backlinks' || message.kind === 'geo-backlinks-progress' || message.kind === 'geo-backlinks-reconcile')
       return this.handle(message);
     if (message.kind === 'social-reconcile') {
@@ -1062,6 +1077,10 @@ export class Scanner {
       summaryKey,
       this.now().toISOString(),
     );
-    if (finalized) await this.dependencies.dispatch?.discardRun(projectId, runId);
+    if (finalized) {
+      await this.dependencies.dispatch?.discardRun(projectId, runId);
+      try { await dispatchIdentityShadow(this.dependencies, run, results); }
+      catch { console.error(JSON.stringify({ event: 'identity_shadow_dispatch_pending', projectId, runId })); }
+    }
   }
 }

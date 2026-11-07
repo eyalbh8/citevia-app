@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   isTerminal,
+  IDENTITY_PARSER_VERSION,
   PARSER_VERSION,
   RETENTION_DAYS,
   type CapturedAnswer,
@@ -10,6 +11,7 @@ import {
 } from '@citevia/core';
 import type { Runtime } from '@citevia/storage';
 import { captureKeyFor } from './engine.js';
+import { matchesIdentityReceipt } from './analysis-request.js';
 
 /** IAM-only maintenance: new report, original answers/time/provenance preserved; collection is forbidden. */
 export async function reanalyzeCapturedRun(
@@ -23,7 +25,8 @@ export async function reanalyzeCapturedRun(
   const source = await repository.getRun(projectId, sourceRunId);
   const project = await repository.getProject(projectId);
   if (!source || !project) throw new Error('Account or source run not found');
-  const id = `run_${createHash('sha256').update(`${projectId}:${sourceRunId}:${requestId}:${PARSER_VERSION}`).digest('hex').slice(0, 24)}`;
+  const parserVersion = project.parserVersion === IDENTITY_PARSER_VERSION ? IDENTITY_PARSER_VERSION : PARSER_VERSION;
+  const id = `run_${createHash('sha256').update(`${projectId}:${sourceRunId}:${requestId}:${parserVersion}`).digest('hex').slice(0, 24)}`;
   let run = await repository.getRun(projectId, id);
   const original = await repository.listResults(projectId, sourceRunId);
   if (!run) {
@@ -37,7 +40,10 @@ export async function reanalyzeCapturedRun(
       extractionModel: project.extractionModel,
       extractionFallbackModel: undefined,
       competitors: structuredClone(project.competitors),
-      parserVersion: PARSER_VERSION,
+      ...(parserVersion === IDENTITY_PARSER_VERSION ? { brand: structuredClone(project.brand) } : {}),
+      identityPilotScheduledAt: undefined,
+      identityPilotParserVersion: undefined,
+      parserVersion,
     };
     // Staged legacy receipts know only their original brand definitions. Matching IDs
     // alone cannot prove that a renamed/reassigned rival is still the same entity.
@@ -48,13 +54,14 @@ export async function reanalyzeCapturedRun(
       const captureKey = result.captureKey || captureKeyFor(result);
       const answer = await artifacts.get<CapturedAnswer>(captureKey);
       const valid = answer?.status === 'completed' && !!answer.text.trim();
-      const validatedKey = `${captureKey}.scored-v2.json`;
+      const validatedKey = parserVersion === IDENTITY_PARSER_VERSION ? `${captureKey}.${parserVersion}.json` : `${captureKey}.scored-v2.json`;
       const validated = valid
         ? await artifacts.get<Analysis>(validatedKey)
         : null;
       const useValidated =
         sameBrands &&
-        validated?.parserVersion === PARSER_VERSION &&
+        validated?.parserVersion === parserVersion &&
+        (parserVersion !== IDENTITY_PARSER_VERSION || (!!answer && matchesIdentityReceipt(validated, answer, { ...snapshot, analysisPromptId: result.promptId }))) &&
         validated.model === snapshot.extractionModel &&
         validated.brands.length === 1 + snapshot.competitors.length &&
         [snapshot.brand, ...snapshot.competitors].every((brand) =>
@@ -141,12 +148,12 @@ export async function reanalyzeCapturedRun(
   }
   for (let attempt = 0; attempt < 3; attempt++) {
     const latest = await repository.getProject(projectId);
-    if (!latest || latest.parserVersion === PARSER_VERSION) break;
+    if (!latest || latest.parserVersion === parserVersion || latest.parserVersion !== project.parserVersion) break;
     if (
       await repository.saveProject(
         {
           ...latest,
-          parserVersion: PARSER_VERSION,
+          parserVersion,
           version: latest.version + 1,
           updatedAt: now.toISOString(),
         },

@@ -269,6 +269,7 @@ export interface MentionProvider {
   points: { date: string; count: number }[];
 }
 export interface MentionsSummary {
+  mixedScoringMethods?: boolean;
   period: MonitoringPeriod;
   total: number;
   providers: MentionProvider[];

@@ -51,6 +51,10 @@ export interface Project {
   scanSchedule?: { version: number; slotsUtcMinutes: number[]; activatedAt?: string };
   /** Enables scheduled and manual scanning; pausing preserves saved data. */
   enabled: boolean;
+  /** The single scheduled UTC occurrence armed for a private identity comparison. */
+  identityPilotScheduledAt?: string;
+  /** The analyzer approved for that occurrence; a model change requires a new opt-in. */
+  identityPilotModel?: string;
   /** Monthly GEO planning is an independent, system-admin-managed opt-in. */
   geoBacklinks?: import('./geo-backlinks.js').GeoBacklinkSettings;
   /** Social publishing has a separate opt-in; absent settings are disabled. */
@@ -166,9 +170,13 @@ export interface RunSnapshot {
   /** Tenant scope for private analysis caches and usage attribution. */
   projectId?: string;
   analysisMode?: 'realtime' | 'batch';
+  /** Selects the prompt for evaluating a saved capture outside a worker execution. */
+  analysisPromptId?: string;
+  identityPilotScheduledAt?: string;
+  identityPilotParserVersion?: string;
   extractionFallbackModel?: string;
   /** Per-call attribution, never part of the frozen measurement methodology. */
-  execution?: { runId: string; promptId: string; attempt: number };
+  execution?: { runId: string; promptId: string; attempt: number; stage?: 'identity-shadow' };
   projectName: string;
   brand: Brand;
   competitors: Brand[];
@@ -235,6 +243,12 @@ export interface EvidenceSpan {
 }
 export interface BrandAnalysis {
   brandId: string;
+  identity?: {
+    status: 'confirmed' | 'unresolved' | 'absent';
+    reason: string;
+    evidence: EvidenceSpan[];
+    citationIds: string[];
+  };
   mentioned: boolean;
   explicitRank: number | null;
   /** iGEO rank among all identified companies, including untracked alternatives. */
@@ -258,6 +272,8 @@ export interface Usage {
 }
 export interface CompanyAnalysis {
   name: string;
+  /** Null records an explicitly untracked company, including a namesake. */
+  brandId?: string | null;
   rank: number;
   evidence: EvidenceSpan;
   /** Optional on older captures, which did not assess untracked companies. */
@@ -266,6 +282,8 @@ export interface CompanyAnalysis {
   sentimentEvidence?: EvidenceSpan | null;
 }
 export interface Analysis {
+  /** Binds a saved identity decision to the evidence and the scoring rules used. */
+  identityInputHash?: string;
   /** Reference to an exact compatible saved analysis reused without a model call. */
   reusedFrom?: string;
   brands: BrandAnalysis[];
@@ -505,6 +523,7 @@ export type ScanMessage =
   | { kind: 'onboard'; projectId: string; jobId: string }
   | { kind: 'reconcile' }
   | { kind: 'reconcile-run'; projectId: string; runId: string }
+  | { kind: 'identity-shadow'; projectId: string; runId: string; promptId: string; attempt?: number }
   | { kind: 'dispatch' };
 export const TERMINAL_STATUSES: ResultStatus[] = [
   'succeeded',
@@ -517,6 +536,7 @@ export const isTerminal = (status: ResultStatus) =>
   TERMINAL_STATUSES.includes(status);
 export const RETENTION_DAYS = 400;
 export const PARSER_VERSION = 'igeo-evidence-v2';
+export const IDENTITY_PARSER_VERSION = 'igeo-identity-v3';
 
 export interface Brandbook {
   about: string;

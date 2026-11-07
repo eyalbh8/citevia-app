@@ -659,7 +659,7 @@ export function MentionsChart({
             </text>
             {series.map((p) => (
               <g key={p.provider} data-provider={p.provider} className="mentions-series">
-                {p.points.slice(1).map((point, index) => {
+                {!summary.mixedScoringMethods && p.points.slice(1).map((point, index) => {
                   const previous = p.points[index];
                   const gap = point.index - previous.index > 1;
                   return (
@@ -681,7 +681,7 @@ export function MentionsChart({
             {(['openai', 'gemini', 'perplexity'] as const).flatMap((provider) =>
               (series.find((p) => p.provider === provider)?.points ?? [])
                 .filter((point, index, points) =>
-                  index === 0 || index === points.length - 1 ||
+                  summary.mixedScoringMethods || index === 0 || index === points.length - 1 ||
                   index % Math.max(1, Math.ceil(points.length / 14)) === 0 ||
                   point.index === hover,
                 )
@@ -923,7 +923,7 @@ function MentionBrands({ row }: { row: MentionAnswer }) {
             >
               <DomainLogo
                 domain={
-                  row.brandSites.find((brand) => brand.name === name)?.url
+                  row.brandSites[i]?.url
                 }
                 name={name}
                 size={27}

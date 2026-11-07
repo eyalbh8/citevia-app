@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  IDENTITY_PARSER_VERSION,
   reportingCompanies,
   reportingCitations,
   type Analysis,
@@ -95,5 +96,16 @@ describe('iGEO company and source projections', () => {
     expect(companies[1].sources).toHaveLength(1);
     expect(reportingCitations(answer)).toHaveLength(2);
     expect(answer.citations[0]).not.toHaveProperty('domain');
+
+    // The same display name can describe both the tracked company and a different business.
+    const reviewed = structuredClone(analysis);
+    reviewed.parserVersion = IDENTITY_PARSER_VERSION;
+    reviewed.companies![0] = { ...reviewed.companies![0], name: 'Northstar', brandId: null };
+    reviewed.companies![1].brandId = 'target';
+    reviewed.brands[0].identity = { status: 'confirmed', reason: 'The answer identifies this provider.', evidence: [evidence(15, text.length)], citationIds: ['c2'] };
+    const [namesake, tracked] = reportingCompanies(reviewed, snapshot, answer);
+    expect(namesake).toMatchObject({ tracked: false, domain: null, rank: 1 });
+    expect(tracked).toMatchObject({ tracked: true, brandId: 'target', rank: 2, reason: 'Northstar is useful.', sources: [{ id: 'c2' }] });
+    expect(tracked.sources).toHaveLength(1);
   });
 });

@@ -1,0 +1,12 @@
+# Review a scheduled business identity pilot
+
+The pilot compares two analyses of the same captured answer. Normal scan results still use the account's published scoring method. The candidate has no effect on visibility, rank, or sentiment until an operator reviews the comparison and selects the new method for future scans.
+
+Use the scanner Lambda's IAM-only `analysis:identity-pilot` event. All operations require the account's `projectId`. Obtain permission for the captures to go to the analyzer shown in the preview.
+
+1. Send `{"kind":"analysis:identity-pilot","projectId":"ACCOUNT_ID","mode":"arm","apply":false}`. Check the UTC occurrence, analyzer model, and current policy. Send the same event with `apply:true` and `expectedVersion` set to the preview's version. This arms one scheduled occurrence; it does not start a scan. A different analyzer or occurrence requires a new opt-in.
+2. Once the scheduled runs finish, send `{"kind":"analysis:identity-pilot","projectId":"ACCOUNT_ID","mode":"inspect","runId":"RUN_ID"}` for **each provider**. A pending item can mean the private analysis is still running. Failed or uncertain analysis is unscored. Review refusals and failed collections separately. An operator can use `resume` with the run ID and `apply:true` to redispatch pending work; an uncertain paid call is never purchased again automatically.
+3. Read the candidate at each item's private `reviewKey` against the saved answer. Check disagreements and unresolved identities. The first passage that discusses the business sets appearance rank. A list of names, a restated question, generic service advice, or a site cited only as background does not qualify. For a namesake, check the business owner and exact hostname; for a confirmed mention, check the supporting passage and the citations that identify the business. Explicit recommendation rank is a separate metric.
+4. If any decision is unsupported, leave the published method in place. To disarm the pilot, preview `mode:"disable"`, then apply using its version. Private artifacts remain available for investigation. Only promote after every provider for the occurrence has a `reviewedDigest` and the review supports publishing the new method. Supply the complete map `reviewedDigests:{"RUN_ID":"DIGEST"}` with `mode:"promote"`, `apply:true`, and the current `expectedVersion`.
+
+Promotion and `mode:"rollback"` change the method for future runs on that account. Neither rewrites completed runs. Do not publish a private candidate by copying it into an earlier result.
