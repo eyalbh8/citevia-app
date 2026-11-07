@@ -305,6 +305,7 @@ export class Scanner {
           ? { extractionFallbackModel: fallbackModel } : {}),
         parserVersion: project.parserVersion,
         ...(message.trigger !== 'manual' && project.parserVersion !== IDENTITY_PARSER_VERSION &&
+          project.identityPilotModel === project.extractionModel &&
           project.identityPilotScheduledAt && Date.parse(project.identityPilotScheduledAt) === Date.parse(message.scheduledAt)
           ? { identityPilotScheduledAt: project.identityPilotScheduledAt, identityPilotParserVersion: IDENTITY_PARSER_VERSION } : {}),
         configVersion: project.version,

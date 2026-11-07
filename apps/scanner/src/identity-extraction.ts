@@ -99,7 +99,8 @@ const instructions = `Measure the businesses actually discussed by this saved an
 Decide separately for EVERY tracked id. A confirmed identity requires BOTH a specific discussion of that business and evidence identifying the correct entity. Critical or negative discussion counts. Use official_site if an actual business-specific passage identifies the official domain or a linked citation from it, independent_source if a specific third-party profile or article identifies this exact business (look at the cited page, title, and entity), or specific_discussion for an unambiguous business-specific statement in the text, even without a citation. An unbranded answer genuinely recommending an identifiable business is a mention. A clearly identified business described under its official domain as its name can also count.
 For near-generic names be especially careful. Never credit an introductory name repeated from the prompt, a question/heading alone, a company named as a hypothetical example in a general checklist, or a disclaimer asking which business was meant. Instructions, prices, licensing rules and common services applicable to any firm do not establish a particular firm's identity. Treat generic services attributed to the prompt name but drawn exclusively from another provider's own offerings as other_business or cannot_identify. When the answer disclaims identification or verification, check whether it actually supplies independently attributable business information later. Assess actual identity even when the answer states a name confidently. Similar domain spelling is not identity. If the response identifies a different firm (including a named owner with a different official site), record other_business and include that firm among untracked companies if discussed. Citing the official site during general advice is source_only or generic_topic; the citation by itself establishes no business visibility.
 Use prompt_echo, generic_topic, cannot_identify, other_business, source_only or absent for uncredited cases. For these, you may give the most relevant nameId/discussionId/citationIds as the explanation; sentiment=unknown and other metric fields null. For confirmed cases nameId identifies the business in the answer; discussionId must be its FIRST substantive business-specific passage, never the introductory echo, a heading or source link. For a heading followed by detail, select the heading as nameId and the attributed concrete detail as discussionId. citationIds are indices in the supplied citations list and must support the decision; a retrieved or unrelated URL is not evidence. The list shows which evidence excerpts each citation supports. Multiple companies in one passage do not automatically share attribution.
-Include ONLY additional untracked businesses actually discussed in companies. For a namesake supply its distinct identifying name as written if available. Exclude publishers, regulators or generic categories used only for background. Each entry's nameId must contain its name and discussionId its first substantive passage. Sentiment must describe that very business with a supporting passage, otherwise choose unknown and null. explicitRank is only an explicitly numbered recommendation position for a tracked business in the answer; instruction steps and section numbers do not qualify. rankId selects that numbered line. Return one JSON response with catalog indices rather than text offsets.`;
+Decide whether the opening paragraph itself makes a specific claim about each named business before selecting later detail. A comparison that identifies two named businesses and distinguishes them by concrete facts, such as ownership, business type or offering, already discusses both. Use that opening paragraph as discussionId for each entity it characterizes, even when a later list profiles them in a different order. A list of names, a comparison question, generic evaluation criteria or a failure to identify the parties does not qualify. Select each company's own attached sources.
+Include ONLY additional untracked businesses actually discussed in companies. For a namesake supply its distinct identifying name as written if available. Compare hostname spelling exactly, including punctuation: when the answer identifies another firm's owner and distinct site, report the tracked firm as other_business and include the actual firm among companies, even if its trading name is the same. Exclude publishers, regulators or generic categories used only for background. Each entry's nameId must contain its name and discussionId its first substantive passage. Sentiment must describe that very business with a supporting passage, otherwise choose unknown and null. explicitRank is only an explicitly numbered recommendation position for a tracked business in the answer; instruction steps and section numbers do not qualify. rankId selects that numbered line. Return one JSON response with catalog indices rather than text offsets.`;
 
 function invalid(message: string): never {
   throw new ProviderError('invalid_extraction', message, false);
@@ -228,21 +229,110 @@ function explicitHost(text: string, brand: Brand) {
     ) ?? []
   ).some((value) => owned(value.toLowerCase(), brand));
 }
-function bareHeading(span: EvidenceSpan, brand: Brand, question: string) {
-  const wording = compact(
-    visible(span.quote).replace(/^\s*[#*\s]*(?:\d+[.)]\s*)?/, ''),
-  );
-  return (
+function unsupportedDiscussion(
+  span: EvidenceSpan,
+  roster: Brand[],
+  question: string,
+) {
+  if (/^\s*#{1,6}\s/u.test(span.quote)) return true;
+  const line = visible(span.quote)
+    .replace(/^\s*[#*\s]*(?:\d+[.)]\s*)?/, '')
+    .trim();
+  const wording = compact(line);
+  if (
     !wording ||
     wording === compact(question) ||
-    [brand.name, ...brand.aliases, ...brand.domains].some(
-      (name) => wording === compact(name),
-    )
+    (/^[^!?？؟]+[?？؟][*_\s]*$/u.test(line) && !/[.!;。]\s/u.test(line))
+  )
+    return true;
+  const names = new Set(
+    roster.flatMap((brand) =>
+      [brand.name, ...brand.aliases, ...brand.domains].map(compact),
+    ),
   );
+  if (names.has(wording)) return true;
+  const labels = line
+    .split(/\s+(?:vs\.?|versus|or|and|מול|או|לעומת)\s+|[|&;,/+]/iu)
+    .map(compact)
+    .filter(Boolean);
+  return labels.length > 1 && labels.every((label) => names.has(label));
 }
 function identifies(span: Excerpt, brand: Brand) {
   return (
     containsAlias(visible(span.quote), brand) || explicitHost(span.quote, brand)
+  );
+}
+function exactCompanyProfile(source: Source, brand: Brand) {
+  // An official-site classification can point at the company's independently
+  // hosted profile. Verify both the exact profile path and its publisher title.
+  if (!/^(?:[a-z]{2}\.)?linkedin\.com$/.test(source.host)) return false;
+  const slug = /^\/company\/([^/]+)\/?$/i.exec(
+    source.page.slice(source.host.length),
+  )?.[1];
+  if (!slug || !containsAlias(source.title, brand)) return false;
+  const profileSlug = (alias: string) =>
+    alias
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/^-|-$/g, '');
+  try {
+    return [brand.name, ...brand.aliases].some(
+      (alias) =>
+        profileSlug(alias) ===
+        decodeURIComponent(slug).normalize('NFKC').toLowerCase(),
+    );
+  } catch {
+    return false;
+  }
+}
+function qualifiedNamesake(name: Excerpt, brand: Brand, suggested: string[]) {
+  // Preserve the exact identifying parenthesis even when the answer puts
+  // Markdown emphasis between the trading name and its owner's name.
+  const plain = visible(name.quote).replace(/\*\*/g, '');
+  for (const alias of [brand.name, ...brand.aliases]) {
+    const at = aliasOffset(plain, { ...brand, name: alias, aliases: [] });
+    if (at < 0) continue;
+    const qualification = /^\s*\([^()\n]{2,100}\)/u.exec(
+      plain.slice(at + alias.length),
+    );
+    if (qualification) {
+      const tradingName = plain.slice(at, at + alias.length);
+      for (const candidate of suggested) {
+        const parts = /^([^()]+?)\s*\(([^()]{2,100})\)$/u.exec(candidate);
+        if (
+          parts &&
+          compact(parts[1]) === compact(tradingName) &&
+          containsAlias(qualification[0], {
+            id: '',
+            name: parts[2],
+            aliases: [],
+            domains: [],
+          })
+        )
+          return candidate;
+      }
+      return tradingName + qualification[0];
+    }
+  }
+  return null;
+}
+function conflictingHost(source: Source, brand: Brand) {
+  return (
+    !!source.host &&
+    !owned(source.host, brand) &&
+    brand.domains.some(
+      (d) => compact(hostname(d) || '') === compact(source.host),
+    )
+  );
+}
+function soleTrackedSubject(span: Excerpt, brand: Brand, roster: Brand[]) {
+  const narrative = visible(
+    span.quote.replace(/\[[^\]\n]*\]\(https?:\/\/[^)\s]+\)/giu, ''),
+  ).replace(/(?:[a-z\d-]+\.)+[a-z]{2,63}/giu, '');
+  return (
+    containsAlias(narrative, brand) &&
+    !roster.some((b) => b.id !== brand.id && containsAlias(narrative, b))
   );
 }
 function attributedDiscussion(
@@ -328,7 +418,9 @@ export function parseIdentityExtraction(
   const excerpt = (id: number | null) =>
     id === null ? null : (catalog[id] ?? invalid('Unknown evidence excerpt.'));
   const warnings: string[] = [],
-    companies: CompanyAnalysis[] = [];
+    companies: CompanyAnalysis[] = [],
+    namesakes: CompanyAnalysis[] = [];
+  const namesakeTradingNames = new Map<CompanyAnalysis, Brand>();
   const brands = definitions.map((brand): BrandAnalysis => {
     const row = rows.get(brand.id)!;
     const name = excerpt(row.nameId),
@@ -341,12 +433,53 @@ export function parseIdentityExtraction(
     const spans = Array.from(
       new Set([discussion, name].filter((e): e is Excerpt => e !== null)),
     );
+    // The first company-specific statement determines appearance order. A
+    // separately selected assessment of this same company can prove identity
+    // when the provider placed the official citation on that assessment.
+    if (
+      row.decision === 'official_site' &&
+      ['positive', 'negative', 'mixed'].includes(row.sentiment) &&
+      discussion &&
+      sentimentSpan &&
+      !spans.includes(sentimentSpan) &&
+      soleTrackedSubject(discussion, brand, definitions) &&
+      soleTrackedSubject(sentimentSpan, brand, definitions) &&
+      !unsupportedDiscussion(sentimentSpan, definitions, prompt.text) &&
+      !sources.some(
+        (s) =>
+          conflictingHost(s, brand) &&
+          [...spans, sentimentSpan].some((span) =>
+            s.evidenceIds.includes(span.id),
+          ),
+      )
+    ) {
+      const corroboration = chosen
+        .filter(
+          (s) =>
+            owned(s.host, brand) && s.evidenceIds.includes(sentimentSpan.id),
+        )
+        .flatMap((s) => s.evidenceIds.map((id) => catalog[id]))
+        .find(
+          (span) =>
+            !spans.includes(span) &&
+            (span.blockId !== sentimentSpan.blockId ||
+              span.end <= sentimentSpan.start ||
+              span.start >= sentimentSpan.end) &&
+            soleTrackedSubject(span, brand, definitions) &&
+            !unsupportedDiscussion(span, definitions, prompt.text) &&
+            !sources.some(
+              (s) =>
+                conflictingHost(s, brand) && s.evidenceIds.includes(span.id),
+            ),
+        );
+      if (corroboration) spans.push(sentimentSpan, corroboration);
+    }
     const native = chosen.flatMap((s) =>
       s.citations.filter((c) => spans.some((span) => overlaps(c, span))),
     );
     const citations = [...new Set(native.map((c) => c.id))];
     let decision: Row['decision'] = row.decision;
-    if (confirmedDecisions.has(decision)) {
+    if (confirmedDecisions.has(decision) || decision === 'other_business') {
       const identified =
         name &&
         discussion &&
@@ -370,25 +503,85 @@ export function parseIdentityExtraction(
               ),
             ),
         );
-      const conflicting = sources.some(
+      const conflicting = sources.filter(
         (s) =>
-          spans.some((span) => s.evidenceIds.includes(span.id)) &&
-          s.host &&
-          !owned(s.host, brand) &&
-          brand.domains.some(
-            (d) => compact(hostname(d) || '') === compact(s.host),
-          ),
+          conflictingHost(s, brand) &&
+          spans.some((span) => s.evidenceIds.includes(span.id)),
       );
+      const qualified =
+        name && conflicting.length > 0
+          ? qualifiedNamesake(
+              name,
+              brand,
+              parsed.data.companies
+                .filter(
+                  (c) =>
+                    c.nameId === name.id && c.discussionId === discussion?.id,
+                )
+                .map((c) => c.name),
+            )
+          : null;
+      const mixedHosts =
+        !!qualified &&
+        discussion &&
+        conflicting.some((s) => s.evidenceIds.includes(discussion.id)) &&
+        attached.some(
+          (s) => owned(s.host, brand) && s.evidenceIds.includes(discussion.id),
+        );
       if (
-        !identified ||
-        !discussion ||
-        bareHeading(discussion, brand, prompt.text) ||
-        (!official && (sharedName || conflicting)) ||
-        (decision === 'official_site' && !official) ||
-        (decision === 'independent_source' && !attached.some((s) => s.host))
+        decision === 'official_site' &&
+        !official &&
+        discussion &&
+        attached.some(
+          (source) =>
+            source.evidenceIds.includes(discussion.id) &&
+            exactCompanyProfile(source, brand),
+        )
+      )
+        decision = 'independent_source';
+      const substantive =
+        discussion &&
+        !unsupportedDiscussion(discussion, definitions, prompt.text);
+      if (
+        confirmedDecisions.has(decision) &&
+        (!identified ||
+          !substantive ||
+          mixedHosts ||
+          (!official && (sharedName || conflicting.length > 0)) ||
+          (decision === 'official_site' && !official) ||
+          (decision === 'independent_source' && !attached.some((s) => s.host)))
       ) {
         decision = 'cannot_identify';
         warnings.push(brand.id + ': confirmation lacked identifying evidence.');
+      }
+      if (
+        identified &&
+        name &&
+        discussion &&
+        substantive &&
+        !official &&
+        !sharedName &&
+        conflicting.some(
+          (s) =>
+            attached.includes(s) &&
+            s.evidenceIds.includes(discussion.id) &&
+            !definitions.some((b) => owned(s.host, b)),
+        )
+      ) {
+        if (qualified) {
+          decision = 'other_business';
+          const company: CompanyAnalysis = {
+            name: qualified,
+            brandId: null,
+            rank: 0,
+            evidence: evidenceSpan(discussion),
+            sentiment: 'unknown',
+            sentimentEvidence: null,
+            sentimentScore: null,
+          };
+          namesakes.push(company);
+          namesakeTradingNames.set(company, brand);
+        }
       }
     }
     const confirmed = confirmedDecisions.has(decision);
@@ -470,7 +663,7 @@ export function parseIdentityExtraction(
     };
     if (
       !containsAlias(visible(name.quote), identity) ||
-      bareHeading(discussion, identity, prompt.text)
+      unsupportedDiscussion(discussion, [...definitions, identity], prompt.text)
     )
       continue;
     const key = compact(row.name);
@@ -502,6 +695,21 @@ export function parseIdentityExtraction(
     });
     additional.add(key);
   }
+  for (const namesake of namesakes) {
+    if (
+      !companies.some(
+        (c) =>
+          c.brandId === null &&
+          containsAlias(namesake.name, {
+            id: '',
+            name: c.name,
+            aliases: [],
+            domains: [],
+          }),
+      )
+    )
+      companies.push(namesake);
+  }
   const blockOrder = new Map(
     answer.blocks.map((block, index) => [block.id, index]),
   );
@@ -509,12 +717,13 @@ export function parseIdentityExtraction(
     company.evidence.start +
     identityOffset(
       company.evidence,
-      definitions.find((brand) => brand.id === company.brandId) ?? {
-        id: '',
-        name: company.name,
-        aliases: [],
-        domains: [],
-      },
+      definitions.find((brand) => brand.id === company.brandId) ??
+        namesakeTradingNames.get(company) ?? {
+          id: '',
+          name: company.name,
+          aliases: [],
+          domains: [],
+        },
     );
   companies.sort(
     (a, b) =>

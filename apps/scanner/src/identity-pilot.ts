@@ -65,6 +65,7 @@ export async function scoreIdentityShadow(runtime: PilotRuntime, provider: Answe
   ]);
   if (!run || !eligible(run) || !project?.enabled || project.demo || !result?.captureKey || !measurable(result) ||
     project.identityPilotScheduledAt !== run.snapshot.identityPilotScheduledAt ||
+    project.identityPilotModel !== run.snapshot.extractionModel || project.extractionModel !== project.identityPilotModel ||
     now.getTime() - Date.parse(run.scheduledAt) > PILOT_WINDOW) return;
   const { artifacts } = runtime;
   if (!artifacts.putIfAbsent) throw Error('Identity pilot requires conditional evidence storage');
@@ -207,8 +208,10 @@ export async function configureIdentityPilot(runtime: PilotRuntime,
     const nextOccurrence = nextProjectScan(project, now);
     if (!nextOccurrence) throw Error('Account requires an active scan schedule');
     next.identityPilotScheduledAt = nextOccurrence;
+    next.identityPilotModel = project.extractionModel;
   } else {
     delete next.identityPilotScheduledAt;
+    delete next.identityPilotModel;
     if (mode === 'promote') {
       if (apply && next.parserVersion !== IDENTITY_PARSER_VERSION)
         await verifyReviewedGroup(runtime, projectId, project.identityPilotScheduledAt, reviewedDigests);
@@ -216,12 +219,13 @@ export async function configureIdentityPilot(runtime: PilotRuntime,
     }
     if (mode === 'rollback') next.parserVersion = SCORED_PARSER_VERSION;
   }
-  const changed = next.parserVersion !== project.parserVersion || next.identityPilotScheduledAt !== project.identityPilotScheduledAt;
+  const changed = next.parserVersion !== project.parserVersion || next.identityPilotScheduledAt !== project.identityPilotScheduledAt ||
+    next.identityPilotModel !== project.identityPilotModel;
   if (apply && changed) {
     next.version++;
     next.updatedAt = now.toISOString();
     if (!await repository.saveProject(next, project.version)) throw Error('Account changed; refresh the preview');
   }
   return { projectId, mode, applied: apply && changed, version: project.version + Number(changed && apply),
-    scheduledAt: next.identityPilotScheduledAt ?? null, parserVersion: next.parserVersion };
+    scheduledAt: next.identityPilotScheduledAt ?? null, analyzer: next.identityPilotModel ?? null, parserVersion: next.parserVersion };
 }

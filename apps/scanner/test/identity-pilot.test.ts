@@ -30,6 +30,15 @@ async function fixture() {
 }
 
 describe('scoped identity comparison on a scheduled occurrence', () => {
+  it('never sends shadow work to an analyzer changed after the pilot was approved', async () => {
+    const env = await fixture();
+    expect(env.armed.analyzer).toBe(env.run.snapshot.extractionModel);
+    const current = (await env.repository.getProject(env.account.id))!;
+    await env.repository.saveProject({...current, extractionModel: 'different-model', version: current.version + 1}, current.version);
+    await env.scanner.handle(env.message);
+    expect(env.provider.extract).toHaveBeenCalledTimes(1);
+  });
+
   it('publishes the frozen baseline and scores the captured answer once across duplicate shadow deliveries', async () => {
     const env = await fixture();
     const before = await env.repository.listResults(env.run.projectId, env.run.id);

@@ -311,6 +311,247 @@ describe('business identity scoring', () => {
     expect(resolved.brands[0].identity?.reason).toContain('different business');
   });
 
+  it('uses an attached exact business profile if the official citation supports only a later passage', () => {
+    const answer = captured(
+      'Acme offers in-home repairs.\nAcme also sells replacement parts.',
+    );
+    const credit = () =>
+      from(answer, [
+        decision('acme', {
+          decision: 'official_site',
+          nameId: 0,
+          discussionId: 0,
+          citationIds: [0, 1],
+        }),
+        decision('bravo'),
+      ]).brands[0];
+    answer.citations = [
+      {
+        ...citation(
+          answer,
+          'https://www.linkedin.com/company/acme/',
+          'Acme | LinkedIn',
+          0,
+        ),
+        id: 'profile',
+      },
+      {
+        ...citation(answer, 'https://acme.example/shop', 'Acme shop', 1),
+        id: 'official',
+      },
+    ];
+    expect(credit().identity).toMatchObject({
+      status: 'confirmed',
+      reason: expect.stringContaining('independent source'),
+      citationIds: ['profile'],
+    });
+    for (const url of [
+      'https://linkedin.com/company/acme-repairs',
+      'https://linkedin.com.evil.test/company/acme',
+      'https://linkedin.com/posts/company/acme',
+    ]) {
+      answer.citations[0].url = url;
+      expect(credit().mentioned).toBe(false);
+    }
+  });
+
+  it('retains a separately identified namesake when a model accidentally credits the tracked firm', () => {
+    const answer = captured(
+      '* **Visa Law (Smith & Partners):**\nIts downtown office provides legal consultations.\nBravo runs a referral line.',
+    );
+    const firm = {
+      ...selected,
+      brand: {
+        id: 'acme',
+        name: 'Visa Law',
+        aliases: [],
+        domains: ['visalaw.example'],
+      },
+    };
+    answer.citations = [
+      citation(answer, 'https://visa-law.example/team', 'Smith & Partners', 1),
+    ];
+    const credit = (additional: unknown[] = []) =>
+      from(
+        answer,
+        [
+          decision('acme', {
+            decision: 'official_site',
+            nameId: 0,
+            discussionId: 1,
+            citationIds: [0],
+          }),
+          confirmed('bravo', 2),
+        ],
+        additional,
+        firm,
+      );
+    expect(credit().brands[0]).toMatchObject({
+      mentioned: false,
+      identity: { reason: expect.stringContaining('different business') },
+    });
+    expect(credit().companies?.map((c) => [c.name, c.brandId, c.rank])).toEqual(
+      [
+        ['Visa Law (Smith & Partners)', null, 1],
+        ['Bravo', 'bravo', 2],
+      ],
+    );
+    expect(
+      credit([
+        {
+          name: 'Smith & Partners',
+          nameId: 0,
+          discussionId: 1,
+          sentiment: 'neutral',
+          sentimentId: 1,
+        },
+      ]).companies,
+    ).toHaveLength(2);
+    answer.citations = [
+      citation(
+        answer,
+        'https://unrelated.example/guide',
+        'Smith & Partners',
+        1,
+      ),
+    ];
+    expect(credit().companies?.map((c) => c.name)).toEqual(['Bravo']);
+  });
+
+  it('credits a substantive opening comparison and excludes headings, questions, and lists of names', () => {
+    const firm = {
+      ...selected,
+      brand: {
+        id: 'acme',
+        name: 'Visa Law',
+        aliases: [],
+        domains: ['visalaw.example'],
+      },
+    };
+    const answer = captured(
+      'Bravo makes repair kits while **Visa Law** (the firm owned by Smith & Partners) handles its contracts.',
+    );
+    answer.citations = [
+      citation(answer, 'https://visa-law.example/team', 'Smith & Partners', 0),
+    ];
+    const result = from(
+      answer,
+      [
+        decision('acme', {
+          decision: 'other_business',
+          nameId: 0,
+          discussionId: 0,
+          citationIds: [0],
+        }),
+        confirmed('bravo', 0),
+      ],
+      [
+        {
+          name: 'Visa Law (Smith & Partners)',
+          nameId: 0,
+          discussionId: 0,
+          sentiment: 'neutral',
+          sentimentId: 0,
+        },
+      ],
+      firm,
+    );
+    expect(result.companies?.map((c) => [c.name, c.rank])).toEqual([
+      ['Bravo', 1],
+      ['Visa Law (Smith & Partners)', 2],
+    ]);
+    for (const introduction of [
+      'Acme and Bravo',
+      '### About Acme',
+      '### Acme: pricing and service',
+      'Who should I choose, Acme or Bravo?',
+    ]) {
+      expect(
+        from(captured(introduction), [confirmed('acme', 0), decision('bravo')])
+          .brands[0].mentioned,
+      ).toBe(false);
+    }
+  });
+
+  it('accepts an official citation attached to a separately assessed business-specific passage and rejects a citation attached to another subject', () => {
+    const credit = (
+      later: string,
+      corroboration = true,
+      sentiment = 'positive',
+    ) => {
+      const answer = captured(
+        'Acme replaces specialist machine components.\n' +
+          later +
+          '\nAcme runs repair workshops across three cities.',
+      );
+      const reference = (line: number) =>
+        citation(answer, 'https://acme.example/shop', 'Acme repair shop', line);
+      answer.citations = [reference(1)];
+      if (corroboration) answer.citations.push({ ...reference(2), id: 'c2' });
+      return from(answer, [
+        decision('acme', {
+          decision: 'official_site',
+          nameId: 0,
+          discussionId: 0,
+          sentiment,
+          sentimentId: 1,
+          citationIds: [0],
+        }),
+        decision('bravo'),
+      ]).brands[0];
+    };
+    const confirmed = credit(
+      'Acme owns two repair workshops and accepts overnight orders.',
+    );
+    expect(confirmed).toMatchObject({
+      mentioned: true,
+      appearanceRank: 1,
+      identity: { citationIds: ['c1', 'c2'] },
+    });
+    expect(confirmed.identity?.evidence).toHaveLength(3);
+    expect(
+      credit(
+        'For general filing requirements, consult the guide from Acme.',
+        false,
+        'neutral',
+      ).mentioned,
+    ).toBe(false);
+    expect(
+      credit('The advice in the Acme guide is excellent.', false).mentioned,
+    ).toBe(false);
+    for (const unrelated of [
+      'Bravo owns two repair workshops.',
+      'Some customers hire Bravo after trying Acme.',
+      'Read the [Acme](https://acme.example/) guide for details.',
+      '### About Acme',
+    ])
+      expect(credit(unrelated).mentioned).toBe(false);
+  });
+
+  it('leaves a qualified namesake unresolved when its passage cites both confusable hosts', () => {
+    const answer = captured('Acme (Robin Mills) operates a jewelry store.');
+    answer.citations = [
+      citation(answer, 'https://ac-me.example/shop', 'Robin Mills Jewelry', 0),
+      citation(
+        answer,
+        'https://acme.example/guide',
+        'General business registration',
+        0,
+      ),
+    ];
+    expect(
+      from(answer, [
+        decision('acme', {
+          decision: 'official_site',
+          nameId: 0,
+          discussionId: 0,
+          citationIds: [0, 1],
+        }),
+        decision('bravo'),
+      ]).brands[0].identity?.status,
+    ).toBe('unresolved');
+  });
+
   it('treats duplicate brand decisions and invalid evidence as analysis failures', () => {
     const answer = captured();
     expect(() =>

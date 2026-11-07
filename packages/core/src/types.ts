@@ -53,6 +53,8 @@ export interface Project {
   enabled: boolean;
   /** The single scheduled UTC occurrence armed for a private identity comparison. */
   identityPilotScheduledAt?: string;
+  /** The analyzer approved for that occurrence; a model change requires a new opt-in. */
+  identityPilotModel?: string;
   /** Monthly GEO planning is an independent, system-admin-managed opt-in. */
   geoBacklinks?: import('./geo-backlinks.js').GeoBacklinkSettings;
   /** Social publishing has a separate opt-in; absent settings are disabled. */
