@@ -1,9 +1,9 @@
-import type {
-  Analysis,
-  BrandAnalysis,
-  CapturedAnswer,
-  Citation,
-  RunSnapshot,
+import {
+  IDENTITY_PARSER_VERSION,
+  type Analysis,
+  type CapturedAnswer,
+  type Citation,
+  type RunSnapshot,
 } from './types.js';
 import { brandRank, brandSentimentScore } from './scoring.js';
 import { promptFingerprint } from './onboarding.js';
@@ -25,18 +25,17 @@ export function reportingCompanies(
 ) {
   const tracked = [snapshot.brand, ...snapshot.competitors];
   const mentioned = (analysis?.brands || []).filter((brand) => brand.mentioned);
-  const measured = new Map<string, BrandAnalysis>();
+  const confirmed = new Map(mentioned.map((brand) => [brand.brandId, brand]));
+  const measured = new Set<string>();
   const entries = (analysis?.companies || []).map((company) => {
     const name = promptFingerprint(company.name);
-    const identity = tracked.find((brand) =>
-      [brand.name, ...brand.aliases].some(
-        (alias) => promptFingerprint(alias) === name,
-      ),
-    );
-    const brand = identity
-      ? mentioned.find((item) => item.brandId === identity.id)
-      : undefined;
-    if (brand) measured.set(brand.brandId, brand);
+    // A saved null means the scanner identified a different business, even when
+    // its name matches a tracked one. Only legacy receipts need name matching.
+    const identity = company.brandId !== undefined || analysis?.parserVersion === IDENTITY_PARSER_VERSION
+      ? tracked.find((brand) => brand.id === company.brandId && confirmed.has(brand.id))
+      : tracked.find((brand) => [brand.name, ...brand.aliases].some((alias) => promptFingerprint(alias) === name));
+    const brand = identity && confirmed.get(identity.id);
+    if (brand) measured.add(brand.brandId);
     return {
       company: company.name,
       rank: company.rank,
@@ -67,18 +66,15 @@ export function reportingCompanies(
       const evidence = entry.brand?.evidence || entry.evidence;
       const domain = entry.identity?.domains[0] || null;
       const sentiment = entry.brand?.sentiment || entry.sentiment;
-      // Only native citation ranges that overlap verified company evidence imply attribution.
-      const sources = reportingCitations(answer).filter(
-        (citation) =>
-          citation.start !== null &&
-          citation.end !== null &&
-          evidence.some(
-            (span) =>
-              span.blockId === citation.blockId &&
-              span.start < citation.end! &&
-              citation.start! < span.end,
-          ),
-      );
+      const identity = entry.brand?.identity;
+      // Identity-aware analyses record exactly which native citations support
+      // the attribution. Legacy receipts only have occurrence ranges.
+      const sources = reportingCitations(answer).filter((citation) => {
+        if (identity) return identity.citationIds.includes(citation.id);
+        const { blockId, start, end } = citation;
+        return start !== null && end !== null &&
+          evidence.some((span) => span.blockId === blockId && span.start < end && start < span.end);
+      });
       return {
         company: entry.identity?.name || entry.company,
         rank: entry.brand ? brandRank(entry.brand) : entry.rank,
@@ -89,7 +85,7 @@ export function reportingCompanies(
         company_site_url: domain ? `https://${domain}` : null,
         domain,
         sources,
-        reason: evidence.map((span) => span.quote).join('\n'),
+        reason: (identity?.evidence ?? evidence).map((span) => span.quote).join('\n'),
         tracked: !!entry.identity,
         brandId: entry.identity?.id || null,
       };

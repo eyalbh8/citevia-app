@@ -9,7 +9,7 @@ import type {
 import { projectProviders, snapshotProvider } from './providers.js';
 import { usesDetailedReporting } from './demo-growth.js';
 import { brandSentimentScore } from './scoring.js';
-import { isReportableRun } from './metrics.js';
+import { hasMixedScoringMethods, isReportableRun } from './metrics.js';
 import { domainForUrl, isOwnedDomain, normalizeUrl } from './urls.js';
 import {
   matchesMonitoringFilters,
@@ -23,6 +23,7 @@ export interface DashboardOverview {
   analyzed: number;
   /** Selected scans are still collecting or analyzing answers. */
   scanInProgress?: boolean;
+  mixedScoringMethods?: boolean;
   providers: { provider: ScanProvider; count: number; change: number | null }[];
   stages: {
     key: string;
@@ -124,6 +125,7 @@ export function aggregateDashboardOverview(
   citationOccurrences?: ReadonlyMap<string, number>,
 ): DashboardOverview {
   const observations = dashboardObservations(project, period, filters, input);
+  const mixedScoringMethods = hasMixedScoringMethods(observations);
   const enabled = projectProviders(project).map((item) => item.provider);
   const providers = enabled.filter(
     (provider) =>
@@ -283,14 +285,14 @@ export function aggregateDashboardOverview(
         domain: brand.domains[0] || null,
         isTarget: brand.id === project.brand.id,
         rank: rounded(mean([...brandRanks.values()]), 1),
-        rankChange: rankDates.length
+        rankChange: !mixedScoringMethods && rankDates.length
           ? brandRanks.get(rankDates[0])! - brandRanks.get(rankDates.at(-1)!)!
           : null,
         mentions: mentions.get(brand.id)?.size || 0,
-        mentionChange: dailyChange(daily.get(brand.id) || new Map(), days),
+        mentionChange: mixedScoringMethods ? null : dailyChange(daily.get(brand.id) || new Map(), days),
         sentiment: rounded(mean([...scores.values()].flat()), 0),
         sentimentChange:
-          firstSentiment !== null && lastSentiment !== null
+          !mixedScoringMethods && firstSentiment !== null && lastSentiment !== null
             ? Math.round(lastSentiment) - Math.round(firstSentiment)
             : null,
       };
@@ -353,6 +355,7 @@ export function aggregateDashboardOverview(
     period,
     filters,
     analyzed: observations.length,
+    ...(mixedScoringMethods && { mixedScoringMethods: true }),
     providers: providers.map((provider) => {
       const counts = new Map<string, number>();
       const events = [
@@ -363,7 +366,7 @@ export function aggregateDashboardOverview(
       return {
         provider,
         count: events.length,
-        change: dailyChange(counts, providerDays.get(provider) || []),
+        change: mixedScoringMethods ? null : dailyChange(counts, providerDays.get(provider) || []),
       };
     }),
     stages: [...stages]
@@ -373,7 +376,7 @@ export function aggregateDashboardOverview(
         visibility: Math.round(row.visibility / row.promptCount),
         // The active prompt denominator is the same on both observed days,
         // including unmeasured prompts as zero, so it cancels in the ratio.
-        visibilityChange: dailyChange(stageDays.get(key)!, stageDays.get(key)!.keys()),
+        visibilityChange: mixedScoringMethods ? null : dailyChange(stageDays.get(key)!, stageDays.get(key)!.keys()),
       }))
       .sort(
         (a, b) => b.visibility - a.visibility || a.key.localeCompare(b.key),

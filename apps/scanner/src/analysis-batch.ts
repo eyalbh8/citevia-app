@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import type { CapturedAnswer, PromptResult, ScanRun } from '@citevia/core';
 import { CostBudgetError, type AnalysisBatchPort, type AnalysisBatchUpdate, type ArtifactStore, type CallLedger, type ProviderAdmissionStore } from '@citevia/storage';
 import type { AnalysisBatchRecord, AnalysisBatchStore } from '../../../packages/storage/src/analysis-batch.js';
-import { analysisRequest, parseAnalysisReceipt } from './analysis-request.js';
+import { analysisRequest, matchesIdentityReceipt, parseAnalysisReceipt } from './analysis-request.js';
+import { IDENTITY_PARSER_VERSION } from '@citevia/core';
 import { extractionBody, object, ProviderError, type ProviderReceipt } from './provider.js';
 import { BatchSubmissionError, parseBatchResultLines, type BatchClient, type NativeBatch } from './openai-batch.js';
 import { usage } from './normalize.js';
@@ -167,14 +168,15 @@ export class AnalysisBatchCoordinator implements AnalysisBatchPort {
           return { updates: this.failed([{ promptId: result.promptId, captureKey: result.captureKey! } as BatchItem], 'saved_answer_missing', 'Saved answer is unavailable. No replacement answer was purchased.') };
         const analysisKey = result.analysisKey ?? `${result.captureKey!.slice(0, -'capture.json'.length)}analysis.json`;
         let saved = null;
-        try { saved = await cachedAnalysis(this.options.artifacts, answer, { ...run.snapshot, projectId: run.projectId }, this.now()); }
+        const snapshot = { ...run.snapshot, projectId: run.projectId, analysisPromptId: result.promptId };
+        try { saved = await cachedAnalysis(this.options.artifacts, answer, snapshot, this.now()); }
         catch { console.error(JSON.stringify({ event: 'analysis_cache_read_skipped', projectId: run.projectId })); }
         if (saved) {
           await this.options.artifacts.put(analysisKey, saved);
           cached.push({ promptId: result.promptId, captureKey: result.captureKey!, retryRequestId: result.lastRetryRequestId, analysisAttempt: result.analysisAttempts, analysisKey, analysis: saved });
           continue;
         }
-        const body = extractionBody(analysisRequest(answer, run.snapshot));
+        const body = extractionBody(analysisRequest(answer, snapshot));
         items.push({ customId: analysisBatchCustomId(run, result, body), promptId: result.promptId, captureKey: result.captureKey!, retryRequestId: result.lastRetryRequestId, analysisKey, attempt: result.analysisAttempts ?? result.attempts, body });
       }
       // Apply reuse first; the next reconciliation batches only actual misses.
@@ -204,6 +206,12 @@ export class AnalysisBatchCoordinator implements AnalysisBatchPort {
         if (!update.analysisKey) return update;
         const analysis = await this.options.artifacts.get<import('@citevia/core').Analysis>(update.analysisKey);
         if (!analysis) throw new ProviderError('analysis_batch_saved_analysis_missing', 'Saved batch analysis is unavailable.', false);
+        if (run.snapshot.parserVersion === IDENTITY_PARSER_VERSION) {
+          const answer = await this.options.artifacts.get<CapturedAnswer>(update.captureKey);
+          if (!answer || !matchesIdentityReceipt(analysis, answer, { ...run.snapshot, analysisPromptId: update.promptId })) {
+            return { ...update, analysisKey: undefined, error: { code: 'analysis_evidence_mismatch', message: 'Saved analysis does not match this answer and scoring policy.', retryable: false } };
+          }
+        }
         return { ...update, analysis };
       }));
       return { batchId: record.id, updates };
@@ -357,7 +365,7 @@ export class AnalysisBatchCoordinator implements AnalysisBatchPort {
       let analysis;
       try {
         if (!answer) throw new ProviderError('saved_answer_missing', 'Saved answer is unavailable.', false);
-        analysis = parseAnalysisReceipt(receipt, answer, run.snapshot);
+        analysis = parseAnalysisReceipt(receipt, answer, { ...run.snapshot, analysisPromptId: item.promptId });
       } catch (error) {
         const failure = error instanceof ProviderError ? error : new ProviderError('analysis_batch_invalid_analysis', 'Batch analysis did not pass validation.', false);
         await this.settle(record, item, receipt, failure.code);
@@ -366,7 +374,7 @@ export class AnalysisBatchCoordinator implements AnalysisBatchPort {
         continue;
       }
       await this.options.artifacts.put(item.analysisKey, analysis);
-      try { await cacheAnalysis(this.options.artifacts, answer!, { ...run.snapshot, projectId: run.projectId }, analysis, this.now()); }
+      try { await cacheAnalysis(this.options.artifacts, answer!, { ...run.snapshot, projectId: run.projectId, analysisPromptId: item.promptId }, analysis, this.now()); }
       catch { console.error(JSON.stringify({ event: 'analysis_cache_write_skipped', projectId: run.projectId })); }
       await this.settle(record, item, receipt);
       await this.reportReceipt(run, item, receipt);

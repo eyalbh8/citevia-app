@@ -1,6 +1,7 @@
 import { publicSourceUrl } from '@citevia/core';
 import { Skeleton } from './Loading';
 import {
+  isTerminal,
   PROVIDER_LABELS,
   snapshotProvider,
   brandRank,
@@ -102,6 +103,16 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
       (brand) => brand.brandId === run.snapshot.brand.id,
     ) || result.target;
   const aliases = [run.snapshot.brand.name, ...run.snapshot.brand.aliases];
+  const identity = target?.identity;
+  const visibleDecisions = (data.analysis?.brands ?? result.brands ?? (target ? [target] : [])).flatMap((brand) => {
+    if (!brand.identity) return [];
+    const tracked = [run.snapshot.brand, ...run.snapshot.competitors].find(({ id }) => id === brand.brandId);
+    if (!tracked || (tracked.id !== run.snapshot.brand.id && brand.identity.status === 'absent')) return [];
+    return [{ name: tracked.name, id: tracked.id, ...brand.identity }];
+  });
+  const visibility = identity?.status === 'unresolved' ? 'Identity unresolved'
+    : target ? (target.mentioned ? 'Mentioned' : 'Not mentioned')
+    : isTerminal(result.status) ? 'Unmeasured' : 'Pending analysis';
   return (
     <>
       <div className="eyebrow">
@@ -115,13 +126,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
       <div className="drawer-metrics">
         <div>
           <small>Brand visibility</small>
-          <strong>
-            {target
-              ? target.mentioned
-                ? 'Mentioned'
-                : 'Not mentioned'
-              : 'Pending analysis'}
-          </strong>
+          <strong>{visibility}</strong>
         </div>
         <div>
           <small>Rank among companies</small>
@@ -151,6 +156,27 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
       )}
       {answer ? (
         <>
+          {visibleDecisions.length > 0 && (
+            <section aria-label="Business identity evidence">
+              <h3 className="drawer-section-title"><Quote size={14} />Business identity</h3>
+              {visibleDecisions.map((decision) => (
+                <div key={decision.id}>
+                  <strong>{reportExcerpt(decision.name)} · {decision.status === 'unresolved' ? 'Identity unresolved' : decision.status === 'confirmed' ? 'Confirmed' : 'Absent'}</strong>
+                  <p className="card-description" dir="auto">{reportExcerpt(decision.reason)}</p>
+                  {decision.evidence.map((span) => (
+                    <blockquote className="evidence" dir="auto" key={JSON.stringify([span.blockId, span.start, span.end])}>
+                      {reportExcerpt(span.quote)}
+                    </blockquote>
+                  ))}
+                  {answer.citations.filter((citation) => decision.citationIds.includes(citation.id)).map((citation) => (
+                    <p className="card-description" key={citation.id}>
+                      <ExternalLink url={citation.url}>{reportExcerpt(citation.title || citation.url)}</ExternalLink>
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </section>
+          )}
           <AnswerMarkdown text={answer.text || ''} aliases={aliases} renderReport={(content, omitted) => <>
             <h3 className="drawer-section-title">
               <MessageSquareText size={14} />
@@ -191,7 +217,7 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
               </h3>
               {reportingCompanies(data.analysis, run.snapshot, answer).map(
                 (company) => (
-                  <p className="card-description" key={company.company}>
+                  <p className="card-description" key={JSON.stringify([company.rank, company.brandId, company.company])}>
                     {company.rank === null ? 'Unranked' : `#${company.rank}`} ·{' '}
                     {reportExcerpt(company.company)}
                     {company.sentimentScore !== null && (
@@ -277,10 +303,8 @@ export function ResponseDetailContent({ data }: { data: ResponseDetail }) {
             <Info size={14} />
             <span>
               Captured from the{' '}
-              {PROVIDER_LABELS[snapshotProvider(run.snapshot)]} API. Rank and
-              sentiment are analyzed with OpenAI. Highlighting is for
-              navigation; rank and sentiment come from validated evidence. This
-              answer is preserved with its original scan configuration.
+              {PROVIDER_LABELS[snapshotProvider(run.snapshot)]} API.
+              {' '}Analyzed with {reportExcerpt(data.analysis?.model || run.snapshot.extractionModel)}.
               {run.reanalysisOf &&
                 ' This report reanalyzes saved answers from an earlier scan; no new collection calls were made.'}
             </span>

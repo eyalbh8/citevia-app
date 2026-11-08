@@ -38,6 +38,22 @@ function answerDetail(raw: unknown): ResponseDetail {
 }
 
 describe('Answer attribution', () => {
+  it('shows the saved explanation and exact passage when the named business could not be identified', () => {
+    const data = answerDetail(null);
+    const quote = 'I cannot identify XTrade from this name.';
+    data.answer!.text = quote;
+    data.result.target = {
+      brandId: 'xtrade', mentioned: false, mentionOrder: null, explicitRank: null, sentiment: 'not_applicable',
+      evidence: [], sentimentEvidence: null, rankEvidence: null,
+      identity: { status: 'unresolved', reason: 'The answer requests identifying details.', evidence: [{ blockId: 'answer', start: 0, end: quote.length, quote }], citationIds: [] },
+    };
+    const report = document.createElement('div');
+    report.innerHTML = renderToStaticMarkup(<ResponseDetailContent data={data} />);
+    expect(report.querySelector('.drawer-metrics')!.textContent).toContain('Identity unresolved');
+    const decision = report.querySelector('[aria-label="Business identity evidence"]')!;
+    expect(decision.textContent).toContain(data.result.target.identity!.reason);
+    expect(decision.querySelector('blockquote')!.textContent).toBe(quote);
+  });
   it.each([{ demo: true }, { illustrative: true, presentation: { label: 'XTrade visibility scenario' } }])(
     'keeps account setup labels and provider-capture claims out of generated answers', (raw) => {
       const html = renderToStaticMarkup(<ResponseDetailContent data={answerDetail(raw)} />);

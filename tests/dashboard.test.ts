@@ -166,6 +166,17 @@ function capture(urls: string[]): CapturedAnswer {
 }
 
 describe('dashboard overview measurement semantics', () => {
+  it('keeps saved counts visible and suppresses changes when a period includes a scoring update', () => {
+    const value = project();
+    const old = observation(value, 'old', '2026-10-18');
+    const current = observation(value, 'new', '2026-10-20', { mentioned: false });
+    current.run.snapshot.parserVersion = 'new-scoring-policy';
+    const data = aggregateDashboardOverview(value, period, filters, [old, current]);
+    expect(data).toMatchObject({ mixedScoringMethods: true, analyzed: 2 });
+    expect(data.providers.find(p => p.provider === 'openai')).toMatchObject({ count: 1, change: null });
+    expect(data.ranking.find(b => b.isTarget)).toMatchObject({ mentions: 1, mentionChange: null, rankChange: null, sentimentChange: null });
+    expect(data.stages.every(s => s.visibilityChange === null)).toBe(true);
+  });
   it.each(['running', 'completed', 'partial'] as const)(
     'reports successful answers from a %s scan without counting unfinished or cancelled answers',
     (status) => {

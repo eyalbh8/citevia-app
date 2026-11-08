@@ -38,6 +38,7 @@ import {
   SCAN_PROVIDERS,
   PROVIDER_LABELS,
   REPORTING_VERSION,
+  usesCompanyAppearanceRank,
   reportingGroups,
   isBrandedPrompt,
   MAX_BRANDED_PROMPTS,
@@ -716,7 +717,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           runId: run.id,
           previousRunId: previous?.id || null,
           rankDefinition:
-            run.snapshot.parserVersion === 'igeo-evidence-v2'
+            usesCompanyAppearanceRank(run.snapshot.parserVersion)
               ? 'company_appearance'
               : 'explicit_recommendation',
           sentimentScale: { min: 0, max: 100 },

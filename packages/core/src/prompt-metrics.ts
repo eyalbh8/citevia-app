@@ -6,7 +6,7 @@ import type {
   ScanRun,
 } from './types.js';
 import { isReportableRun, sameTargetMethod } from './metrics.js';
-import { brandRank, brandSentimentScore } from './scoring.js';
+import { brandRank, brandSentimentScore, usesCompanyAppearanceRank } from './scoring.js';
 import { projectProviders, snapshotProvider } from './providers.js';
 import { investingComparisonPeriod, investingTrend, usesModeledReporting } from './demo-growth.js';
 
@@ -70,6 +70,16 @@ export function matchesPromptMethod(project: Project, run: ScanRun) {
         )?.model || '',
     })
   );
+}
+
+// Keep the preceding scored method accessible after a rollout or rollback.
+// Callers still select and compare rows using one exact saved method per provider.
+function historicalPromptMethod(project: Project, run: ScanRun) {
+  return matchesPromptMethod({
+    ...project,
+    parserVersion: usesCompanyAppearanceRank(project.parserVersion) && usesCompanyAppearanceRank(run.snapshot.parserVersion)
+      ? run.snapshot.parserVersion : project.parserVersion,
+  }, run);
 }
 
 /** iGEO percentage convention: zero to positive is +100%; zero to zero is 0%. */
@@ -195,7 +205,7 @@ export function promptMetrics(
   previousRun: ScanRun | null = null,
   previousResults: PromptResult[] = [],
 ): PromptMetricsRow[] {
-  if (run && !matchesPromptMethod(project, run)) run = null;
+  if (run && !historicalPromptMethod(project, run)) run = null;
   const comparable =
     run &&
     previousRun &&
@@ -285,8 +295,8 @@ export function promptPeriodMetrics(
         (run) =>
           isReportableRun(run) &&
           // Changing future analysis settings must not erase saved measurements.
-          // All other target, collection-model, parser and locale checks still apply.
-          matchesPromptMethod(
+          // Each provider's headline and comparison use the selected saved method below.
+          historicalPromptMethod(
             { ...project, extractionModel: run.snapshot.extractionModel },
             run,
           ) &&

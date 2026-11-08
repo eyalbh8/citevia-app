@@ -49,6 +49,7 @@ export default function MentionsView({
         }}
       />
       <ErrorNotice error={summary.error || answers.error} />
+      {summary.data?.mixedScoringMethods && <p className="card-description">Scoring changed during this period. Select dates within one scoring method to compare changes.</p>}
       {summary.loading && !summary.data ? (
         <Skeleton variant="chart" label="Loading mention history…" />
       ) : (

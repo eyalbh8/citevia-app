@@ -13,6 +13,12 @@ import { JOURNEY_STAGES } from './onboarding.js';
 import { domainForUrl, isOwnedDomain, normalizeUrl, sourceId } from './urls.js';
 import { brandRank, brandSentimentScore } from './scoring.js';
 export const REPORTING_VERSION = 2;
+
+/** Saved totals remain observable across a scoring change, but movement needs one method. */
+export function hasMixedScoringMethods(observations: { run: ScanRun }[]) {
+  const first = observations[0]?.run.snapshot.parserVersion;
+  return observations.some(({ run }) => run.snapshot.parserVersion !== first);
+}
 /** Successful answers are reportable while the rest of a scan is still running. */
 export function isReportableRun(run: ScanRun): boolean {
   return !run.cancelledAt && !run.reportingExcludedAt &&

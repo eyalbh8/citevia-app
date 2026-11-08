@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Analysis, BrandAnalysis } from '@citevia/core';
+import { IDENTITY_PARSER_VERSION, type Analysis, type BrandAnalysis } from '@citevia/core';
 import { captured, snapshot } from '../apps/scanner/test/fixtures.js';
 import { evaluateAnalysis, labelledMetrics, parseEvaluationSamples, runEvaluationCli, type ExpectedAnalysis } from '../scripts/evaluate-analysis.js';
 import type { ResponseProvider } from '../apps/scanner/src/provider.js';
@@ -41,6 +41,11 @@ function provider(invalidCandidate = false): ResponseProvider {
 }
 
 describe('saved-answer analysis evaluation', () => {
+  it('counts separate policy evaluations even when they use the same model', async () => {
+    const input = { ...sample, snapshot: { ...sample.snapshot, analysisPromptId: snapshot.prompts[0].id } };
+    const report = await evaluateAnalysis([input], { candidate: input.snapshot.extractionModel, candidateParser: IDENTITY_PARSER_VERSION });
+    expect(report.plan.models[0].requests).toBe(2);
+  });
   it('evaluates Gemini natively without initializing OpenAI or production storage', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'citevia-analysis-eval-gemini-'));
     const input = join(directory, 'answers.jsonl');
