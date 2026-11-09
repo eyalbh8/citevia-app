@@ -20,7 +20,8 @@ export async function syncSocialSchedule(project: Project, options: {
   for (let start = 0; start < 28; start += 4) {
     const results = await Promise.allSettled(Array.from({ length: Math.min(4, 28 - start) }, async (_, offset) => {
       const index = start + offset, Name = socialScheduleName(project.id, index);
-      if (index !== 0 || !settings.enabled || !settings.slots.length) {
+      const hasSlots = settings.brands?.length ? settings.brands.some(brand => brand.slots.length > 0) : settings.slots.length > 0;
+      if (index !== 0 || !settings.enabled || !hasSlots) {
         try { await client.send(new DeleteScheduleCommand({ Name, GroupName })); }
         catch (error) { if ((error as Error).name !== 'ResourceNotFoundException') throw error; }
         return;

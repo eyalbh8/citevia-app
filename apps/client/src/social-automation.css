@@ -90,3 +90,29 @@
   .social-slot { grid-template-columns: minmax(0, 1fr) minmax(85px, 0.8fr) 28px; gap: 7px; padding: 10px; }
   .social-history-row { align-items: flex-start; }
 }
+.social-brand-plans .social-schedule-heading { margin-top: 18px; }
+.social-brand-plans .social-schedule-heading button { flex-shrink: 0; }
+.social-automation .social-brand-plan { padding: 14px 18px 18px; border: 1px solid var(--border, #e8e9f2); border-radius: 12px; margin: 14px 0; }
+.social-brand-plan legend { font-size: 15px; font-weight: 650; padding: 0 6px; overflow-wrap: anywhere; }
+.social-brand-fields { display: grid; gap: 14px; }
+.social-brand-fields > button { justify-self: start; }
+.social-brand-fields .field { min-width: 0; }
+.social-brand-fields .field input, .social-brand-fields .field select, .social-brand-fields .field textarea { width: 100%; box-sizing: border-box; }
+.social-brand-fields textarea { resize: vertical; font-family: inherit; }
+.social-brand-accounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.social-brand-plan .social-slots { margin: 0; }
+.social-weekly-volume { max-width: 190px; }
+.social-weekly-total { font-size: 14px; }
+.social-brand-cadence { align-self: center; margin: 0; font-size: 14px; }
+.social-brand-cadence small { display: block; margin-top: 4px; color: var(--text-secondary, #71758c); }
+@media (max-width: 600px) { .social-brand-accounts { grid-template-columns: 1fr; } }
+
+.social-review-links { display: grid; gap: 16px; }
+.social-review-links h3, .social-review-links p { margin: 0; }
+.social-review-links .button { justify-self: start; }
+.social-review-candidates { list-style: none; padding: 0; margin: 0; }
+.social-review-candidates li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.social-created-link { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.social-created-link input { width: 100%; }
+.social-review-link-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.social-review-link-row small { display: block; margin-top: 4px; }

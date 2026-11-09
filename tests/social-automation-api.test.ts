@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, SocialPublisherError, type SocialPublisher } from '@citevia/storage';
-import type { SocialDestination, SocialPublication } from '@citevia/core';
+import { defaultSocialAutomationSettings, type SocialAutomationBrand, type SocialDestination, type SocialPublication } from '@citevia/core';
 import { createApi } from '../apps/api/src/app.js';
+import { createAuthenticatedApi } from '../apps/api/src/handler.js';
 import { newProject } from './fixtures/scanner.js';
 import { testIdentity } from './fixtures/users.js';
 
@@ -72,6 +73,72 @@ describe('social automation API', () => {
     expect((await f.call('', 'GET', undefined, 'social-viewer')).status).toBe(200);
     expect((await f.call('/connect', 'POST', { channel: 'facebook' }, 'social-viewer')).status).toBe(403);
     expect((await f.call('/settings', 'PATCH', { version: 1, settings }, 'social-outsider')).status).toBe(404);
+  });
+  it('saves brand calendars and rejects wrong-channel, foreign, disconnected and reused accounts', async () => {
+    const f = await fixture(), ig = { ...account, channel: 'instagram' as const, id: 'ig' };
+    const brand = { id: 'hot', name: 'Hot Coffee', description: 'Espresso and coffee beans', facebookDestinationId: account.id,
+      instagramDestinationId: ig.id, shareFacebookInstagramContent: true, slots: settings.slots };
+    const input = { ...settings, slots: [], brands: [brand], createBlogDrafts: true };
+    f.options.social.blogAvailable = false;
+    for (const invalid of [{ ...ig, channel: 'facebook' as const }, { ...ig, profileId: 'foreign' }, { ...ig, active: false }, { ...ig, requiresReconnect: true }]) {
+      f.publisher.accounts.mockResolvedValue([account, invalid]);
+      expect((await f.call('/settings', 'PATCH', { version: 1, settings: input })).status).toBe(400);
+    }
+    f.publisher.accounts.mockResolvedValue([account, ig]);
+    for (const invalid of [{ ...input, brands: [brand, { ...brand, id: 'iced', name: 'Iced Coffee' }] },
+      { ...input, brands: [{ ...brand, slots: [] }] }, { ...input, generationTime: '10:30' }])
+      expect((await f.call('/settings', 'PATCH', { version: 1, settings: invalid })).status).toBe(400);
+    const saved = await (await f.call('/settings', 'PATCH', { version: 1, settings: input })).json();
+    expect(saved.settings.brands).toEqual([brand]);
+    expect(saved.settings.slots).toEqual([]);
+    const { brands: _brands, ...olderInput } = input;
+    const unchanged = await (await f.call('/settings', 'PATCH', { version: saved.version, settings: olderInput })).json();
+    expect(unchanged).toEqual(saved);
+    expect(f.sync).toHaveBeenCalledTimes(1);
+    expect(f.queue.messages).toHaveLength(1);
+    f.sync.mockRejectedValueOnce(new Error('scheduler unavailable'));
+    const moved = { ...input, generationTime: '07:00' };
+    expect((await f.call('/settings', 'PATCH', { version: saved.version, settings: moved })).status).toBe(503);
+    const pending = (await f.repository.getProject(f.project.id))!;
+    expect(pending.socialAutomation?.scheduleStatus).toBe('error');
+    const repaired = await (await f.call('/settings', 'PATCH', { version: pending.version, settings: moved })).json();
+    expect(repaired.settings).toMatchObject({ revision: pending.socialAutomation?.revision, scheduleStatus: 'synced' });
+    expect(f.queue.messages).toHaveLength(2);
+    f.publisher.accounts.mockRejectedValue(new Error('provider unavailable'));
+    const legacyPause = await (await f.call('/settings', 'PATCH', { version: repaired.version, settings: { ...settings, enabled: false } })).json();
+    expect(legacyPause.settings.brands).toEqual([brand]);
+    expect(legacyPause.settings.enabled).toBe(false);
+    expect((await f.call('/settings', 'PATCH', { version: legacyPause.version, settings: { ...settings, enabled: false, brands: [] } })).status).toBe(200);
+  });
+  it('preserves original brief text by brand ID when an owner resubmits the public settings form', async () => {
+    const f = await fixture();
+    const brands: SocialAutomationBrand[] = ['Hot', 'Iced'].map(name => ({
+      id: `demo-${name}`, name: `${name} Demo Coffee`, description: `${name} coffee demos`, slots: settings.slots,
+      shareFacebookInstagramContent: true, facebookDestinationId: `fb-${name}`, instagramDestinationId: `ig-${name}`,
+    }));
+    await f.repository.saveProject({ ...f.project, version: 2, socialAutomation: { ...defaultSocialAutomationSettings(), brands } }, 1);
+    const api = createAuthenticatedApi({ repository: f.repository, artifacts: new MemoryArtifacts(), queue: f.queue },
+      { authenticate: async () => testIdentity('social-owner'), lookup: vi.fn() }, f.options);
+    const endpoint = `https://api.citevia.io/v1/projects/${f.project.id}/social`;
+    const read = await api(new Request(endpoint));
+    expect(read.status).toBe(200);
+    const view = await read.json();
+    const [hot, iced] = view.settings.brands as SocialAutomationBrand[];
+    expect(hot.id).not.toBe(brands[0].id);
+    expect(hot.name).toBe('Hot […] Coffee');
+    expect(hot.description).toBe('Hot coffee […]');
+    const replacement = 'Cold coffee over ice';
+    const slots = [{ ...hot.slots[0], time: '13:00' }];
+    const save = await api(new Request(endpoint + '/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version: view.version, settings: { ...settings, enabled: false, brands: [
+        { ...iced, description: replacement }, { ...hot, slots },
+      ] } }),
+    }));
+    expect(save.status).toBe(200);
+    expect((await f.repository.getProject(f.project.id))?.socialAutomation?.brands).toEqual([
+      { ...brands[1], description: replacement }, { ...brands[0], slots },
+    ]);
+    expect(f.queue.messages).toHaveLength(0);
   });
   it('never turns expired social credentials into a Descope session error', async () => {
     const f = await fixture();

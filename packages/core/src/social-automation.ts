@@ -7,12 +7,24 @@ export const SOCIAL_CHANNELS = ['facebook', 'instagram', 'linkedin', 'x', 'pinte
 export type SocialChannel = (typeof SOCIAL_CHANNELS)[number];
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export const MAX_SOCIAL_AUTOMATION_SLOTS = 28;
+export const MAX_SOCIAL_AUTOMATION_BRANDS = 20;
 export const SOCIAL_OCCURRENCE_MAX_AGE_MS = 60 * 60 * 1000;
 export interface SocialAutomationSlot {
   id: string;
   /** Sunday = 0, matching JavaScript Date.getDay(). */
   dayOfWeek: number;
   time: string;
+}
+export interface SocialBrandBrief {
+  id: string;
+  name: string;
+  description: string;
+}
+export interface SocialAutomationBrand extends SocialBrandBrief {
+  facebookDestinationId: string;
+  instagramDestinationId: string;
+  shareFacebookInstagramContent: boolean;
+  slots: SocialAutomationSlot[];
 }
 export interface SocialAutomationSettings {
   enabled: boolean;
@@ -27,6 +39,8 @@ export interface SocialAutomationSettings {
   revision: number;
   timezone: string;
   slots: SocialAutomationSlot[];
+  /** A nonempty brand list selects per-brand weekly planning. */
+  brands?: SocialAutomationBrand[];
   effectiveFrom: string;
   scheduleStatus: 'pending' | 'synced' | 'error';
 }
@@ -38,6 +52,18 @@ export const socialAutomationSlotSchema = z.object({
   dayOfWeek: z.number().int().min(0).max(6),
   time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
 }).strict();
+const publishingSlotsSchema = z.array(socialAutomationSlotSchema).max(MAX_SOCIAL_AUTOMATION_SLOTS).refine(slots =>
+  new Set(slots.map(slot => slot.id)).size === slots.length &&
+  new Set(slots.map(slot => `${slot.dayOfWeek}:${slot.time}`)).size === slots.length, 'Publishing times must be unique.');
+const brandSchema = z.object({
+  id: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().min(1).max(600),
+  facebookDestinationId: z.string().trim().min(1).max(255),
+  instagramDestinationId: z.string().trim().min(1).max(255),
+  shareFacebookInstagramContent: z.boolean(),
+  slots: publishingSlotsSchema,
+}).strict();
 /** Only these settings may be accepted from the browser; revisions and profile IDs are server-owned. */
 export const socialAutomationInputSchema = z.object({
   enabled: z.boolean(),
@@ -47,12 +73,24 @@ export const socialAutomationInputSchema = z.object({
   generationCadence: z.enum(['daily', 'weekly', 'monthly']).default('daily'),
   generationTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).default('08:00'),
   timezone: timezoneSchema,
-  slots: z.array(socialAutomationSlotSchema).max(MAX_SOCIAL_AUTOMATION_SLOTS),
+  slots: publishingSlotsSchema,
+  brands: z.array(brandSchema).max(MAX_SOCIAL_AUTOMATION_BRANDS).optional(),
 }).strict().superRefine((value, ctx) => {
-  if (value.enabled && !value.slots.length) ctx.addIssue({ code: 'custom', path: ['slots'], message: 'Choose at least one publishing time.' });
-  if (new Set(value.slots.map(slot => slot.id)).size !== value.slots.length ||
-    new Set(value.slots.map(slot => `${slot.dayOfWeek}:${slot.time}`)).size !== value.slots.length)
-    ctx.addIssue({ code: 'custom', path: ['slots'], message: 'Publishing times must be unique.' });
+  const brands = value.brands ?? [];
+  if (brands.reduce((total, brand) => total + brand.slots.length, 0) > MAX_SOCIAL_AUTOMATION_SLOTS)
+    ctx.addIssue({ code: 'custom', path: ['brands'], message: `Choose up to ${MAX_SOCIAL_AUTOMATION_SLOTS} weekly publishing times across all brands.` });
+  if (value.enabled && !brands.length && !value.slots.length) ctx.addIssue({ code: 'custom', path: ['slots'], message: 'Choose at least one publishing time.' });
+  const destinations = brands.flatMap(brand => [brand.facebookDestinationId, brand.instagramDestinationId]);
+  if (new Set(destinations).size !== destinations.length)
+    ctx.addIssue({ code: 'custom', path: ['brands'], message: 'Assign each social account to only one brand.' });
+  if (new Set(brands.map(brand => brand.id)).size !== brands.length ||
+      new Set(brands.map(brand => brand.name.toLowerCase())).size !== brands.length)
+    ctx.addIssue({ code: 'custom', path: ['brands'], message: 'Give each brand a distinct name and ID.' });
+  if (value.enabled) brands.forEach((brand, index) => {
+    if (!brand.slots.length) ctx.addIssue({ code: 'custom', path: ['brands', index, 'slots'], message: 'Choose at least one publishing time for each brand.' });
+    if (brand.slots.some(slot => slot.dayOfWeek === 1 && slot.time <= value.generationTime))
+      ctx.addIssue({ code: 'custom', path: ['brands', index, 'slots'], message: 'Choose Monday publishing times after the weekly preparation time.' });
+  });
 });
 export type SocialAutomationInput = z.infer<typeof socialAutomationInputSchema>;
 export function defaultSocialAutomationSettings(timezone = 'UTC'): SocialAutomationSettings {
@@ -78,13 +116,22 @@ export interface BlogDraftDestination {
 }
 export type AutomationDestination = SocialDestination | BlogDraftDestination;
 export interface SocialContent { title: string; body: string; hashtags: string[] }
-export interface SocialMediaAsset { id?: string; type: 'image' | 'video'; url: string; mimeType: string; attribution?: AgentImage[] }
-export interface SocialGenerationContext { brand: Brand; brandbook?: Brandbook; country: string; language: string; imageSource?: 'openai' | 'unsplash' }
+export interface SocialMediaAsset { id?: string; type: 'image' | 'video'; url: string; mimeType: string; attribution?: AgentImage[]; contentDigest?: string }
+export interface SocialGenerationContext {
+  brand: Brand;
+  brandbook?: Brandbook;
+  country: string;
+  language: string;
+  imageSource?: 'openai' | 'unsplash';
+  socialBrand?: SocialBrandBrief;
+  weeklyCreative?: { number: number; total: number; scheduledAt: string };
+}
 export interface SocialOccurrence {
   id: string;
   projectId: string;
   revision: number;
   slotId: string;
+  brandId?: string;
   localDate: string;
   scheduledAt: string;
   createdAt: string;
@@ -164,6 +211,7 @@ export interface SocialOccurrenceMessage {
   projectId: string;
   revision: number;
   slotId: string;
+  brandId?: string;
   scheduledAt: string;
 }
 export interface ReserveSocialOccurrenceInput extends Omit<SocialOccurrenceMessage, 'kind'> {
@@ -184,8 +232,10 @@ export function socialSlotCron(slot: SocialAutomationSlot): string {
   return `cron(${minute} ${hour} ? * ${['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][parsed.dayOfWeek]} *)`;
 }
 
-export function socialGenerationCron(settings: Pick<SocialAutomationSettings, 'generationCadence' | 'generationTime'>): string {
-  const cadence = settings.generationCadence ?? 'daily', time = settings.generationTime ?? '08:00';
+type CadenceSettings = Pick<SocialAutomationSettings, 'generationCadence' | 'brands'>;
+const generationCadence = (settings: CadenceSettings) => settings.brands?.length ? 'weekly' : settings.generationCadence ?? 'daily';
+export function socialGenerationCron(settings: CadenceSettings & Pick<SocialAutomationSettings, 'generationTime'>): string {
+  const cadence = generationCadence(settings), time = settings.generationTime ?? '08:00';
   if (!['daily', 'weekly', 'monthly'].includes(cadence) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time))
     throw new Error('Invalid content preparation schedule');
   const [hour, minute] = time.split(':').map(Number);
@@ -215,12 +265,29 @@ function localInstant(date: string, time: string, timezone: string): number | nu
   return candidates.length ? Math.min(...candidates) : null;
 }
 
+export function parseStoredSocialAutomation(settings: SocialAutomationSettings) {
+  const { enabled, createBlogDrafts, imageSource, shareFacebookInstagramContent, generationCadence, generationTime, timezone, slots, brands } = settings;
+  return socialAutomationInputSchema.safeParse({ enabled, createBlogDrafts, imageSource, shareFacebookInstagramContent, generationCadence, generationTime, timezone, slots, brands });
+}
+/** No brand-scoped post may be adopted by the legacy project plan or another brand. */
+export function socialPublicationDestinationAssigned(project: Project, post: Pick<SocialPublication, 'projectId' | 'destination' | 'context'>) {
+  if (project.id !== post.projectId) return false;
+  const { destination } = post, brands = project.socialAutomation?.brands;
+  if (destination.channel !== 'blog' && (!project.socialProfileId || destination.profileId !== project.socialProfileId)) return false;
+  if (!brands?.length) return !post.context.socialBrand;
+  const brand = brands.find(brand => brand.id === post.context.socialBrand?.id);
+  return !!brand && socialBrandHasDestination(brand, destination);
+}
+export function socialBrandHasDestination(brand: SocialAutomationBrand, destination: Pick<AutomationDestination, 'id' | 'channel'>) {
+  return destination.channel === 'facebook' && brand.facebookDestinationId === destination.id ||
+    destination.channel === 'instagram' && brand.instagramDestinationId === destination.id;
+}
+
 function generationWindow(project: Pick<Project, 'socialAutomation' | 'demo'>,
   message: Pick<SocialGenerationMessage, 'revision' | 'scheduledAt' | 'trigger'>, now: string | Date) {
   const settings = project.socialAutomation;
   if (project.demo || !settings?.enabled || settings.revision !== message.revision || !Number.isInteger(settings.revision) || settings.revision < 1) return null;
-  const parsed = socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, imageSource: settings.imageSource, shareFacebookInstagramContent: settings.shareFacebookInstagramContent,
-    generationCadence: settings.generationCadence, generationTime: settings.generationTime, timezone: settings.timezone, slots: settings.slots });
+  const parsed = parseStoredSocialAutomation(settings);
   if (!parsed.success) return null;
   const scheduled = Date.parse(message.scheduledAt), current = new Date(now).getTime(), effective = Date.parse(settings.effectiveFrom);
   const minimum = message.trigger === 'manual' ? effective : Math.floor(effective / 60000) * 60000;
@@ -228,12 +295,13 @@ function generationWindow(project: Pick<Project, 'socialAutomation' | 'demo'>,
     scheduled > current + 60000 || current - scheduled > SOCIAL_OCCURRENCE_MAX_AGE_MS) return null;
   const local = localParts(scheduled, settings.timezone), start = Date.parse(`${local.date}T00:00:00Z`), day = new Date(start).getUTCDay();
   const normalized = parsed.data;
+  const cadence = generationCadence(normalized);
   if (message.trigger !== 'manual' && (scheduled % 60000 !== 0 || local.time !== normalized.generationTime ||
-    (normalized.generationCadence === 'weekly' && day !== 1) ||
-    (normalized.generationCadence === 'monthly' && new Date(start).getUTCDate() !== 1))) return null;
-  const end = normalized.generationCadence === 'monthly'
+    (cadence === 'weekly' && day !== 1) ||
+    (cadence === 'monthly' && new Date(start).getUTCDate() !== 1))) return null;
+  const end = cadence === 'monthly'
     ? Date.UTC(new Date(start).getUTCFullYear(), new Date(start).getUTCMonth() + 1, 1)
-    : start + (normalized.generationCadence === 'weekly' ? 7 - (day + 6) % 7 : 1) * 86400000;
+    : start + (cadence === 'weekly' ? 7 - (day + 6) % 7 : 1) * 86400000;
   return { settings: normalized, start, end, earliest: Math.max(current, effective) };
 }
 
@@ -243,13 +311,16 @@ export function socialGenerationOccurrences(project: Pick<Project, 'socialAutoma
   const window = generationWindow(project, message, now);
   if (!window) return null;
   const occurrences: SocialOccurrenceMessage[] = [];
+  const slots = window.settings.brands?.length
+    ? window.settings.brands.flatMap(brand => brand.slots.map(slot => ({ ...slot, brandId: brand.id })))
+    : window.settings.slots.map(slot => ({ ...slot, brandId: undefined }));
   for (let day = window.start; day < window.end; day += 86400000) {
     const date = new Date(day).toISOString().slice(0, 10), weekday = new Date(day).getUTCDay();
-    for (const slot of window.settings.slots.filter(slot => slot.dayOfWeek === weekday)) {
+    for (const slot of slots.filter(slot => slot.dayOfWeek === weekday)) {
       const timestamp = localInstant(date, slot.time, window.settings.timezone);
       if (timestamp === null || timestamp <= window.earliest) continue;
       occurrences.push({ kind: 'social-occurrence', projectId: message.projectId, revision: message.revision,
-        slotId: slot.id, scheduledAt: new Date(timestamp).toISOString() });
+        slotId: slot.id, ...(slot.brandId ? { brandId: slot.brandId } : {}), scheduledAt: new Date(timestamp).toISOString() });
     }
   }
   return occurrences.sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt) || a.slotId.localeCompare(b.slotId));
@@ -258,16 +329,17 @@ export function socialGenerationOccurrences(project: Pick<Project, 'socialAutoma
 /** A local date is the deduplication boundary, including the repeated hour when daylight saving ends. */
 export function socialOccurrenceLocalDate(
   project: Pick<Project, 'socialAutomation' | 'demo'>,
-  message: Pick<SocialOccurrenceMessage, 'revision' | 'slotId' | 'scheduledAt'> & Pick<Partial<ReserveSocialOccurrenceInput>, 'generationScheduledAt' | 'generationTrigger'>,
+  message: Pick<SocialOccurrenceMessage, 'revision' | 'brandId' | 'slotId' | 'scheduledAt'> & Pick<Partial<ReserveSocialOccurrenceInput>, 'generationScheduledAt' | 'generationTrigger'>,
   now: string | Date = new Date(),
 ): string | null {
   const settings = project.socialAutomation;
   if (project.demo || !settings?.enabled || !Number.isInteger(settings.revision) || settings.revision < 1 || settings.revision !== message.revision ||
-    !socialAutomationInputSchema.safeParse({ enabled: settings.enabled, createBlogDrafts: settings.createBlogDrafts, imageSource: settings.imageSource, shareFacebookInstagramContent: settings.shareFacebookInstagramContent,
-      generationCadence: settings.generationCadence, generationTime: settings.generationTime, timezone: settings.timezone, slots: settings.slots }).success) return null;
+    !parseStoredSocialAutomation(settings).success) return null;
   const scheduled = Date.parse(message.scheduledAt), current = new Date(now).getTime(), effective = Date.parse(settings.effectiveFrom);
   if (![scheduled, current, effective].every(Number.isFinite) || scheduled % 60000 !== 0 || scheduled < effective) return null;
-  const slot = settings.slots.find(value => value.id === message.slotId);
+  const slots = settings.brands?.length ? settings.brands.find(brand => brand.id === message.brandId)?.slots
+    : message.brandId === undefined ? settings.slots : undefined;
+  const slot = slots?.find(value => value.id === message.slotId);
   if (!slot) return null;
   const local = localParts(scheduled, settings.timezone), day = Date.parse(`${local.date}T00:00:00Z`);
   if (local.time !== slot.time || new Date(day).getUTCDay() !== slot.dayOfWeek) return null;

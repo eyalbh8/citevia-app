@@ -16,7 +16,7 @@ export const runtimeTables = [
   'citevia_mcp_connections', 'citevia_mcp_records', 'citevia_mcp_request_limits',
   'citevia_onboarding_jobs', 'citevia_projects', 'citevia_prompt_results',
   'citevia_provider_admission', 'citevia_provider_leases', 'citevia_response_citations',
-  'citevia_runs', 'citevia_social_occurrences', 'citevia_social_publications',
+  'citevia_runs', 'citevia_social_occurrences', 'citevia_social_publications', 'citevia_social_review_links',
   'citevia_tracked_url_matches', 'citevia_tracked_urls', 'citevia_traffic_installations',
   'citevia_website_health_audits',
 ] as const;

@@ -1,6 +1,6 @@
 import { ProviderError, type ProviderCallContext } from './provider.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, DEFAULT_AGENT_CONTENT_MODEL, socialOccurrenceLocalDate, socialGenerationOccurrences, socialApprovalSnapshot,
+import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, DEFAULT_AGENT_CONTENT_MODEL, socialOccurrenceLocalDate, socialGenerationOccurrences, socialApprovalSnapshot, socialPublicationDestinationAssigned,
   type AgentPostJob, type Project, type SocialGenerationMessage, type SocialOccurrenceMessage, type SocialPublication } from '@citevia/core';
 import { createSocialPublisher, createSocialMediaUploadStore, socialPublisherConfigured, SocialPublisherError,
   type Runtime, type SocialPublisher, type SocialPublishResult, type SocialPublishMedia, type SocialMediaUploadStore, type SocialUploadedMedia } from '@citevia/storage';
@@ -69,7 +69,8 @@ export class SocialAutomationEngine {
   }
   private async enabled(post: SocialPublication): Promise<Project | null> {
     const project = await this.runtime.repository.getProject(post.projectId);
-    return project && !project.demo && project.socialAutomation?.enabled && project.socialAutomation.revision === post.revision ? project : null;
+    return project && !project.demo && project.socialAutomation?.enabled && project.socialAutomation.revision === post.revision &&
+      socialPublicationDestinationAssigned(project, post) ? project : null;
   }
 
   async handlePublication(projectId: string, publicationId: string): Promise<void> {
@@ -130,7 +131,8 @@ export class SocialAutomationEngine {
         const members = shared?.sourcePublicationId === current.id && ['queued', 'copy', 'image-0', 'qa-0'].includes(current.stage)
           ? await Promise.all(shared.memberPublicationIds.filter(id => id !== current.id).map(id => repository.getSocialPublication(projectId, id))) : [];
         const sibling = members.find(post => post && post.occurrenceId === current.occurrenceId && post.revision === current.revision &&
-          post.sharedGeneration?.sourcePublicationId === current.id && ['facebook', 'instagram'].includes(post.destination.channel) &&
+          post.sharedGeneration?.sourcePublicationId === current.id && post.context.socialBrand?.id === current.context.socialBrand?.id &&
+          socialPublicationDestinationAssigned(project, post) && ['facebook', 'instagram'].includes(post.destination.channel) &&
           post.destination.profileId === destination.profileId &&
           !['failed', 'cancelled', 'uncertain'].includes(post.status) && accounts.some(account => account.id === post.destination.id && account.channel === post.destination.channel));
         if (sibling && sibling.destination.channel !== 'blog') generationDestination = sibling.destination;
@@ -142,6 +144,7 @@ export class SocialAutomationEngine {
         const source = await repository.getSocialPublication(projectId, shared.sourcePublicationId);
         if (!source || source.occurrenceId !== current.occurrenceId || source.revision !== current.revision ||
             source.destination.profileId !== destination.profileId || !['facebook', 'instagram'].includes(source.destination.channel) ||
+            source.context.socialBrand?.id !== current.context.socialBrand?.id || !socialPublicationDestinationAssigned(project, source) ||
             source.sharedGeneration?.sourcePublicationId !== source.id || source.sharedGeneration.format !== shared.format ||
             !source.sharedGeneration.memberPublicationIds.includes(current.id))
           throw new SocialPublisherError('shared_generation_invalid', 'The shared post could not be verified. Prepare a new post.');
@@ -246,7 +249,8 @@ export class SocialAutomationEngine {
           }
           await artifacts.put(key, uploaded);
           current = await this.persist(current, { media: [...(current.media || []).slice(0, index), { type: 'image', mimeType: image.mime, url: uploaded.url,
-            ...(uploaded.source ? { id: uploaded.source.id } : {}), ...(image.stockPhoto ? { attribution: [image.stockPhoto] } : {}) }],
+            ...(uploaded.source ? { id: uploaded.source.id } : {}), ...(image.stockPhoto ? { attribution: [image.stockPhoto] } : {}),
+            ...(shared ? { contentDigest: createHash('sha256').update(bytes).digest('hex') } : {}) }],
             ...(uploaded.source ? { checkpoints: { ...current.checkpoints, mediaSources: {
               ...(current.checkpoints?.mediaSources as Record<string, SocialUploadedMedia> | undefined), [uploaded.source.id]: uploaded.source } } } : {}) });
         }

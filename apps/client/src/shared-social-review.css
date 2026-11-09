@@ -1,0 +1,19 @@
+.shared-social-page { max-width: 900px; margin: auto; padding: 32px 20px 60px; }
+.shared-social-page > header { margin: 32px 0 24px; }
+.shared-social-page > header p { max-width: 66ch; color: var(--muted); }
+.shared-creative { padding: clamp(16px, 3vw, 30px); margin: 16px 0; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+.shared-creative header span { font-weight: 600; color: var(--primary); }
+.shared-creative h2 { margin: 5px 0 16px; }
+.shared-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; overflow-wrap: anywhere; }
+.shared-content p, .shared-content figure { margin: 0 0 12px; }
+.shared-caption { white-space: pre-wrap; }
+.shared-content img { display: block; width: 100%; max-height: 430px; object-fit: contain; border-radius: 8px; }
+.shared-destinations { list-style: none; padding: 0; }
+.shared-destinations li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.shared-destinations label { display: flex; align-items: center; gap: 10px; overflow-wrap: anywhere; }
+.shared-destinations li p { flex-basis: 100%; margin: 0; color: var(--danger); }
+@media (max-width: 620px) { .shared-content { grid-template-columns: 1fr; gap: 8px; } }
+
+.shared-decision { display: grid; gap: 12px; }
+.shared-decision label { display: flex; gap: 8px; align-items: baseline; }
+.shared-decision button { justify-self: start; }

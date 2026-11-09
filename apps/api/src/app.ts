@@ -1,5 +1,6 @@
 import { trafficRoute } from './traffic.js';
 import { agentRoute } from './agents.js';
+import { clientSocialReview, reviewEndpoint } from './social-review-links.js';
 import { socialRoute, type SocialApiOptions } from './social.js';
 import { blogPerformanceRoute } from './blog-performance.js';
 import { websiteHealthRoute } from './website-health.js';
@@ -224,6 +225,10 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       const path = url.pathname.replace(/\/$/, '');
       if (path === '/health' && method === 'GET')
         return response({ status: 'ok', service: 'citevia-api' });
+      const review = reviewEndpoint.exec(path);
+      if (review) return await clientSocialReview(runtime, review, request, now(), {
+        publisher: socialPublisherConfigured() ? createSocialPublisher : undefined, ...options.social,
+      }, body);
       const parsedIdentity = verifiedIdentitySchema.safeParse(identity);
       if (!parsedIdentity.success)
         throw new HttpError(

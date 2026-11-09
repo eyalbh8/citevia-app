@@ -48,7 +48,7 @@ export default function SettingsView({
     loading,
   } = useApi<Project>(`${path}/settings`);
   const runs = useApi<Page<ScanRun>>(`${path}/runs`);
-  const [section, setSection] = useState('general');
+  const [section, setSection] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('section') === 'publishing' ? 'publishing' : 'general');
   return (
     <>
       <ErrorNotice error={error} retry={onSaved} />

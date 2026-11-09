@@ -99,8 +99,17 @@ export class PostgresRepository extends PostgresUsers implements Repository {
   reserveSocialOccurrence(input: import('@citevia/core').ReserveSocialOccurrenceInput) { return social.reserveSocialOccurrence(this.db, input); }
   getSocialPublication(projectId: string, publicationId: string) { return social.getSocialPublication(this.db, projectId, publicationId); }
   listActiveSocialPublications(limit?: number, now?: string) { return social.listActiveSocialPublications(this.db, limit, now); }
-  listSocialPublications(projectId: string, offset: number, limit: number) { return social.listSocialPublications(this.db, projectId, offset, limit); }
-  saveSocialPublication(publication: import('@citevia/core').SocialPublication, expectedVersion: number) { return social.saveSocialPublication(this.db, publication, expectedVersion); }
+  listSocialPublications(projectId: string, offset: number, limit: number, clientReviewOnly = false) {
+    return social.listSocialPublications(this.db, projectId, offset, limit, clientReviewOnly);
+  }
+  createSocialReviewLink(link: import('./contracts.js').SocialReviewLink) { return social.createSocialReviewLink(this.db, link); }
+  getSocialReviewLink(projectId: string, id: string, now: string) { return social.getSocialReviewLink(this.db, projectId, id, now); }
+  listSocialReviewLinks(projectId: string, now: string) { return social.listSocialReviewLinks(this.db, projectId, now); }
+  revokeSocialReviewLink(projectId: string, id: string) { return social.revokeSocialReviewLink(this.db, projectId, id); }
+  getSocialReviewPosts(projectId: string, ids: string[]) { return social.getSocialReviewPosts(this.db, projectId, ids); }
+  saveSocialPublication(publication: import('@citevia/core').SocialPublication, expectedVersion: number, reviewLinkId?: string) {
+    return social.saveSocialPublication(this.db, publication, expectedVersion, reviewLinkId);
+  }
   getWebsiteHealthAudit(projectId: string, auditId: string) { return websiteHealth.getWebsiteHealthAudit(this.db, projectId, auditId); }
   listWebsiteHealthAudits(projectId: string, offset: number, limit: number) { return websiteHealth.listWebsiteHealthAudits(this.db, projectId, offset, limit); }
   listActiveWebsiteHealthAudits() { return websiteHealth.listActiveWebsiteHealthAudits(this.db); }

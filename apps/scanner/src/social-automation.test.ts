@@ -556,6 +556,21 @@ describe('reviewed publishing calendar', () => {
 });
 
 describe('daily, weekly and monthly preparation', () => {
+  it('halts a reviewed publication if its connected account now belongs to another brand', async () => {
+    const f = await fixture();
+    const settings = f.project.socialAutomation!;
+    const brand = { id: 'hot', name: 'Hot Coffee', description: 'Espresso and beans', facebookDestinationId: 'facebook-account',
+      instagramDestinationId: 'hot-ig', shareFacebookInstagramContent: true, slots: settings.slots };
+    await f.updateProject({ socialAutomation: { ...settings, brands: [brand] } });
+    await f.worker.handleOccurrence({ ...f.message, brandId: brand.id });
+    const post = (await f.runtime.repository.listSocialPublications(f.project.id, 0, 5)).items.find(item => item.context.socialBrand?.id === brand.id)!;
+    await f.finish(post.id); await f.approve(post.id);
+    // Even a current revision and valid content fingerprint cannot authorize a different brand's account.
+    await f.updateProject({ socialAutomation: { ...settings, brands: [{ ...brand, facebookDestinationId: 'hot-new-fb' },
+      { ...brand, id: 'iced', name: 'Iced Coffee', instagramDestinationId: 'iced-ig' }] } });
+    expect((await f.finish(post.id)).status).toBe('cancelled');
+    expect(f.publisher.publish).not.toHaveBeenCalled();
+  });
   it.each([
     ['daily', 1], ['weekly', 7], ['monthly', 29],
   ] as const)('prepares all remaining %s publishing slots exactly once', async (generationCadence, count) => {

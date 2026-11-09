@@ -68,6 +68,68 @@ describe('social automation settings', () => {
     expect(schedule().textContent).toContain(cadence === 'weekly' ? 'Every Monday' : 'first day of each month');
     expect(schedule().textContent).toContain('only after your approval');
   });
+  it('saves two weekly brand plans with isolated Facebook and Instagram accounts and independently editable times', async () => {
+    data.settings.generationCadence = 'monthly';
+    data.settings.slots = [{ id: 'legacy', dayOfWeek: 0, time: '18:30' }];
+    data.blogAvailable = false;
+    for (const brand of ['Hot', 'Iced']) {
+      for (const channel of ['facebook', 'instagram'] as const) {
+        data.connections.push({ id: `${brand}-${channel}`, channel, username: `${brand} Coffee`, active: true, requiresReconnect: false });
+      }
+    }
+    data.connections.push({ id: 'old-facebook', channel: 'facebook', username: 'Old Page', active: true, requiresReconnect: true });
+    await render();
+    function field(scope: Element, label: string) {
+      return [...scope.querySelectorAll('label')].find(item => item.firstElementChild?.textContent === label)!
+        .querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea')!;
+    }
+    for (const [index, brand] of ['Hot', 'Iced'].entries()) {
+      await click(button('Add brand'));
+      const plan = schedule().querySelectorAll('.social-brand-plan')[index];
+      await change(field(plan, 'Brand name'), `${brand} Coffee`);
+      await change(field(plan, 'What does this brand promote?'), brand === 'Hot' ? 'Espresso and coffee beans' : 'Cold coffee served over ice');
+      const facebook = field(plan, 'Facebook account') as HTMLSelectElement;
+      expect(facebook.querySelector<HTMLOptionElement>('[value="old-facebook"]')!.disabled).toBe(true);
+      expect(facebook.querySelector('[value="Hot-instagram"]')).toBeNull();
+      if (brand === 'Iced') expect(facebook.querySelector<HTMLOptionElement>('[value="Hot-facebook"]')!.disabled).toBe(true);
+      await change(facebook, `${brand}-facebook`);
+      await change(field(plan, 'Instagram account'), `${brand}-instagram`);
+      await click(checkbox('Use the same post', plan));
+      await change(field(plan, 'Publishing times per week'), brand === 'Hot' ? '10' : '2');
+    }
+    expect(schedule().textContent).toContain('12 unique posts · 24 destination publications');
+    const plans = schedule().querySelectorAll('.social-brand-plan');
+    await change(plans[0].querySelector<HTMLInputElement>('[aria-label="Publishing time 1"]')!, '13:35');
+    await change(plans[0].querySelector<HTMLSelectElement>('[aria-label="Publishing day 1"]')!, '5');
+    expect(plans[1].querySelector<HTMLInputElement>('[aria-label="Publishing time 1"]')!.value).toBe('09:00');
+    expect(schedule().textContent).toContain('Every Monday');
+    expect(schedule().querySelector('[aria-label="Content preparation frequency"]')).toBeNull();
+    await click(toggle()); await click(button('Save automation settings'));
+    expect(mocks.request).toHaveBeenCalledOnce();
+    const saved = JSON.parse(mocks.request.mock.calls[0][1].body).settings;
+    expect(saved).toMatchObject({ enabled: true, generationCadence: 'monthly', slots: [{ id: 'legacy' }], brands: [
+      { name: 'Hot Coffee', description: 'Espresso and coffee beans', facebookDestinationId: 'Hot-facebook', instagramDestinationId: 'Hot-instagram', shareFacebookInstagramContent: true },
+      { name: 'Iced Coffee', description: 'Cold coffee served over ice', facebookDestinationId: 'Iced-facebook', instagramDestinationId: 'Iced-instagram', shareFacebookInstagramContent: true },
+    ] });
+    expect(saved.brands[0].slots).toHaveLength(10);
+    expect(saved.brands[0].slots[0]).toMatchObject({ dayOfWeek: 5, time: '13:35' });
+    expect(saved.brands[1].slots).toHaveLength(2);
+  });
+  it('restores the saved project schedule after the last brand is removed', async () => {
+    data.settings.generationCadence = 'monthly';
+    data.settings.brands = [{ id: 'hot', name: 'Hot Coffee', description: 'Espresso and coffee beans',
+      facebookDestinationId: 'hot-fb', instagramDestinationId: 'hot-ig', shareFacebookInstagramContent: true,
+      slots: [{ id: 'tuesday', dayOfWeek: 2, time: '13:30' }] }];
+    data.settings.slots = [{ id: 'legacy', dayOfWeek: 5, time: '17:30' }];
+    await render();
+    expect(schedule().textContent).toContain('Unavailable account (hot-fb)');
+    expect(schedule().textContent).toContain('1 unique post · 2 destination publications');
+    await click(button('Remove brand'));
+    expect(schedule().querySelector<HTMLSelectElement>('[aria-label="Content preparation frequency"]')!.value).toBe('monthly');
+    expect(schedule().querySelector<HTMLInputElement>('[aria-label="Publishing time 1"]')!.value).toBe('17:30');
+    await click(button('Save automation settings'));
+    expect(JSON.parse(mocks.request.mock.calls[0][1].body).settings).toMatchObject({ brands: [], slots: [{ id: 'legacy' }] });
+  });
   it('starts generation for the saved period only when automation is enabled', async () => {
     await render(); expect(button('Generate content now').disabled).toBe(true);
     data.settings.enabled = true; await render(); await click(button('Generate content now'));
@@ -366,5 +428,59 @@ describe('TikTok publication review', () => {
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(row);
+  });
+});
+
+describe('owner client review handoff', () => {
+  it('selects eligible versions across the batch, drops changed versions and lets the owner copy or revoke the link', async () => {
+    data.settings.enabled = true;
+    const candidates = Array.from({ length: 24 }, (_, index) => ({
+      id: 'candidate-' + index, version: 3, brandName: index < 20 ? 'Hot Coffee' : 'Iced Coffee', title: 'Coffee ' + index,
+      channel: index % 2 ? 'instagram' : 'facebook', destination: 'Coffee account',
+      scheduledAt: '2026-11-09T10:00:00Z', shareable: index !== 0,
+    }));
+    const link = { id: 'grant', url: 'https://app.citevia.io/#social-review/coffee/test', expiresAt: '2026-11-09T10:00:00Z',
+      createdAt: '2026-11-02T10:00:00Z', publicationCount: 22, publications: [] as { id: string; version: number }[] };
+    let active = false;
+    const original = mocks.useApi.getMockImplementation()!;
+    mocks.useApi.mockImplementation((endpoint: string | null) => {
+      if (endpoint?.includes('clientReview=true')) return { data: { items: candidates, total: candidates.length } };
+      if (endpoint?.endsWith('/review-links')) return { data: { items: active ? [link] : [] } };
+      return original(endpoint);
+    });
+    mocks.request.mockImplementation(async (_endpoint: string, options: RequestInit) => {
+      active = options.method === 'POST';
+      if (active) link.publications = JSON.parse(String(options.body)).publications;
+      return active ? link : { revoked: true };
+    });
+    await render(); await click(button('Client review links'));
+    expect(button('Create review link (0)').disabled).toBe(true);
+    await click(checkbox('Select all eligible on this page (23)'));
+    candidates[2].version = 4;
+    await render();
+    await click(button('Create review link (22)'));
+    const [endpoint, options] = mocks.request.mock.calls[0];
+    expect(endpoint).toBe(path + '/social/review-links');
+    const { publications } = JSON.parse(options.body);
+    expect(publications).toHaveLength(22);
+    expect(publications).not.toContainEqual(expect.objectContaining({ id: 'candidate-0' }));
+    expect(publications).not.toContainEqual(expect.objectContaining({ id: 'candidate-2' }));
+    expect(publications).toContainEqual({ id: 'candidate-23', version: 3 });
+    expect([...container.querySelectorAll('small')].filter(note => note.textContent === 'Included in an active client review link')).toHaveLength(22);
+    expect(container.querySelector<HTMLInputElement>('.social-created-link input')?.value).toBe(link.url);
+    const copy = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: copy }, configurable: true });
+    try {
+      await click(button('Copy review link')); expect(copy).toHaveBeenCalledWith(link.url);
+      await click(button('Revoke'));
+      expect(mocks.request).toHaveBeenLastCalledWith(endpoint + '/grant', { method: 'DELETE' });
+      expect(container.querySelector('.social-created-link')).toBeNull();
+    } finally { Reflect.deleteProperty(navigator, 'clipboard'); }
+  });
+
+  it('exposes link management only to project owners', async () => {
+    project.role = 'viewer';
+    await render();
+    expect(button('Client review links')).toBeUndefined();
   });
 });

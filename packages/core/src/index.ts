@@ -28,3 +28,4 @@ export * from './social-automation.js';
 export * from './geo-backlinks.js';
 
 export * from './report-id.js';
+export * from './social-review.js';
