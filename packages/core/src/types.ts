@@ -42,6 +42,7 @@ export interface Project {
   competitors: Brand[];
   /** Records an explicit owner choice, including choosing no competitors. */
   competitorsConfiguredAt?: string;
+  competitorResearch?: Pick<import('./competitors.js').DiscoveredCompetitor, 'name' | 'domain' | 'relevance'>[];
   country: string;
   language: string;
   timezone: string;
@@ -612,6 +613,12 @@ export interface OnboardingJob {
   updatedAt: string;
   deadlineAt: string;
   researchKey?: string;
+  researchRevision?: number;
+  researchFeedback?: string;
+  verifiedBrandbookKey?: string;
+  verifiedResearchKey?: string;
+  competitorSearchTerm?: string;
+  competitorSearchDomains?: string[];
   brandbookKey?: string;
   promptsKey?: string;
   /** New revisions use a separate checkpoint so a rejected portfolio cannot be reused. */

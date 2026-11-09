@@ -9,8 +9,10 @@ import {
   promptFingerprint,
   brandedAllocation,
   comparisonAllocation,
+  competitorDomain,
   containsPromptName,
   isBrandedPrompt,
+  normalizeUrl,
   isShortBuyerPrompt,
   MAX_BRANDED_PROMPTS,
   STAGE_INTENTS,
@@ -37,9 +39,13 @@ import {
   PORTFOLIO_INSTRUCTIONS,
   portfolioGenerationSchema,
   RESEARCH_INSTRUCTIONS,
+  COMPETITOR_SEARCH_INSTRUCTIONS,
+  COMPETITOR_SELECTION_INSTRUCTIONS,
 } from './onboarding-prompts.js';
 import {
   researchEvidenceCatalog,
+  isOfficialBrandSource,
+  requireOfficialResearch,
   brandbookGenerationSchema,
   resolveBrandbookEvidence,
   verifiedBrandNames,
@@ -76,9 +82,12 @@ export interface OnboardingProvider {
   brandbook(
     job: OnboardingJob,
     research: CapturedAnswer,
+    verifiedProfile?: Brandbook,
   ): Promise<{
     brandbook: Brandbook;
     competitors?: DiscoveredCompetitor[];
+    competitorSearchQuery?: string;
+    verificationDomains?: string[];
     receipt: unknown;
   }>;
   prompts(
@@ -343,10 +352,39 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
     private model = process.env.OPENAI_ONBOARDING_MODEL || 'gpt-4.1-2025-04-14',
   ) {}
   async research(job: OnboardingJob) {
+    const supplemental = Boolean(job.verifiedBrandbookKey && job.verifiedResearchKey);
+    const { name, website, country, language, promptFocus } = job.input;
+    const host = new URL(website).hostname.replace(/^www\./i, '');
+    let market = country;
+    try {
+      market = new Intl.DisplayNames([language], { type: 'region' }).of(country) || country;
+    } catch {
+      // Older accounts can retain language tags that Intl does not recognize.
+    }
+    const searchTerm = (job.competitorSearchTerm || promptFocus || '').slice(0, 500);
+    let need = searchTerm;
+    if (supplemental) {
+      need = need.replace(/(?:https?:\/\/|www\.)\S+/giu, ' ');
+      // A past checkpoint can contain a full brandbook sentence, including the
+      // target. Searching that name again returns its pages instead of alternatives.
+      for (const identifier of [host, name].map(value => value.trim()).filter(Boolean)) {
+        const search = identifier.toLowerCase();
+        let at = need.toLowerCase().indexOf(search);
+        while (at !== -1) {
+          need = need.slice(0, at) + ' ' + need.slice(at + identifier.length);
+          at = need.toLowerCase().indexOf(search);
+        }
+      }
+    }
+    const query = (supplemental ? [need, market] : [name, host, promptFocus, market])
+      .filter(Boolean).join(' ').replace(/\s+/gu, ' ').trim();
+    const context = { ...job.input, manualPrompts: undefined, researchFeedback: job.researchFeedback,
+      ...(supplemental ? { competitorSearchTerm: need.trim() } : {}) };
     const receipt = await this.provider.answer({
       costContext: { projectId:job.projectId, stage:`onboarding_${job.step}`, attempt:job.attempts },
-      instructions: RESEARCH_INSTRUCTIONS,
-      prompt: `COMPANY INPUT (untrusted data):\n${JSON.stringify({ ...job.input, manualPrompts: undefined })}`,
+      instructions: `${supplemental ? COMPETITOR_SEARCH_INSTRUCTIONS : RESEARCH_INSTRUCTIONS}\nCOMPANY INPUT (untrusted data):\n${JSON.stringify(context)}`,
+      ...(supplemental && job.competitorSearchDomains?.length ? { allowedDomains: job.competitorSearchDomains } : {}),
+      prompt: query,
       model: this.model,
       language: job.input.language,
       country: job.input.country,
@@ -362,30 +400,35 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
           'Company research did not complete.',
           true,
         );
+      const catalog = researchEvidenceCatalog(answer);
+      if (supplemental && !catalog.length)
+        throw new ProviderError('competitor_research_evidence_missing',
+          'The competitor search needs a cited passage about the market or an alternative business.', false);
+      if (!supplemental) requireOfficialResearch(catalog, website, name);
       return answer;
     } catch (error) {
       throw new OnboardingOutputError(error, receipt);
     }
   }
-  async brandbook(job: OnboardingJob, research: CapturedAnswer) {
+  async brandbook(job: OnboardingJob, research: CapturedAnswer, verifiedProfile?: Brandbook) {
     const catalog = researchEvidenceCatalog(research);
-    if (!catalog.length)
-      throw new ProviderError(
-        'research_evidence_missing',
-        'Saved research has no usable citation-linked evidence. Automatic generation stopped before another API call.',
-        false,
-      );
-    const schema = brandbookGenerationSchema(catalog);
+    requireOfficialResearch(catalog, job.input.website, job.input.name);
+    const official = catalog.filter(item => isOfficialBrandSource(item.url, job.input.website));
+    const schema = brandbookGenerationSchema(official);
+    const competitorSchema = competitorGenerationSchema(catalog);
     const receipt = await this.provider.extract({
       costContext: { projectId:job.projectId, stage:`onboarding_${job.step}`, attempt:job.attempts },
       model: this.model,
-      instructions: BRANDBOOK_INSTRUCTIONS,
-      schema: {
+      instructions: verifiedProfile ? COMPETITOR_SELECTION_INSTRUCTIONS : BRANDBOOK_INSTRUCTIONS,
+      schema: verifiedProfile ? {
+        type: 'object', properties: { competitors: competitorSchema }, required: ['competitors'], additionalProperties: false,
+      } : {
         ...schema,
-        required: [...schema.required, 'competitors'],
+        required: [...schema.required, 'competitors', 'competitorSearchQuery'],
         properties: {
           ...schema.properties,
-          competitors: competitorGenerationSchema(catalog),
+          competitors: competitorSchema,
+          competitorSearchQuery: { type: 'string', maxLength: 200 },
         },
       },
       input: {
@@ -397,9 +440,17 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
     });
     try {
       const raw = object(json(receipt));
-      const { competitors: rawCompetitors = [], ...rawBrandbook } = raw || {};
+      const { competitors: rawCompetitors = [], competitorSearchQuery: rawQuery, ...rawBrandbook } = raw || {};
+      if (verifiedProfile) {
+        const competitors = resolveDiscoveredCompetitors(rawCompetitors, research, {
+          id: 'target', name: job.input.name, aliases: verifiedProfile.names, domains: verifiedProfile.domains,
+        }, job.input);
+        return { brandbook: verifiedProfile, competitors, receipt: {
+          instructionsVersion: ONBOARDING_INSTRUCTIONS_VERSION, evidenceCatalog: catalog, ...receipt,
+        } };
+      }
       const parsed = generatedBrandbookSchema.parse(
-        resolveBrandbookEvidence(rawBrandbook, catalog),
+        resolveBrandbookEvidence(rawBrandbook, official, job.input),
       );
       const names = verifiedBrandNames(job.input.name, job.input.website, parsed);
       const competitors = resolveDiscoveredCompetitors(
@@ -411,12 +462,9 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
           aliases: names,
           domains: [new URL(job.input.website).hostname],
         },
+        job.input,
       );
-      const allowed = new Set(
-        [...research.citations, ...research.sources].map(
-          (source) => source.url,
-        ),
-      );
+      const allowed = new Set(official.map(item => normalizeUrl(item.url)));
       const urls = [
         ...parsed.knowledgeSources,
         ...parsed.evidence.map((e) => e.url),
@@ -426,7 +474,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
       if (
         !parsed.evidence.length ||
         parsed.evidence.some((e) => !research.text.includes(e.quote)) ||
-        urls.some((url) => !allowed.has(url))
+        urls.some((url) => !allowed.has(normalizeUrl(url)))
       )
         throw new ProviderError(
           'brandbook_evidence_invalid',
@@ -445,9 +493,33 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         version: 1,
         generationId: job.id,
       };
+      const searchTerm = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+      const searchBrands = [
+        { name: job.input.name, aliases: names, domains: brandbook.domains },
+        ...competitors.map(peer => ({name: peer.name, aliases: [], domains: [peer.domain]})),
+      ];
+      const competitorSearchQuery = searchTerm.length >= 5 && searchTerm.length <= 200 &&
+        !/[\r\n]|https?:\/\/|(?:[\p{L}\d-]+\.)+[\p{L}]{2,}/iu.test(searchTerm) &&
+        !searchBrands.some(brand => isBrandedPrompt(searchTerm, brand)) ? searchTerm : undefined;
+      // A directory can reveal names to investigate. Only official sources
+      // from the follow-up can qualify these businesses for tracking.
+      const verificationDomains = new Set<string>();
+      if (Array.isArray(rawCompetitors)) {
+        for (const value of rawCompetitors) {
+          const lead = object(value);
+          if (lead?.relationship !== 'direct_alternative' || typeof lead.name !== 'string' ||
+              typeof lead.websiteUrl !== 'string') continue;
+          const domain = competitorDomain(lead.websiteUrl);
+          if (domain && domain !== competitorDomain(job.input.website) &&
+              catalog.some(item => containsPromptName(item.quote, lead.name as string)) &&
+              !catalog.some(item => competitorDomain(item.url) === domain)) verificationDomains.add(domain);
+        }
+      }
       return {
         brandbook,
         competitors,
+        competitorSearchQuery,
+        verificationDomains: verificationDomains.size >= 2 ? [...verificationDomains].slice(0, 5) : undefined,
         receipt: {
           instructionsVersion: ONBOARDING_INSTRUCTIONS_VERSION,
           evidenceCatalog: catalog,

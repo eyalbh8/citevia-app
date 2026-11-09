@@ -1,6 +1,14 @@
 .competitor-settings {
   min-width: 0;
 }
+.competitor-research {
+  margin: 12px 0;
+  font-size: 13px;
+}
+.competitor-research summary {
+  cursor: pointer;
+  color: var(--primary);
+}
 .competitor-settings > header {
   display: flex;
   align-items: flex-start;

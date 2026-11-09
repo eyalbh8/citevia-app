@@ -10,6 +10,7 @@ import type {
 import {
   markScheduleSynced,
   competitorBrands,
+  promptFingerprint,
 } from '@citevia/core';
 import type { Runtime } from '@citevia/storage';
 import {
@@ -21,6 +22,8 @@ import { ProviderError, type ProviderReceipt } from './provider.js';
 import { runIdFor } from './engine.js';
 import { validateSavedPortfolio } from './saved-portfolio.js';
 import { verifiedBrandNames } from './onboarding-evidence.js';
+import { withCompetitorResearch } from './onboarding-research-retry.js';
+import { ONBOARDING_INSTRUCTIONS_VERSION } from './onboarding-prompts.js';
 const leaseMs = 12 * 60_000;
 const maxAutomaticPortfolioCorrections = 2;
 class LostLease extends Error {}
@@ -28,6 +31,9 @@ class LostLease extends Error {}
 type ResearchCheckpoint = {
   brandbook: Brandbook;
   competitors?: DiscoveredCompetitor[];
+  receipt?: { instructionsVersion?: string };
+  competitorSearchQuery?: string;
+  verificationDomains?: string[];
 };
 
 function portfolioContext(project: Project, job: OnboardingJob, research: ResearchCheckpoint) {
@@ -38,6 +44,10 @@ function portfolioContext(project: Project, job: OnboardingJob, research: Resear
       project.promptFocus !== job.input.promptFocus) {
     throw new ProviderError('onboarding_account_changed',
       'The brand, website, market, language or focus changed during setup. Restore the submitted details and retry, or start onboarding for the new business.', false);
+  }
+  if (project.onboardingAppliedJobId !== job.id && research.receipt?.instructionsVersion &&
+      research.receipt.instructionsVersion !== ONBOARDING_INSTRUCTIONS_VERSION) {
+    throw new ProviderError('onboarding_research_policy_changed', 'Recheck the company profile and direct rivals against current official sources.', false);
   }
   // Recheck aliases from older saved research using current identity rules.
   const verified = verifiedBrandNames(project.brand.name, job.input.website, research.brandbook);
@@ -122,7 +132,7 @@ export class OnboardingEngine {
     };
     try {
       if (current.step === 'research') {
-        const key = `${root}/research.json`;
+        const key = current.researchRevision ? `${root}/research-${current.researchRevision}.json` : `${root}/research.json`;
         await generateOnce(key, () => this.provider.research(current));
         current = { ...current, researchKey: key, step: 'brandbook' };
       } else if (current.step === 'brandbook') {
@@ -130,11 +140,37 @@ export class OnboardingEngine {
           current.researchKey!,
         );
         if (!research) throw new Error('Missing research checkpoint');
-        const key = `${root}/brandbook.json`;
-        await generateOnce(key, () =>
-          this.provider.brandbook(current, research),
-        );
-        current = { ...current, brandbookKey: key, step: 'prompts' };
+        const primary = current.verifiedResearchKey
+          ? await artifacts.get<CapturedAnswer>(current.verifiedResearchKey)
+          : null;
+        if (current.verifiedResearchKey && !primary) throw new Error('Missing original research checkpoint');
+        const key = current.researchRevision ? `${root}/brandbook-${current.researchRevision}.json` : `${root}/brandbook.json`;
+        await generateOnce(key, async () => {
+          if (!current.verifiedBrandbookKey) return this.provider.brandbook(current, research);
+          const original = await artifacts.get<ResearchCheckpoint>(current.verifiedBrandbookKey);
+          if (!original?.brandbook || !primary) throw new Error('Missing validated company research');
+          const result = await this.provider.brandbook(current, withCompetitorResearch(primary, research), original.brandbook);
+          const candidates = [...(original.competitors ?? []), ...(result.competitors ?? [])];
+          const unique = new Map(candidates.map(peer => [peer.domain, peer]));
+          const competitors = [...unique.values()].filter(peer => !candidates.some(other =>
+            other.domain !== peer.domain && promptFingerprint(other.name) === promptFingerprint(peer.name))).slice(0, 5);
+          return { ...result, brandbook: original.brandbook, competitors };
+        });
+        const result = await artifacts.get<ResearchCheckpoint>(key);
+        if (!result?.brandbook) throw new Error('Missing brandbook checkpoint');
+        const project = await repository.getProject(projectId);
+        if (result.competitors && result.competitors.length < 3 && !current.researchRevision &&
+            project && !project.competitorsConfiguredAt && !project.competitors.length) {
+          // Keep the verified profile while making one more search for direct alternatives.
+          current = { ...current, step: 'research', verifiedBrandbookKey: key, verifiedResearchKey: current.researchKey,
+            competitorSearchTerm: result.competitorSearchQuery || current.input.promptFocus ||
+              result.brandbook.subIndustryCategory || result.brandbook.industryCategory || result.brandbook.keyFeatures[0],
+            competitorSearchDomains: result.verificationDomains,
+            researchRevision: 1,
+            researchFeedback: 'Find additional direct competitors using local buyer terms for the verified services and market. Look for official pages that document the competing offer and whom it serves.' };
+        } else {
+          current = { ...current, brandbookKey: key, step: 'prompts' };
+        }
       } else if (current.step === 'prompts') {
         const book = await artifacts.get<ResearchCheckpoint>(current.brandbookKey!);
         if (!book) throw new Error('Missing brandbook checkpoint');
@@ -181,6 +217,9 @@ export class OnboardingEngine {
           const next = {
             ...project,
             ...context,
+            competitorResearch: (book.competitors ?? []).filter(candidate => candidate.relevance &&
+              context.competitors.some(peer => peer.domains.includes(candidate.domain) && peer.name === candidate.name))
+              .map(({name, domain, relevance}) => ({name, domain, relevance})),
             prompts,
             enabled: true,
             onboardingAppliedJobId: jobId,
@@ -274,12 +313,15 @@ export class OnboardingEngine {
         return;
       }
       let rejectedPortfolioSaved = false;
+      let rejectedResearchSaved = false;
       let rejectedPortfolioKey: string | undefined;
       if (error instanceof OnboardingOutputError) {
         try {
           rejectedPortfolioKey = `${root}/attempts/${current.paidCall?.id ?? randomUUID()}/${job.step}.json`;
           await artifacts.put(rejectedPortfolioKey, error.receipt);
           rejectedPortfolioSaved = job.step === 'prompts' && error.canRevise;
+          rejectedResearchSaved = error.receipt.response.status === 'completed' &&
+            ['brandbook_evidence_invalid', 'onboarding_official_research_missing', 'competitor_research_evidence_missing'].includes(error.code);
         } catch {
           console.error(
             JSON.stringify({
@@ -289,6 +331,27 @@ export class OnboardingEngine {
               step: job.step,
             }),
           );
+        }
+      }
+      const needsResearch = rejectedResearchSaved ||
+        (job.step === 'brandbook' && error instanceof ProviderError && !(error instanceof OnboardingOutputError) &&
+          error.code === 'onboarding_official_research_missing');
+      const obsoleteResearch = error instanceof ProviderError && error.code === 'onboarding_research_policy_changed';
+      if (obsoleteResearch || (needsResearch && (job.step === 'research' || job.step === 'brandbook'))) {
+        const fallback = current.verifiedBrandbookKey;
+        if (fallback || !current.researchRevision) {
+          const retry: OnboardingJob = {
+            ...current, status: 'queued', attempts: 0, version: current.version + 1,
+            step: fallback ? 'prompts' : 'research', brandbookKey: fallback,
+            researchRevision: current.researchRevision || 1,
+            researchFeedback: fallback ? undefined : (error as ProviderError).message,
+            ...(obsoleteResearch ? { portfolioRevision: (current.portfolioRevision ?? 0) + 1, promptsKey: undefined } : {}),
+            leaseOwner: undefined, leaseExpiresAt: undefined, paidCall: undefined,
+            updatedAt: this.now().toISOString(),
+          };
+          if (await repository.saveOnboarding(retry, current.version))
+            await queue.send([{ kind: 'onboard', projectId, jobId }]);
+          return;
         }
       }
       const stalePortfolio = job.step === 'activate' && error instanceof ProviderError &&

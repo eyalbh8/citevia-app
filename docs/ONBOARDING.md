@@ -6,8 +6,8 @@ A system administrator opens **Accounts → New account** and supplies the brand
 
 The system persists the account, membership and onboarding job atomically, with weekly scanning disabled. It then queues these steps:
 
-1. **Research:** OpenAI Responses with web search researches the company and up to five direct competitors, including their official websites, and saves the native response and sources.
-2. **Brandbook:** a separate strict JSON generation creates the iGEO-style company profile and a separate competitor list from that research. The model selects IDs from a server-built catalog of citation-linked research excerpts. The server copies each exact quote and its native URL; it never accepts a generated or paraphrased evidence quote. Selected evidence and all returned URLs are validated before saving. Competitors require name-bearing evidence linked to their official domain; unsupported candidates are omitted. Missing profile facts remain empty/null and appear under Needs verification.
+1. **Research.** Search the submitted official domain for the company identity and main offerings. Use the selected market, language and optional service focus to find real alternatives. Keep native citations with the passages they support.
+2. **Brandbook and competitors.** Build factual fields from cited research on the submitted business’s own website, preserving qualifications and flagging unsupported claims under Needs verification. An identified business and at least one supported offering are required. Select up to five direct competitors with evidence of a shared offering and service to the buyer market. If fewer than three qualify and the owner has not selected rivals, make one supplemental search using a local buyer query. When directories identify multiple plausible businesses whose own sites were not cited, that search verifies the candidate domains directly. Retain verified rivals and the original company profile. The Competitors screen links the research for each automatic selection.
 3. **Prompts:** a separate strict JSON generation creates exactly 50 questions using the four brand-specific tactics. Each prompt has a journey section, topic, branded flag, generation ID and version.
 4. **Activate:** save the brandbook, validated portfolio and verified competitors, enable the weekly schedule in the account's timezone, and enqueue an idempotent first scan. Existing manual competitor choices, including an explicitly empty list, are preserved. All provider scans receive the same assigned competitors. The Accounts screen shows progress and recoverable failures; Dashboard shows scan progress.
 
@@ -15,7 +15,7 @@ No per-account CLI or database editing is required. Descope authenticates people
 
 ## Generation instructions
 
-The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v7`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
+The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v8`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
 
 - Understand: whether AI understands the brand’s business, offerings, audiences and use cases.
 - Prefer: discovery, shortlists, alternatives, comparisons and tradeoffs.
@@ -109,6 +109,6 @@ Use `POST /v1/onboarding/accounts` with an authenticated system-administrator se
 
 An owner or system administrator can select **Stop setup** in Accounts or call `POST /v1/projects/{id}/onboarding/stop`. The persisted stopped state fences late model completions, stale queue deliveries and recovery. An already in-flight provider request may finish and incur its cost; its saved receipt can be preserved, but it cannot start the next stage. API calls to start scans or enable a weekly schedule are rejected until onboarding has completed. The scanner independently checks the same status, including stale scheduled messages.
 
-A generation/validation failure stops automatically after that attempt. The UI displays the reason and makes it clear that no further generation/scanning begins automatically. **Retry setup** calls the existing owner-only retry endpoint, clears the old call intent, and resumes from saved valid checkpoints. Up to eight explicit retry intents are allowed. A new retry is a deliberate paid action where the failed stage needs another response; duplicate HTTP/SQS deliveries do not reset the intent.
+When setup exhausts its bounded corrections, the Accounts screen displays the reason. **Retry setup** uses the saved checkpoints, with fresh research when the prior evidence could not establish the company. Up to eight explicit owner retries are allowed. Duplicate retry request IDs reuse the same attempt.
 
-For brandbooks, research evidence must have a valid native citation range, source URL and exact saved quote. If no usable evidence exists, the worker stops before purchasing the brandbook call. Invalid evidence IDs, free-form quotes, unvisited URLs, malformed JSON or invalid portfolio counts stop rather than repeatedly asking the model to repair its own output. Failed native receipts are saved under unique attempt IDs; a diagnostic storage failure does not cause another model call.
+When completed research cannot establish the submitted company or its offering, setup makes one more research pass with feedback. A failed source check on the supplemental competitor search can use the already verified company profile. Duplicate deliveries and uncertain paid calls follow the existing lease and retry rules.

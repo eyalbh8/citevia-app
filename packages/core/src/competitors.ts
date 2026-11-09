@@ -7,6 +7,14 @@ export interface DiscoveredCompetitor {
   name: string;
   domain: string;
   evidence: { quote: string; url: string }[];
+  /** Present on discoveries with verified offering and market evidence. */
+  relevance?: {
+    country: string;
+    sharedNeed: string;
+    targetOffering: { quote: string; url: string };
+    competingOffering: { quote: string; url: string };
+    market: { quote: string; url: string };
+  };
 }
 
 /** Public company domains only; a citation or a generated hostname is not itself a competitor. */

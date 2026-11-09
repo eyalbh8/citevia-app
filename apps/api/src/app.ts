@@ -521,6 +521,11 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           deadlineAt: new Date(now().getTime() + 86400000).toISOString(),
           retryRequestIds: [...job.retryRequestIds, key],
           automaticPortfolioCorrections: 0,
+          ...((job.step === 'research' || job.step === 'brandbook') && job.error &&
+            ['onboarding_official_research_missing', 'brandbook_evidence_invalid', 'research_evidence_missing'].includes(job.error.code)
+            ? { step: 'research' as const, researchRevision: (job.researchRevision ?? 0) + 1,
+                researchFeedback: job.error.message, researchKey: undefined, brandbookKey: undefined }
+            : {}),
           ...(job.step === 'activate' && job.error &&
             ['onboarding_portfolio_policy_changed', 'onboarding_portfolio_checkpoint_missing'].includes(job.error.code)
             ? { step: 'prompts' as const, promptsKey: undefined, portfolioRevision: (job.portfolioRevision ?? 0) + 1,
