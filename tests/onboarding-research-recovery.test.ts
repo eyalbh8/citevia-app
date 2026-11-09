@@ -8,11 +8,11 @@ import { ProviderError } from '../apps/scanner/src/provider.js';
 import { FixtureOnboardingProvider } from './fixtures/onboarding.js';
 import { testIdentity } from './fixtures/users.js';
 
-async function setup() {
+async function setup(language = 'he') {
   const runtime = {repository: new MemoryRepository(), queue: new MemoryQueue(), artifacts: new MemoryArtifacts()};
   await runtime.repository.syncUser(testIdentity('owner'));
   const {items: [item]} = await createAccounts(runtime, 'owner', 'research-check',
-    {accounts: [{name: 'Acme', website: 'https://acme.com', region: 'IL', language: 'he'}]}, new Date(), 10);
+    {accounts: [{name: 'Acme', website: 'https://acme.com', region: 'IL', language}]}, new Date(), 10);
   const provider = new FixtureOnboardingProvider();
   const worker = new OnboardingEngine(runtime, provider, async () => {});
   const work = () => worker.handle(item.project.id, item.job.id);
@@ -68,7 +68,7 @@ it('stops before prompts and the first scan when both company searches fail to e
 });
 
 it('adds independently verified rivals from both passes to the first portfolio and exposes their source evidence', async () => {
-  const {provider, work, current, runtime, item} = await setup();
+  const {provider, work, current, runtime, item} = await setup('en');
   const profile = await provider.brandbook(item.job);
   const candidate = (name: string, domain: string) => {
     const own = {quote: 'Acme offers retail training.', url: 'https://acme.com/training'};
