@@ -43,17 +43,54 @@ function research(): CapturedAnswer {
   const blocks = [
     {
       id: 'rival',
-      text: 'Clearview offers competing analytics to the same small business audience. https://www.clearview.com/about',
+      text: 'Clearview provides inventory analytics. Clearview serves shops in Italy. https://www.clearview.com/about',
     },
     {
       id: 'own',
-      text: 'Acme Tools offers analytics. https://help.acme.com/about',
+      text: 'Acme Tools offers inventory analytics and payroll audits for shops. https://help.acme.com/about',
     },
     {
       id: 'duplicate',
-      text: 'Clearview also sells these tools. https://other.com/about',
+      text: 'Clearview provides inventory analytics. Clearview serves shops in Italy. https://other.com/about',
+    },
+    {
+      id: 'clothing',
+      text: 'Jet sells clothing to small businesses in Italy. https://jetwear.com/store',
+    },
+    {
+      id: 'market',
+      text: 'Clearview serves shops only in Canada. https://clearview.com/availability',
+    },
+    {
+      id: 'misnamed',
+      text: 'Our service includes inventory analytics for shops in Italy. https://clearview.com/clearview',
+    },
+    {
+      id: 'regional',
+      text: 'Clearview provides inventory analytics to customers in Milan and online worldwide. https://clearview.com/customers',
+    },
+    {
+      id: 'hq',
+      text: 'Clearview is headquartered in Italy. https://clearview.com/contact',
+    },
+    {
+      id: 'toronto',
+      text: 'Clearview serves retailers only in Toronto. https://clearview.com/retail',
+    },
+    {
+      id: 'negative',
+      text: 'Clearview does not serve shops in Italy. https://clearview.com/zones',
+    },
+    {
+      id: 'italy',
+      text: 'Clearview assists clients in Milan, Italy. https://clearview.com/lombardy',
     },
   ];
+  return capturedResearch(blocks);
+}
+function capturedResearch(
+  blocks: { id: string; text: string }[],
+): CapturedAnswer {
   return {
     providerResponseId: 'fixture-research',
     model: 'fixture',
@@ -65,7 +102,7 @@ function research(): CapturedAnswer {
       blockId: block.id,
       title: 'Official website',
       url: block.text.slice(block.text.indexOf('https://')),
-      start: 0,
+      start: block.text.indexOf('https://'),
       end: block.text.length,
     })),
     sources: [{ url: 'https://unrelated.com' }],
@@ -75,34 +112,46 @@ function research(): CapturedAnswer {
   };
 }
 
+const targetClaim =
+  'Acme Tools offers inventory analytics and payroll audits for shops.';
+const scope = { country: 'IT', language: 'en' };
+function proposal(saved: CapturedAnswer) {
+  const catalog = researchEvidenceCatalog(saved);
+  return {
+    name: 'Clearview',
+    websiteUrl: 'https://clearview.com',
+    relationship: 'direct_alternative',
+    sharedNeed: 'inventory analytics',
+    targetOffering: { quote: targetClaim, evidenceId: catalog[1].id },
+    competingOffering: {
+      quote: 'Clearview provides inventory analytics.',
+      evidenceId: catalog[0].id,
+    },
+    market: {
+      quote: 'Clearview serves shops in Italy.',
+      area: 'Italy',
+      country: 'IT',
+      evidenceId: catalog[0].id,
+    },
+  };
+}
+
 describe('grounded onboarding competitors', () => {
   it('keeps competitor extraction alongside the brandbook and outside its editable fields', async () => {
     const saved = research(),
       catalog = researchEvidenceCatalog(saved);
     const job = policyJob();
     const output = {
-      about: 'Acme Tools offers analytics.',
-      industryCategory: 'Analytics',
-      subIndustryCategory: '',
-      names: ['Acme Tools'],
-      keyFeatures: [],
-      toneOfVoice: [],
-      values: [],
-      personality: [],
-      targetAudience: [],
+      evidence: [
+        { field: 'about', value: targetClaim, evidenceId: catalog[1].id },
+        { field: 'keyFeatures', value: targetClaim, evidenceId: catalog[1].id },
+      ],
       knowledgeSources: [],
       sitemapUrl: null,
       caseStudiesSourceUrl: null,
       postGuidelines: { dos: [], donts: [] },
       unknowns: [],
-      evidence: [{ field: 'about', evidenceId: catalog[1].id }],
-      competitors: [
-        {
-          name: 'Clearview',
-          websiteUrl: 'https://clearview.com',
-          evidenceIds: [catalog[0].id],
-        },
-      ],
+      competitors: [proposal(saved)],
     };
     const extract = vi.fn(async (_request: unknown) => ({
       response: {
@@ -132,76 +181,303 @@ describe('grounded onboarding competitors', () => {
     expect(request.schema.properties).toHaveProperty('competitors');
   });
 
-  it('copies official-domain evidence, deduplicates names/domains and excludes own aliases/domains', () => {
+  it('retains only the official claims that explain the buyer overlap and available market', () => {
     const saved = research(),
-      catalog = researchEvidenceCatalog(saved);
-    const result = resolveDiscoveredCompetitors(
-      [
-        {
-          name: 'Clearview',
-          websiteUrl: 'https://clearview.com',
-          evidenceIds: [catalog[0].id],
-        },
-        {
-          name: 'Clearview',
-          websiteUrl: 'https://www.clearview.com/product',
-          evidenceIds: [catalog[0].id],
-        },
-        {
-          name: 'Acme Tools',
-          websiteUrl: 'https://acme.com',
-          evidenceIds: [catalog[1].id],
-        },
-        {
-          name: 'Clearview',
-          websiteUrl: 'https://other.com',
-          evidenceIds: [catalog[2].id],
-        },
-      ],
+      c = proposal(saved);
+    const accepted = resolveDiscoveredCompetitors(
+      [c, { ...c, websiteUrl: 'https://www.clearview.com/shop' }],
       saved,
       target,
+      scope,
     );
-    expect(result).toEqual([
+    expect(accepted).toEqual([
       {
-        name: 'Clearview',
+        name: c.name,
         domain: 'clearview.com',
-        evidence: [{ quote: catalog[0].quote, url: catalog[0].url }],
+        evidence: [
+          {
+            quote: c.competingOffering.quote,
+            url: 'https://www.clearview.com/about',
+          },
+          { quote: c.market.quote, url: 'https://www.clearview.com/about' },
+        ],
+        relevance: {
+          sharedNeed: 'inventory analytics',
+          country: 'IT',
+          targetOffering: {
+            quote: c.targetOffering.quote,
+            url: 'https://help.acme.com/about',
+          },
+          competingOffering: {
+            quote: c.competingOffering.quote,
+            url: 'https://www.clearview.com/about',
+          },
+          market: {
+            quote: c.market.quote,
+            url: 'https://www.clearview.com/about',
+          },
+        },
       },
     ]);
   });
 
-  it('drops invented identities, unrelated citations, unsafe sites and missing evidence without inventing replacements', () => {
+  it('rejects unrelated providers, missing offering evidence, indirect sellers and the target’s own brands', () => {
     const saved = research(),
+      catalog = researchEvidenceCatalog(saved),
+      c = proposal(saved);
+    const jet = {
+      name: 'Jet',
+      websiteUrl: 'https://jetwear.com',
+      competingOffering: {
+        quote: 'Jet sells clothing to small businesses in Italy.',
+        evidenceId: catalog[3].id,
+      },
+      market: {
+        quote: 'Jet sells clothing to small businesses in Italy.',
+        area: 'Italy',
+        country: 'IT',
+        evidenceId: catalog[3].id,
+      },
+    };
+    const rivals = [
+      { ...c, ...jet },
+      { ...c, ...jet, sharedNeed: 'clothing' },
+      { ...c, relationship: 'indirect' },
+      { ...c, relationship: 'same_business' },
+      {
+        ...c,
+        targetOffering: { ...c.targetOffering, evidenceId: catalog[0].id },
+      },
+      {
+        ...c,
+        competingOffering: {
+          ...c.competingOffering,
+          quote: 'Invented inventory analytics service.',
+        },
+      },
+      { ...c, name: 'Acme Tools', websiteUrl: 'https://help.acme.com' },
+      { ...c, name: 'Unrelated' },
+      { ...c, websiteUrl: 'https://other.com' },
+      { ...c, websiteUrl: 'http://127.0.0.1' },
+      { ...c, sharedNeed: 'analytics agency' },
+      {
+        ...c,
+        competingOffering: {
+          evidenceId: catalog[5].id,
+          quote: 'Our service includes inventory analytics for shops in Italy.',
+        },
+        market: {
+          country: 'IT',
+          area: 'Italy',
+          evidenceId: catalog[5].id,
+          quote: 'Our service includes inventory analytics for shops in Italy.',
+        },
+      },
+    ];
+    for (const rival of rivals)
+      expect(
+        resolveDiscoveredCompetitors([rival], saved, target, scope),
+      ).toEqual([]);
+    expect(
+      resolveDiscoveredCompetitors([c], saved, target, {
+        ...scope,
+        promptFocus: 'payroll audits',
+      }),
+    ).toEqual([]);
+  });
+
+  it('supports local/global availability and rejects wrong markets and headquarters-only proof', () => {
+    const saved = research(),
+      c = proposal(saved),
+      catalog = researchEvidenceCatalog(saved);
+    const onlyCanada = {
+      country: 'IT',
+      area: 'Canada',
+      quote: 'Clearview serves shops only in Canada.',
+      evidenceId: catalog[4].id,
+    };
+    for (const market of [
+      onlyCanada,
+      { ...c.market, country: 'US' },
+      { ...c.market, area: 'Paris' },
+      {
+        ...c.market,
+        area: 'Toronto',
+        quote: 'Clearview serves retailers only in Toronto.',
+        evidenceId: catalog[8].id,
+      },
+      {
+        ...c.market,
+        area: 'Italy',
+        quote: 'serve shops in Italy',
+        evidenceId: catalog[9].id,
+      },
+      {
+        ...c.market,
+        evidenceId: catalog[7].id,
+        quote: 'Clearview is headquartered in Italy.',
+      },
+    ]) {
+      expect(
+        resolveDiscoveredCompetitors([{ ...c, market }], saved, target, scope),
+      ).toEqual([]);
+    }
+    for (const market of [
+      {
+        country: 'IT',
+        area: 'worldwide',
+        evidenceId: catalog[6].id,
+        quote:
+          'Clearview provides inventory analytics to customers in Milan and online worldwide.',
+      },
+      {
+        country: 'IT',
+        area: 'Milan',
+        evidenceId: catalog[10].id,
+        quote: 'Clearview assists clients in Milan, Italy.',
+      },
+    ]) {
+      expect(
+        resolveDiscoveredCompetitors([{ ...c, market }], saved, target, scope),
+      ).toHaveLength(1);
+    }
+  });
+
+  it('does not choose between two independent business domains sharing an unqualified name', () => {
+    const saved = research(),
+      c = proposal(saved),
       catalog = researchEvidenceCatalog(saved);
     expect(
       resolveDiscoveredCompetitors(
         [
+          c,
           {
-            name: 'Invented',
-            websiteUrl: 'https://clearview.com',
-            evidenceIds: [catalog[0].id],
-          },
-          {
-            name: 'Clearview',
-            websiteUrl: 'https://unrelated.com',
-            evidenceIds: [catalog[0].id],
-          },
-          {
-            name: 'Clearview',
-            websiteUrl: 'http://127.0.0.1',
-            evidenceIds: [catalog[0].id],
-          },
-          {
-            name: 'Clearview',
-            websiteUrl: 'https://clearview.com',
-            evidenceIds: ['fabricated'],
+            ...c,
+            websiteUrl: 'https://other.com',
+            competingOffering: {
+              ...c.competingOffering,
+              evidenceId: catalog[2].id,
+            },
+            market: { ...c.market, evidenceId: catalog[2].id },
           },
         ],
         saved,
         target,
+        scope,
       ),
     ).toEqual([]);
-    expect(resolveDiscoveredCompetitors([], saved, target)).toEqual([]);
+  });
+
+  it('recovers a concrete product identifier and locally served buyers without crediting unrelated publications', () => {
+    const saved = capturedResearch([
+      {
+        id: 'primary',
+        text: 'Acme files Q‑7 applications in Italy. https://acme.com/q7',
+      },
+      {
+        id: 'firm',
+        text: '1. Stockbridge Law\nThe firm provides Q7 filing services for Italian investors. https://stockbridgelaw.com/services',
+      },
+      {
+        id: 'topic',
+        text: 'Q7 forms require a local signature. https://stockbridgelaw.com/services',
+      },
+      {
+        id: 'publisher',
+        text: 'The Ledger publishes articles about Q7 for Italian investors. https://ledger.com/articles',
+      },
+    ]);
+    const catalog = researchEvidenceCatalog(saved);
+    const c = {
+      name: 'Stockbridge Law',
+      websiteUrl: 'https://stockbridgelaw.com',
+      relationship: 'direct_alternative',
+      sharedNeed: 'Comprehensive Q-7 application services for local investors',
+      targetOffering: {
+        evidenceId: catalog[0].id,
+        quote: 'Acme files Q‑7 applications in Italy.',
+      },
+      competingOffering: {
+        evidenceId: catalog[1].id,
+        quote: 'The firm provides Q7 filing services for Italian investors.',
+      },
+      market: {
+        country: 'IT',
+        area: 'investors',
+        evidenceId: catalog[2].id,
+        quote: 'Q7 forms require a local signature.',
+      },
+    };
+    const publisher = {
+      ...c,
+      name: 'The Ledger',
+      websiteUrl: 'https://ledger.com',
+      competingOffering: {
+        evidenceId: catalog[3].id,
+        quote: 'The Ledger publishes articles about Q7 for Italian investors.',
+      },
+      market: {
+        area: 'Italian',
+        country: 'IT',
+        evidenceId: catalog[3].id,
+        quote: 'The Ledger publishes articles about Q7 for Italian investors.',
+      },
+    };
+    const accepted = resolveDiscoveredCompetitors(
+      [c, publisher],
+      saved,
+      target,
+      scope,
+    );
+    expect(accepted.map((x) => x.name)).toEqual(['Stockbridge Law']);
+    expect(accepted[0].relevance).toMatchObject({
+      sharedNeed: 'Q-7',
+      market: { quote: c.competingOffering.quote },
+    });
+  });
+
+  it('cannot use a shared place or a generic audience as the competing service', () => {
+    const saved = capturedResearch([
+      {
+        id: 'primary',
+        text: 'Acme provides visa help to small teams in the United States. https://acme.com/q7',
+      },
+      {
+        id: 'rival',
+        text: 'Clearview ships clothing to small teams in the United States. https://clearview.com/shop',
+      },
+    ]);
+    const catalog = researchEvidenceCatalog(saved),
+      c = proposal(research());
+    const row = {
+      ...c,
+      targetOffering: {
+        quote: 'Acme provides visa help to small teams in the United States.',
+        evidenceId: catalog[0].id,
+      },
+      competingOffering: {
+        quote: 'Clearview ships clothing to small teams in the United States.',
+        evidenceId: catalog[1].id,
+      },
+      market: {
+        quote: 'Clearview ships clothing to small teams in the United States.',
+        area: 'United States',
+        country: 'US',
+        evidenceId: catalog[1].id,
+      },
+    };
+    for (const sharedNeed of [
+      'United States',
+      'small teams',
+      'Support small teams in the United States',
+    ]) {
+      expect(
+        resolveDiscoveredCompetitors([{ ...row, sharedNeed }], saved, target, {
+          country: 'US',
+          language: 'en',
+        }),
+      ).toEqual([]);
+    }
   });
 
   it('creates stable IDs and caps tracked competitors at five while protecting the own brand', () => {

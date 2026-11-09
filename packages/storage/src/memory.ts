@@ -750,6 +750,7 @@ export class MemoryRepository implements Repository {
         ...project,
         prompts: [],
         brandbook: undefined,
+        competitorResearch: undefined,
         activePromptCount: project.prompts.filter((prompt) => prompt.active)
           .length,
         onboardingSummary: job

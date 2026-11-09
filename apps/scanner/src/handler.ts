@@ -108,10 +108,8 @@ function awsScanner(): Scanner {
     runtime,
     {
       research: async (job) => (await onboard()).research(job),
-      brandbook: async (job, research) =>
-        (await onboard()).brandbook(job, research),
-      prompts: async (job, book, competitors) =>
-        (await onboard()).prompts(job, book, competitors),
+      brandbook: async (...args) => (await onboard()).brandbook(...args),
+      prompts: async (...args) => (await onboard()).prompts(...args),
     },
     syncProjectSchedule,
   );

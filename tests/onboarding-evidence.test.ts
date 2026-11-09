@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CapturedAnswer, OnboardingJob } from '@citevia/core';
-import { researchEvidenceCatalog } from '../apps/scanner/src/onboarding-evidence.js';
+import { researchEvidenceCatalog, requireOfficialResearch, isOfficialBrandSource } from '../apps/scanner/src/onboarding-evidence.js';
 import { OpenAIOnboardingProvider } from '../apps/scanner/src/onboarding-provider.js';
 
 function research(): CapturedAnswer {
   const text =
-    '## Research\nAcme produce strumenti per le imprese. ([Acme](https://acme.com/about))\n\nIts tools support small teams. ([Acme](https://acme.com/products))';
+    '## Research\nAcme produce strumenti per le imprese. ([Acme](https://acme.com/about))\n\nAcme vende questi strumenti solo alle piccole imprese. ([Acme](https://acme.com/products))';
   const first = text.indexOf('([Acme]'),
     second = text.lastIndexOf('([Acme]');
   return {
@@ -51,15 +51,6 @@ const job = {
   },
 } as unknown as OnboardingJob;
 const base = {
-  about: 'Acme produce strumenti per le imprese.',
-  industryCategory: 'Tools',
-  subIndustryCategory: '',
-  names: ['Acme'],
-  keyFeatures: [],
-  toneOfVoice: [],
-  values: [],
-  personality: [],
-  targetAudience: [],
   knowledgeSources: ['https://acme.com/about'],
   sitemapUrl: null,
   caseStudiesSourceUrl: null,
@@ -92,7 +83,11 @@ describe('brandbook evidence references', () => {
     const extract = vi.fn(async (_request: unknown) =>
       receipt({
         ...base,
-        evidence: [{ field: 'about', evidenceId: catalog[0].id }],
+        competitorSearchQuery: 'fornitori di strumenti per piccole imprese',
+        evidence: [
+          { field: 'about', evidenceId: catalog[0].id, value: 'Acme produce strumenti per le imprese.' },
+          { field: 'keyFeatures', evidenceId: catalog[1].id, value: 'Acme vende questi strumenti' },
+        ],
       }),
     );
     const result = await new OpenAIOnboardingProvider({
@@ -101,9 +96,15 @@ describe('brandbook evidence references', () => {
     }).brandbook(job, saved);
     expect(result.brandbook.evidence).toEqual([
       { field: 'about', quote: catalog[0].quote, url: catalog[0].url },
+      { field: 'keyFeatures', quote: catalog[1].quote, url: catalog[1].url },
     ]);
+    expect(result.competitorSearchQuery).toBe('fornitori di strumenti per piccole imprese');
+    expect(result.brandbook).not.toHaveProperty('competitorSearchQuery');
+    expect(result.brandbook.about).toBe('Acme produce strumenti per le imprese.');
+    expect(result.brandbook.keyFeatures).toEqual(['Acme vende questi strumenti solo alle piccole imprese.']);
+    expect(result.brandbook.names).toEqual(['Acme']);
     expect(result.receipt).toMatchObject({
-      instructionsVersion: 'citevia-onboarding-v7',
+      instructionsVersion: 'citevia-onboarding-v8',
       evidenceCatalog: catalog,
     });
     const request = extract.mock.calls[0][0] as any;
@@ -115,9 +116,17 @@ describe('brandbook evidence references', () => {
     ).not.toHaveProperty('quote');
   });
   it('rejects hallucinated IDs, paraphrases, extra evidence fields, empty evidence and unvisited source URLs', async () => {
-    const saved = research(),
-      catalog = researchEvidenceCatalog(saved);
+    const saved = research(), catalog = researchEvidenceCatalog(saved);
+    const proofs = [
+      { field: 'about', evidenceId: catalog[0].id, value: 'Acme produce strumenti per le imprese.' },
+      { field: 'keyFeatures', evidenceId: catalog[1].id, value: 'Acme vende questi strumenti' },
+    ];
     for (const payload of [
+      { ...base, evidence: proofs, about: 'An invented override' },
+      { ...base, evidence: proofs, identityStatus: 'different_business' },
+      { ...base, evidence: proofs, caseStudiesSourceUrl: 'https://acme.com/unrelated' },
+      { ...base, evidence: [proofs[0], { ...proofs[1], value: 'A completely invented offering' }] },
+      { ...base, evidence: [{ ...proofs[0], value: 'A completely invented description' }, proofs[1]] },
       { ...base, evidence: [{ field: 'about', evidenceId: 'invented' }] },
       {
         ...base,
@@ -159,6 +168,91 @@ describe('brandbook evidence references', () => {
       expect(extract).toHaveBeenCalledTimes(1);
     }
   });
+  it('keeps unverified optional information out of facts without discarding a supported profile', async () => {
+    const saved = research(), items = researchEvidenceCatalog(saved);
+    const extract = vi.fn(async () => receipt({
+      ...base, evidence: [
+        {field: 'about', value: 'Acme produce strumenti per le imprese.', evidenceId: items[0].id},
+        {field: 'keyFeatures', value: 'Acme vende questi strumenti', evidenceId: items[1].id},
+        {field: 'industryCategory', value: 'Medical devices', evidenceId: items[0].id},
+        {field: 'values', value: 'Free repairs', evidenceId: items[0].id},
+      ],
+    }));
+    const result = await new OpenAIOnboardingProvider({answer: vi.fn(), extract}).brandbook(job, saved);
+    expect(result.brandbook).toMatchObject({ industryCategory: '', values: [], unknowns: ['Unverified against the official sources: Medical devices','Unverified against the official sources: Free repairs'] });
+    expect(result.brandbook.evidence).toHaveLength(2);
+  });
+
+  it('declines an explicit identity mismatch and keeps a denied offering out of the profile', async () => {
+    const saved = research();
+    const host = 'https://acme.com';
+    for (const claim of ['We could not identify Acme.', 'The site belongs to Gamma, not Acme.', 'לא ניתן לזהות את Acme כעסק הזה.']) {
+      expect(() => requireOfficialResearch([{id:'one',blockId:'b',start:0,end:claim.length,url:host,quote:claim}],host,'Acme')).toThrow();
+    }
+    const refusal = 'Acme does not provide legal services.';
+    const lines = ['Acme makes tools for small businesses.', refusal];
+    saved.text = lines.join('\n'); saved.blocks = lines.map((text,i)=>({id:String(i),text}));
+    saved.citations = lines.map((line,i)=>({...saved.citations[0],url:host,blockId:String(i),start:0,end:line.length}));
+    const items = researchEvidenceCatalog(saved);
+    const extract = vi.fn(async () => receipt({...base,knowledgeSources:[host],evidence:[
+      {field:'about',value:lines[0],evidenceId:items[0].id},
+      {field:'keyFeatures',value:'legal services',evidenceId:items[1].id},
+    ]}));
+    await expect(new OpenAIOnboardingProvider({answer:vi.fn(),extract}).brandbook(job,saved))
+      .rejects.toMatchObject({code:'brandbook_evidence_invalid'});
+  });
+
+  it('uses the nearest named offering heading only for its contiguous, officially cited bullets', async () => {
+    for (const [heading, accepted] of [['Acme services:', true], ['Gamma services:', false],
+      ['Acme competitors:', false], ['Acme services:\n', false]] as const) {
+      const saved = research(); const url = 'https://acme.com/about';
+      const overview = 'Acme makes tools for small businesses.';
+      const bullet = '- Bench installation for small workshops.';
+      const text = [overview, heading, bullet].join('\n');
+      const start = text.indexOf(bullet);
+      saved.text = text; saved.blocks = [{id: 'text', text}];
+      saved.citations = [
+        {...saved.citations[0],url,start:0,end:overview.length},
+        {...saved.citations[1],url,start,end:text.length},
+      ];
+      const items = researchEvidenceCatalog(saved);
+      const extract = vi.fn(async () => receipt({...base,knowledgeSources:[url],evidence:[
+        {field:'about',value:overview,evidenceId:items[0].id},
+        {field:'keyFeatures',value:'Bench installation',evidenceId:items[1].id},
+      ]}));
+      const result = new OpenAIOnboardingProvider({answer:vi.fn(),extract}).brandbook(job,saved);
+      if (accepted) expect((await result).brandbook.keyFeatures).toEqual(['Bench installation for small workshops.']);
+      else await expect(result).rejects.toMatchObject({code:'brandbook_evidence_invalid'});
+    }
+  });
+
+  it('isolates claims attached to different companies on a shared citation line', () => {
+    const target = 'https://acme.com/about', rival = 'https://rival.com/products';
+    const text = 'Acme makes tools. ([source](' + target + ')) Rival offers financing. ([source](' + rival + '))';
+    const original = research();
+    const captured = {...original, text, blocks: [{id:'text',text}], citations: [target, rival].map((url,i) => {
+      const start = text.indexOf('([source](' + url);
+      return {...original.citations[0], id:String(i), start, end:start+('([source](' + url + '))').length,url};
+    })};
+    const catalog = researchEvidenceCatalog(captured);
+    expect(catalog[0].quote).not.toContain('Rival');
+    expect(catalog[1].quote).not.toContain('Acme');
+    expect(() => requireOfficialResearch(catalog, target, 'Rival')).toThrow();
+    expect(isOfficialBrandSource('https://evil.acme.com.ph/', target)).toBe(false);
+    expect(isOfficialBrandSource('https://another.hosted.com/', 'https://my.hosted.com')).toBe(false);
+  });
+
+  it('requires a narrative identity on an official page before paying to extract the brandbook', async () => {
+    const saved = research(); const extract = vi.fn();
+    // “Acme” occurs in the link label and host, not in the supported statement.
+    const text = 'Gamma runs this firm. ([Acme](https://acme.com/about))';
+    saved.text = text; saved.blocks = [{id: 'text', text}];
+    saved.citations = [{...saved.citations[0], start:text.indexOf('([Acme]'),end:text.length}];
+    await expect(new OpenAIOnboardingProvider({answer:vi.fn(), extract}).brandbook(job, saved))
+      .rejects.toMatchObject({code:'onboarding_official_research_missing'});
+    expect(extract).not.toHaveBeenCalled();
+  });
+
   it('rejects citation-free research before another paid call and ignores unsafe or malformed native annotations', async () => {
     const saved = research(),
       extract = vi.fn();
@@ -173,7 +267,7 @@ describe('brandbook evidence references', () => {
         saved,
       ),
     ).rejects.toMatchObject({
-      code: 'research_evidence_missing',
+      code: 'onboarding_official_research_missing',
       retryable: false,
     });
     expect(extract).not.toHaveBeenCalled();

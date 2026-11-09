@@ -1,7 +1,7 @@
 import { reportExcerpt } from './report-excerpt';
 import { useState } from 'react';
 import { Check, Plus, Search, Trash2 } from 'lucide-react';
-import { promptFingerprint, type Brand, type Project } from '@citevia/core';
+import { competitorDomain, promptFingerprint, publicSourceUrl, type Brand, type Project } from '@citevia/core';
 import { useApi } from './api';
 import { ErrorNotice } from './components';
 import { Skeleton } from './Loading';
@@ -106,6 +106,7 @@ export default function CompetitorSettings({
               />
             </label>
           </div>
+          <ResearchDetails project={project} competitor={competitor} />
           <label className="field competitor-aliases">
             Other names{' '}
             <span className="field-hint">Optional · separate with commas</span>
@@ -123,8 +124,9 @@ export default function CompetitorSettings({
       ))}
       {!value.length && (
         <p className="competitor-empty">
-          No competitors assigned yet. Add a brand or find alternatives
-          mentioned in your saved answers.
+          {project.competitorResearch && !project.competitorsConfiguredAt
+            ? 'Onboarding found no direct competitors it could verify for this market.'
+            : 'No competitors assigned yet.'} Add a brand or find alternatives mentioned in your saved answers.
         </p>
       )}
         <div className="competitor-actions">
@@ -221,5 +223,32 @@ export default function CompetitorSettings({
         </p>
       )}
     </section>
+  );
+}
+
+function ResearchDetails({ project, competitor }: { project: Project; competitor: Brand }) {
+  const proof = project.competitorResearch?.find(item =>
+    item.name === competitor.name && item.domain === competitorDomain(competitor.domains[0] ?? '')
+  )?.relevance;
+  if (!proof || proof.country !== project.country) return null;
+  if (!project.brand.domains.some(domain => competitorDomain(domain) === competitorDomain(proof.targetOffering.url))) return null;
+  const rows = [
+    { label: project.brand.name, source: proof.targetOffering },
+    { label: competitor.name, source: proof.competingOffering },
+    { label: `Buyers in ${proof.country}`, source: proof.market },
+  ];
+  return (
+    <details className="competitor-research">
+      <summary>Why this competitor was selected</summary>
+      <p>{reportExcerpt(proof.sharedNeed)}</p>
+      {rows.map(({ label, source }) => {
+        const url = publicSourceUrl(source.url);
+        return <div className="brandbook-evidence" key={label}>
+          <strong>{reportExcerpt(label)}</strong>
+          <blockquote>{reportExcerpt(source.quote)}</blockquote>
+          {url && <a href={url} target="_blank" rel="noreferrer">{new URL(url).hostname}</a>}
+        </div>;
+      })}
+    </details>
   );
 }
