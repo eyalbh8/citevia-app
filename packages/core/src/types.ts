@@ -33,6 +33,7 @@ export interface Prompt {
   tags?: string[];
 }
 export interface Project {
+  promptFocus?: string;
   /** Explicit synthetic scenario; never dispatches paid scans or records real visits. */
   demo?: DemoConfig;
   id: string;
@@ -571,6 +572,7 @@ export interface Brandbook {
   generationId: string;
 }
 export interface AccountOnboardingInput {
+  promptFocus?: string;
   name: string;
   region: string;
   language: string;
@@ -578,6 +580,7 @@ export interface AccountOnboardingInput {
 }
 /** Persisted worker context. Older jobs may retain manual prompts and company notes. */
 export interface OnboardingInput {
+  promptFocus?: string;
   name: string;
   website: string;
   country: string;
@@ -611,6 +614,11 @@ export interface OnboardingJob {
   researchKey?: string;
   brandbookKey?: string;
   promptsKey?: string;
+  /** New revisions use a separate checkpoint so a rejected portfolio cannot be reused. */
+  portfolioRevision?: number;
+  portfolioFeedback?: { code: string; message: string };
+  rejectedPortfolioKey?: string;
+  automaticPortfolioCorrections?: number;
   firstRunId?: string;
   paidCall?: {
     id: string;

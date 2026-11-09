@@ -8,16 +8,21 @@ import {
   journeyGoal,
   promptFingerprint,
   brandedAllocation,
+  comparisonAllocation,
+  containsPromptName,
   isBrandedPrompt,
   isShortBuyerPrompt,
   MAX_BRANDED_PROMPTS,
   STAGE_INTENTS,
   type Brandbook,
+  type JourneyStage,
+  type Brand,
   type CapturedAnswer,
   type DiscoveredCompetitor,
   type OnboardingJob,
   type Prompt,
 } from '@citevia/core';
+import { validateBuyerSearches } from './onboarding-prompt-quality.js';
 import { normalizeAnswer } from './normalize.js';
 import {
   ProviderError,
@@ -37,11 +42,35 @@ import {
   researchEvidenceCatalog,
   brandbookGenerationSchema,
   resolveBrandbookEvidence,
+  verifiedBrandNames,
 } from './onboarding-evidence.js';
 import {
   competitorGenerationSchema,
   resolveDiscoveredCompetitors,
 } from './competitor-discovery.js';
+export type PortfolioPeer = Pick<Brand, 'name' | 'aliases' | 'domains'>;
+type DraftSearch = { stage: JourneyStage; group: 'branded' | 'unbranded'; text: string; intent: string };
+
+/** Pass only the rejected search text and its classification back for revision. */
+export function previousPortfolioDraft(receipt: ProviderReceipt): DraftSearch[] {
+  try {
+    const draft = object(json(receipt));
+    const searches = JOURNEY_STAGES.flatMap(stage => {
+      const section = object(draft?.[stage]);
+      return (['branded', 'unbranded'] as const).flatMap(group => {
+        const rows = section?.[group];
+        return Array.isArray(rows) ? rows.slice(0, 50).flatMap(value => {
+          const row = object(value);
+          return typeof row?.text === 'string' && typeof row.intent === 'string'
+            ? [{ stage, group, text: row.text.slice(0, 200), intent: row.intent.slice(0, 20) }] : [];
+        }) : [];
+      });
+    });
+    return searches.slice(0, 50);
+  } catch {
+    return [];
+  }
+}
 export interface OnboardingProvider {
   research(job: OnboardingJob): Promise<CapturedAnswer>;
   brandbook(
@@ -55,10 +84,12 @@ export interface OnboardingProvider {
   prompts(
     job: OnboardingJob,
     brandbook: Brandbook,
-    competitors?: DiscoveredCompetitor[],
+    competitors?: readonly PortfolioPeer[],
+    previousDraft?: DraftSearch[],
   ): Promise<{ prompts: Prompt[]; receipt: unknown }>;
 }
 export class OnboardingOutputError extends ProviderError {
+  readonly canRevise: boolean;
   constructor(
     error: unknown,
     readonly receipt: ProviderReceipt,
@@ -71,6 +102,8 @@ export class OnboardingOutputError extends ProviderError {
       false,
       receipt.requestId,
     );
+    this.canRevise = receipt.response.status === 'completed' && (error instanceof z.ZodError ||
+      (error instanceof ProviderError && error.code.startsWith('onboarding_') && error.code !== 'onboarding_refused'));
   }
 }
 function json(receipt: ProviderReceipt): unknown {
@@ -106,6 +139,68 @@ const canonical = promptFingerprint;
 function portfolioBrand(job: OnboardingJob, book: Brandbook) {
   return { name: job.input.name, aliases: book.names, domains: book.domains };
 }
+
+function asksForComparison(text: string, locale: string): boolean {
+  const wording = promptFingerprint(text);
+  switch (locale.split('-')[0].toLowerCase()) {
+    case 'en':
+      return /\b(?:vs|versus|or|compar\w*|alternative\w*|differ\w*|better|cheaper|faster|lower|higher|more|less|than|between|best|top|leading|most|stands? out|tradeoffs?|trade offs?|shortlist\w*|choose between|stack up|pros and cons|strengths and weaknesses)\b/u.test(wording);
+    case 'he':
+      return /(?:^| )(?:מול|לעומת|או|ולא|בין|להשוות|משתוו\S*|שונ\S*|[בלמה]?השוו\S*|[בלמה]?השווא\S*|בולט\S*|מוביל\S*|החוזקות|חוזקות|חלופ\S*|אלטרנטיב\S*|מתחר\S*|עדיפ\S*|עדיף|יותר|ביותר|הכי|מדורג\S*|[הב]?הבדל\S*|יתרונות וחסרונות)(?: |$)/u.test(wording);
+    default:
+      // The generation instructions require the comparison intent in every locale.
+      return true;
+  }
+}
+/** Assign one rival per question, even if a shortlist names several eligible rivals. */
+function namedComparisonCount(texts: string[], rivals: readonly PortfolioPeer[]): number {
+  const matches = texts.map(text => rivals.filter(rival => isBrandedPrompt(text, rival)));
+  const assigned = new Map<PortfolioPeer, number>();
+  function assign(question: number, tried: Set<PortfolioPeer>): boolean {
+    for (const rival of matches[question]) {
+      if (tried.has(rival)) continue;
+      tried.add(rival);
+      const previous = assigned.get(rival);
+      if (previous === undefined || assign(previous, tried)) {
+        assigned.set(rival, question);
+        return true;
+      }
+    }
+    return false;
+  }
+  for (let i = 0; i < texts.length; i++) assign(i, new Set());
+  return assigned.size;
+}
+
+function promptSlotPlan(
+  allocation: Record<JourneyStage, number>,
+  branded: Record<JourneyStage, number>,
+  peers: readonly PortfolioPeer[],
+) {
+  const compare = comparisonAllocation(allocation.prefer, branded.prefer, peers.length);
+  return Object.fromEntries(JOURNEY_STAGES.map(stage => {
+    const section = (group: 'branded' | 'unbranded', count: number) => Array.from({ length: count }, (_, i) => {
+      if (stage === 'prefer') {
+        // Leave room for a natural discovery question while still obtaining
+        // the minimum three explicit buyer comparisons in a full portfolio.
+        const planned = group === 'unbranded' && count > compare.unbranded + 1
+          ? compare.unbranded + 1 : compare[group];
+        if (i >= planned) return { intent: 'commercial' };
+        if (group === 'branded' && i < compare.distinct_named_rivals)
+          return { intent: 'comparison', compare_with: peers[i].name };
+        return { intent: 'comparison', buyer_decision: 'Ask to compare actual alternatives on a concrete buying criterion.' };
+      }
+      const offset = group === 'branded' ? 0 : branded[stage];
+      const intents = STAGE_INTENTS[stage];
+      return { intent: intents[(i + offset) % intents.length] };
+    });
+    return [stage, {
+      branded: section('branded', branded[stage]),
+      unbranded: section('unbranded', allocation[stage] - branded[stage]),
+    }];
+  }));
+}
+
 function manualBrandedCount(job: OnboardingJob, book: Brandbook) {
   const count = job.input.manualPrompts.filter((p) =>
     isBrandedPrompt(p.text, portfolioBrand(job, book)),
@@ -122,11 +217,16 @@ export function validatePortfolio(
   job: OnboardingJob,
   book: Brandbook,
   raw: unknown,
+  competitors: readonly PortfolioPeer[] = [],
 ): Prompt[] {
+  const target = portfolioBrand(job, book);
   const generated = z
     .object({ prompts: z.array(generatedPromptSchema).max(50) })
     .strict()
-    .parse(raw).prompts;
+    .parse(raw).prompts.map(prompt => ({
+      ...prompt,
+      branded: isBrandedPrompt(prompt.text, target),
+    }));
   const allocation = journeyAllocation(job.input.manualPrompts);
   if (
     generated.length !== 50 - job.input.manualPrompts.length ||
@@ -144,7 +244,7 @@ export function validatePortfolio(
     ...job.input.manualPrompts.map((p) => ({
       ...p,
       topic: 'Custom prompts',
-      branded: false,
+      branded: isBrandedPrompt(p.text, target),
       intent: undefined,
     })),
     ...generated,
@@ -172,13 +272,17 @@ export function validatePortfolio(
       'Generated questions must be one short search phrase, at most 20 words and 160 characters.',
       false,
     );
-  if (
-    all.filter((p) => isBrandedPrompt(p.text, portfolioBrand(job, book)))
-      .length > MAX_BRANDED_PROMPTS
-  )
+  const slots = brandedAllocation(allocation, manualBrandedCount(job, book));
+  if (JOURNEY_STAGES.some(stage => generated.filter(p => p.stage === stage && p.branded).length !== slots[stage]))
     throw new ProviderError(
       'onboarding_branded_limit',
-      'A portfolio can contain at most 15 branded questions, including company aliases and website.',
+      'The generated questions must fill the requested branded and unbranded slots in each section.',
+      false,
+    );
+  if (generated.some(p => p.branded && !containsPromptName(p.text, target.name)))
+    throw new ProviderError(
+      'onboarding_brand_identity_invalid',
+      'Use the full supplied company name in every generated branded question.',
       false,
     );
   for (const stage of JOURNEY_STAGES) {
@@ -191,10 +295,23 @@ export function validatePortfolio(
     )
       throw new ProviderError(
         'onboarding_intent_coverage_invalid',
-        'Generated questions must cover each section’s required search intents.',
+        `The ${stage} section must cover ${allowed.join(' and ')}. It contained ${[...new Set(rows.map(p => p.intent))].join(', ')}. Use the intent assigned to each question in slot_plan.`,
         false,
       );
   }
+  const comparison = comparisonAllocation(allocation.prefer, slots.prefer, competitors.length);
+  const comparisons = generated.filter(p => p.stage === 'prefer' &&
+    p.intent === 'comparison' && asksForComparison(p.text, job.input.language));
+  const named = comparisons.filter(p => p.branded);
+  const distinctRivals = namedComparisonCount(named.map(p => p.text), competitors);
+  if (named.length < comparison.branded || comparisons.length - named.length < comparison.unbranded ||
+      distinctRivals < comparison.distinct_named_rivals)
+    throw new ProviderError(
+      'onboarding_comparison_coverage_invalid',
+      `Prefer needs ${comparison.branded} branded and ${comparison.unbranded} unbranded buyer comparisons, including ${comparison.distinct_named_rivals} different supplied rivals in separate branded questions. Found ${named.length} branded, ${comparisons.length - named.length} unbranded and ${distinctRivals} distinct rivals. Follow slot_plan.`,
+      false,
+    );
+  validateBuyerSearches(generated, job.input.language, target);
   const at = new Date().toISOString();
   return all.map((p, index) => ({
     id: `p_${createHash('sha256').update(`${job.id}:${index}`).digest('hex').slice(0, 24)}`,
@@ -202,7 +319,7 @@ export function validatePortfolio(
     stage: p.stage,
     topic: p.topic,
     intent: p.intent,
-    branded: isBrandedPrompt(p.text, portfolioBrand(job, book)),
+    branded: p.branded,
     version: 1,
     active: true,
     createdAt: at,
@@ -274,13 +391,14 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
       const parsed = generatedBrandbookSchema.parse(
         resolveBrandbookEvidence(rawBrandbook, catalog),
       );
+      const names = verifiedBrandNames(job.input.name, job.input.website, parsed);
       const competitors = resolveDiscoveredCompetitors(
         rawCompetitors,
         research,
         {
           id: 'target',
           name: job.input.name,
-          aliases: parsed.names,
+          aliases: names,
           domains: [new URL(job.input.website).hostname],
         },
       );
@@ -310,7 +428,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         companyCountry: job.input.country,
         language: job.input.language,
         domains: [new URL(job.input.website).hostname],
-        names: [...new Set([job.input.name, ...parsed.names])].slice(0, 20),
+        names,
         caseStudies: [],
         generatedAt: receipt.receivedAt,
         model: receipt.response.model || this.model,
@@ -333,7 +451,8 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
   async prompts(
     job: OnboardingJob,
     brandbook: Brandbook,
-    competitors: DiscoveredCompetitor[] = [],
+    competitors: readonly PortfolioPeer[] = [],
+    previousDraft?: DraftSearch[],
   ) {
     if (job.input.manualPrompts.length === 50)
       return {
@@ -358,10 +477,15 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         competitors,
         market: job.input.country,
         language: job.input.language,
+        ...(job.input.promptFocus ? { prompt_focus: job.input.promptFocus } : {}),
+        ...(job.portfolioFeedback ? { revision_feedback: job.portfolioFeedback } : {}),
+        ...(previousDraft?.length ? { previous_draft: previousDraft } : {}),
         manual_prompts: job.input.manualPrompts,
         remaining_count: 50 - job.input.manualPrompts.length,
         section_allocation: allocation,
-        maximum_branded_count: MAX_BRANDED_PROMPTS,
+        required_generated_branded_count: Object.values(branded).reduce((sum, count) => sum + count, 0),
+        slot_plan: promptSlotPlan(allocation, branded, competitors),
+        minimum_prefer_comparisons: comparisonAllocation(allocation.prefer, branded.prefer, competitors.length),
         prompt_slots: Object.fromEntries(
           JOURNEY_STAGES.map((stage) => [
             stage,
@@ -411,10 +535,10 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
               prompt.text,
               portfolioBrand(job, brandbook),
             );
-            if (group === 'unbranded' && actual)
+            if ((group === 'branded') !== actual)
               throw new ProviderError(
                 'onboarding_branded_limit',
-                'An unbranded question included the company name or an alias.',
+                'Every branded slot must identify the target, and every unbranded slot must omit it.',
                 false,
               );
             return { ...prompt, stage, branded: actual };
@@ -422,7 +546,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         }),
       );
       return {
-        prompts: validatePortfolio(job, brandbook, { prompts: generated }),
+        prompts: validatePortfolio(job, brandbook, { prompts: generated }, competitors),
         receipt: {
           instructionsVersion: ONBOARDING_INSTRUCTIONS_VERSION,
           ...receipt,

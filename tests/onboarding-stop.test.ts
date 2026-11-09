@@ -77,6 +77,38 @@ async function drain(env: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe('onboarding paid-call stop policy', () => {
+  it('prevents a saved portfolio with duplicate prompts from activating the account or starting the first scan', async () => {
+    const env = await setup();
+    const { id, projectId } = env.item.job;
+    for (let step = 0; step < 3; step++) await env.worker.handle(projectId, id);
+    const before = (await env.repository.getOnboarding(projectId, id))!;
+    expect(before.step).toBe('activate');
+    const saved = (await env.artifacts.get<{ prompts: {text: string}[] }>(before.promptsKey!))!;
+    saved.prompts[1].text = saved.prompts[0].text;
+    await env.artifacts.put(before.promptsKey!, saved);
+    await env.worker.handle(projectId, id);
+    expect((await env.repository.getProject(projectId))?.enabled).toBe(false);
+    expect(env.queue.messages.some(message => message.kind === 'kickoff')).toBe(false);
+    expect((await env.repository.getOnboarding(projectId, id))?.step).not.toBe('completed');
+  });
+
+  it('keeps previous brand research from activating a different business after the owner edits the account', async () => {
+    const env = await setup();
+    const { id, projectId } = env.item.job;
+    for (let step = 0; step < 3; step++) await env.worker.handle(projectId, id);
+    const project = (await env.repository.getProject(projectId))!;
+    await env.repository.saveProject({
+      ...project, version: project.version + 1,
+      brand: { ...project.brand, domains: ['different-business.com'] },
+    }, project.version);
+    await env.worker.handle(projectId, id);
+    expect(await env.repository.getOnboarding(projectId, id)).toMatchObject({
+      status: 'failed', error: { code: 'onboarding_account_changed' },
+    });
+    expect((await env.repository.getProject(projectId))?.prompts).toHaveLength(0);
+    expect(env.queue.messages.some(message => message.kind === 'kickoff')).toBe(false);
+  });
+
   it.each(['research', 'brandbook', 'prompts'] as const)(
     'stops %s after one failed call and ignores stale queue, DLQ and recovery deliveries',
     async (step) => {
@@ -259,7 +291,7 @@ describe('onboarding paid-call stop policy', () => {
     expect(await env.repository.listRuns(project.id)).toHaveLength(0);
     expect(collector.collect).not.toHaveBeenCalled();
   });
-  it('pauses tracking when non-model activation retries are exhausted', async () => {
+  it('pauses tracking on schedule failure and resumes the validated first portfolio on owner retry', async () => {
     const env = await setup();
     const worker = new OnboardingEngine(
       {
@@ -292,6 +324,13 @@ describe('onboarding paid-call stop policy', () => {
     expect(
       (await env.repository.getProject(env.item.project.id))?.enabled,
     ).toBe(false);
+    const savedPrompts = (await env.repository.getProject(env.item.project.id))!.prompts;
+    expect((await env.call('onboarding/retry')).status).toBe(202);
+    await drain(env);
+    const resumed = (await env.repository.getProject(env.item.project.id))!;
+    expect(resumed.enabled).toBe(true);
+    expect(resumed.prompts).toEqual(savedPrompts);
+    expect((await env.repository.getOnboarding(resumed.id, env.item.job.id))?.status).toBe('completed');
     expect(env.research).toHaveBeenCalledTimes(1);
     expect(env.brandbook).toHaveBeenCalledTimes(1);
     expect(env.prompts).toHaveBeenCalledTimes(1);

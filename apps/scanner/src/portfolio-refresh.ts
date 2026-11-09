@@ -3,14 +3,15 @@ import type { OnboardingJob, Project, Prompt } from '@citevia/core';
 import type { Runtime } from '@citevia/storage';
 import {
   OnboardingOutputError,
-  validatePortfolio,
   type OnboardingProvider,
 } from './onboarding-provider.js';
+import { validateSavedPortfolio } from './saved-portfolio.js';
 
 const hash = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const contextHash = (project: Project) =>
-  hash([project.brandbook, project.brand, project.country, project.language]);
+  hash([project.brandbook, project.brand, project.country, project.language,
+    project.competitors, project.promptFocus]);
 export function replacePortfolio(
   project: Project,
   prompts: Prompt[],
@@ -84,6 +85,7 @@ export async function refreshPortfolio(
       language: project.language,
       timezone: project.timezone,
       description: '',
+      promptFocus: project.promptFocus,
       manualPrompts: [],
     },
     status: 'running',
@@ -95,8 +97,15 @@ export async function refreshPortfolio(
     deadlineAt: new Date(now().getTime() + 15 * 60_000).toISOString(),
   };
   try {
+    const book = {
+      ...project.brandbook!,
+      names: [project.brand.name, ...project.brand.aliases],
+      domains: project.brand.domains,
+      companyCountry: project.country,
+      language: project.language,
+    };
     if (!saved) {
-      saved = await provider.prompts(job, project.brandbook!);
+      saved = await provider.prompts(job, book, project.competitors);
       await artifacts.put(key, saved);
     }
     const latest = await repository.getProject(projectId);
@@ -107,17 +116,9 @@ export async function refreshPortfolio(
       contextHash(latest) !== latest.portfolioRefresh.brandbookHash
     )
       throw new Error(
-        'Prompts or brandbook changed during generation; saved output needs review before applying.',
+        'The prompts, brand, market, focus or competitors changed during generation; start a new refresh.',
       );
-    const validated = validatePortfolio(job, latest.brandbook!, {
-      prompts: saved.prompts.map(({ text, stage, topic, branded, intent }) => ({
-        text,
-        stage,
-        topic,
-        branded,
-        intent,
-      })),
-    });
+    const validated = validateSavedPortfolio(job, book, saved.prompts, latest.competitors);
     const at = now().toISOString();
     const next: Project = {
       ...latest,
@@ -134,7 +135,7 @@ export async function refreshPortfolio(
       projectId,
       refreshed: true,
       promptCount: saved.prompts.length,
-      brandedCount: saved.prompts.filter((p) => p.branded).length,
+      brandedCount: validated.filter((p) => p.branded).length,
       scanStarted: false,
     };
   } catch (error) {

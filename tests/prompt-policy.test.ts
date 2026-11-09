@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   brandedAllocation,
+  comparisonAllocation,
+  containsPromptName,
   isBrandedPrompt,
   isShortBuyerPrompt,
   JOURNEY_PROMPT_COUNTS,
@@ -29,19 +31,87 @@ async function portfolio() {
   return { job, book, prompts };
 }
 describe('natural prompt portfolio policy', () => {
-  it('counts actual names and aliases regardless of a model-supplied branded flag', async () => {
+  it('requires exactly ten named questions and forty discovery questions using the actual text', async () => {
     const { job, book, prompts } = await portfolio();
-    for (let i = 0; i < 15; i++)
-      prompts[i].text = `What does ACME Labs offer for need ${i}?`;
-    const accepted = validatePortfolio(job, book, { prompts });
-    expect(accepted.filter((p) => p.branded)).toHaveLength(15);
-    prompts[15].text = 'What are the fees at acme.com?';
+    const misleadingFlags = prompts.map((p) => ({ ...p, branded: !p.branded }));
+    const accepted = validatePortfolio(job, book, { prompts: misleadingFlags });
+    expect(accepted.filter((p) => p.branded)).toHaveLength(10);
+    expect(accepted.filter((p) => !p.branded)).toHaveLength(40);
+    const firstBranded = prompts.find((p) => p.branded)!;
+    firstBranded.text =
+      'Who offers replacement parts for independent retailers?';
     expect(() => validatePortfolio(job, book, { prompts })).toThrowError(
+      expect.objectContaining({ code: 'onboarding_branded_limit' }),
+    );
+  });
+  it('requires the complete brand name in generated branded searches including similar service names', async () => {
+    const { job, book, prompts } = await portfolio();
+    job.input.name = 'E2 Visas USA';
+    book.names = ['E2 Visas USA', 'E2 Visa USA'];
+    book.domains = ['e2visasusa.com'];
+    for (const prompt of prompts)
+      prompt.text = prompt.text.replaceAll('Acme', job.input.name);
+    const branded = prompts.find((p) => p.branded)!;
+    branded.text = 'Can E2 Visa USA handle my visa application?';
+    expect(() => validatePortfolio(job, book, { prompts })).toThrowError(
+      expect.objectContaining({ code: 'onboarding_brand_identity_invalid' }),
+    );
+    branded.text = 'Who would use e2visasusa.com for an application?';
+    expect(() => validatePortfolio(job, book, { prompts })).toThrowError(
+      expect.objectContaining({ code: 'onboarding_brand_identity_invalid' }),
+    );
+  });
+  it('uses distinct verified peers for direct comparisons and keeps open comparisons for discovery', async () => {
+    const job = policyJob(),
+      provider = new FixtureOnboardingProvider();
+    const book = (await provider.brandbook(job)).brandbook;
+    const peers = ['Cinder', 'Pinewood', 'Pondstar'].map((name) => ({
+      name,
+      aliases: [],
+      domains: [],
+    }));
+    const { prompts } = await provider.prompts(job, book, peers);
+    const comparisons = prompts.filter((p) => p.intent === 'comparison');
+    expect(comparisons.filter((p) => p.branded)).toHaveLength(3);
+    expect(comparisons.filter((p) => !p.branded)).toHaveLength(3);
+    const rows = prompts.map(({ text, topic, intent, stage, branded }) => ({
+      text,
+      topic,
+      intent,
+      stage,
+      branded,
+    }));
+    const direct = rows.filter(p => p.branded && p.intent === 'comparison');
+    direct[0].text = 'Compare Acme, Cinder and Pinewood for setup help';
+    direct[1].text = 'How does Acme compare to Cinder on repair support?';
+    expect(validatePortfolio(job, book, { prompts: rows }, peers)).toHaveLength(50);
+    rows.find((p) => p.text.includes('Pondstar'))!.text =
+      'Compare Acme and a different supplier for training';
+    expect(() =>
+      validatePortfolio(job, book, { prompts: rows }, peers),
+    ).toThrowError(
       expect.objectContaining({
-        code: 'onboarding_branded_limit',
-        retryable: false,
+        code: 'onboarding_comparison_coverage_invalid',
       }),
     );
+    rows.find(
+      (p) =>
+        p.branded &&
+        p.intent === 'comparison' &&
+        p.text.includes('different supplier'),
+    )!.text = 'Book a demo with Acme and Pondstar';
+    expect(() =>
+      validatePortfolio(job, book, { prompts: rows }, peers),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'onboarding_comparison_coverage_invalid',
+      }),
+    );
+    expect(comparisonAllocation(2, 1, 0)).toEqual({
+      branded: 1,
+      unbranded: 0,
+      distinct_named_rivals: 0,
+    });
   });
   it('matches whole multilingual names and punctuation without treating substrings as branded', () => {
     const brand = {
@@ -53,6 +123,25 @@ describe('natural prompt portfolio policy', () => {
     expect(isBrandedPrompt('Is GEO’s pricing fair?', brand)).toBe(true);
     expect(isBrandedPrompt('New-Balance running shoes', brand)).toBe(true);
     expect(isBrandedPrompt('מה מציע מותג?', brand)).toBe(true);
+    expect(isBrandedPrompt('מה ההבדל בין המתחרים ולמותג?', brand)).toBe(true);
+    expect(
+      isBrandedPrompt('מי מציע חלופה לE2 Visas USA?', {
+        name: 'E2 Visas USA',
+        aliases: [],
+        domains: [],
+      }),
+    ).toBe(true);
+    expect(isBrandedPrompt('Geo.com.evil.net/geo.com reviews', brand)).toBe(
+      false,
+    );
+    expect(isBrandedPrompt('Geoの導入を検討できる会社', brand)).toBe(true);
+    expect(containsPromptName('日本でAcmeを選ぶ理由', 'Acme')).toBe(true);
+    expect(containsPromptName('日本でAcmeProを選ぶ理由', 'Acme')).toBe(false);
+    expect(containsPromptName('任天堂の製品を扱う店', '任天堂')).toBe(true);
+    expect(containsPromptName('任天堂の製品を扱う店', '天堂')).toBe(false);
+    expect(containsPromptName('See https://geo.com for support', 'Geo')).toBe(
+      false,
+    );
     expect(isBrandedPrompt('Compare www.geo.com fees', brand)).toBe(true);
   });
   it('limits length and multiple questions while allowing short search phrases', async () => {
@@ -77,7 +166,7 @@ describe('natural prompt portfolio policy', () => {
     );
   });
   it('uses only the remaining branded budget and stops excessive manual inputs before a paid call', async () => {
-    const slots = brandedAllocation(JOURNEY_PROMPT_COUNTS, 12);
+    const slots = brandedAllocation(JOURNEY_PROMPT_COUNTS, 7);
     expect(Object.values(slots).reduce((sum, n) => sum + n, 0)).toBe(3);
     const { job, book } = await portfolio();
     job.input.manualPrompts = Array.from({ length: 16 }, (_, i) => ({

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Brandbook, CapturedAnswer } from '@citevia/core';
+import { promptFingerprint } from '@citevia/core';
 import { object, ProviderError } from './provider.js';
 import { BRANDBOOK_SCHEMA } from './onboarding-prompts.js';
 
@@ -10,6 +11,24 @@ export interface ResearchEvidence {
   end: number;
   quote: string;
   url: string;
+}
+
+export function verifiedBrandNames(primary: string, website: string, book: Pick<Brandbook, 'names' | 'evidence'>): string[] {
+  const host = new URL(website).hostname.replace(/^www\./i, '');
+  const passages = book.evidence
+    .filter(item => {
+      const sourceHost = new URL(item.url).hostname.replace(/^www\./i, '');
+      return item.field === 'names' && (sourceHost === host || sourceHost.endsWith('.' + host));
+    })
+    .map(item => ' ' + promptFingerprint(item.quote.replace(/https?:\/\/[^\s)\]]+/giu, '')) + ' ');
+  const unique = new Map([[promptFingerprint(primary), primary]]);
+  for (const candidate of book.names) {
+    const key = promptFingerprint(candidate);
+    if (key && !unique.has(key) && passages.some(passage => passage.includes(' ' + key + ' '))) {
+      unique.set(key, candidate);
+    }
+  }
+  return [...unique.values()].slice(0, 20);
 }
 
 /** Quotes and source bindings come from saved native citations, never from generated text. */

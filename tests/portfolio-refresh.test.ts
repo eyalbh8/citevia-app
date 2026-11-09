@@ -105,7 +105,7 @@ describe('saved-brandbook portfolio refresh', () => {
       (await f.repository.getProject(f.project.id))?.portfolioRefresh?.status,
     ).toBe('completed');
   });
-  it('fences concurrent requests and refuses stale generation after a prompt edit', async () => {
+  it.each(['prompt', 'competitors', 'service focus'] as const)('fences concurrent requests and refuses stale generation after a %s edit', async (changed) => {
     const f = await setup();
     let finish!: (
       value: Awaited<ReturnType<FixtureOnboardingProvider['prompts']>>,
@@ -136,16 +136,18 @@ describe('saved-brandbook portfolio refresh', () => {
       ),
     ).rejects.toThrow('duplicate charges');
     const latest = (await f.repository.getProject(f.project.id))!;
-    latest.prompts[0].text = 'A manual edit during generation?';
+    if (changed === 'prompt') latest.prompts[0].text = 'A manual edit during generation?';
+    if (changed === 'competitors') latest.competitors = [
+      {id: 'rival', name: 'New Rival', aliases: [], domains: ['newrival.com']},
+    ];
+    if (changed === 'service focus') latest.promptFocus = 'Small businesses applying for investor visas';
     await f.repository.saveProject(
       { ...latest, version: latest.version + 1 },
       latest.version,
     );
     finish(generated);
     await expect(inFlight).rejects.toThrow('changed during generation');
-    expect((await f.repository.getProject(f.project.id))?.prompts[0].text).toBe(
-      'A manual edit during generation?',
-    );
+    expect((await f.repository.getProject(f.project.id))?.prompts).toEqual(latest.prompts);
     expect(prompts).toHaveBeenCalledOnce();
   });
 });

@@ -1,5 +1,10 @@
 import { expect, it } from 'vitest';
 import { csvRows, parseAccountImport } from './account-import';
+
+it('accepts an optional service focus in a bulk account row', () => {
+  const [item] = parseAccountImport('name,region,language,website,promptFocus\nAcme,IL,he,https://acme.com,Investor visas');
+  expect(item.promptFocus).toBe('Investor visas');
+});
 it('imports only the four onboarding fields and supports quoted names and URLs', () => {
   const accounts = parseAccountImport(
     'name,region,language,website\r\n"Acme, Inc.",us,en,https://acme.com',
