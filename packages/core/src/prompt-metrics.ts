@@ -75,8 +75,14 @@ export function matchesPromptMethod(project: Project, run: ScanRun) {
 // Keep the preceding scored method accessible after a rollout or rollback.
 // Callers still select and compare rows using one exact saved method per provider.
 function historicalPromptMethod(project: Project, run: ScanRun) {
+  const sameBusiness = run.snapshot.brand.id === project.brand.id &&
+    run.snapshot.brand.name === project.brand.name &&
+    JSON.stringify(run.snapshot.brand.domains) === JSON.stringify(project.brand.domains);
   return matchesPromptMethod({
     ...project,
+    // Alias edits change the analysis method, not the business. Keep the saved
+    // method visible; sameTargetMethod still separates its comparison cohort.
+    brand: sameBusiness ? run.snapshot.brand : project.brand,
     parserVersion: usesCompanyAppearanceRank(project.parserVersion) && usesCompanyAppearanceRank(run.snapshot.parserVersion)
       ? run.snapshot.parserVersion : project.parserVersion,
   }, run);
