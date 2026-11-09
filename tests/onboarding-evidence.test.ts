@@ -72,6 +72,30 @@ const receipt = (output: unknown) => ({
 });
 
 describe('brandbook evidence references', () => {
+  it('retains the actual quoted Hebrew sentence when a selection moves only its terminal period', async () => {
+    const saved = research();
+    const company = { ...job, input: { ...job.input, name: 'משרד עורכי הדין דנה', language: 'he' } };
+    const overview = 'משרד עורכי הדין דנה מעניק ייעוץ משפטי בישראל.';
+    const offering = 'משרד עורכי הדין דנה הוא "משרד בוטיק המעניק ייעוץ משפטי לעסקים בלבד".';
+    saved.text = overview + '\n' + offering;
+    saved.blocks = [{ id: 'text', text: saved.text }];
+    saved.citations = [overview, offering].map((line, i) => ({ ...saved.citations[0],
+      start: i ? overview.length + 1 : 0, end: i ? saved.text.length : overview.length }));
+    const items = researchEvidenceCatalog(saved);
+    const extract = vi.fn(async () => receipt({ ...base, evidence: [
+      { field: 'about', value: overview, evidenceId: items[0].id },
+      { field: 'keyFeatures', value: 'משרד בוטיק המעניק ייעוץ משפטי לעסקים בלבד.', evidenceId: items[1].id },
+    ] }));
+    const result = await new OpenAIOnboardingProvider({ answer: vi.fn(), extract }).brandbook(company, saved);
+    expect(result.brandbook.keyFeatures).toEqual([offering]);
+    expect(result.brandbook.names).toEqual([company.input.name]);
+    // Choosing Hebrew prompts does not make an unverified translated name valid.
+    await expect(new OpenAIOnboardingProvider({ answer: vi.fn(), extract }).brandbook({ ...company,
+      input: { ...company.input, name: 'Dana Law Firm' } }, saved))
+      .rejects.toMatchObject({ code: 'onboarding_official_research_missing' });
+    expect(extract).toHaveBeenCalledTimes(1);
+  });
+
   it('copies quotes and their native source bindings deterministically instead of asking the model to reproduce text', async () => {
     const saved = research(),
       catalog = researchEvidenceCatalog(saved);
@@ -104,7 +128,7 @@ describe('brandbook evidence references', () => {
     expect(result.brandbook.keyFeatures).toEqual(['Acme vende questi strumenti solo alle piccole imprese.']);
     expect(result.brandbook.names).toEqual(['Acme']);
     expect(result.receipt).toMatchObject({
-      instructionsVersion: 'citevia-onboarding-v8',
+      instructionsVersion: 'citevia-onboarding-v9',
       evidenceCatalog: catalog,
     });
     const request = extract.mock.calls[0][0] as any;

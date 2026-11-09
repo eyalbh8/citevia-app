@@ -14,6 +14,25 @@ import {
 import type { Runtime } from '@citevia/storage';
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
+
+/** An explicit retry before activation may use owner-corrected account details.
+ * All dependent checkpoints get new keys; the original receipts stay intact. */
+export function correctedOnboardingInput(job: OnboardingJob, project: Project): OnboardingInput | undefined {
+  const host = new URL(job.input.website).hostname.toLowerCase();
+  const domain = project.brand.domains[0]?.toLowerCase();
+  if (project.brand.name === job.input.name && domain === host &&
+      project.country === job.input.country && project.language === job.input.language &&
+      project.promptFocus === job.input.promptFocus) return;
+  const input = onboardingInputSchema.parse({
+    name: project.brand.name,
+    website: domain === host ? job.input.website : `https://${domain ?? ''}`,
+    region: project.country,
+    language: project.language,
+    ...(project.promptFocus ? { promptFocus: project.promptFocus } : {}),
+  });
+  return { ...job.input, name: input.name, website: input.website, country: input.region,
+    language: input.language, promptFocus: input.promptFocus, timezone: project.timezone };
+}
 export const onboardingRequestSchema = z
   .object({ accounts: z.array(onboardingInputSchema).min(1).max(25) })
   .strict();

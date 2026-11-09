@@ -482,7 +482,7 @@ describe('automated account onboarding', () => {
     expect(request.input.required_generated_branded_count).toBe(10);
     expect(request.input.minimum_prefer_comparisons).toEqual({ branded: 3, unbranded: 3, distinct_named_rivals: 0 });
     expect(generated.receipt).toMatchObject({
-      instructionsVersion: 'citevia-onboarding-v8',
+      instructionsVersion: 'citevia-onboarding-v9',
     });
     // Regression: the real failure had 13/12/12/13, even though the total was 50.
     // A provider returning that split must still stop after one paid attempt.

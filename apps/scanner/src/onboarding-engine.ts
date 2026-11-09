@@ -43,7 +43,7 @@ function portfolioContext(project: Project, job: OnboardingJob, research: Resear
       project.country !== job.input.country || project.language !== job.input.language ||
       project.promptFocus !== job.input.promptFocus) {
     throw new ProviderError('onboarding_account_changed',
-      'The brand, website, market, language or focus changed during setup. Restore the submitted details and retry, or start onboarding for the new business.', false);
+      'The brand, website, market, language or focus changed during setup. Retry setup to research the corrected details before activation.', false);
   }
   if (project.onboardingAppliedJobId !== job.id && research.receipt?.instructionsVersion &&
       research.receipt.instructionsVersion !== ONBOARDING_INSTRUCTIONS_VERSION) {
@@ -159,14 +159,14 @@ export class OnboardingEngine {
         const result = await artifacts.get<ResearchCheckpoint>(key);
         if (!result?.brandbook) throw new Error('Missing brandbook checkpoint');
         const project = await repository.getProject(projectId);
-        if (result.competitors && result.competitors.length < 3 && !current.researchRevision &&
+        if (result.competitors && result.competitors.length < 3 && !current.verifiedBrandbookKey &&
             project && !project.competitorsConfiguredAt && !project.competitors.length) {
           // Keep the verified profile while making one more search for direct alternatives.
           current = { ...current, step: 'research', verifiedBrandbookKey: key, verifiedResearchKey: current.researchKey,
             competitorSearchTerm: result.competitorSearchQuery || current.input.promptFocus ||
               result.brandbook.subIndustryCategory || result.brandbook.industryCategory || result.brandbook.keyFeatures[0],
             competitorSearchDomains: result.verificationDomains,
-            researchRevision: 1,
+            researchRevision: (current.researchRevision ?? 0) + 1,
             researchFeedback: 'Find additional direct competitors using local buyer terms for the verified services and market. Look for official pages that document the competing offer and whom it serves.' };
         } else {
           current = { ...current, brandbookKey: key, step: 'prompts' };
