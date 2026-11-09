@@ -305,12 +305,18 @@ export function validatePortfolio(
   const named = comparisons.filter(p => p.branded);
   const distinctRivals = namedComparisonCount(named.map(p => p.text), competitors);
   if (named.length < comparison.branded || comparisons.length - named.length < comparison.unbranded ||
-      distinctRivals < comparison.distinct_named_rivals)
+      distinctRivals < comparison.distinct_named_rivals) {
+    const rewrite = (['branded', 'unbranded'] as const).flatMap(group =>
+      generated.filter(p => p.stage === 'prefer' && p.branded === (group === 'branded'))
+        .flatMap((p, index) => p.intent === 'comparison' && !comparisons.includes(p)
+          ? [`${group} slot ${index + 1}`] : []));
+    const feedback = rewrite.length ? ` Rewrite ${rewrite.join(', ')} to explicitly compare providers on a purchase criterion.` : '';
     throw new ProviderError(
       'onboarding_comparison_coverage_invalid',
-      `Prefer needs ${comparison.branded} branded and ${comparison.unbranded} unbranded buyer comparisons, including ${comparison.distinct_named_rivals} different supplied rivals in separate branded questions. Found ${named.length} branded, ${comparisons.length - named.length} unbranded and ${distinctRivals} distinct rivals. Follow slot_plan.`,
+      `Prefer needs ${comparison.branded} branded and ${comparison.unbranded} unbranded buyer comparisons, including ${comparison.distinct_named_rivals} different supplied rivals in separate branded questions. Found ${named.length} branded, ${comparisons.length - named.length} unbranded and ${distinctRivals} distinct rivals.${feedback} Follow slot_plan.`,
       false,
     );
+  }
   validateBuyerSearches(generated, job.input.language, target);
   const at = new Date().toISOString();
   return all.map((p, index) => ({
