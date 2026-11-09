@@ -110,6 +110,33 @@ function fixture() {
 }
 
 describe('iGEO prompt period metrics', () => {
+  it('keeps saved measurements visible after adding verified aliases without changing frozen metadata', () => {
+    const f = fixture();
+    const saved = f.observation('2026-10-16T12:00:00Z');
+    const before = JSON.stringify(saved.run.snapshot.brand);
+    f.project.brand = { ...f.project.brand, aliases: ['Verified shorter name'] };
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      measurementCount: 1, avgVisibility: 100, historicalAnalysis: true,
+    });
+    expect(JSON.stringify(saved.run.snapshot.brand)).toBe(before);
+  });
+  it('does not compare or merge measurements across an alias-method change', () => {
+    const f = fixture();
+    f.observation('2026-10-13T12:00:00Z', { mentioned: false });
+    f.observation('2026-10-16T12:00:00Z', { mentioned: false });
+    f.project.brand = { ...f.project.brand, aliases: ['Verified shorter name'] };
+    f.observation('2026-10-20T12:00:00Z');
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0]).toMatchObject({
+      measurementCount: 1, previousMeasurementCount: 0, avgVisibility: 100,
+      visibilityChange: null, comparison: null, historicalAnalysis: false,
+    });
+  });
+  it.each(['id', 'name', 'domains'] as const)('does not restore historical measurements for a changed business %s', field => {
+    const f = fixture();
+    f.observation('2026-10-16T12:00:00Z');
+    f.project.brand = { ...f.project.brand, [field]: field === 'domains' ? ['other.example'] : 'Other identity' };
+    expect(promptPeriodMetrics(f.project, f.history, start, end).items[0].measurementCount).toBe(0);
+  });
   it('keeps the previous scored method available until a prompt has new measurements and excludes cross-method changes', () => {
     const f = fixture();
     f.observation('2026-10-13T12:00:00Z');
@@ -296,9 +323,8 @@ describe('iGEO prompt period metrics', () => {
     ).toMatchObject({ previousMeasurementCount: 1, rankChange: 33.33 });
     f.project.brand = { ...f.project.brand, aliases: ['New target alias'] };
     expect(
-      promptPeriodMetrics(f.project, f.history, start, end).items[0]
-        .measurementCount,
-    ).toBe(0);
+      promptPeriodMetrics(f.project, f.history, start, end).items[0],
+    ).toMatchObject({ measurementCount: 1, historicalAnalysis: true });
   });
   it('matches rounded period averages and two-decimal iGEO changes', () => {
     const f = fixture();

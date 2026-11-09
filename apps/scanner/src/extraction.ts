@@ -201,12 +201,13 @@ export function verifyRank(
   rank: number | null,
   evidence: EvidenceSpan | null,
   brand: Brand,
+  identifies = containsAlias,
 ): void {
   if (rank === null) {
     if (evidence !== null) invalid('A rank evidence span has no rank.');
     return;
   }
-  if (!evidence || !containsAlias(evidence.quote, brand))
+  if (!evidence || !identifies(evidence.quote, brand))
     invalid('Rank lacks brand evidence.');
   // Be conservative: accept only an explicit numbered list line, never mention order inferred by the model.
   const lines = evidence.quote.split('\n');
@@ -214,7 +215,7 @@ export function verifyRank(
     !lines.some((line) => {
       const match = line.match(/^\s*(?:#{1,6}\s*)?(?:\*\*)?(\d+)[.)]\s+(.*)$/u);
       return (
-        match && Number(match[1]) === rank && containsAlias(match[2], brand)
+        match && Number(match[1]) === rank && identifies(match[2], brand)
       );
     })
   )
@@ -225,6 +226,7 @@ export function validateExtraction(
   raw: unknown,
   answer: CapturedAnswer,
   brands: Brand[],
+  identifiers = { contains: containsAlias, offset: aliasOffset },
 ): BrandAnalysis[] {
   const parsed = extractionShape.safeParse(raw);
   if (!parsed.success) invalid('Extraction did not match the required schema.');
@@ -254,16 +256,16 @@ export function validateExtraction(
     const evidence = row.evidence.map((span) =>
       verifySpan(span, answer.blocks),
     );
-    if (evidence.some((span) => !containsAlias(span.quote, brand)))
+    if (evidence.some((span) => !identifiers.contains(span.quote, brand)))
       invalid('Mention evidence does not contain a brand alias.');
     const rankEvidence =
       row.rankEvidence && verifySpan(row.rankEvidence, answer.blocks);
     const sentimentEvidence =
       row.sentimentEvidence && verifySpan(row.sentimentEvidence, answer.blocks);
-    verifyRank(row.explicitRank, rankEvidence, brand);
+    verifyRank(row.explicitRank, rankEvidence, brand, identifiers.contains);
     if (
       row.sentiment !== 'unknown' &&
-      (!sentimentEvidence || !containsAlias(sentimentEvidence.quote, brand))
+      (!sentimentEvidence || !identifiers.contains(sentimentEvidence.quote, brand))
     )
       invalid('Sentiment lacks exact evidence identifying the brand.');
     if (row.sentiment === 'unknown' && sentimentEvidence !== null)
@@ -287,7 +289,7 @@ export function validateExtraction(
         (span) =>
           (blockIndex.get(span.blockId) ?? 0) * 1_000_000 +
           span.start +
-          aliasOffset(span.quote, brand),
+          identifiers.offset(span.quote, brand),
       ),
     );
   };
