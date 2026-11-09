@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Brand } from '@citevia/core';
+import { reportingCompanies, type Brand } from '@citevia/core';
 import { captured, snapshot } from '../apps/scanner/test/fixtures.js';
 import { businessIdentifierOffset, containsBusinessIdentifier } from '../apps/scanner/src/business-identifiers.js';
 import { parseScoredExtraction, scoredExtractionRequest, SCORED_PARSER_VERSION } from '../apps/scanner/src/scoring-extraction.js';
@@ -81,6 +81,14 @@ describe('exact business identifiers', () => {
       [{ name: brand.name, evidenceId: 0 }]), answer, configured);
     expect(analysis.brands[0].mentioned).toBe(true);
     expect(analysis.companies?.[0].evidence.quote).toContain('דנה ברק');
+  });
+  it('retains the verified company identity in reporting even when a frozen snapshot predates its aliases', () => {
+    const answer = captured('דנה ברק מייצגת בעסקאות מקרקעין.');
+    const analysis = parseScoredExtraction(receipt(present, [{ name: 'דנה ברק', evidenceId: 0 }]), answer, configured);
+    expect(analysis.companies?.[0].brandId).toBe(brand.id);
+    const rows = reportingCompanies(analysis, { ...configured, brand: { ...brand, aliases: [] } }, answer);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ brandId: 'target', tracked: true, domain: 'barak.example', company: brand.name });
   });
   it('passes the prompt, official domains and attached citations to the analyzer', () => {
     const answer = captured();

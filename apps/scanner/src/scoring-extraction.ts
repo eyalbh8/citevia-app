@@ -438,6 +438,7 @@ export function parseScoredExtraction(
           : brand?.sentiment ?? entity.sentiment;
       return {
         name: entity.name,
+        ...(entity.trackedId ? { brandId: entity.trackedId } : {}),
         rank: index + 1,
         evidence: entity.evidence,
         sentiment,
