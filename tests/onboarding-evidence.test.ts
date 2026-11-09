@@ -128,7 +128,7 @@ describe('brandbook evidence references', () => {
     expect(result.brandbook.keyFeatures).toEqual(['Acme vende questi strumenti solo alle piccole imprese.']);
     expect(result.brandbook.names).toEqual(['Acme']);
     expect(result.receipt).toMatchObject({
-      instructionsVersion: 'citevia-onboarding-v9',
+      instructionsVersion: 'citevia-onboarding-v10',
       evidenceCatalog: catalog,
     });
     const request = extract.mock.calls[0][0] as any;

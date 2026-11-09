@@ -15,14 +15,14 @@ No per-account CLI or database editing is required. Descope authenticates people
 
 ## Generation instructions
 
-The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v9`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
+The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v10`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
 
 - Understand: whether AI understands the brand’s business, offerings, audiences and use cases.
 - Prefer: discovery, shortlists, alternatives, comparisons and tradeoffs.
 - Trust: whether AI treats the brand’s expertise and published information as credible source material.
 - Convert: commercial evaluation and next steps, without inventing prices, offers or action URLs.
 
-The 50 generated prompts contain **40 unbranded and 10 branded searches**. Understand and Prefer each receive 13 prompts and Trust and Convert each receive 12. The default branded allocation is 3/3/2/2. Each generated branded prompt must contain the submitted brand name. Unbranded searches must make sense on their own and give the answerer a reason to name businesses, such as recommending, comparing or hiring a provider. A general definition or a list of application requirements does not serve that purpose.
+The 50 generated prompts contain **40 unbranded and 10 branded searches**. Understand and Prefer each receive 13 prompts and Trust and Convert each receive 12. The default branded allocation is 3/3/2/2. Each generated branded prompt must contain the submitted brand name. Analysis also receives the configured official domains and evidence-backed alternate business names. Research records genuine shorter trading names; it does not derive arbitrary surname, service or spelling matches. The formal display name used by prompts is independent of these recognition identifiers. Unbranded searches must make sense on their own and give the answerer a reason to name businesses, such as recommending, comparing or hiring a provider. A general definition or a list of application requirements does not serve that purpose.
 
 Prefer includes at least three branded and three unbranded comparisons. When research identifies named competitors, the generator uses up to three distinct competitors for direct comparisons. Otherwise it asks about alternatives for the same buyer need. The generated portfolio uses the requested language and market, and mixes sentence openings and search forms.
 
