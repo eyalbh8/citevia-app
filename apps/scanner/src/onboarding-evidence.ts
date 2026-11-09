@@ -62,7 +62,7 @@ export function deniesOffering(text: string) {
 export function requireOfficialResearch(catalog: ResearchEvidence[], website: string, name: string) {
   if (!catalog.some(item => isOfficialBrandSource(item.url, website) && identifiesCompany(narrative(item.quote), name)))
     throw new ProviderError('onboarding_official_research_missing',
-      'Research needs a source-cited description identifying the submitted business on its official website.', false);
+      'The submitted business name could not be verified in the cited official research. Use the business name shown on its website, in its original language, then retry setup. Do not translate the name just to match the prompt language.', false);
 }
 
 export function verifiedBrandNames(primary: string, website: string, book: Pick<Brandbook, 'names' | 'evidence'>): string[] {
@@ -193,6 +193,17 @@ export function plainText(text: string) {
   return narrative(text).normalize('NFC').replace(/\s+/gu, ' ').trim();
 }
 
+function copiedClaim(passage: string, claim: string) {
+  if (passage.includes(claim)) return claim;
+  // A selected sentence can place its period before a closing quotation mark.
+  // Recover only that punctuation difference, then retain the source sentence.
+  const withoutStop = claim.replace(/[.!?。！？]+$/u, '');
+  if (!withoutStop || withoutStop === claim) return undefined;
+  const offset = passage.indexOf(withoutStop);
+  return offset >= 0 && /^["'”’»״」』]+[.!?。！？]/u.test(passage.slice(offset + withoutStop.length))
+    ? withoutStop : undefined;
+}
+
 /** Keep the entire supporting statement, including qualifications such as
  * “for business customers only”. A selected noun alone can invert its meaning. */
 export function supportedStatement(passage: string, selected: string, language: string) {
@@ -233,15 +244,16 @@ export function resolveBrandbookEvidence(
       invalidEvidence('A company fact has no valid reference to the official website.');
     const field = selection.field as FactField;
     const passage = plainText(item.quote);
-    const claim = plainText(selection.value);
-    if (!claim || !/[\p{L}\p{N}]/u.test(claim) || !passage.includes(claim)) {
-      if (claim) gaps.add(claim.slice(0, 300));
+    const selected = plainText(selection.value);
+    const claim = copiedClaim(passage, selected);
+    if (!claim || !/[\p{L}\p{N}]/u.test(claim)) {
+      if (selected) gaps.add(selected.slice(0, 300));
       continue;
     }
     const supported = field === 'about' || field === 'keyFeatures'
       ? supportedStatement(passage, claim, company.language) : claim;
     if (field === 'about' && (!identifiesCompany(supported, company.name) || supported.length < 20))
-      invalidEvidence('Select an official overview identifying ' + company.name + ' by name.');
+      invalidEvidence('The selected overview does not identify ' + company.name + '. Check that the brand name matches the name shown on its official website, in its original language, then retry setup.');
     const listSubject = item.listHeading && identifiesCompany(narrative(item.listHeading), company.name) &&
       !/\b(?:competitors?|rivals?|alternatives?|partners?)\b|(?:מתחר|חלופ|שותפים)/iu.test(item.listHeading);
     if (field === 'keyFeatures' && ((!identifiesCompany(supported, company.name) && !listSubject) ||

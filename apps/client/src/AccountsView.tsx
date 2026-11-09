@@ -25,6 +25,7 @@ import {
   useApi,
   query,
   onboardAccounts,
+  request,
 } from './api';
 import { parseAccountImport } from './account-import';
 import LanguageSelect from './LanguageSelect';
@@ -94,6 +95,8 @@ export default function AccountsView({
     [region, setRegion] = useState('US'),
     [language, setLanguage] = useState('en'),
     [bulkText, setBulkText] = useState('');
+  const [correctedNames, setCorrectedNames] = useState<Record<string, string>>({});
+  const [retrying, setRetrying] = useState<string>();
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -136,13 +139,29 @@ export default function AccountsView({
     }
   }
   async function retry(id: string) {
+    setRetrying(id);
     setError(undefined);
     try {
+      const correctedName = correctedNames[id]?.trim();
+      if (correctedName) {
+        const settings = await request<Project>(`/projects/${id}/settings`);
+        if (settings.brand.name !== correctedName) {
+          await request(`/projects/${id}/settings`, {
+            method: 'PATCH',
+            body: JSON.stringify({ version: settings.version, name: correctedName,
+              brand: { ...settings.brand, name: correctedName } }),
+          });
+        }
+      }
       await idempotentPost(`/projects/${id}/onboarding/retry`);
       setRevision((value) => value + 1);
-      notify('Account setup queued for retry. Saved work will be reused.');
+      onChanged();
+      notify(correctedName ? 'Account setup queued with the corrected brand name.' : 'Account setup queued for retry. Valid saved work will be reused.');
     } catch (error) {
       setError(error as Error);
+      setRevision((value) => value + 1);
+    } finally {
+      setRetrying(undefined);
     }
   }
   async function stop(id: string) {
@@ -219,7 +238,7 @@ export default function AccountsView({
                         maxLength={100}
                         onChange={(e) => setName(e.target.value)}
                       />
-                      <small>Use the spelling you want buyers to see in branded prompts.</small>
+                      <small>Use the business name shown on its official website, in its original language. The prompt language can be different.</small>
                     </label>
                     <label className="field">
                       Official website
@@ -483,6 +502,18 @@ export default function AccountsView({
                     {job.error && (
                       <p className="account-error">{reportExcerpt(job.error.message)}</p>
                     )}
+                    {job.status === 'failed' && account.role === 'owner' &&
+                      !account.onboardingAppliedJobId && job.error &&
+                      ['onboarding_official_research_missing', 'brandbook_evidence_invalid', 'onboarding_account_changed'].includes(job.error.code) && (
+                        <label className="field">
+                          Official brand name
+                          <input dir="auto" maxLength={100}
+                            value={correctedNames[account.id] ?? account.brand.name}
+                            disabled={retrying === account.id}
+                            onChange={(event) => setCorrectedNames(current => ({ ...current, [account.id]: event.target.value }))} />
+                          <small>Copy the name from the official website. Retry saves a corrected name and researches it again. Keep English brands in English.</small>
+                        </label>
+                      )}
                     {['failed', 'stopped'].includes(job.status) && (
                       <p className="card-description">
                         No more generation calls or scans will start
@@ -514,6 +545,7 @@ export default function AccountsView({
                     account.role === 'owner' && (
                       <button
                         className="button button-outline"
+                        disabled={retrying === account.id || correctedNames[account.id]?.trim() === ''}
                         onClick={() => void retry(account.id)}
                       >
                         <RefreshCw size={12} />

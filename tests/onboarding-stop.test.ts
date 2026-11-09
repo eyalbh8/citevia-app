@@ -77,6 +77,50 @@ async function drain(env: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe('onboarding paid-call stop policy', () => {
+  it('restarts research for an owner-corrected Hebrew name without reusing old identity checkpoints', async () => {
+    const env = await setup();
+    const { id, projectId, inputHash } = env.item.job;
+    for (let step = 0; step < 3; step++) await env.worker.handle(projectId, id);
+    const previous = (await env.repository.getOnboarding(projectId, id))!;
+    const project = (await env.repository.getProject(projectId))!;
+    const name = "משרד עורכי הדין דנה ושות'";
+    await env.repository.saveProject({ ...project, name, brand: { ...project.brand, name }, language: 'he',
+      version: project.version + 1 }, project.version);
+    await env.worker.handle(projectId, id);
+    expect((await env.repository.getOnboarding(projectId, id))?.error?.code).toBe('onboarding_account_changed');
+    expect((await env.call('onboarding/retry')).status).toBe(202);
+    const retried = (await env.repository.getOnboarding(projectId, id))!;
+    expect(retried).toMatchObject({ status: 'queued', step: 'research', inputHash,
+      input: { name, language: 'he' }, researchRevision: 1, portfolioRevision: 1 });
+    for (const key of ['researchKey', 'brandbookKey', 'promptsKey', 'verifiedResearchKey',
+      'verifiedBrandbookKey', 'competitorSearchTerm', 'competitorSearchDomains', 'rejectedPortfolioKey'] as const)
+      expect(retried[key]).toBeUndefined();
+    // Creation idempotency and the original receipts remain intact.
+    expect(await env.artifacts.get(previous.researchKey!)).toBeTruthy();
+    expect(await env.artifacts.get(previous.promptsKey!)).toBeTruthy();
+    expect((await env.call('onboarding/retry')).status).toBe(202);
+    expect((await env.repository.getOnboarding(projectId, id))?.version).toBe(retried.version);
+    await Promise.all([env.worker.handle(projectId, id), env.worker.handle(projectId, id)]);
+    expect(env.research).toHaveBeenCalledTimes(2);
+    expect(env.research.mock.calls[1][0].input.name).toBe(name);
+    expect((await env.repository.getOnboarding(projectId, id))?.researchKey).not.toBe(previous.researchKey);
+    expect(env.queue.messages.some(message => message.kind === 'kickoff')).toBe(false);
+  });
+
+  it('does not overwrite already applied results after an identity edit and retry', async () => {
+    const env = await setup();
+    const { id, projectId } = env.item.job;
+    for (let step = 0; step < 3; step++) await env.worker.handle(projectId, id);
+    const project = (await env.repository.getProject(projectId))!;
+    const job = (await env.repository.getOnboarding(projectId, id))!;
+    await env.repository.saveProject({ ...project, brand: { ...project.brand, name: 'Different brand' },
+      onboardingAppliedJobId: id, version: project.version + 1 }, project.version);
+    await env.repository.saveOnboarding({ ...job, status: 'failed', version: job.version + 1 }, job.version);
+    expect((await env.call('onboarding/retry')).status).toBe(409);
+    expect((await env.repository.getOnboarding(projectId, id))?.status).toBe('failed');
+    expect(env.research).toHaveBeenCalledTimes(1);
+  });
+
   it('prevents a saved portfolio with duplicate prompts from activating the account or starting the first scan', async () => {
     const env = await setup();
     const { id, projectId } = env.item.job;

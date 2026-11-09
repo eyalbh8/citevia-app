@@ -57,6 +57,23 @@ it('uses the validated first brandbook if the supplemental search supplies no us
   expect(await current()).toMatchObject({step:'prompts', status:'queued', brandbookKey:saved!.verifiedBrandbookKey});
 });
 
+it('still searches for competitors once after a company-evidence retry', async () => {
+  const { provider, work, current, item } = await setup();
+  const template = await provider.brandbook(item.job);
+  const book = vi.spyOn(provider, 'brandbook').mockResolvedValue({ ...template, competitors: [] } as typeof template);
+  const research = vi.spyOn(provider, 'research').mockRejectedValueOnce(invalid('onboarding_official_research_missing'));
+  await work(); // failed company evidence, revision 1
+  await work(); // corrected company research
+  await work(); // verified book, separate competitor search at revision 2
+  expect(await current()).toMatchObject({ step: 'research', researchRevision: 2 });
+  const verifiedKey = (await current())!.verifiedBrandbookKey;
+  await work();
+  await work();
+  expect(await current()).toMatchObject({ step: 'prompts', verifiedBrandbookKey: verifiedKey });
+  expect(research).toHaveBeenCalledTimes(3);
+  expect(book).toHaveBeenCalledTimes(2);
+});
+
 it('stops before prompts and the first scan when both company searches fail to establish identity', async () => {
   const {provider, work, current, runtime, item} = await setup();
   const search = vi.spyOn(provider, 'research').mockRejectedValue(invalid('onboarding_official_research_missing'));

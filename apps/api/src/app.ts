@@ -64,7 +64,7 @@ import { resolveReportInput, resolveReportUrl, restoreReportFields } from './pub
 import { actorFingerprint, auditRoute, enforceApiLimit } from './api-security.js';
 import { runIdFor, providerRunIdFor } from '../../scanner/src/engine.js';
 import { brandbookUpdateSchema } from '@citevia/core';
-import { createAccounts } from './onboarding.js';
+import { createAccounts, correctedOnboardingInput } from './onboarding.js';
 import {
   ANSWER_SORTS,
   promptAnswers,
@@ -513,6 +513,10 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             'RETRY_LIMIT',
             'Account setup reached its retry limit. Contact your administrator.',
           );
+        const correctedInput = correctedOnboardingInput(job, stored);
+        if (correctedInput && stored.onboardingAppliedJobId === job.id)
+          throw new HttpError(409, 'ONBOARDING_ALREADY_APPLIED',
+            'This setup already saved its results. Start a new onboarding to research a different identity.');
         const next = {
           ...job,
           status: 'queued' as const,
@@ -531,6 +535,17 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             ? { step: 'prompts' as const, promptsKey: undefined, portfolioRevision: (job.portfolioRevision ?? 0) + 1,
                 portfolioFeedback: job.error }
             : {}),
+          ...(correctedInput ? {
+            input: correctedInput,
+            step: 'research' as const,
+            researchRevision: (job.researchRevision ?? 0) + 1,
+            researchFeedback: 'The owner corrected the account details. Verify the exact business name on the official website; do not translate or invent a trading name.',
+            researchKey: undefined, brandbookKey: undefined, promptsKey: undefined,
+            verifiedBrandbookKey: undefined, verifiedResearchKey: undefined,
+            competitorSearchTerm: undefined, competitorSearchDomains: undefined,
+            portfolioRevision: (job.portfolioRevision ?? 0) + 1,
+            portfolioFeedback: undefined, rejectedPortfolioKey: undefined,
+          } : {}),
           error: undefined,
           leaseOwner: undefined,
           leaseExpiresAt: undefined,
