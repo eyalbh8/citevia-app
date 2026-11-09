@@ -81,6 +81,17 @@ describe('market and identity evidence in onboarding research', () => {
     expect(answer.mock.calls[0][0].prompt).toContain(website.slice('https://'.length));
   });
 
+  it('restricts lead verification to candidate websites only during a supplemental search', async () => {
+    const job = { ...policyJob(), competitorSearchTerm: 'retail training',
+      competitorSearchDomains: ['retailtutors.com', 'merchantschool.com'] };
+    const answer = vi.fn(async (_: AnswerRequest) => researchFrom('https://acme.com/services'));
+    const provider = new OpenAIOnboardingProvider({answer, extract: vi.fn()});
+    await provider.research(job);
+    expect(answer.mock.calls[0][0].allowedDomains).toBeUndefined();
+    await provider.research({...job, verifiedBrandbookKey:'accepted-profile', verifiedResearchKey:'original'});
+    expect(answer.mock.calls[1][0].allowedDomains).toEqual(job.competitorSearchDomains);
+  });
+
   it('requires native cited evidence even on the supplemental search', async () => {
     const job = { ...policyJob(), verifiedBrandbookKey: 'book', verifiedResearchKey: 'research', competitorSearchTerm: 'Retail training' };
     const receipt = researchFrom('https://rival.net/services');
