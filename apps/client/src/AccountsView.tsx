@@ -90,6 +90,7 @@ export default function AccountsView({
   }, [pending]);
   const [name, setName] = useState(''),
     [website, setWebsite] = useState(''),
+    [promptFocus, setPromptFocus] = useState(''),
     [region, setRegion] = useState('US'),
     [language, setLanguage] = useState('en'),
     [bulkText, setBulkText] = useState('');
@@ -100,7 +101,7 @@ export default function AccountsView({
     try {
       const accounts: AccountOnboardingInput[] = bulk
         ? parseAccountImport(bulkText)
-        : [{ name, website, region, language }];
+        : [{ name, website, region, language, ...(promptFocus.trim() ? { promptFocus: promptFocus.trim() } : {}) }];
       const result = await onboardAccounts(accounts);
       if (result.limitReached) {
         if (bulk)
@@ -126,6 +127,7 @@ export default function AccountsView({
       setCursors([undefined]);
       setName('');
       setWebsite('');
+      setPromptFocus('');
       setBulkText('');
     } catch (error) {
       setError(error as Error);
@@ -210,13 +212,14 @@ export default function AccountsView({
                 <>
                   <div className="field-row">
                     <label className="field">
-                      Company / account name
+                      Brand name
                       <input
                         required
                         value={name}
                         maxLength={100}
                         onChange={(e) => setName(e.target.value)}
                       />
+                      <small>Use the spelling you want buyers to see in branded prompts.</small>
                     </label>
                     <label className="field">
                       Official website
@@ -243,9 +246,8 @@ export default function AccountsView({
                   />
                   <small>
                     1–25 accounts per batch. Each CSV row or JSON object needs
-                    only name, region, language and website. Use a two-letter
-                    region code, such as US or GB, and a language code, such as
-                    en.
+                    name, region, language and website. Add promptFocus to
+                    prioritize a product or service for an account.
                   </small>
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <button
@@ -254,7 +256,7 @@ export default function AccountsView({
                       onClick={() =>
                         downloadCsv(
                           'citevia-accounts-template.csv',
-                          ['name', 'region', 'language', 'website'],
+                          ['name', 'region', 'language', 'website', 'promptFocus'],
                           [],
                         )
                       }
@@ -312,8 +314,15 @@ export default function AccountsView({
                   </label>
                 </div>
               )}
+              {!bulk && (
+                <label className="field">
+                  Prompt focus (optional)
+                  <input value={promptFocus} maxLength={300} onChange={(e) => setPromptFocus(e.target.value)} placeholder="A specific product or service" />
+                  <small>Leave blank to cover the business’s main offerings.</small>
+                </label>
+              )}
               <div className="generated-portfolio">
-                <h3>50 prompts, four tactics</h3>
+                <h3>40 unbranded prompts and 10 branded prompts</h3>
                 <div className="journey-grid">
                   {JOURNEY_STAGES.map((stage) => (
                     <div className="journey-tactic" key={stage}>

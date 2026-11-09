@@ -3,11 +3,18 @@ if (process.env.NODE_ENV !== 'test')
 // Test fixtures only. Never import this module from application or script code.
 import type { Brandbook, OnboardingJob } from '@citevia/core';
 import {
+  brandedAllocation,
+  comparisonAllocation,
+  isBrandedPrompt,
   journeyAllocation,
   STAGE_INTENTS,
   type JourneyStage,
+  type PromptIntent,
 } from '@citevia/core';
-import type { OnboardingProvider } from '../../apps/scanner/src/onboarding-provider.js';
+import type {
+  OnboardingProvider,
+  PortfolioPeer,
+} from '../../apps/scanner/src/onboarding-provider.js';
 import { validatePortfolio } from '../../apps/scanner/src/onboarding-provider.js';
 export class FixtureOnboardingProvider implements OnboardingProvider {
   async research(job: OnboardingJob) {
@@ -60,48 +67,107 @@ export class FixtureOnboardingProvider implements OnboardingProvider {
     };
     return { brandbook, receipt: { demo: true } };
   }
-  async prompts(job: OnboardingJob, book: Brandbook) {
-    const templates = {
-      understand: 'What solutions work',
-      prefer: 'Which providers should I compare',
-      trust: 'Where can I find reliable guidance',
-      convert: 'How can I choose a plan',
+  async prompts(
+    job: OnboardingJob,
+    book: Brandbook,
+    peers: readonly PortfolioPeer[] = [],
+  ) {
+    const allocation = journeyAllocation(job.input.manualPrompts);
+    const brand = {
+      name: job.input.name,
+      domains: book.domains,
+      aliases: book.names,
     };
-    const audiences = [
-      'a small team',
-      'a growing company',
-      'an enterprise team',
-      'an independent consultant',
-      'an agency',
-      'a new business',
-    ];
-    const constraints = [
+    const branded = brandedAllocation(
+      allocation,
+      job.input.manualPrompts.filter((p) => isBrandedPrompt(p.text, brand))
+        .length,
+    );
+    const compare = comparisonAllocation(
+      allocation.prefer,
+      branded.prefer,
+      peers.length,
+    );
+    const topics = [
       'setup',
       'support',
-      'reliability',
-      'integrations',
-      'cost',
-      'implementation',
       'training',
-      'scalability',
+      'costs',
       'reporting',
+      'maintenance',
+      'integrations',
+      'ordering',
+      'delivery',
+      'installation',
+      'repairs',
+      'returns',
+      'billing',
     ];
-    const prompts = Object.entries(
-      journeyAllocation(job.input.manualPrompts),
-    ).flatMap(([stage, count]) =>
-      Array.from({ length: count }, (_, i) => ({
-        text: `${templates[stage as keyof typeof templates]} for ${audiences[i % audiences.length]}, focusing on ${constraints[Math.floor(i / audiences.length)]}?`,
-        stage,
-        topic: 'Sample buyer journey',
-        branded: false,
-        intent:
-          STAGE_INTENTS[stage as JourneyStage][
-            i % STAGE_INTENTS[stage as JourneyStage].length
+    const prompts = Object.entries(allocation).flatMap(([key, count]) => {
+      const stage = key as JourneyStage;
+      return Array.from({ length: count }, (_, i) => {
+        const topic = topics[i % topics.length];
+        const isBranded = i < branded[stage];
+        const name = isBranded ? job.input.name : 'providers';
+        const unbrandedIndex = i - branded[stage];
+        const comparing =
+          stage === 'prefer' &&
+          (isBranded
+            ? i < compare.branded
+            : unbrandedIndex < compare.unbranded);
+        const alternative =
+          isBranded && i < compare.distinct_named_rivals
+            ? peers[i].name
+            : 'other providers';
+        const options = {
+          understand: [
+            `Who offers ${topic} for small teams?`,
+            `Providers with help for ${topic}`,
+            `Looking for a supplier for ${topic}`,
           ],
-      })),
-    );
+          prefer: [
+            `Recommended providers for ${topic}`,
+            `Which suppliers offer affordable ${topic}?`,
+            `Find a provider with ${topic} support`,
+          ],
+          trust: [
+            `Whose published guides cover ${topic} for buyers?`,
+            `Suppliers with reliable documentation on ${topic}`,
+            `Who shares detailed guidance on ${topic}?`,
+          ],
+          convert: [
+            `Where can I book ${topic} support?`,
+            `Which supplier can quote for ${topic}?`,
+            `Looking to hire providers for ${topic}`,
+          ],
+        };
+        let text = options[stage][i % 3];
+        if (isBranded)
+          text = {
+            understand: `Does ${name} provide ${topic} services?`,
+            prefer: `Would ${name} suit a team prioritizing ${topic}?`,
+            trust: `Where does ${name} document its ${topic} service?`,
+            convert: `Can I contact ${name} for a ${topic} quote?`,
+          }[stage];
+        if (comparing)
+          text = isBranded
+            ? `Compare ${name} and ${alternative} on ${topic}`
+            : [
+                `Which providers should I compare for ${topic}?`,
+                `Compare suppliers by ${topic} options`,
+                `Alternatives for outsourced ${topic}: which providers stand out?`,
+              ][i % 3];
+        const intent: PromptIntent =
+          stage === 'prefer'
+            ? comparing
+              ? 'comparison'
+              : 'commercial'
+            : STAGE_INTENTS[stage][i % STAGE_INTENTS[stage].length];
+        return { text, stage, topic, branded: isBranded, intent };
+      });
+    });
     return {
-      prompts: validatePortfolio(job, book, { prompts }),
+      prompts: validatePortfolio(job, book, { prompts }, peers),
       receipt: { demo: true },
     };
   }

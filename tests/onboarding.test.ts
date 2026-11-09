@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   onboardingInputSchema,
   journeyAllocation,
+  brandedAllocation,
   JOURNEY_STAGES,
   JOURNEY_PROMPT_COUNTS,
   type AccountOnboardingInput,
@@ -410,11 +411,7 @@ describe('automated account onboarding', () => {
             group,
             prompts
               .filter((prompt) => prompt.stage === stage)
-              .filter((_, i) =>
-                group === 'branded'
-                  ? i < (stage === 'convert' ? 3 : 4)
-                  : i >= (stage === 'convert' ? 3 : 4),
-              )
+              .filter((p) => p.branded === (group === 'branded'))
               .map(({ text, topic, intent }) => ({ text, topic, intent })),
           ]),
         ),
@@ -467,8 +464,8 @@ describe('automated account onboarding', () => {
         request.schema.properties[stage].properties.unbranded,
       ).toMatchObject({
         type: 'array',
-        minItems: JOURNEY_PROMPT_COUNTS[stage] - (stage === 'convert' ? 3 : 4),
-        maxItems: JOURNEY_PROMPT_COUNTS[stage] - (stage === 'convert' ? 3 : 4),
+        minItems: JOURNEY_PROMPT_COUNTS[stage] - brandedAllocation(JOURNEY_PROMPT_COUNTS)[stage],
+        maxItems: JOURNEY_PROMPT_COUNTS[stage] - brandedAllocation(JOURNEY_PROMPT_COUNTS)[stage],
       });
       expect(
         request.schema.properties[stage].properties.unbranded.items.properties,
@@ -482,9 +479,10 @@ describe('automated account onboarding', () => {
     expect(request.instructions).toContain(
       'source authority as its central purpose',
     );
-    expect(request.input.maximum_branded_count).toBe(15);
+    expect(request.input.required_generated_branded_count).toBe(10);
+    expect(request.input.minimum_prefer_comparisons).toEqual({ branded: 3, unbranded: 3, distinct_named_rivals: 0 });
     expect(generated.receipt).toMatchObject({
-      instructionsVersion: 'citevia-onboarding-v6',
+      instructionsVersion: 'citevia-onboarding-v7',
     });
     // Regression: the real failure had 13/12/12/13, even though the total was 50.
     // A provider returning that split must still stop after one paid attempt.
@@ -619,8 +617,8 @@ describe('portfolio response schema allocation', () => {
       maxItems: 0,
     });
     expect(schema.properties.prefer.properties.unbranded).toMatchObject({
-      minItems: 8,
-      maxItems: 8,
+      minItems: 9,
+      maxItems: 9,
     });
   });
 });

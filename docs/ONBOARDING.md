@@ -2,7 +2,7 @@
 
 ## Implemented flow
 
-A system administrator opens **Accounts → New account** and supplies exactly four fields: brand name, region, language and official website URL. Region is a two-letter country/region code and language is a code such as en or en-GB. Research discovers the company context automatically; onboarding does not accept notes, manual prompts or a timezone. Bulk CSV/JSON uses the same four fields, up to 25 accounts per request. New accounts default to Monday 06:00 UTC; owners can change the timezone later in Settings. Each account is owned by its creator, and system administrators can assign users to it.
+A system administrator opens **Accounts → New account** and supplies the brand name, region, language and official website URL. An optional prompt focus prioritizes a particular product or service. Without a focus, the generator covers the main offerings supported by the research. Region is a two-letter country/region code and language is a code such as en or en-GB. Research discovers the company context automatically; onboarding does not accept notes, manual prompts or a timezone. Bulk CSV/JSON uses the same fields, up to 25 accounts per request. New accounts receive two scheduled scans per week. Each account is owned by its creator, and system administrators can assign users to it.
 
 The system persists the account, membership and onboarding job atomically, with weekly scanning disabled. It then queues these steps:
 
@@ -15,18 +15,18 @@ No per-account CLI or database editing is required. Descope authenticates people
 
 ## Generation instructions
 
-The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v6`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
+The versioned instructions and strict schemas live in `apps/scanner/src/onboarding-prompts.ts` (`citevia-onboarding-v7`). `OPENAI_ONBOARDING_MODEL` configures research/brandbook/portfolio generation independently of scan generation and analysis.
 
 - Understand: whether AI understands the brand’s business, offerings, audiences and use cases.
 - Prefer: discovery, shortlists, alternatives, comparisons and tradeoffs.
 - Trust: whether AI treats the brand’s expertise and published information as credible source material.
 - Convert: commercial evaluation and next steps, without inventing prices, offers or action URLs.
 
-Allocation is **13 Understand, 13 Prefer, 12 Trust, 12 Convert**, with **at most 15 branded questions across the 50**. Version `citevia-onboarding-v5` requests four named section objects, each containing `branded` and `unbranded` arrays with exact counts in the strict response schema. The default slot split is 4/4/4/3 branded and 9/9/8/9 unbranded. A branded slot may instead contain an unbranded question; an unbranded slot cannot name the company, an alias or its website. The server determines branding from actual text with whole-name matching; the model cannot evade the cap by returning `branded:false`. Legacy manual questions consume the same total budget. Excessive manual branding stops before a paid request.
+The 50 generated prompts contain **40 unbranded and 10 branded searches**. Understand and Prefer each receive 13 prompts and Trust and Convert each receive 12. The default branded allocation is 3/3/2/2. Each generated branded prompt must contain the submitted brand name. Unbranded searches must make sense on their own and give the answerer a reason to name businesses, such as recommending, comparing or hiring a provider. A general definition or a list of application requirements does not serve that purpose.
 
-Questions should sound like a person typing into ChatGPT or search: normally 5–12 words, with hard limits of 20 whitespace-separated words and 160 Unicode characters. Multiple questions and multiline briefs are rejected. The portfolio mixes informational/category discovery, commercial money searches, comparisons, evidence/source validation and transactional next steps. Understand requires informational/discovery intents; Prefer commercial/comparison; Trust validation; Convert transactional/commercial. Both allowed intents must occur when at least two questions remain in a section. The server checks counts, lengths, intent coverage, duplicates, aliases and the branded cap before activation. Semantic quality still needs live review; these checks do not guarantee a visibility outcome.
+Prefer includes at least three branded and three unbranded comparisons. When research identifies named competitors, the generator uses up to three distinct competitors for direct comparisons. Otherwise it asks about alternatives for the same buyer need. The generated portfolio uses the requested language and market, and mixes sentence openings and search forms.
 
-The application rejects unknown sections, the wrong count/allocation, duplicate normalized questions, invalid records and unverifiable brandbook evidence. Model refusals, incomplete output and provider failures do not silently activate an account. Generated prompts and the brandbook are editable after setup. Editing a prompt increments its version; old scan snapshots remain unchanged.
+The scanner verifies the actual wording against the brand and its aliases, the counts, comparison coverage, stage intents, length and duplicate wording. It checks for repetitive openings across the portfolio and rejects common generic question forms in English and Hebrew. Each prompt supports up to 20 whitespace-separated words and 160 characters. Account owners can edit prompts after setup. On older pending jobs, existing manual questions consume the relevant slots.
 
 ## Persistence and compatibility
 
@@ -53,7 +53,7 @@ Failed/refused/incomplete outcomes are also saved in `prompt_responses`. A faile
 
 ## Recovery and scale
 
-Jobs have conditional leases, saved research/brandbook/prompt checkpoints and a 24-hour onboarding deadline. Each model stage makes at most one automatic API attempt. Any model, validation or checkpoint-write failure stops the job and requires explicit owner retry. Infrastructure-only work can retry up to four times without purchasing another model response. A retry reuses valid checkpoints, rather than repeating earlier paid calls. A retry of activation never overwrites a portfolio already applied by that job. Eight explicit owner retries are allowed; duplicate retry request IDs do not reset work again. Before a model call, the worker persists a unique call intent. An expired lease with an unresolved intent stops with onboarding_call_uncertain instead of silently purchasing another response. A saved checkpoint is reused without a new call. The scheduled recovery tick repairs interrupted dispatch but never reactivates failed/stopped jobs.
+Jobs have conditional leases, saved research/brandbook/prompt checkpoints and a 24-hour onboarding deadline. After saving a completed prompt response that failed validation, onboarding can generate up to two corrected portfolios using the previous draft and validation feedback. A stored portfolio from an older policy also goes through validation before activation. A refusal, uncertain provider outcome or failed response save requires explicit owner retry. Infrastructure-only work can retry up to four times without purchasing another model response. A retry reuses valid checkpoints, rather than repeating earlier paid calls. A retry of activation never overwrites a portfolio already applied by that job. Eight explicit owner retries are allowed; duplicate retry request IDs do not reset work again. Before a model call, the worker persists a unique call intent. An expired lease with an unresolved intent stops with onboarding_call_uncertain instead of silently purchasing another response. A saved checkpoint is reused without a new call. The scheduled recovery tick repairs interrupted dispatch but never reactivates failed/stopped jobs.
 
 Creation requires an idempotency key. Repeating a request after an ambiguous failure repairs the same per-item jobs. Reusing a key with different company details is rejected. Owner account limits are enforced inside a database transaction. The AWS default is 100 accounts per owner (`MaxAccountsPerOwner`, configurable to 10,000), 10 concurrent SQS workers, 12 reserved scanner invocations, and 20 reserved API invocations. Each Lambda opens at most two database connections. Coordinate increased worker counts with the OpenAI project's actual rate limits, database capacity and expected scan duration; these defaults are configuration, not a throughput benchmark.
 
@@ -103,7 +103,7 @@ The public API accepts only:
 }
 ```
 
-Use `POST /v1/onboarding/accounts` with an authenticated system-administrator session and an `Idempotency-Key`. The server maps region to the existing country field and adds internal UTC scheduling and empty legacy context; the operator enters no extra fields. Prompts can be edited after setup in the dedicated Prompts screen.
+Use `POST /v1/onboarding/accounts` with an authenticated system-administrator session and an `Idempotency-Key`. The server maps region to the existing country field and adds internal UTC scheduling and empty legacy context; promptFocus is optional. Prompts can be edited after setup in the dedicated Prompts screen.
 
 ## Stop and explicit retry
 

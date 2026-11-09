@@ -34,6 +34,7 @@ export async function createAccounts(
       website: submitted.website,
       country: submitted.region,
       language: submitted.language,
+      ...(submitted.promptFocus ? { promptFocus: submitted.promptFocus } : {}),
       timezone: 'UTC',
       description: '',
       manualPrompts: [],
@@ -46,6 +47,7 @@ export async function createAccounts(
     const project: Project = {
       id: projectId,
       name: account.name,
+      ...(account.promptFocus ? { promptFocus: account.promptFocus } : {}),
       brand: {
         id: 'target',
         name: account.name,

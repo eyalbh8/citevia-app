@@ -51,6 +51,7 @@ export const onboardingInputSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
     website: publicUrl,
+    promptFocus: z.string().trim().max(300).optional(),
     region: z
       .string()
       .trim()

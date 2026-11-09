@@ -80,6 +80,7 @@ const writeBodies: Record<string, unknown> = {
   update_tracked_url: objectSchema({ version: positiveVersion, title: textField(200, 1), active: { type: 'boolean' } }, ['version']),
   onboard_accounts: objectSchema({ accounts: { type: 'array', minItems: 1, maxItems: 25, items: objectSchema({
     name: textField(100, 1), website: publicUrl, region: { type: 'string', pattern: '^[A-Z]{2}$' },
+    promptFocus: { type: 'string', maxLength: 300, description: 'Optional product or service to prioritize in the prompts.' },
     language: { type: 'string', pattern: '^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$' },
   }, ['name', 'website', 'region', 'language']) } }, ['accounts']),
 };

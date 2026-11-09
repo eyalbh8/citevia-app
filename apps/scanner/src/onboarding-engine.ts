@@ -4,24 +4,53 @@ import type {
   CapturedAnswer,
   DiscoveredCompetitor,
   OnboardingJob,
+  Project,
   Prompt,
 } from '@citevia/core';
 import {
   markScheduleSynced,
-  isBrandedPrompt,
-  MAX_BRANDED_PROMPTS,
-  isShortBuyerPrompt,
   competitorBrands,
 } from '@citevia/core';
 import type { Runtime } from '@citevia/storage';
 import {
   OnboardingOutputError,
+  previousPortfolioDraft,
   type OnboardingProvider,
 } from './onboarding-provider.js';
-import { ProviderError } from './provider.js';
+import { ProviderError, type ProviderReceipt } from './provider.js';
 import { runIdFor } from './engine.js';
+import { validateSavedPortfolio } from './saved-portfolio.js';
+import { verifiedBrandNames } from './onboarding-evidence.js';
 const leaseMs = 12 * 60_000;
+const maxAutomaticPortfolioCorrections = 2;
 class LostLease extends Error {}
+
+type ResearchCheckpoint = {
+  brandbook: Brandbook;
+  competitors?: DiscoveredCompetitor[];
+};
+
+function portfolioContext(project: Project, job: OnboardingJob, research: ResearchCheckpoint) {
+  const submittedHost = new URL(job.input.website).hostname.toLowerCase();
+  if (project.brand.name !== job.input.name ||
+      project.brand.domains[0]?.toLowerCase() !== submittedHost ||
+      project.country !== job.input.country || project.language !== job.input.language ||
+      project.promptFocus !== job.input.promptFocus) {
+    throw new ProviderError('onboarding_account_changed',
+      'The brand, website, market, language or focus changed during setup. Restore the submitted details and retry, or start onboarding for the new business.', false);
+  }
+  // Recheck aliases from older saved research using current identity rules.
+  const verified = verifiedBrandNames(project.brand.name, job.input.website, research.brandbook);
+  const names = [...new Set([project.brand.name, ...project.brand.aliases, ...verified])].slice(0, 20);
+  const brandbook = { ...research.brandbook, names, domains: project.brand.domains };
+  const brand = { ...project.brand, aliases: names.filter(name => name !== project.brand.name) };
+  // The owner can select (or clear) competitors while research is running.
+  const competitors = project.competitorsConfiguredAt || project.competitors.length
+    ? project.competitors
+    : competitorBrands({ id: project.id, brand }, research.competitors ?? []);
+  return { brandbook, brand, competitors };
+}
+
 export class OnboardingEngine {
   constructor(
     private runtime: Runtime,
@@ -107,26 +136,26 @@ export class OnboardingEngine {
         );
         current = { ...current, brandbookKey: key, step: 'prompts' };
       } else if (current.step === 'prompts') {
-        const book = await artifacts.get<{
-          brandbook: Brandbook;
-          competitors?: DiscoveredCompetitor[];
-        }>(current.brandbookKey!);
+        const book = await artifacts.get<ResearchCheckpoint>(current.brandbookKey!);
         if (!book) throw new Error('Missing brandbook checkpoint');
-        const key = `${root}/prompts.json`;
-        await generateOnce(key, () =>
-          this.provider.prompts(current, book.brandbook, book.competitors),
-        );
+        const project = await repository.getProject(projectId);
+        if (!project || project.onboardingJobId !== jobId)
+          throw new ProviderError('onboarding_superseded', 'A newer onboarding job replaced this one.', false);
+        const key = current.portfolioRevision
+          ? `${root}/prompts-revision-${current.portfolioRevision}.json`
+          : `${root}/prompts.json`;
+        const context = portfolioContext(project, current, book);
+        const rejected = current.rejectedPortfolioKey
+          ? await artifacts.get<ProviderReceipt>(current.rejectedPortfolioKey) : null;
+        await generateOnce(key, () => this.provider.prompts(current, context.brandbook, context.competitors,
+          rejected ? previousPortfolioDraft(rejected) : undefined));
         current = { ...current, promptsKey: key, step: 'activate' };
       } else if (current.step === 'activate') {
-        const book = await artifacts.get<{
-            brandbook: Brandbook;
-            competitors?: DiscoveredCompetitor[];
-          }>(current.brandbookKey!),
+        const book = await artifacts.get<ResearchCheckpoint>(current.brandbookKey!),
           portfolio = await artifacts.get<{ prompts: Prompt[] }>(
             current.promptsKey!,
           );
-        if (!book || portfolio?.prompts.length !== 50)
-          throw new Error('Invalid onboarding checkpoints');
+        if (!book) throw new Error('Missing brandbook checkpoint');
         const assertActive = async () => {
           const latest = await repository.getOnboarding(projectId, jobId);
           if (
@@ -144,48 +173,15 @@ export class OnboardingEngine {
             false,
           );
         if (project.onboardingAppliedJobId !== jobId) {
-          if (
-            portfolio.prompts.filter((p) =>
-              isBrandedPrompt(p.text, {
-                name: project!.brand.name,
-                aliases: book.brandbook.names,
-                domains: book.brandbook.domains,
-              }),
-            ).length > MAX_BRANDED_PROMPTS ||
-            portfolio.prompts.some((p) => !isShortBuyerPrompt(p.text))
-          )
-            throw new ProviderError(
-              'onboarding_portfolio_policy_changed',
-              'Saved prompts do not meet the short-question / 15-branded limit. Review the saved portfolio before explicitly generating a replacement.',
-              false,
-            );
+          if (!portfolio)
+            throw new ProviderError('onboarding_portfolio_checkpoint_missing',
+              'The saved portfolio could not be found. Retry setup to generate a replacement.', false);
+          const context = portfolioContext(project, current, book);
+          const prompts = validateSavedPortfolio(current, context.brandbook, portfolio.prompts, context.competitors);
           const next = {
             ...project,
-            brandbook: book.brandbook,
-            // Manual settings win if an owner configured rivals while setup ran.
-            competitors:
-              project.competitorsConfiguredAt || project.competitors.length
-                ? project.competitors
-                : competitorBrands(
-                    {
-                      id: project.id,
-                      brand: {
-                        ...project.brand,
-                        aliases: [
-                          ...project.brand.aliases,
-                          ...book.brandbook.names,
-                        ],
-                      },
-                    },
-                    book.competitors || [],
-                  ),
-            brand: {
-              ...project.brand,
-              aliases: book.brandbook.names
-                .filter((name) => name !== project!.brand.name)
-                .slice(0, 20),
-            },
-            prompts: portfolio.prompts,
+            ...context,
+            prompts,
             enabled: true,
             onboardingAppliedJobId: jobId,
             scheduleStatus: 'pending' as const,
@@ -206,10 +202,21 @@ export class OnboardingEngine {
           await assertActive();
           const latest = await repository.ensureProjectScanSchedule(projectId);
           if (!latest) throw new Error('Account missing');
-          await this.syncSchedule(latest);
+          const context = portfolioContext(latest, current, book);
+          try {
+            validateSavedPortfolio(current, context.brandbook, latest.prompts.filter(p => p.active), context.competitors);
+          } catch (error) {
+            throw new ProviderError('onboarding_active_prompts_changed',
+              `The account's active prompts no longer meet onboarding requirements. Correct them on the Prompts screen and retry setup. ${error instanceof ProviderError ? error.message : ''}`.trim(),
+              false);
+          }
+          // Retrying a stopped/failed activation resumes its previously paused schedule.
+          const resumed = current.retryRequestIds.length > 0 && !latest.enabled
+            ? { ...latest, enabled: true } : latest;
+          await this.syncSchedule(resumed);
           if (
             await repository.saveProject(
-              markScheduleSynced(latest, this.now().toISOString()),
+              markScheduleSynced(resumed, this.now().toISOString()),
               latest.version,
             )
           ) {
@@ -266,12 +273,13 @@ export class OnboardingEngine {
         await this.pauseFailedSetup(projectId, jobId);
         return;
       }
+      let rejectedPortfolioSaved = false;
+      let rejectedPortfolioKey: string | undefined;
       if (error instanceof OnboardingOutputError) {
         try {
-          await artifacts.put(
-            `${root}/attempts/${current.paidCall?.id ?? randomUUID()}/${job.step}.json`,
-            error.receipt,
-          );
+          rejectedPortfolioKey = `${root}/attempts/${current.paidCall?.id ?? randomUUID()}/${job.step}.json`;
+          await artifacts.put(rejectedPortfolioKey, error.receipt);
+          rejectedPortfolioSaved = job.step === 'prompts' && error.canRevise;
         } catch {
           console.error(
             JSON.stringify({
@@ -282,6 +290,32 @@ export class OnboardingEngine {
             }),
           );
         }
+      }
+      const stalePortfolio = job.step === 'activate' && error instanceof ProviderError &&
+        error.code === 'onboarding_portfolio_policy_changed';
+      if ((rejectedPortfolioSaved || stalePortfolio) && error instanceof ProviderError &&
+          (current.automaticPortfolioCorrections ?? 0) < maxAutomaticPortfolioCorrections) {
+        // Only a known, saved rejection can start another generation. Each revision
+        // has its own artifact and must acquire a fresh paid-call reservation.
+        const correction: OnboardingJob = {
+          ...current,
+          status: 'queued',
+          step: 'prompts',
+          portfolioRevision: (current.portfolioRevision ?? 0) + 1,
+          automaticPortfolioCorrections: (current.automaticPortfolioCorrections ?? 0) + 1,
+          portfolioFeedback: { code: error.code, message: error.message },
+          rejectedPortfolioKey,
+          promptsKey: undefined,
+          attempts: 0,
+          leaseOwner: undefined,
+          leaseExpiresAt: undefined,
+          paidCall: undefined,
+          version: current.version + 1,
+          updatedAt: this.now().toISOString(),
+        };
+        if (await repository.saveOnboarding(correction, current.version))
+          await queue.send([{ kind: 'onboard', projectId, jobId }]);
+        return;
       }
       // Once an API call is reserved, any failure requires explicit retry. A lost
       // checkpoint or expired lease cannot silently purchase another response.

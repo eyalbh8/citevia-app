@@ -61,14 +61,14 @@ export function parseAccountImport(source: string): AccountOnboardingInput[] {
     const [headers, ...rows] = csvRows(source);
     if (!headers) throw new Error('The import is empty.');
     const keys = headers.map((value) => value.trim());
-    const allowed = ['name', 'region', 'language', 'website'];
+    const required = ['name', 'region', 'language', 'website'];
     if (
-      keys.length !== 4 ||
-      allowed.some((key) => !keys.includes(key)) ||
+      required.some((key) => !keys.includes(key)) ||
+      keys.some((key) => !required.includes(key) && key !== 'promptFocus') ||
       new Set(keys).size !== keys.length
     )
       throw new Error(
-        'CSV needs exactly four headers: name, region, language, website.',
+        'Include name, region, language and website. You can also include promptFocus.',
       );
     values = rows.map((row) => {
       if (row.length > keys.length)

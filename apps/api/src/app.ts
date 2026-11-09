@@ -520,6 +520,12 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           version: job.version + 1,
           deadlineAt: new Date(now().getTime() + 86400000).toISOString(),
           retryRequestIds: [...job.retryRequestIds, key],
+          automaticPortfolioCorrections: 0,
+          ...(job.step === 'activate' && job.error &&
+            ['onboarding_portfolio_policy_changed', 'onboarding_portfolio_checkpoint_missing'].includes(job.error.code)
+            ? { step: 'prompts' as const, promptsKey: undefined, portfolioRevision: (job.portfolioRevision ?? 0) + 1,
+                portfolioFeedback: job.error }
+            : {}),
           error: undefined,
           leaseOwner: undefined,
           leaseExpiresAt: undefined,
