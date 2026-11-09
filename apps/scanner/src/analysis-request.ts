@@ -42,7 +42,12 @@ export function analysisRequest(answer: CapturedAnswer, snapshot: RunSnapshot): 
         schema: EXTRACTION_SCHEMA,
         ...(snapshot.extractionModel === 'gpt-6-luna' ? { reasoningEffort: 'none' as const } : {}),
       };
-  return { ...request, costContext: { projectId: snapshot.projectId, ...snapshot.execution, stage: snapshot.execution?.stage ?? 'analysis' } };
+  return { ...request,
+    ...(snapshot.analysisFeedback ? {
+      instructions: request.instructions + '\nA previous completed analysis failed server validation. Correct the issue in validation_feedback and return the full requested JSON. Copy company names exactly as written in the saved answer, including prefixes and punctuation. Keep every evidence and identity requirement; never invent an entity or evidence to satisfy validation.',
+      input: { ...(request.input as Record<string, unknown>), validation_feedback: snapshot.analysisFeedback },
+    } : {}),
+    costContext: { projectId: snapshot.projectId, ...snapshot.execution, stage: snapshot.execution?.stage ?? 'analysis' } };
 }
 
 export function parseAnalysisReceipt(receipt: ProviderReceipt, answer: CapturedAnswer, snapshot: RunSnapshot): Analysis {

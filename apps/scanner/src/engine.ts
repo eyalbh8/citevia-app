@@ -18,13 +18,14 @@ import {
 } from '@citevia/core';
 import type { ScannerDependencies, ScanDispatchReservation } from '@citevia/storage';
 import { ExtractionError } from './openai.js';
-import { matchesIdentityReceipt } from './analysis-request.js';
+import { matchesIdentityReceipt, parseAnalysisReceipt } from './analysis-request.js';
 import { dispatchIdentityShadow, recordShadowDeadLetter, scoreIdentityShadow } from './identity-pilot.js';
 import {
   object,
   ProviderError,
   responseFailure,
   type NativeResponse,
+  type ProviderReceipt,
 } from './provider.js';
 
 export const MAX_ATTEMPTS = 4;
@@ -624,7 +625,35 @@ export class Scanner {
       current = extracting;
       const analysisKey = current.analysisKey ?? analysisKeyFor(current);
       let analysis = await artifacts.get<Analysis>(analysisKey);
-      const analysisSnapshot = { ...run.snapshot, projectId: run.projectId, analysisPromptId: current.promptId };
+      const analysisSnapshot = { ...run.snapshot, projectId: run.projectId, analysisPromptId: current.promptId,
+        ...(current.analysisFeedback ? { analysisFeedback: current.analysisFeedback } : {}) };
+      if (!analysis && this.stageAttempts(current, 'analysis') > 0) {
+        const attempt = this.stageAttempts(current, 'analysis');
+        const receipt = await artifacts.get<ProviderReceipt & {
+          analysisAttempt?: number; captureKey?: string; parserVersion?: string;
+        }>(`${rootKey(current)}/extraction-attempt-${attempt}.json`);
+        if (receipt) {
+          const bound = receipt.analysisAttempt !== undefined;
+          if (bound ? receipt.analysisAttempt !== attempt || receipt.captureKey !== captureKey ||
+              receipt.parserVersion !== run.snapshot.parserVersion : attempt !== current.attempts)
+            throw new ProviderError('analysis_receipt_mismatch', 'Saved extraction receipt does not match this answer and attempt.', false);
+          try {
+            // A parser fix can recover the already paid output with no model call.
+            analysis = parseAnalysisReceipt(receipt, answer, analysisSnapshot);
+          } catch (error) {
+            if (!(error instanceof ProviderError)) throw error;
+            if (error.code === 'invalid_extraction' && !responseFailure(receipt.response)) {
+              const feedback = { code: error.code, message: error.message };
+              const ready = { ...current, version: current.version + 1,
+                safeRetryStage: 'analysis' as const, analysisFeedback: feedback };
+              if (!(await repository.commitResult(ready, current))) return;
+              current = ready;
+              analysisSnapshot.analysisFeedback = feedback;
+            }
+          }
+          if (analysis) await artifacts.put(analysisKey, analysis);
+        }
+      }
       if (analysis && analysisSnapshot.parserVersion === IDENTITY_PARSER_VERSION &&
         !matchesIdentityReceipt(analysis, answer, analysisSnapshot)) {
         throw new ProviderError('analysis_receipt_mismatch', 'Saved analysis does not match this answer or its identity policy.', false);
@@ -670,21 +699,31 @@ export class Scanner {
       delete succeeded.error;
       delete succeeded.pendingCallStage;
       delete succeeded.safeRetryStage;
+      delete succeeded.analysisFeedback;
       if (await repository.commitResult(succeeded, current))
         await this.finalize(message.projectId, message.runId);
     } catch (error) {
       // Batch transport/storage failures are reconciled from durable state, without resetting item attempts.
       if (current.status === 'analysis_pending') throw error;
-      const failure = scanError(error);
+      let failure = scanError(error);
+      let savedInvalidAnalysis = false;
       if (error instanceof ExtractionError) {
         await artifacts.put(
-          `${rootKey(current)}/extraction-attempt-${current.attempts}.json`,
-          error.receipt,
+          `${rootKey(current)}/extraction-attempt-${this.stageAttempts(current, 'analysis')}.json`,
+          { ...error.receipt, analysisAttempt: this.stageAttempts(current, 'analysis'),
+            captureKey: current.captureKey, parserVersion: run.snapshot.parserVersion },
         );
+        // Only a known, completed response whose receipt is durably saved may
+        // buy a correction. The same stage budget and backoff bound every call.
+        savedInvalidAnalysis = stage === 'analysis' && error.code === 'invalid_extraction' &&
+          !responseFailure(error.receipt.response);
+        if (savedInvalidAnalysis)
+          failure = { ...failure, retryable: true, safeToRetry: true, kind: 'transient' };
       }
       const deferred = error instanceof ProviderError && error.kind === 'deferred';
       const blockedBeforeHttp = error instanceof ProviderError && error.kind === 'quota' && error.code === 'provider_quota_blocked';
-      const safeProviderRetry = error instanceof ProviderError && error.safeToRetry && error.kind !== 'quota';
+      const safeProviderRetry = savedInvalidAnalysis ||
+        (error instanceof ProviderError && error.safeToRetry && error.kind !== 'quota');
       const infrastructureRetry = !(error instanceof ProviderError);
       const retryAfterMs = error instanceof ProviderError ? error.retryAfterMs : undefined;
       const delay = deferred ? Math.max(1000, retryAfterMs ?? 15_000) : this.retryDelay(current, stage, retryAfterMs);
@@ -703,6 +742,7 @@ export class Scanner {
             ? 'failed_extraction'
             : 'failed_collection',
         error: { ...failure, retryable },
+        ...(savedInvalidAnalysis ? { analysisFeedback: { code: failure.code, message: failure.message } } : {}),
         ...(retryable ? {} : { completedAt: this.now().toISOString() }),
       };
       if (deferred || blockedBeforeHttp) {
@@ -754,6 +794,7 @@ export class Scanner {
         next.brands = update.analysis.brands;
         next.extractionUsage = update.analysis.usage;
         delete next.error;
+        delete next.analysisFeedback;
       } else {
         const failure = update.error ?? { code: 'analysis_batch_invalid_analysis', message: 'Batch analysis did not contain the tracked brand.', retryable: false };
         const retryTimestamp = this.now().getTime() + this.retryDelay(result, 'analysis', failure.retryAfterMs);
@@ -762,6 +803,8 @@ export class Scanner {
           this.stageAttempts(result, 'analysis') < MAX_ATTEMPTS &&
           Number.isFinite(retryTimestamp) && this.deadlineFor(run, result) > retryTimestamp;
         next.error = { ...failure, retryable };
+        if (failure.code === 'invalid_extraction' && failure.safeToRetry)
+          next.analysisFeedback = { code: failure.code, message: failure.message };
         if (retryable) {
           next.status = 'captured';
           next.safeRetryStage = 'analysis';
@@ -846,6 +889,8 @@ export class Scanner {
         lastRetryRequestId: message.requestId,
         lastRetryRequestedAt: requestedAt,
         retryRequestIds: [...history, message.requestId],
+        ...(result.status === 'failed_extraction' && result.error?.code === 'invalid_extraction'
+          ? { analysisFeedback: { code: result.error.code, message: result.error.message } } : {}),
       };
       delete next.completedAt;
       delete next.error;
@@ -856,6 +901,7 @@ export class Scanner {
         next.captureGeneration = (result.captureGeneration ?? 0) + 1;
         delete next.captureKey;
         delete next.analysisKey;
+        delete next.analysisFeedback;
         delete next.capturedAt;
         delete next.usage;
         next.citationCount = 0;

@@ -126,10 +126,12 @@ export function aliasOffset(text: string, brand: Brand): number {
   // UTF-16 lengths so evidence offsets still address the original answer.
   const normalize = (value: string) => value.normalize('NFC')
     .replace(/[\u00a0\u2007\u202f]/gu, ' ')
-    .replace(/[\u2010\u2011]/gu, '-');
+    .replace(/[\u2010\u2011]/gu, '-')
+    .replace(/[\u2018\u2019\u05f3]/gu, "'")
+    .replace(/[\u201c\u201d\u05f4]/gu, '"');
   const normalized = normalize(text);
   let position = Infinity;
-  for (const alias of [brand.name, ...brand.aliases].filter(Boolean)) {
+  const find = (alias: string, prefix: string) => {
     const escaped = Array.from(normalize(alias), (character) => {
       const literal = character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       // Markdown can escape punctuation in a name, e.g. E\*TRADE. Match
@@ -137,10 +139,20 @@ export function aliasOffset(text: string, brand: Brand): number {
       return '\\`*_{}[]()#+-.!>|~'.includes(character) ? `\\\\?${literal}` : literal;
     }).join('');
     const match = new RegExp(
-      `(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`,
+      `(?<![\\p{L}\\p{N}_])(${prefix})${escaped}(?![\\p{L}\\p{N}_])`,
       'iu',
     ).exec(normalized);
-    if (match) position = Math.min(position, match.index);
+    if (match) position = Math.min(position, match.index + match[1].length);
+  };
+  for (const alias of [brand.name, ...brand.aliases].filter(Boolean)) {
+    // Hebrew prepositions/conjunctions attach to names without a space. The
+    // boundary remains before the prefix, and the offset starts at the name.
+    find(alias, '(?:[ובכלמשה]|ו[בכלמשה])?');
+    // A definite article assimilates after ב/כ/ל, e.g. המוסד -> למוסד.
+    // Restrict this to multiword institutional names, never proper-name ה
+    // such as הראל, and never shorten or translate a business name.
+    if (/^ה(?:מוסד|חברה|משרד|מרכז|בית|אוניברסיטה|מכון|בנק|ארגון|לשכה|אגודה|קרן)\s/u.test(alias))
+      find(alias.slice(1), 'ו?[בכל]');
   }
   if (!Number.isFinite(position)) return -1;
   // Translate canonical-normalized offsets back to the original UTF-16 text.

@@ -440,7 +440,7 @@ export function parseScoredExtraction(
       };
     }),
     parserVersion: SCORED_PARSER_VERSION,
-    validationVersion: 'exact-evidence-v2.3',
+    validationVersion: 'exact-evidence-v2.4',
     validationWarnings: warnings,
     model: responseModel(receipt.response, snapshot.extractionModel),
     createdAt: receipt.receivedAt,

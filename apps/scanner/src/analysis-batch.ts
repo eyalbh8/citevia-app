@@ -4,7 +4,7 @@ import { CostBudgetError, type AnalysisBatchPort, type AnalysisBatchUpdate, type
 import type { AnalysisBatchRecord, AnalysisBatchStore } from '../../../packages/storage/src/analysis-batch.js';
 import { analysisRequest, matchesIdentityReceipt, parseAnalysisReceipt } from './analysis-request.js';
 import { IDENTITY_PARSER_VERSION } from '@citevia/core';
-import { extractionBody, object, ProviderError, type ProviderReceipt } from './provider.js';
+import { extractionBody, object, ProviderError, responseFailure, type ProviderReceipt } from './provider.js';
 import { BatchSubmissionError, parseBatchResultLines, type BatchClient, type NativeBatch } from './openai-batch.js';
 import { usage } from './normalize.js';
 import { budgetFromEnv, estimateProviderCost, hasCompleteTokenUsage, logBudgetDenial, PRICE_VERSION, settleCall } from './cost-observer.js';
@@ -168,7 +168,8 @@ export class AnalysisBatchCoordinator implements AnalysisBatchPort {
           return { updates: this.failed([{ promptId: result.promptId, captureKey: result.captureKey! } as BatchItem], 'saved_answer_missing', 'Saved answer is unavailable. No replacement answer was purchased.') };
         const analysisKey = result.analysisKey ?? `${result.captureKey!.slice(0, -'capture.json'.length)}analysis.json`;
         let saved = null;
-        const snapshot = { ...run.snapshot, projectId: run.projectId, analysisPromptId: result.promptId };
+        const snapshot = { ...run.snapshot, projectId: run.projectId, analysisPromptId: result.promptId,
+          ...(result.analysisFeedback ? { analysisFeedback: result.analysisFeedback } : {}) };
         try { saved = await cachedAnalysis(this.options.artifacts, answer, snapshot, this.now()); }
         catch { console.error(JSON.stringify({ event: 'analysis_cache_read_skipped', projectId: run.projectId })); }
         if (saved) {
@@ -367,10 +368,16 @@ export class AnalysisBatchCoordinator implements AnalysisBatchPort {
         if (!answer) throw new ProviderError('saved_answer_missing', 'Saved answer is unavailable.', false);
         analysis = parseAnalysisReceipt(receipt, answer, { ...run.snapshot, analysisPromptId: item.promptId });
       } catch (error) {
-        const failure = error instanceof ProviderError ? error : new ProviderError('analysis_batch_invalid_analysis', 'Batch analysis did not pass validation.', false);
+        let failure = error instanceof ProviderError ? error : new ProviderError('analysis_batch_invalid_analysis', 'Batch analysis did not pass validation.', false);
+        // Keep the exact, completed item before permitting a bounded correction.
+        if (failure.code === 'invalid_extraction' && !responseFailure(receipt.response)) {
+          await this.options.artifacts.put(`${item.analysisKey}.rejected-${item.attempt}.json`, receipt);
+          failure = new ProviderError(failure.code, failure.message, true, failure.requestId,
+            { ...failure, kind: 'transient', safeToRetry: true });
+        }
         await this.settle(record, item, receipt, failure.code);
         await this.reportReceipt(run, item, receipt, failure);
-        updates.push(...this.failed([item], failure.code, failure.message));
+        updates.push(...this.failed([item], failure.code, failure.message, failure));
         continue;
       }
       await this.options.artifacts.put(item.analysisKey, analysis);

@@ -9,6 +9,28 @@ const mention = (text: string, overrides: Record<string, unknown> = {}) => ({ br
 
 describe('evidence extraction', () => {
   it.each([
+    ["למשרד עורכי הדין דנה ושות׳", "משרד עורכי הדין דנה ושות'", 'משרד'],
+    ['ולעו״ד דנה כהן', 'עו"ד דנה כהן', 'עו'],
+    ['למוסד הישראלי לבוררות עסקית', 'המוסד הישראלי לבוררות עסקית', 'מוסד'],
+    ['O’Reilly', "O'Reilly", 'O'],
+  ])('recognizes grammar and punctuation in %s without moving saved evidence', (written, name, stem) => {
+    const text = '🧭 ' + written + ' מומלץ.';
+    const brand = { ...target, name, aliases: [] };
+    expect(aliasOffset(text, brand)).toBe(text.indexOf(stem));
+    const evidence = { blockId: 'block-1', quote: written, start: 3, end: 3 + written.length };
+    expect(validateExtraction({ brands: [{ ...mention(written), evidence: [evidence], sentimentEvidence: evidence }] },
+      captured(text), [brand])[0].evidence).toEqual([evidence]);
+    expect(text.slice(evidence.start, evidence.end)).toBe(written);
+  });
+
+  it('does not shorten proper names, alter plurals, or admit arbitrary word embeddings', () => {
+    expect(containsAlias('בראל ביטוח', { ...target, name: 'הראל ביטוח', aliases: [] })).toBe(false);
+    expect(containsAlias('מיקרומשרד דנה', { ...target, name: 'משרד דנה', aliases: [] })).toBe(false);
+    expect(containsAlias('E2 Visa USA', { ...target, name: 'E2 Visas USA', aliases: [] })).toBe(false);
+    expect(containsAlias('Acmeology', target)).toBe(false);
+  });
+
+  it.each([
     ['JP\u202fMorgan Self\u2011Directed Investing', 'JP Morgan Self-Directed Investing'],
     ['E\\*TRADE', 'E*TRADE'],
   ])('matches visible company spelling in %s while retaining original evidence offsets', (name, canonical) => {
