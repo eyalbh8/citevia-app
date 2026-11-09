@@ -178,21 +178,24 @@ function promptSlotPlan(
   peers: readonly PortfolioPeer[],
 ) {
   const compare = comparisonAllocation(allocation.prefer, branded.prefer, peers.length);
-  return Object.fromEntries(JOURNEY_STAGES.map(stage => {
+  const forms = ['short noun phrase naming the type of provider', 'start with the buyer situation or specific need',
+    'direct question', 'request a recommendation or shortlist'];
+  return Object.fromEntries(JOURNEY_STAGES.map((stage, stageIndex) => {
     const section = (group: 'branded' | 'unbranded', count: number) => Array.from({ length: count }, (_, i) => {
+      const form = forms[(stageIndex + i + (group === 'branded' ? 0 : branded[stage])) % forms.length];
       if (stage === 'prefer') {
         // Leave room for a natural discovery question while still obtaining
         // the minimum three explicit buyer comparisons in a full portfolio.
         const planned = group === 'unbranded' && count > compare.unbranded + 1
           ? compare.unbranded + 1 : compare[group];
-        if (i >= planned) return { intent: 'commercial' };
+        if (i >= planned) return { intent: 'commercial', form };
         if (group === 'branded' && i < compare.distinct_named_rivals)
-          return { intent: 'comparison', compare_with: peers[i].name };
-        return { intent: 'comparison', buyer_decision: 'Ask to compare actual alternatives on a concrete buying criterion.' };
+          return { intent: 'comparison', compare_with: peers[i].name, form };
+        return { intent: 'comparison', form, buyer_decision: 'Explicitly request a comparison or differences between businesses on a concrete buying criterion.' };
       }
       const offset = group === 'branded' ? 0 : branded[stage];
       const intents = STAGE_INTENTS[stage];
-      return { intent: intents[(i + offset) % intents.length] };
+      return { intent: intents[(i + offset) % intents.length], form };
     });
     return [stage, {
       branded: section('branded', branded[stage]),

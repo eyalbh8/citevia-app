@@ -123,14 +123,16 @@ export function validateBuyerSearches(
   }
   // Apply portfolio-level variety checks only to a substantial generated batch.
   // When most prompts were supplied manually there may be only one or two slots.
-  if (
-    searches.length >= 12 &&
-    (Math.max(0, ...openingWords.values()) > searches.length * 0.4 ||
-      Math.max(0, ...openingPairs.values()) > searches.length * 0.25)
-  ) {
+  if (searches.length < 12) return;
+  const repeated = [
+    ...[...openingWords].filter(([, count]) => count > searches.length * 0.4),
+    ...[...openingPairs].filter(([, count]) => count > searches.length * 0.25),
+  ];
+  if (repeated.length) {
+    const examples = repeated.map(([words, count]) => `“${words.slice(0, 50)}” (${count} times)`).join(', ');
     throw new ProviderError(
       'onboarding_repetitive_openings',
-      'Too many generated searches start with the same wording. Mix buyer situations, short search phrases, questions and comparisons.',
+      `Too many searches start with ${examples}. Rewrite at least half of those openings using specific buyer situations or short noun phrases.`,
       false,
     );
   }
