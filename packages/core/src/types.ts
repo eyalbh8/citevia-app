@@ -177,6 +177,8 @@ export interface RunSnapshot {
   identityPilotScheduledAt?: string;
   identityPilotParserVersion?: string;
   extractionFallbackModel?: string;
+  /** Server validation feedback for a bounded retry of a completed analysis. */
+  analysisFeedback?: { code: string; message: string };
   /** Per-call attribution, never part of the frozen measurement methodology. */
   execution?: { runId: string; promptId: string; attempt: number; stage?: 'identity-shadow' };
   projectName: string;
@@ -354,8 +356,9 @@ export interface PromptResult {
   analysisAttempts?: number;
   /** A checkpoint written before a provider call; an interrupted call is never replayed blindly. */
   pendingCallStage?: 'collection' | 'analysis';
-  /** Only a definitive provider rejection or explicit manual retry permits another paid call. */
+  /** A definitive rejection, saved invalid analysis, or explicit retry permits another paid call. */
   safeRetryStage?: 'collection' | 'analysis';
+  analysisFeedback?: { code: string; message: string };
   retryNotBefore?: string;
   captureGeneration?: number;
   lastRetryRequestId?: string;

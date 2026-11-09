@@ -181,7 +181,7 @@ describe('scanner engine lifecycle', () => {
     expect(env.provider.collect).toHaveBeenCalledOnce();
     expect((await env.repository.getRun(project.id, job.runId))!.status).toBe('completed');
   });
-  it('keeps malformed extraction receipts without replaying a paid invalid response', async () => {
+  it('saves completed invalid receipts and bounds correction calls by the original analysis budget', async () => {
     const receipt = { response: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: '{broken' }] }], usage: { total_tokens: 20 } }, requestId: 'extract-request', receivedAt: instant };
     const provider = { collect: vi.fn(async () => captured()), extract: vi.fn(async () => { throw new ExtractionError(new ProviderError('invalid_extraction', 'Malformed extraction.', true), receipt); }) };
     const env = await setup({ provider, promptCount: 1 });
@@ -189,12 +189,90 @@ describe('scanner engine lifecycle', () => {
     const job = promptMessages(env.queue.messages)[0];
     await env.scanner.handle(job);
     await env.scanner.handle(job);
+    expect(provider.extract).toHaveBeenCalledOnce(); // An early duplicate cannot bypass backoff.
+    for (let attempt = 1; attempt < MAX_ATTEMPTS; attempt++) {
+      env.advance(16 * 60_000);
+      await env.scanner.handle(job);
+    }
+    env.advance(16 * 60_000);
+    await env.scanner.handle(job);
     const result = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
-    expect(result).toMatchObject({ status: 'failed_extraction', attempts: 1, error: { retryable: false } });
+    expect(result).toMatchObject({ status: 'failed_extraction', collectionAttempts: 1,
+      analysisAttempts: MAX_ATTEMPTS, error: { retryable: false } });
+    expect(provider.collect).toHaveBeenCalledOnce();
+    expect(provider.extract).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+    expect([...env.artifacts.values.keys()].filter(key => key.includes('extraction-attempt'))).toHaveLength(MAX_ATTEMPTS);
+    expect((await env.repository.getRun(project.id, job.runId))!.status).toBe('failed');
+  });
+  it('corrects a rejected extraction using the saved answer and validation feedback, once across concurrent workers', async () => {
+    const receipt = { response: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: '{}' }] }] }, requestId: 'bad-output', receivedAt: instant };
+    const extract = vi.fn().mockRejectedValueOnce(new ExtractionError(
+      new ProviderError('invalid_extraction', 'Company evidence does not identify the selected company.', false), receipt,
+    )).mockImplementation(async (answer: CapturedAnswer) => analysis(answer));
+    const provider = { collect: vi.fn(async () => captured()), extract };
+    const env = await setup({ provider, promptCount: 1 });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await env.scanner.handle(job);
+    expect((await env.repository.getResult(project.id, job.runId, job.promptId))?.status).toBe('captured');
+    env.advance(60_000);
+    await Promise.all([env.scanner.handle(job), env.scanner.handle(job)]);
+    const result = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
+    expect(result).toMatchObject({ status: 'succeeded', analysisAttempts: 2, collectionAttempts: 1 });
+    expect(result.analysisFeedback).toBeUndefined();
+    expect(provider.collect).toHaveBeenCalledOnce();
+    expect(extract).toHaveBeenCalledTimes(2);
+    expect(extract.mock.calls[1][0]).toEqual(extract.mock.calls[0][0]);
+    expect(extract.mock.calls[1][1].analysisFeedback).toMatchObject({ code: 'invalid_extraction' });
+  });
+  it('never purchases a correction if saving the rejected extraction receipt fails', async () => {
+    const receipt = { response: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: '{}' }] }] }, requestId: 'bad-output', receivedAt: instant };
+    const provider = { collect: vi.fn(async () => captured()), extract: vi.fn(async () => {
+      throw new ExtractionError(new ProviderError('invalid_extraction', 'Invalid evidence.', false), receipt);
+    }) };
+    class UnavailableReceipts extends MemoryArtifacts {
+      override async put(key: string, value: unknown) {
+        if (key.includes('extraction-attempt-')) throw Error('Receipt storage unavailable');
+        return super.put(key, value);
+      }
+    }
+    const env = await setup({ provider, artifacts: new UnavailableReceipts(), promptCount: 1 });
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await expect(env.scanner.handle(job)).rejects.toThrow('Receipt storage unavailable');
+    env.advance(13 * 60_000);
+    await env.scanner.handle(job);
     expect(provider.collect).toHaveBeenCalledOnce();
     expect(provider.extract).toHaveBeenCalledOnce();
-    expect([...env.artifacts.values.keys()].filter(key => key.includes('extraction-attempt'))).toHaveLength(1);
-    expect((await env.repository.getRun(project.id, job.runId))!.status).toBe('failed');
+    expect((await env.repository.getResult(project.id, job.runId, job.promptId))?.error?.code).toBe('analysis_call_uncertain');
+  });
+  it('recovers a saved native extraction after a parser fix without another collection or analysis call', async () => {
+    const receipt = { response: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text',
+      text: JSON.stringify({ companies: [{ name: project.brand.name, evidenceId: 0 }], brands: {
+        [project.brand.id]: { mentioned: true, sentiment: 'neutral', evidenceIds: [0], sentimentEvidenceId: 0,
+          explicitRank: null, rankEvidenceId: null },
+      } }),
+    }] }], usage: { input_tokens: 10, output_tokens: 10, total_tokens: 20 } }, requestId: 'saved-native', receivedAt: instant };
+    const provider = { collect: vi.fn(async () => captured()), extract: vi.fn(async () => {
+      throw new ExtractionError(new ProviderError('invalid_extraction', 'Old parser rejected this output.', false), receipt);
+    }) };
+    const env = await setup({ provider, promptCount: 1, parserVersion: 'igeo-evidence-v2' });
+    const saved = (await env.repository.getProject(project.id))!;
+    await env.repository.saveProject({ ...saved, competitors: [], version: saved.version + 1 }, saved.version);
+    await env.scanner.handle(kickoff);
+    const job = promptMessages(env.queue.messages)[0];
+    await env.scanner.handle(job);
+    const failed = (await env.repository.getResult(project.id, job.runId, job.promptId))!;
+    // Old receipts predate the explicit attempt binding, but have an unambiguous stage budget.
+    await env.artifacts.put(captureKeyFor(failed).replace('capture.json', 'extraction-attempt-1.json'), receipt);
+    env.advance(60_000);
+    await env.scanner.handle(job);
+    expect((await env.repository.getResult(project.id, job.runId, job.promptId))).toMatchObject({
+      status: 'succeeded', collectionAttempts: 1, analysisAttempts: 1, extractionUsage: { totalTokens: 20 },
+    });
+    expect(provider.collect).toHaveBeenCalledOnce();
+    expect(provider.extract).toHaveBeenCalledOnce();
+    expect((await env.repository.getRun(project.id, job.runId))?.status).toBe('completed');
   });
   it('saves refusals but does not analyze them or count them as captures', async () => {
     const answer = { ...captured(), status: 'refused' as const, refusal: 'Cannot answer.' };

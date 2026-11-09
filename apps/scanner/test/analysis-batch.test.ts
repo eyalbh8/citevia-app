@@ -94,6 +94,18 @@ describe('native Batch transport and attribution', () => {
 });
 
 describe('durable analysis batching', () => {
+  it('retains a completed invalid item before allowing an analysis-only correction', async () => {
+    const f = await setup(1);
+    await f.coordinator.process(f.run, f.results);
+    await f.finish();
+    const rows = f.files.get('file-output')!.split('\n').map(line => JSON.parse(line));
+    rows[0].response.body.output[0].content[0].text = '{}';
+    f.files.set('file-output', rows.map(row => JSON.stringify(row)).join('\n'));
+    const output = await f.coordinator.process(f.run, f.results);
+    expect(output.updates[0].error).toMatchObject({ code: 'invalid_extraction', kind: 'transient', safeToRetry: true, retryable: true });
+    expect([...f.artifacts.values.keys()].some(key => key.includes('.rejected-'))).toBe(true);
+    expect(f.client.create).toHaveBeenCalledOnce(); // The worker owns the next bounded attempt.
+  });
   it('grants the full processing and import window after late collection, without extending it on polls', async () => {
     const f = await setup(1);
     f.advance(29 * 60 * 60_000);
