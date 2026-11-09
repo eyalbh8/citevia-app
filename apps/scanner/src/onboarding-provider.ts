@@ -176,6 +176,7 @@ function promptSlotPlan(
   allocation: Record<JourneyStage, number>,
   branded: Record<JourneyStage, number>,
   peers: readonly PortfolioPeer[],
+  brandName: string,
 ) {
   const compare = comparisonAllocation(allocation.prefer, branded.prefer, peers.length);
   const forms = ['short noun phrase naming the type of provider', 'start with the buyer situation or specific need',
@@ -198,7 +199,7 @@ function promptSlotPlan(
       return { intent: intents[(i + offset) % intents.length], form };
     });
     return [stage, {
-      branded: section('branded', branded[stage]),
+      branded: section('branded', branded[stage]).map(slot => ({ ...slot, include_name: brandName })),
       unbranded: section('unbranded', allocation[stage] - branded[stage]),
     }];
   }));
@@ -493,7 +494,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         remaining_count: 50 - job.input.manualPrompts.length,
         section_allocation: allocation,
         required_generated_branded_count: Object.values(branded).reduce((sum, count) => sum + count, 0),
-        slot_plan: promptSlotPlan(allocation, branded, competitors),
+        slot_plan: promptSlotPlan(allocation, branded, competitors, job.input.name),
         minimum_prefer_comparisons: comparisonAllocation(allocation.prefer, branded.prefer, competitors.length),
         prompt_slots: Object.fromEntries(
           JOURNEY_STAGES.map((stage) => [
@@ -539,7 +540,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
               'Generated prompts did not match the requested section allocation.',
               false,
             );
-          return sections[stage][group].map((prompt) => {
+          return sections[stage][group].map((prompt, index) => {
             const actual = isBrandedPrompt(
               prompt.text,
               portfolioBrand(job, brandbook),
@@ -547,7 +548,9 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
             if ((group === 'branded') !== actual)
               throw new ProviderError(
                 'onboarding_branded_limit',
-                'Every branded slot must identify the target, and every unbranded slot must omit it.',
+                group === 'branded'
+                  ? `Rewrite ${stage} branded slot ${index + 1} to explicitly name ${job.input.name} in the buyer's search.`
+                  : `Rewrite ${stage} unbranded slot ${index + 1} as a standalone provider search without the target's name, alias or domain.`,
                 false,
               );
             return { ...prompt, stage, branded: actual };
