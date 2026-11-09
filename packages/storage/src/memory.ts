@@ -35,13 +35,14 @@ import {
   type WebsiteHealthJob,
 } from '@citevia/core';
 import type {
-  ArtifactStore, JobQueue, Repository, SavedAnalysisRef, SavedAnalysis, TrackingMatchOptions,
+  ArtifactStore, JobQueue, Repository, SocialReviewLink, SavedAnalysisRef, SavedAnalysis, TrackingMatchOptions,
 } from './contracts.js';
 import { randomUUID } from 'node:crypto';
 import { link, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 
 interface State extends geoBacklinks.GeoBacklinkMemoryState {
+  socialReviewLinks?: Record<string, SocialReviewLink>;
   socialOccurrences?: Record<string, SocialOccurrence>;
   socialPublications?: Record<string, SocialPublication>;
   websiteHealthAudits?: Record<string, WebsiteHealthJob>;
@@ -130,17 +131,49 @@ export class MemoryRepository implements Repository {
       !(Date.parse(publication.nextAttemptAt ?? '') > Date.parse(now)))
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id)).slice(0, socialPageBounds(0, limit).limit)));
   }
-  listSocialPublications(projectId: string, offset: number, limit: number): Promise<{ items: SocialPublication[]; total: number }> {
+  listSocialPublications(projectId: string, offset: number, limit: number, clientReviewOnly = false): Promise<{ items: SocialPublication[]; total: number }> {
     return this.operation(() => {
-      const items = Object.values(this.state.socialPublications || {}).filter(publication => publication.projectId === projectId)
+      const items = Object.values(this.state.socialPublications || {}).filter(publication => publication.projectId === projectId &&
+        (!clientReviewOnly || (publication.status === 'review_required' && ['facebook', 'instagram'].includes(publication.destination.channel))))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
       const bounds = socialPageBounds(offset, limit);
       return { items: copy(items.slice(bounds.offset, bounds.offset + bounds.limit)), total: items.length };
     });
   }
-  saveSocialPublication(publication: SocialPublication, expectedVersion: number): Promise<boolean> {
+  createSocialReviewLink(link: SocialReviewLink) {
+    return this.operation(() => {
+      this.state.socialReviewLinks ||= {};
+      this.state.socialReviewLinks[key(link.projectId, link.id)] = copy(link);
+    }, true);
+  }
+  getSocialReviewLink(projectId: string, id: string, now: string) {
+    return this.operation(() => {
+      const link = this.state.socialReviewLinks?.[key(projectId, id)];
+      return link && link.expiresAt > now ? copy(link) : null;
+    });
+  }
+  listSocialReviewLinks(projectId: string, now: string) {
+    return this.operation(() => copy(Object.values(this.state.socialReviewLinks || {})
+      .filter(link => link.projectId === projectId && link.expiresAt > now)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id))));
+  }
+  revokeSocialReviewLink(projectId: string, id: string) {
+    return this.operation(() => {
+      if (!this.state.socialReviewLinks?.[key(projectId, id)]) return false;
+      delete this.state.socialReviewLinks[key(projectId, id)];
+      return true;
+    }, true);
+  }
+  getSocialReviewPosts(projectId: string, ids: string[]) {
+    return this.operation(() => copy(ids.flatMap(id => this.state.socialPublications?.[key(projectId, id)] ?? [])));
+  }
+  saveSocialPublication(publication: SocialPublication, expectedVersion: number, reviewLinkId?: string): Promise<boolean> {
     return this.operation(() => {
       if (publication.version !== expectedVersion + 1) throw new Error('Invalid social publication version');
+      if (reviewLinkId) {
+        const link = this.state.socialReviewLinks?.[key(publication.projectId, reviewLinkId)];
+        if (!link || link.expiresAt <= publication.updatedAt) return false;
+      }
       const current = this.state.socialPublications?.[key(publication.projectId, publication.id)];
       if (current?.version !== expectedVersion || current.occurrenceId !== publication.occurrenceId || current.destination.id !== publication.destination.id) return false;
       this.state.socialPublications![key(publication.projectId, publication.id)] = copy(publication);

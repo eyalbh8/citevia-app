@@ -36,6 +36,17 @@ describe('social schedules', () => {
     expect(send).toHaveBeenCalledTimes(28);
     expect(send.mock.calls.every(([call]) => call instanceof DeleteScheduleCommand)).toBe(true);
   });
+  it('schedules Monday preparation for brand slots regardless of the dormant legacy calendar', async () => {
+    for (const key of ['SCHEDULE_GROUP', 'QUEUE_ARN', 'SCHEDULER_ROLE_ARN']) vi.stubEnv(key, key);
+    const value = project(), settings = value.socialAutomation!;
+    settings.brands = [{ id: 'hot', name: 'Hot Coffee', description: 'Espresso and beans', facebookDestinationId: 'fb',
+      instagramDestinationId: 'ig', shareFacebookInstagramContent: true, slots: settings.slots }];
+    settings.slots = []; settings.generationCadence = 'monthly'; settings.generationTime = '07:45';
+    const send = vi.fn(async (_command: CreateScheduleCommand | DeleteScheduleCommand) => ({}));
+    await syncSocialSchedule(value, { mode: 'aws', client: { send } as unknown as Pick<SchedulerClient, 'send'> });
+    expect(send.mock.calls.filter(([cmd]) => cmd instanceof CreateScheduleCommand).map(([cmd]) => cmd.input))
+      .toEqual([expect.objectContaining({ ScheduleExpression: 'cron(45 7 ? * MON *)', ScheduleExpressionTimezone: 'Asia/Nicosia' })]);
+  });
   it('repairs a newer revision after an older writer partially overwrites schedules then fails', async () => {
     const repository = new MemoryRepository(), value = project();
     await repository.saveProject(value, null);

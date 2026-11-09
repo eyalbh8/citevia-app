@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   SOCIAL_CHANNELS, defaultSocialAutomationSettings, socialAutomationInputSchema, socialOccurrenceLocalDate, socialSlotCron,
-  socialGenerationCron, socialGenerationOccurrences, socialApprovalSnapshot,
+  socialGenerationCron, socialGenerationOccurrences, socialApprovalSnapshot, socialPublicationDestinationAssigned,
   type Project, type ReserveSocialOccurrenceInput, type SocialDestination, type SocialPublication,
 } from '@citevia/core';
 import { MemoryRepository, PostgresRepository, type Repository, type SqlDatabase } from '@citevia/storage';
@@ -53,6 +53,14 @@ describe('social automation schedule validation', () => {
     for (const scheduledAt of ['2026-03-08T06:30:00Z', '2026-03-08T07:30:00Z'])
       expect(socialOccurrenceLocalDate(project, input(project, { slotId: 'sunday', scheduledAt }), scheduledAt)).toBeNull();
   });
+  it('bounds the combined brand week to 28 publishing slots', () => {
+    const slots = Array.from({ length: 15 }, (_, i) => ({ id: 'slot-' + i, dayOfWeek: 2, time: '10:' + String(i).padStart(2, '0') }));
+    const brands = ['hot', 'iced'].map(id => ({ id, name: id, description: 'Coffee', instagramDestinationId: id + '-ig',
+      facebookDestinationId: id + '-fb', shareFacebookInstagramContent: true, slots: slots.slice(1) }));
+    const settings = { enabled: true, timezone: 'UTC', slots: [], brands };
+    expect(socialAutomationInputSchema.safeParse(settings).success).toBe(true);
+    expect(socialAutomationInputSchema.safeParse({ ...settings, brands: [{ ...brands[0], slots }, brands[1]] }).success).toBe(false);
+  });
   it('rejects stale revisions, expired deliveries, future times and earlier configurations', () => {
     const project = account();
     expect(socialOccurrenceLocalDate(project, input(project, { revision: 2 }), monday)).toBeNull();
@@ -96,6 +104,18 @@ describe('social automation schedule validation', () => {
     Object.assign(project.socialAutomation!, { generationCadence: 'monthly', timezone: 'Pacific/Kiritimati', slots: [{ id: 'tue', dayOfWeek: 2, time: '12:00' }] });
     const message = { kind: 'social-generation' as const, projectId: project.id, revision: 1, trigger: 'manual' as const, scheduledAt: '2028-02-28T19:00:00Z' };
     expect(socialGenerationOccurrences(project, message, message.scheduledAt)?.map(slot => slot.scheduledAt)).toEqual(['2028-02-28T22:00:00.000Z']);
+  });
+  it('prepares only the remaining local brand week, choosing the first repeated Sunday time and skipping a missing spring time', () => {
+    const project = account(), settings = project.socialAutomation!;
+    settings.slots = []; settings.timezone = 'Europe/London'; settings.effectiveFrom = '2026-01-01T00:00:00Z';
+    settings.brands = [{ id: 'hot', name: 'Hot Coffee', description: 'Espresso and beans', facebookDestinationId: 'fb',
+      instagramDestinationId: 'ig', shareFacebookInstagramContent: true, slots: [{ id: 'sun', dayOfWeek: 0, time: '01:30' }] }];
+    const manual = (scheduledAt: string) => socialGenerationOccurrences(project, {
+      kind: 'social-generation', projectId: project.id, revision: 1, scheduledAt, trigger: 'manual',
+    }, scheduledAt);
+    expect(manual('2026-10-24T12:00:00Z')).toEqual([expect.objectContaining({ brandId: 'hot', scheduledAt: '2026-10-25T00:30:00.000Z' })]);
+    expect(manual('2026-10-25T00:31:00Z')).toEqual([]);
+    expect(manual('2026-03-28T12:00:00Z')).toEqual([]);
   });
   it('skips nonexistent publishing times and chooses only the first repeated local minute', () => {
     const project = account();
@@ -144,6 +164,36 @@ describe.each(['memory', 'postgres'] as const)('social automation storage (%s)',
   }, 30000);
   afterAll(async () => { await db?.close(); });
   async function save(project = account()) { expect(await repository.saveProject(project, null)).toBe(true); return project; }
+  it('isolates colliding brand slots, scoped accounts and different sharing settings on replay', async () => {
+    const project = account(), settings = project.socialAutomation!;
+    settings.createBlogDrafts = true;
+    const brands = ['hot', 'iced'].map(id => ({ id, name: id + ' coffee', description: id === 'hot' ? 'Espresso and beans' : 'Cold brew',
+      facebookDestinationId: id + '-fb', instagramDestinationId: id + '-ig', shareFacebookInstagramContent: id === 'hot', slots: settings.slots }));
+    settings.brands = brands;
+    await save(project);
+    const destinations = brands.flatMap(brand => (['facebook', 'instagram'] as const).map(channel => ({
+      ...destination(project, channel), id: channel === 'facebook' ? brand.facebookDestinationId : brand.instagramDestinationId,
+    })));
+    destinations.unshift({ ...destinations[0], channel: 'instagram' }, { ...destinations[0], profileId: 'foreign' });
+    destinations.push(destination(project, 'reddit'));
+    const request = input(project, { destinations });
+    for (const brand of brands) {
+      const result = await repository.reserveSocialOccurrence({ ...request, brandId: brand.id });
+      if (result.status !== 'created') throw new Error('Expected brand occurrence');
+      expect(result.publications.map(post => post.destination.id).sort()).toEqual([brand.facebookDestinationId, brand.instagramDestinationId]);
+      for (const post of result.publications) {
+        expect(post.context.socialBrand).toEqual({ id: brand.id, name: brand.name, description: brand.description });
+        expect(!!post.sharedGeneration).toBe(brand.shareFacebookInstagramContent);
+        expect(socialPublicationDestinationAssigned(project, post)).toBe(true);
+        expect(socialPublicationDestinationAssigned(project, { ...post, context: { ...post.context, socialBrand: undefined } })).toBe(false);
+        expect(socialPublicationDestinationAssigned(project, { ...post, destination: destinations.find(d => d.id === (brand.id === 'hot' ? 'iced-ig' : 'hot-ig'))! })).toBe(false);
+      }
+      expect((await repository.reserveSocialOccurrence({ ...request, destinations: [], brandId: brand.id })).status).toBe('existing');
+    }
+    expect((await repository.reserveSocialOccurrence(request)).status).toBe('stale');
+    expect((await repository.reserveSocialOccurrence({ ...request, brandId: 'unknown' })).status).toBe('stale');
+    expect((await repository.listSocialPublications(project.id, 0, 100)).total).toBe(4);
+  });
 
   it('keeps existing accounts off and scan settings independent', async () => {
     const project = await save(account({ socialAutomation: undefined }));

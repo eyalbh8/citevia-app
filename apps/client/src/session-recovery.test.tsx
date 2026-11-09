@@ -32,6 +32,8 @@ vi.mock('./api', async () => ({
 }));
 import App from './App';
 import { ApiError } from './api-error';
+import { defaultSocialAutomationSettings } from '@citevia/core';
+import { project as fixtureProject } from '../../scanner/test/fixtures';
 
 let root: Root, container: HTMLDivElement;
 let account: { data?: unknown; error?: Error; loading: boolean };
@@ -108,5 +110,37 @@ describe('workspace session recovery', () => {
     await render();
     expect(mocks.clearSessionRecovery).toHaveBeenCalled();
     expect(mocks.reloadExpiredSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('project owner publishing navigation', () => {
+  afterEach(() => window.history.replaceState({}, '', '/'));
+  it.each(['owner', 'viewer'] as const)('grants the publishing form to a project owner and restricts it for role %s', async role => {
+    const project = { ...fixtureProject, id: 'coffee-project', role };
+    account = { data: { id: 'user-a', name: 'Test user', isSystemAdmin: false }, loading: false };
+    mocks.useApi.mockImplementation((endpoint: string | null) => {
+      if (endpoint === '/me') return account;
+      const data = endpoint === '/projects' ? { items: [project] } : endpoint?.endsWith('/settings') ? project :
+        endpoint?.endsWith('/social') ? { settings: defaultSocialAutomationSettings(), version: project.version, connections: [],
+          publishingAvailable: true, generationAvailable: true, blogAvailable: true } : undefined;
+      return { loading: false, data };
+    });
+    window.history.replaceState({}, '', role === 'owner' ? '/#integrations' : '/#settings?section=publishing');
+    await render();
+    const publishing = [...container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Project configuration"] button')]
+      .find(button => button.textContent === 'Publishing');
+    if (role === 'owner') {
+      expect(publishing).toBeDefined();
+      await act(async () => publishing!.click());
+      expect(container.querySelector('form[aria-label="Social automation settings"]')).not.toBeNull();
+      expect(container.textContent).toContain('Add brand');
+      expect(mocks.useApi).toHaveBeenCalledWith('/projects/coffee-project/social', project.version);
+    } else {
+      expect(publishing).toBeUndefined();
+      expect(container.querySelector('form[aria-label="Social automation settings"]')).toBeNull();
+      expect(container.textContent).toContain('Owner access required');
+    }
+    expect(container.querySelector('nav[aria-label="System admin"]')).toBeNull();
+    expect(container.querySelector('form[aria-label="Weekly scan frequency"]')).toBeNull();
   });
 });

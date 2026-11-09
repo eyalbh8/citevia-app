@@ -1,3 +1,4 @@
+import SharedSocialReviewPage from './SharedSocialReviewPage';
 import { reportReference } from './report-reference';
 import { reportExcerpt } from './report-excerpt';
 import {
@@ -73,6 +74,7 @@ import TrafficView from './TrafficView';
 import WebsiteHealthView from './WebsiteHealthView';
 import SourcesView from './SourcesView';
 import SettingsView from './SettingsView';
+import SocialAutomationSettings from './SocialAutomationSettings';
 import CompetitorsView from './CompetitorsView';
 import PromptsView from './PromptsView';
 import ResponseDrawer from './ResponseDrawer';
@@ -158,7 +160,7 @@ const views = {
   },
   settings: {
     title: 'Project settings',
-    description: 'Your brand and your weekly scanning schedule.',
+    description: 'Manage project schedules and publishing.',
     icon: Settings2,
   },
 };
@@ -177,7 +179,17 @@ function storedProject() {
   }
 }
 
+function reviewHash() {
+  return typeof window !== 'undefined' && window.location.hash.startsWith('#social-review/') ? window.location.hash : '';
+}
 export default function App() {
+  const [review, setReview] = useState(reviewHash);
+  useEffect(() => {
+    const update = () => setReview(reviewHash());
+    window.addEventListener('hashchange', update);
+    return () => window.removeEventListener('hashchange', update);
+  }, []);
+  if (review) return <SharedSocialReviewPage key={review} hash={review} />;
   if (!authConfigured) return <Login />;
   return (
     <AuthProvider
@@ -595,6 +607,10 @@ function Workspace() {
         </nav>
         <div className="nav-rule" />
         <nav aria-label="Project configuration">
+          {!systemAdmin && currentProject?.role === 'owner' && !currentProject.demo && (
+            <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} aria-current={view === 'settings' ? 'page' : undefined}
+              onClick={() => navigate('settings')}><CalendarDays />Publishing</button>
+          )}
           <button
             className={`nav-item ${view === 'integrations' ? 'active' : ''}`}
             aria-current={view === 'integrations' ? 'page' : undefined}
@@ -944,7 +960,9 @@ function Workspace() {
                     nextScanAt={dashboard.data?.nextScanAt}
                     onSaved={settingsSaved}
                     notify={setToast}
-                  /> : <Empty title="Administrator access required" description="Project settings are managed by your system administrator." />
+                  /> : currentProject?.role === 'owner' && !currentProject.demo ? (
+                    <SocialAutomationSettings key={currentProject.id} project={currentProject} path={path} onSaved={settingsSaved} notify={setToast} />
+                  ) : <Empty title="Owner access required" description="Your project owner manages publishing settings." />
                 ) : view === 'prompts' ? (
                   <PromptsView
                     key={project.id}

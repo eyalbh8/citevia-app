@@ -114,10 +114,10 @@ export default function IntegrationsView({ systemAdmin, project, highlight, onMc
         {selected.id === 'tiktok' && <p className="card-description">Generated videos are saved for your preview, music selection and publishing consent.</p>}
         {!social.data?.publishingAvailable && <p className="setting-note">Social publishing needs administrator setup before accounts can be connected.</p>}
         <button className="button button-primary" disabled={connecting || !social.data?.publishingAvailable || !project || (!systemAdmin && project.role !== 'owner') || !!project.demo} onClick={() => void connect(selected.id)}>{connecting ? 'Opening connection…' : `Connect ${selected.name}`}</button>
-        <a className="button button-outline" href="#settings">Publishing schedule</a>
+        <a className="button button-outline" href="#settings?section=publishing">Publishing schedule</a>
       </> : selected.id === 'blog' ? <>
         <p className="setting-note">Create prompt-based blog drafts on your automation schedule. Blog publishing stays manual.</p>
-        <a className="button button-primary" href="#settings">Set up draft creation</a>
+        <a className="button button-primary" href="#settings?section=publishing">Set up draft creation</a>
         <a className="button button-outline" href="#agents">Open blog drafts</a>
       </> : <>
         <div className="setting-note" role="status"><Info size={17} /><span><strong>Not available in Citevia yet.</strong> This provider’s connection is not enabled yet.</span></div>

@@ -5,7 +5,7 @@ import { usage } from './normalize.js';
 import type { ProviderCallContext } from './provider.js';
 import { isIP } from 'node:net';
 import { z } from 'zod';
-import { agentCopyValid, publicReportMarkdown, type AgentImage, type Project, type Prompt } from '@citevia/core';
+import { agentCopyValid, publicReportMarkdown, type AgentImage, type Project, type Prompt, type SocialGenerationContext } from '@citevia/core';
 import { providerApiKey, providerPost } from './provider-http.js';
 import { ProviderError, responseFailure, responseText, type ProviderReceipt } from './provider.js';
 import { renderSocialVideo, socialVideoReady, wrapSocialCaption, type SocialVideoOptions } from './social-video.js';
@@ -59,12 +59,13 @@ export interface SocialGeneratedVideo {
   durationSeconds: number;
   hasAudio: boolean;
 }
+type SocialPublishingProject = Project & Pick<SocialGenerationContext, 'socialBrand' | 'weeklyCreative'>;
 export interface SocialMediaGenerator {
-  analyzeStyle(project: Project, destination: SocialMediaDestination, recentPosts: SocialRecentPost[]): Promise<SocialBrandStyle>;
-  generateCopy(project: Project, prompt: Prompt, destination: SocialMediaDestination, style: SocialBrandStyle): Promise<SocialGeneratedCopy>;
-  generateImage(project: Project, prompt: Prompt, content: SocialGeneratedCopy, destination: SocialMediaDestination, style: SocialBrandStyle, index: number, total: number, excludedPhotoIds?: string[]): Promise<SocialGeneratedImage>;
+  analyzeStyle(project: SocialPublishingProject, destination: SocialMediaDestination, recentPosts: SocialRecentPost[]): Promise<SocialBrandStyle>;
+  generateCopy(project: SocialPublishingProject, prompt: Prompt, destination: SocialMediaDestination, style: SocialBrandStyle): Promise<SocialGeneratedCopy>;
+  generateImage(project: SocialPublishingProject, prompt: Prompt, content: SocialGeneratedCopy, destination: SocialMediaDestination, style: SocialBrandStyle, index: number, total: number, excludedPhotoIds?: string[]): Promise<SocialGeneratedImage>;
   /** Exactly one separate paid QA call, allowing the worker to checkpoint it independently. */
-  checkImage(project: Project, prompt: Prompt, content: SocialGeneratedCopy, destination: SocialMediaDestination, style: SocialBrandStyle, image: SocialGeneratedImage | string, index: number): Promise<void>;
+  checkImage(project: SocialPublishingProject, prompt: Prompt, content: SocialGeneratedCopy, destination: SocialMediaDestination, style: SocialBrandStyle, image: SocialGeneratedImage | string, index: number): Promise<void>;
   videoReady(): Promise<boolean>;
   renderVideo(content: SocialGeneratedCopy, images: SocialGeneratedImage[]): Promise<SocialGeneratedVideo>;
 }
@@ -146,11 +147,14 @@ export function socialReferenceUrl(value: string): string | null {
   } catch { return null; }
 }
 
-function projectContext(project: Project) {
+const brandScopeRules = 'The socialBrand name and description identify the product line for this creative. Focus the caption, storyboard and image exclusively on products or services described there. Use relevant project facts and the saved question as background. If the question is about another product, choose a useful topic within the selected product line instead. Choose a distinct practical angle for this numbered weekly creative.';
+
+function projectContext(project: SocialPublishingProject) {
   const book = project.brandbook;
   const list = (values: string[], count = 8, length = 180) => values.slice(0, count).map(value => value.slice(0, length));
   return {
     brand: { id: project.brand.id, name: project.brand.name.slice(0, 200), aliases: list(project.brand.aliases), domains: list(project.brand.domains, 5, 300) }, country: project.country, language: project.language,
+    ...(project.socialBrand ? { socialBrand: project.socialBrand, weeklyCreative: project.weeklyCreative } : {}),
     brandbook: book ? {
       about: book.about.slice(0, 1600), industry: book.industryCategory.slice(0, 200), features: list(book.keyFeatures), values: list(book.values),
       voice: list(book.toneOfVoice), audience: list(book.targetAudience), personality: list(book.personality),
@@ -220,7 +224,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     if (!options.apiKey.trim()) throw new Error('OpenAI API key is missing.');
     if (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0 || options.timeoutMs > 210_000)) throw new Error('Social media timeout must be at most 210 seconds.');
   }
-  private request(project: Project, stage: string, url: string, body: Record<string, unknown>, images = 0, imageOutput = false): Promise<ProviderReceipt> {
+  private request(project: SocialPublishingProject, stage: string, url: string, body: Record<string, unknown>, images = 0, imageOutput = false): Promise<ProviderReceipt> {
     const model = String(body.model);
     const run = () => observeCall({ ledger: this.options.ledger, context: { ...this.options.context, projectId: project.id, stage },
       provider: 'openai', model, stage, inputBytes: imageOutput || images > 0 ? 0 : Buffer.byteLength(JSON.stringify(body)),
@@ -235,10 +239,10 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     }));
     return this.options.admission ? withProviderAdmission(this.options.admission, 'openai', run) : run();
   }
-  private async structured<T>(name: string, project: Project, instructions: string, input: unknown, schema: Record<string, unknown>, parse: z.ZodType<T>, images: string[] = []): Promise<{ value: T; receipt: ProviderReceipt }> {
+  private async structured<T>(name: string, project: SocialPublishingProject, instructions: string, input: unknown, schema: Record<string, unknown>, parse: z.ZodType<T>, images: string[] = []): Promise<{ value: T; receipt: ProviderReceipt }> {
     const receipt = await this.request(project, name, 'https://api.openai.com/v1/responses', {
       model: this.options.textModel || DEFAULT_SOCIAL_COPY_MODEL,
-      store: false, reasoning: { effort: 'low' }, instructions: instructions + ' ' + referenceRules,
+      store: false, reasoning: { effort: 'low' }, instructions: [instructions, project.socialBrand && brandScopeRules, referenceRules].filter(Boolean).join(' '),
       // Real image content blocks, not a JSON string containing image URLs.
       input: [{ role: 'user', content: [{ type: 'input_text', text: JSON.stringify(input) }, ...images.map(image_url => ({ type: 'input_image', image_url, detail: 'auto' }))] }],
       text: { format: { type: 'json_schema', name, strict: true, schema } }, max_output_tokens: 5000,
@@ -249,7 +253,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     catch { return invalid('social_invalid_output', 'Generated social content did not pass validation.'); }
   }
 
-  async analyzeStyle(project: Project, destination: SocialMediaDestination, recentPosts: SocialRecentPost[]): Promise<SocialBrandStyle> {
+  async analyzeStyle(project: SocialPublishingProject, destination: SocialMediaDestination, recentPosts: SocialRecentPost[]): Promise<SocialBrandStyle> {
     const posts = recentPosts.slice(0, 12).map(post => ({ id: post.id, text: post.text.slice(0, 4000), publishedAt: post.publishedAt,
       imageUrls: post.imageUrls.map(socialReferenceUrl).filter((url): url is string => !!url).slice(0, 3) }));
     const references = [...new Set(posts.flatMap(post => post.imageUrls))].slice(0, MAX_REFERENCE_IMAGES);
@@ -261,7 +265,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
       source: references.length ? 'connected-feed' : 'brandbook', capturedAt: (this.options.now?.() ?? new Date()).toISOString(), requestId: receipt.requestId };
   }
 
-  async generateCopy(project: Project, prompt: Prompt, destination: SocialMediaDestination, style: SocialBrandStyle): Promise<SocialGeneratedCopy> {
+  async generateCopy(project: SocialPublishingProject, prompt: Prompt, destination: SocialMediaDestination, style: SocialBrandStyle): Promise<SocialGeneratedCopy> {
     if (!prompt.active) return invalid('social_prompt_inactive', 'Automated posts require an active saved prompt.');
     const { value, receipt } = await this.structured('social_post_copy', project,
       'You are an expert social editor. ' + (sharedFormat(destination) ? sharedCaptionRules :
@@ -317,7 +321,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     return content;
   }
 
-  async generateImage(project: Project, prompt: Prompt, content: SocialGeneratedCopy, destination: SocialMediaDestination, style: SocialBrandStyle, index: number, total: number, excludedPhotoIds: string[] = []): Promise<SocialGeneratedImage> {
+  async generateImage(project: SocialPublishingProject, prompt: Prompt, content: SocialGeneratedCopy, destination: SocialMediaDestination, style: SocialBrandStyle, index: number, total: number, excludedPhotoIds: string[] = []): Promise<SocialGeneratedImage> {
     if (!Number.isInteger(index) || index < 0 || index >= content.slides.length || total !== content.slides.length) return invalid('social_image_index', 'Invalid social media scene.');
     if (destination.imageSource === 'unsplash') return this.selectPhoto(content, destination, index, excludedPhotoIds);
     const [width, height] = imageSize(destination);
@@ -325,6 +329,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     const instructions = [
       'Create one original, polished social media image suitable for this business. Continue the visual style of the supplied account references while depicting the new answer. References are style examples, not images to copy literally. Avoid unrelated products, fake logos, invented UI, distorted objects or unsupported business claims. ' + referenceRules,
       destination.channel === 'tiktok' ? 'Vertical video background: leave the lower 45% visually quiet for captions. Do not generate lettering, captions or watermarks; the renderer adds the approved text.' : 'Render only the supplied slide heading and body as concise, correctly spelled text. Use generous margins, strong contrast and large, readable mobile typography. Do not add other text or logos unless present in the verified supplied references.',
+      ...(project.socialBrand ? [brandScopeRules] : []),
       JSON.stringify({ project: projectContext(project), question: prompt.text, channel: contentChannel(destination), style: visualStyle(style),
         storyboard: content.slides.map(slide => ({ heading: slide.heading, body: slide.body })), slideNumber: index + 1, totalSlides: total, slide: content.slides[index] }),
     ].join('\n\n');
@@ -373,7 +378,7 @@ export class OpenAISocialMediaGenerator implements SocialMediaGenerator {
     return { bytes, mime: 'image/jpeg', width, height, requestId: null, stockPhoto };
   }
 
-  async checkImage(project: Project, prompt: Prompt, content: SocialGeneratedCopy, destination: SocialMediaDestination, style: SocialBrandStyle, image: SocialGeneratedImage | string, index: number): Promise<void> {
+  async checkImage(project: SocialPublishingProject, prompt: Prompt, content: SocialGeneratedCopy, destination: SocialMediaDestination, style: SocialBrandStyle, image: SocialGeneratedImage | string, index: number): Promise<void> {
     if (!content.slides[index]) return invalid('social_image_index', 'Invalid social media scene.');
     let target: string | null;
     if (typeof image === 'string' && image.startsWith('data:')) {

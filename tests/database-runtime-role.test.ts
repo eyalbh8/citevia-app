@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { localPostgres } from '../packages/storage/src/local-postgres.js';
-import { PostgresRepository, type SqlDatabase, type SqlSession } from '@citevia/storage';
+import { migrateDatabase, PostgresRepository, type SqlDatabase, type SqlSession } from '@citevia/storage';
 import { planRuntimeRole, provisionRuntimeRole, runtimeRoleName, runtimeTables } from '../scripts/lib/database-runtime-role.js';
 import { newProject } from './fixtures/scanner.js';
 import { testIdentity } from './fixtures/users.js';
@@ -20,6 +20,34 @@ beforeAll(async () => {
 afterAll(async () => { await owner?.close(); });
 
 describe('restricted database runtime role', () => {
+  it('upgrades existing restricted publishers to review-link CRUD exactly once', async () => {
+    const db = await localPostgres();
+    try {
+      // Reconstruct the deployed 019 schema with representative pre-existing ACLs.
+      await db.exec(`DROP TABLE public.citevia_social_review_links;
+        DELETE FROM public.citevia_migrations WHERE name='020_social_review_links.sql';
+        CREATE ROLE citevia_runtime_v1 LOGIN NOINHERIT;
+        CREATE ROLE citevia_runtime_partial LOGIN NOINHERIT;
+        CREATE ROLE citevia_runtime_elevated LOGIN NOINHERIT CREATEDB;
+        CREATE ROLE unrelated_service LOGIN NOINHERIT;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON public.citevia_social_publications
+          TO citevia_runtime_v1, citevia_runtime_elevated, unrelated_service;
+        GRANT SELECT ON public.citevia_social_publications TO citevia_runtime_partial;`);
+      await migrateDatabase(db);
+      const ledger = () => db.query("SELECT checksum,applied_at FROM public.citevia_migrations WHERE name='020_social_review_links.sql'");
+      const first = await ledger();
+      expect(first.rows).toHaveLength(1);
+      await migrateDatabase(db);
+      expect((await ledger()).rows).toEqual(first.rows);
+      const grants = await db.query(`SELECT r.rolname AS role, acl.privilege_type AS privilege, acl.is_grantable AS grantable
+        FROM pg_class AS c CROSS JOIN LATERAL aclexplode(c.relacl) AS acl
+        LEFT JOIN pg_roles AS r ON r.oid=acl.grantee
+        WHERE c.oid='public.citevia_social_review_links'::regclass AND acl.grantee<>c.relowner
+        ORDER BY privilege,role`);
+      expect(grants.rows).toEqual(['DELETE', 'INSERT', 'SELECT', 'UPDATE'].map(privilege =>
+        ({ role: 'citevia_runtime_v1', privilege, grantable: false })));
+    } finally { await db.close(); }
+  }, 30000);
   it('covers the schema explicitly without granting unrelated legacy tables or the migration ledger', async () => {
     const plan = await planRuntimeRole(owner, 'citevia_runtime_next');
     expect(plan.missingTables).toEqual([]);

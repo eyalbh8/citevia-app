@@ -174,6 +174,7 @@ export async function migrateDatabase(
       '017_social_automation.sql',
       '018_social_review_schedule.sql',
       '019_geo_backlinks.sql',
+      '020_social_review_links.sql',
     ]) {
       const source = await readFile(resolve(directory, name), 'utf8'),
         checksum = createHash('sha256').update(source).digest('hex');

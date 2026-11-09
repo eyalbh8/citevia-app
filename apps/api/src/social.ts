@@ -1,8 +1,12 @@
 import { restoreReportFields } from './public-report.js';
+import { socialPublicationDestinationAssigned } from '@citevia/core';
 import { z } from 'zod';
 import { createHash, randomUUID } from 'node:crypto';
-import { SOCIAL_CHANNELS, defaultSocialAutomationSettings, socialAutomationInputSchema, socialApprovalSnapshot, publicReportMarkdown, agentCopyValid, agentImageSchema, type Project, type SocialPublication, type SocialContent } from '@citevia/core';
-import { AccessError, createSocialMediaUploadStore, validateSocialUpload, type SocialMediaUploadStore, type SocialUploadedMedia, type Runtime, type SocialPublisher } from '@citevia/storage';
+import { isDeepStrictEqual } from 'node:util';
+import { SOCIAL_CHANNELS, defaultSocialAutomationSettings, socialAutomationInputSchema, parseStoredSocialAutomation, agentImageSchema, type Project, type SocialPublication } from '@citevia/core';
+import { createSocialMediaUploadStore, validateSocialUpload, type SocialMediaUploadStore, type SocialUploadedMedia, type Runtime, type SocialPublisher } from '@citevia/storage';
+import { approvalSchema, approveSocialPublication, contentSchema, editable, fail, fromPreviousBrandPlan, previewSocialMedia, validateContent, validateMedia } from './social-approval.js';
+import { manageReviewLinks } from './social-review-links.js';
 import { repairSocialSchedule, syncSocialSchedule } from './social-scheduler.js';
 
 export interface SocialApiOptions {
@@ -18,38 +22,12 @@ export interface SocialApiOptions {
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
 });
-const fail = (status: number, code: string, message: string): never => { throw new AccessError(status, code, message); };
-const contentSchema = z.object({ title: z.string().trim().min(1).max(300), body: z.string().trim().min(1).max(30000),
-  hashtags: z.array(z.string().trim().regex(/^#[^\s#]+$/).max(100)).max(30) }).strict();
-const mediaSchema = z.object({ id: z.string().min(1).max(200).optional(), type: z.enum(['image', 'video']), url: z.string().url().max(8192), mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4']), attribution: z.array(agentImageSchema).max(3).optional() }).strict();
-function editable(post: SocialPublication, now: Date) {
-  return post.destination.channel !== 'blog' && ['review_required', 'scheduled'].includes(post.status) &&
-    !post.publishAttemptAt && !post.providerPostId && !(Date.parse(post.leaseUntil || '') > now.getTime());
-}
-function validateContent(post: SocialPublication, content?: SocialContent) {
-  if (!content) return fail(400, 'CONTENT_REQUIRED', 'Wait for the post content to finish.');
-  contentSchema.parse(content);
-  // The worker publishes the approved snapshot verbatim. Require a clean saved
-  // revision before approval, including for drafts created by older generators.
-  if ([content.title, content.body, ...content.hashtags].some(value => publicReportMarkdown(value) !== value)) {
-    return fail(400, 'CONTENT_REVIEW_REQUIRED', 'Edit the caption, title, or hashtags and save the wording you want to publish.');
-  }
-  const channel = post.destination.channel;
-  const fullText = [content.body, content.hashtags.join(' ')].filter(Boolean).join('\n\n');
-  const valid = channel === 'linkedin' ? [...fullText].length <= 3000 : channel === 'tiktok' ? [...fullText].length <= 2200 : agentCopyValid(channel, content);
-  if (!valid) fail(400, 'CONTENT_TOO_LONG', 'The caption or title exceeds this channel’s limit. Shorten it before saving.');
-}
-function validateMedia(post: SocialPublication, media = post.media, allowEmpty = false) {
-  const channel = post.destination.channel;
-  if (!media || (!media.length && !allowEmpty)) return fail(400, 'MEDIA_REQUIRED', 'Add an image or video before approving this post.');
-  const max = channel === 'instagram' ? 10 : 1;
-  if (media.length > max || media.some(asset => asset.type !== (channel === 'tiktok' ? 'video' : 'image')))
-    fail(400, 'INVALID_MEDIA', channel === 'instagram' ? 'Choose up to 10 images for Instagram.' : channel === 'tiktok' ? 'Choose one MP4 video for TikTok.' : 'Choose one image for this channel.');
-  if (new Set(media.map(asset => asset.id || asset.url)).size !== media.length) fail(400, 'INVALID_MEDIA', 'Each media item may appear only once.');
-}
+const mediaSchema = z.object({ id: z.string().min(1).max(200).optional(), type: z.enum(['image', 'video']), url: z.string().url().max(8192), mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'video/mp4']), attribution: z.array(agentImageSchema).max(3).optional(), contentDigest: z.string().regex(/^[0-9a-f]{64}$/).optional() }).strict();
 interface UploadIntent { projectId: string; publicationId: string; version: number; id: string; key: string; mimeType: string; size: number; replaceIndex?: number; expiresAt: string }
 export function publicSocialPublication(post: SocialPublication) {
   return { id: post.id, prompt: post.prompt.text, promptId: post.prompt.id, channel: post.destination.channel,
+    brandName: post.context.socialBrand?.name,
+    clientApproved: post.approval?.approvedBy.startsWith('client-review:') || undefined,
     destination: post.destination.username, status: post.status, createdAt: post.createdAt, scheduledAt: post.scheduledAt,
     updatedAt: post.updatedAt, version: post.version, content: post.content, media: post.media,
     draftPostId: post.draftPostId, publishedUrl: post.publishedUrl, error: post.error };
@@ -61,17 +39,14 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
   const { repository, queue } = runtime;
   if (request.method !== 'GET' && (project.role !== 'owner' || project.demo))
     fail(403, 'FORBIDDEN', 'Project owner access is required.');
+  if (tail === 'social/review-links' || tail.startsWith('social/review-links/'))
+    return manageReviewLinks(runtime, project, userId, tail, request, now, options.frontendOrigin, body);
   const settings = { ...(project.socialAutomation ?? defaultSocialAutomationSettings(project.timezone)),
     imageSource: project.socialAutomation?.imageSource ?? 'openai',
     shareFacebookInstagramContent: project.socialAutomation?.shareFacebookInstagramContent ?? false };
   const uploadStore = () => (options.uploads ?? createSocialMediaUploadStore)();
   const preview = async (post: SocialPublication) => {
-    const sources = (post.checkpoints?.mediaSources ?? {}) as Record<string, SocialUploadedMedia>;
-    const store = uploadStore();
-    const media = await Promise.all((post.media ?? []).map(async asset => {
-      const source = asset.id ? sources[asset.id] : undefined;
-      return source && store ? { ...asset, url: await store.preview(source) } : asset;
-    }));
+    const media = await previewSocialMedia(post, options);
     return { ...publicSocialPublication(post), media, editable: project.role === 'owner' && !project.demo && editable(post, now) };
   };
   const generate = () => queue.send([{ kind: 'social-generation', projectId: project.id, revision: settings.revision, scheduledAt: now.toISOString(), trigger: 'manual' }]);
@@ -80,7 +55,7 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
     return options.publisher();
   };
   const connections = async () => project.socialProfileId && options.publisher
-    ? (await publisher()).accounts(project.socialProfileId) : [];
+    ? (await (await publisher()).accounts(project.socialProfileId)).filter(account => account.profileId === project.socialProfileId) : [];
   if (tail === 'social' && request.method === 'GET') {
     const accounts = await connections();
     return json({ settings, version: project.version, destinationOptions: project.socialDestinationOptions ?? {}, connections: accounts.map(({ profileId: _profile, ...account }) => account),
@@ -110,24 +85,48 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
   }
   if (tail === 'social/settings' && request.method === 'PATCH') {
     const raw = z.object({ version: z.number().int().positive(), settings: z.record(z.string(), z.unknown()) }).strict().parse(await body(request));
-    const input = { version: raw.version, settings: socialAutomationInputSchema.parse({ ...raw.settings,
+    if (raw.version !== project.version) fail(409, 'VERSION_CONFLICT', 'Settings changed. Refresh and try again.');
+    // The public form can contain withheld wording. Match by ID so reordering brands cannot transfer a brief.
+    const incomingBrands = raw.settings.brands;
+    const restoredBrands = Array.isArray(incomingBrands) ? incomingBrands.map(brand => {
+      const saved = settings.brands?.find(item => item.id === brand?.id);
+      return saved ? restoreReportFields(brand, { name: saved.name, description: saved.description }) : brand;
+    }) : incomingBrands;
+    const input = { settings: socialAutomationInputSchema.parse({ ...raw.settings,
+      brands: Object.hasOwn(raw.settings, 'brands') ? restoredBrands : settings.brands,
+      generationTime: Object.hasOwn(raw.settings, 'generationTime') ? raw.settings.generationTime : settings.generationTime,
+      generationCadence: Object.hasOwn(raw.settings, 'generationCadence') ? raw.settings.generationCadence : settings.generationCadence,
       imageSource: Object.hasOwn(raw.settings, 'imageSource') ? raw.settings.imageSource : settings.imageSource,
       shareFacebookInstagramContent: Object.hasOwn(raw.settings, 'shareFacebookInstagramContent')
         ? raw.settings.shareFacebookInstagramContent : settings.shareFacebookInstagramContent ?? false }) };
-    if (input.version !== project.version) fail(409, 'VERSION_CONFLICT', 'Settings changed. Refresh and try again.');
+    const brands = input.settings.brands ?? [];
+    const unchanged = brands.length > 0 && isDeepStrictEqual(parseStoredSocialAutomation(settings).data, input.settings);
+    if (unchanged && settings.scheduleStatus === 'synced') return json({ settings, version: project.version });
+    // Always allow a pause during a provider outage. Verify new assignments even on paused plans.
+    const changedAssignments = brands.filter(brand => !settings.brands?.some(previous =>
+      previous.id === brand.id && previous.facebookDestinationId === brand.facebookDestinationId && previous.instagramDestinationId === brand.instagramDestinationId));
+    const accounts = input.settings.enabled || changedAssignments.length ? await connections() : [];
+    for (const brand of input.settings.enabled ? brands : changedAssignments) {
+      for (const channel of ['facebook', 'instagram'] as const) {
+        const id = channel === 'facebook' ? brand.facebookDestinationId : brand.instagramDestinationId;
+        if (!accounts.some(account => account.id === id && account.channel === channel && account.active && !account.requiresReconnect))
+          return fail(400, 'INVALID_BRAND_DESTINATION', `Choose a connected ${channel === 'facebook' ? 'Facebook' : 'Instagram'} account for ${brand.name}.`);
+      }
+    }
     if (input.settings.enabled) {
       if (!options.generationAvailable) fail(503, 'GENERATION_UNAVAILABLE', 'Content generation is not configured yet.');
       if (!project.prompts.some(prompt => prompt.active)) fail(400, 'NO_PROMPTS', 'Add an active prompt before enabling automation.');
-      if (input.settings.createBlogDrafts && !options.blogAvailable) fail(503, 'BLOG_UNAVAILABLE', 'Blog draft generation is not configured yet.');
-      const accounts = await connections();
+      if (!brands.length && input.settings.createBlogDrafts && !options.blogAvailable) fail(503, 'BLOG_UNAVAILABLE', 'Blog draft generation is not configured yet.');
       if (input.settings.imageSource === 'unsplash' && !options.unsplashAvailable && accounts.some(account => account.active && !account.requiresReconnect))
         fail(503, 'UNSPLASH_UNAVAILABLE', 'Unsplash images are not configured yet. Choose OpenAI or contact your administrator.');
       if (!input.settings.createBlogDrafts && !accounts.some(account => account.active && !account.requiresReconnect))
         fail(400, 'NO_SOCIAL_CONNECTIONS', 'Connect at least one social account before enabling automation.');
     }
-    const next: Project = { ...project, version: project.version + 1, updatedAt: now.toISOString(),
-      socialAutomation: { ...input.settings, revision: settings.revision + 1, effectiveFrom: now.toISOString(), scheduleStatus: 'pending' } };
-    if (!await repository.saveProject(next, project.version)) fail(409, 'VERSION_CONFLICT', 'Settings changed. Refresh and try again.');
+    if (!unchanged) {
+      const next: Project = { ...project, version: project.version + 1, updatedAt: now.toISOString(),
+        socialAutomation: { ...input.settings, revision: settings.revision + 1, effectiveFrom: now.toISOString(), scheduleStatus: 'pending' } };
+      if (!await repository.saveProject(next, project.version)) fail(409, 'VERSION_CONFLICT', 'Settings changed. Refresh and try again.');
+    }
     try {
       const saved = await repairSocialSchedule(repository, project.id, options.sync ?? syncSocialSchedule, () => now);
       if (saved.socialAutomation?.enabled) await queue.send([{ kind: 'social-generation', projectId: saved.id,
@@ -170,6 +169,19 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
   if (tail === 'social/publications' && request.method === 'GET') {
     const params = new URL(request.url).searchParams;
     const offset = z.coerce.number().int().min(0).max(1000000).parse(params.get('offset') || 0);
+    if (params.get('clientReview') === 'true') {
+      const page = await repository.listSocialPublications(project.id, offset, 100, true);
+      const items = page.items.map(post => {
+        const previousPlan = fromPreviousBrandPlan(project, post);
+        return {
+          id: post.id, version: post.version, brandName: post.context.socialBrand?.name, title: post.content?.title ?? post.prompt.text,
+          channel: post.destination.channel, destination: post.destination.username, scheduledAt: post.scheduledAt, previousPlan,
+          shareable: !previousPlan && editable(post, now) && Boolean(post.content && post.media?.length) &&
+            Date.parse(post.scheduledAt) > now.getTime() && socialPublicationDestinationAssigned(project, post),
+        };
+      });
+      return json({ items, total: page.total });
+    }
     const page = await repository.listSocialPublications(project.id, offset, 20);
     return json({ items: await Promise.all(page.items.map(preview)), total: page.total });
   }
@@ -225,7 +237,11 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
         return fail(409, 'UPLOAD_EXPIRED', 'This upload expired or the post changed. Upload the file again.');
       const store = uploadStore(); if (!store) return fail(503, 'UPLOADS_UNAVAILABLE', 'Media uploads are not configured yet.');
       const source = await store.complete(intent.key, intent.mimeType, intent.size, intent.id);
-      const asset = { id: source.id, type: source.type, url: source.url, mimeType: source.mimeType };
+      // Only a shared image needs byte comparison across separately scoped private object keys.
+      // read() verifies the pinned version, declared image size and file signature.
+      const contentDigest = post.sharedGeneration && source.type === 'image'
+        ? createHash('sha256').update(await store.read(source)).digest('hex') : undefined;
+      const asset = { id: source.id, type: source.type, url: source.url, mimeType: source.mimeType, ...(contentDigest ? { contentDigest } : {}) };
       const media = [...(post.media ?? [])];
       if (intent.replaceIndex !== undefined) media[intent.replaceIndex] = asset;
       else if (post.destination.channel === 'instagram') media.push(asset);
@@ -243,34 +259,8 @@ export async function socialRoute(runtime: Runtime, project: Project, userId: st
       return json({ creator, music });
     }
     if (match[2] === 'approve' && request.method === 'POST') {
-      const input = z.object({ version: z.number().int().positive(), previewConfirmed: z.literal(true), expressConsentGiven: z.literal(true),
-        privacyLevel: z.string().min(1).max(80).optional(), allowComment: z.boolean().optional(), allowDuet: z.boolean().optional(), allowStitch: z.boolean().optional(),
-        musicSoundId: z.string().min(1).max(200).optional(),
-      }).strict().parse(await body(request));
-      assertEditable(input.version);
-      if (post.status !== 'review_required') return fail(409, 'POST_CHANGED', 'This version is already approved.');
-      if (!settings.enabled) return fail(409, 'AUTOMATION_PAUSED', 'Enable automation before approving this post.');
-      if (Date.parse(post.scheduledAt) <= now.getTime()) return fail(400, 'PUBLISH_TIME_PASSED', 'Choose a future publishing time, save, and review this post again.');
-      validateContent(post, post.content); validateMedia(post);
-      const account = (await connections()).find(account => account.id === post.destination.id && account.channel === post.destination.channel &&
-        account.profileId === post.destination.profileId && account.active && !account.requiresReconnect);
-      if (!account) return fail(409, 'DISCONNECTED', 'Reconnect this social account before approving the post.');
-      if (post.destination.channel === 'tiktok') {
-        if (!input.privacyLevel || !input.musicSoundId || ['allowComment', 'allowDuet', 'allowStitch'].some(key => typeof input[key as keyof typeof input] !== 'boolean'))
-          return fail(400, 'TIKTOK_APPROVAL_REQUIRED', 'Choose music, privacy and interaction settings before approving TikTok.');
-        const adapter = await publisher();
-        const [creator, music] = await Promise.all([adapter.tiktokCreatorInfo(account.profileId, account.id), adapter.tiktokMusic(account.profileId, account.id)]);
-        if (!creator.canPostMore || !creator.privacyLevels.includes(input.privacyLevel) || !music.some(track => track.id === input.musicSoundId) ||
-          (['allowComment', 'allowDuet', 'allowStitch'] as const).some(key => input[key] && !creator.interactions[key]))
-          return fail(400, 'TIKTOK_OPTIONS_CHANGED', 'TikTok options changed. Refresh the privacy and music choices.');
-      }
-      const { version: _version, ...consent } = input;
-      const next: SocialPublication = { ...post, revision: settings.revision, status: 'scheduled', stage: 'publish', version: post.version + 1,
-        nextAttemptAt: post.scheduledAt, attempts: 0, error: null, updatedAt: now.toISOString(),
-        approval: { ...consent, approvedBy: userId, approvedAt: now.toISOString(), contentHash: createHash('sha256').update(socialApprovalSnapshot(post)).digest('hex') } };
-      if (!await repository.saveSocialPublication(next, post.version)) return fail(409, 'POST_CHANGED', 'This post changed. Refresh the preview.');
-      // The due-work reconciler also recovers this record if enqueueing is interrupted.
-      await queue.send([{ kind: 'social-publication', projectId: project.id, publicationId: post.id }], Math.min(900, Math.max(1, Math.ceil((Date.parse(post.scheduledAt) - now.getTime()) / 1000))));
+      const input = approvalSchema.parse(await body(request));
+      const next = await approveSocialPublication(runtime, project, post, userId, now, options, input);
       return json(await preview(next), 202);
     }
   }

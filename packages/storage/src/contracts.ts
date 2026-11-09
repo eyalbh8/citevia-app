@@ -59,13 +59,30 @@ export interface TrackingMatchOptions {
   start?: string;
   end?: string;
 }
+export interface SocialReviewLink {
+  projectId: string;
+  /** SHA-256 digest of an independently random bearer credential. */
+  id: string;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+  publications: {
+    id: string; version: number; contentHash: string; brandName: string;
+    destination: string; channel: 'facebook' | 'instagram'; scheduledAt: string;
+  }[];
+}
 export interface Repository extends UserRepository, McpRepository, GeoBacklinkRepository {
   /** Atomically select a prompt and reserve every eligible connected destination once. */
   reserveSocialOccurrence(input: ReserveSocialOccurrenceInput): Promise<ReserveSocialOccurrenceResult>;
   getSocialPublication(projectId: string, publicationId: string): Promise<SocialPublication | null>;
   listActiveSocialPublications(limit?: number, now?: string): Promise<SocialPublication[]>;
-  listSocialPublications(projectId: string, offset: number, limit: number): Promise<{ items: SocialPublication[]; total: number }>;
-  saveSocialPublication(publication: SocialPublication, expectedVersion: number): Promise<boolean>;
+  listSocialPublications(projectId: string, offset: number, limit: number, clientReviewOnly?: boolean): Promise<{ items: SocialPublication[]; total: number }>;
+  createSocialReviewLink(link: SocialReviewLink): Promise<void>;
+  getSocialReviewLink(projectId: string, id: string, now: string): Promise<SocialReviewLink | null>;
+  listSocialReviewLinks(projectId: string, now: string): Promise<SocialReviewLink[]>;
+  revokeSocialReviewLink(projectId: string, id: string): Promise<boolean>;
+  getSocialReviewPosts(projectId: string, ids: string[]): Promise<SocialPublication[]>;
+  saveSocialPublication(publication: SocialPublication, expectedVersion: number, reviewLinkId?: string): Promise<boolean>;
   getWebsiteHealthAudit(projectId: string, auditId: string): Promise<WebsiteHealthJob | null>;
   listWebsiteHealthAudits(projectId: string, offset: number, limit: number): Promise<{ items: WebsiteHealthJob[]; total: number }>;
   listActiveWebsiteHealthAudits(): Promise<WebsiteHealthJob[]>;

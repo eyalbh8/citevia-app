@@ -1,3 +1,4 @@
+import { reviewEndpoint } from './social-review-links.js';
 import { publicTrafficRoute } from './traffic.js';
 import { publicReportResponse } from './public-report.js';
 import { trafficCountry } from './traffic-geo.js';
@@ -80,7 +81,8 @@ export function createAuthenticatedApi(
     }
     if (request.method === 'OPTIONS')
       return new Response(null, { status: 204 });
-    if (new URL(request.url).pathname === '/health' && request.method === 'GET')
+    const path = new URL(request.url).pathname;
+    if (reviewEndpoint.test(path) || (path === '/health' && request.method === 'GET'))
       return app(request);
     try {
       const user = await identity.authenticate(request);
