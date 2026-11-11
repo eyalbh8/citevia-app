@@ -32,6 +32,7 @@ import {
 } from '@citevia/core';
 import { downloadCsv, query, request, useApi } from './api';
 import { invalidateApiQueries } from './query-cache';
+import { trafficChartSeries } from './traffic-trend';
 import { Empty, ErrorNotice } from './components';
 import { Skeleton } from './Loading';
 import DateRangeFilter, { initialDateRange, type DateRangeSelection } from './DateRangeFilter';
@@ -101,7 +102,8 @@ function Change({ current, previous, fractionDigits, growthPercent }: { current:
     </span>
   );
 }
-function Trend({ data }: { data: TrafficDashboard }) {
+function Trend({ data, series }: { data: TrafficDashboard; series: TrafficDashboard['series'] }) {
+  const modeled = series !== data.series;
   const id = useId().replace(/:/g, '');
   const [hidden, setHidden] = useState<TrafficProvider[]>([]);
   const [hover, setHover] = useState<number | null>(null);
@@ -121,21 +123,21 @@ function Trend({ data }: { data: TrafficDashboard }) {
   const shown = data.providers.filter((p) => !hidden.includes(p.provider));
   const max = Math.max(
     4,
-    ...data.series.map((p) =>
+    ...series.map((p) =>
       Math.max(0, ...shown.map((s) => p.values[s.provider] || 0)),
     ),
   );
   const ceiling = Math.ceil(max / 4) * 4;
   const x = (i: number) =>
-    60 + (i / Math.max(1, data.series.length - 1)) * plotWidth;
+    60 + (i / Math.max(1, series.length - 1)) * plotWidth;
   const y = (v: number) => 290 - (v / ceiling) * 240;
   const path = (provider: TrafficProvider) =>
-    data.series
+    series
       .map((point, i) => {
         const px = x(i),
           py = y(point.values[provider] || 0);
         if (!i) return `M ${px} ${py}`;
-        const last = data.series[i - 1],
+        const last = series[i - 1],
           mid = (px + x(i - 1)) / 2;
         return `C ${mid} ${y(last.values[provider] || 0)}, ${mid} ${py}, ${px} ${py}`;
       })
@@ -150,16 +152,16 @@ function Trend({ data }: { data: TrafficDashboard }) {
         : {}),
       ...(full ? { year: 'numeric' as const } : {}),
     });
-  const focused = hover === null ? null : data.series[hover];
+  const focused = hover === null ? null : series[hover];
   return (
     <section className="traffic-panel traffic-trend">
       <header>
         <div>
           <h2>LLM visit trends</h2>
-          <p>Follow visits from each AI provider over time.</p>
+          <p>{modeled ? 'Follow the visit trend from each AI provider over time.' : 'Follow visits from each AI provider over time.'}</p>
         </div>
         <span className="traffic-caption">
-          {data.period.granularity === 'hourly' ? 'Hourly' : 'Daily'} · UTC
+          {data.period.granularity === 'hourly' ? 'Hourly' : 'Daily'}{modeled ? ' trend' : ''} · UTC
         </span>
       </header>
       <div className="traffic-legend" aria-label="Chart providers">
@@ -188,7 +190,7 @@ function Trend({ data }: { data: TrafficDashboard }) {
         <svg
           viewBox={`0 0 ${chartWidth} 340`}
           role="img"
-          aria-label="AI referral page visits by provider over time"
+          aria-label={modeled ? 'AI referral visit trends by provider over time' : 'AI referral page visits by provider over time'}
         >
           <defs>
             {shown.map((p) => (
@@ -231,7 +233,7 @@ function Trend({ data }: { data: TrafficDashboard }) {
           {shown.map((p) => (
             <g key={p.provider}>
               <path
-                d={`${path(p.provider)} L ${x(data.series.length - 1)} 290 L 60 290 Z`}
+                d={`${path(p.provider)} L ${x(series.length - 1)} 290 L 60 290 Z`}
                 fill={`url(#${id}-${p.provider})`}
               />
               <path
@@ -240,24 +242,24 @@ function Trend({ data }: { data: TrafficDashboard }) {
                 stroke={colors[p.provider]}
                 strokeWidth="2.5"
               />
-              {data.series.length === 1 && (
+              {series.length === 1 && (
                 <circle
                   cx="60"
-                  cy={y(data.series[0].values[p.provider] || 0)}
+                  cy={y(series[0].values[p.provider] || 0)}
                   r="4"
                   fill={colors[p.provider]}
                 />
               )}
             </g>
           ))}
-          {data.series.map((p, i) =>
+          {series.map((p, i) =>
             i === 0 ||
-            i === data.series.length - 1 ||
+            i === series.length - 1 ||
             i %
               Math.max(
                 1,
                 Math.ceil(
-                  data.series.length /
+                  series.length /
                     Math.max(2, Math.floor(chartWidth / 110)),
                 ),
               ) ===
@@ -269,7 +271,7 @@ function Trend({ data }: { data: TrafficDashboard }) {
                 textAnchor={
                   i === 0
                     ? 'start'
-                    : i === data.series.length - 1
+                    : i === series.length - 1
                       ? 'end'
                       : 'middle'
                 }
@@ -288,12 +290,12 @@ function Trend({ data }: { data: TrafficDashboard }) {
               strokeDasharray="4 4"
             />
           )}
-          {data.series.map((point, i) => (
+          {series.map((point, i) => (
             <rect
               key={point.date}
-              x={x(i) - plotWidth / 2 / Math.max(1, data.series.length - 1)}
+              x={x(i) - plotWidth / 2 / Math.max(1, series.length - 1)}
               y="40"
-              width={plotWidth / Math.max(1, data.series.length - 1)}
+              width={plotWidth / Math.max(1, series.length - 1)}
               height="255"
               fill="transparent"
               onMouseEnter={() => setHover(i)}
@@ -305,10 +307,11 @@ function Trend({ data }: { data: TrafficDashboard }) {
             className="traffic-chart-tooltip"
             role="status"
             style={{
-              left: `clamp(8px, ${(hover! / Math.max(1, data.series.length - 1)) * 100}%, calc(100% - 190px))`,
+              left: `clamp(8px, ${(hover! / Math.max(1, series.length - 1)) * 100}%, calc(100% - 190px))`,
             }}
           >
             <strong>{dateLabel(focused.date, true)}</strong>
+            {modeled && <span>{data.period.granularity === 'hourly' ? 'Hourly' : 'Daily'} visit trend</span>}
             {shown.map((p) => (
               <span key={p.provider}>
                 <i style={{ background: colors[p.provider] }} />
@@ -333,7 +336,7 @@ function Trend({ data }: { data: TrafficDashboard }) {
             }
           >
             <option value="">Choose date</option>
-            {data.series.map((p, i) => (
+            {series.map((p, i) => (
               <option key={p.date} value={i}>
                 {dateLabel(p.date, true)}
               </option>
@@ -705,6 +708,7 @@ export default function TrafficView({
   });
   const report = useApi<TrafficDashboard>(`${path}/traffic${filters}`);
   const data = report.data;
+  const chartSeries = data ? trafficChartSeries(data, project.demo) : undefined;
   const growth = data?.growth?.basis === 'trend' && finitePercent(data.growth.percent) !== undefined
     ? data.growth : undefined;
   const comparisonPeriod = growth ? data!.period : data?.previousPeriod;
@@ -735,6 +739,16 @@ export default function TrafficView({
           '',
           ...(growth ? [''] : []),
         ]);
+    if (chartSeries && chartSeries !== data.series)
+      for (const point of chartSeries)
+        for (const provider of data.providers)
+          rows.push([
+            `${data.period.granularity === 'hourly' ? 'Hourly' : 'Daily'} visit trend`,
+            `${point.date} ${TRAFFIC_LABELS[provider.provider]}`,
+            point.values[provider.provider] || 0,
+            '',
+            ...(growth ? [''] : []),
+          ]);
     downloadCsv(
       `citevia-ai-traffic-${data.period.start.slice(0, 10)}.csv`,
       ['Breakdown', 'Name', 'Visits', 'Previous period visits', ...(growth ? ['Traffic trend (%)'] : [])],
@@ -917,7 +931,7 @@ export default function TrafficView({
                     </button>
                   )}
                 </div>
-                <Trend data={data} />
+                <Trend data={data} series={chartSeries!} />
                 <div className="traffic-breakdowns" key={filters}>
                   <Breakdown
                     title="Top Sources"

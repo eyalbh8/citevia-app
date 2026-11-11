@@ -220,6 +220,41 @@ describe('AI Traffic screen interactions', () => {
       '',
     ]);
   });
+  it('draws the rising demo trend instead of flat visits and a partial-day drop, with matching inspection and CSV values', async () => {
+    report.current = 17;
+    report.providers = TRAFFIC_PROVIDERS.map(provider => ({ provider, visits: provider === 'openai' ? 17 : 0, previous: 0 }));
+    report.period = { ...report.period, start: '2026-10-15T00:00:00.000Z', end: '2026-10-17T12:00:00.000Z' };
+    report.series = ['2026-10-15', '2026-10-16', '2026-10-17'].map((date, index) => ({ date, values: { openai: index === 2 ? 1 : 8 } }));
+    report.growth = { basis: 'trend', percent: 12.7, providers: { openai: 12.7 } };
+    const demo = { ...project, demo: {
+      version: 1 as const, source: 'website-demo' as const, anchorDate: '2026-10-23', startDate: '2026-04-23', endDate: '2027-04-23',
+      sourceAccountId: 'website:northstar.example', sourceCopiedAt: '2026-10-23T00:00:00Z', traffic: { monthlyGrowth: .008 },
+    } };
+    const chatgptPath = () => container.querySelector('path[stroke="#252538"]')!.getAttribute('d')!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    await render(demo);
+    const curve = chatgptPath();
+    expect(curve.at(-1)).toBeLessThan(curve[1]);
+    expect(container.querySelector('.traffic-trend .traffic-caption')?.textContent).toBe('Daily trend · UTC');
+    await click('Export traffic CSV');
+    const exported = mocks.downloadCsv.mock.calls[0][2] as (string | number)[][];
+    const trend = exported.filter(row => row[0] === 'Daily visit trend' && String(row[1]).endsWith(' ChatGPT'));
+    expect(trend).toHaveLength(3);
+    expect(Number(trend.at(-1)![2])).toBeGreaterThan(Number(trend[0][2]));
+    expect(trend.reduce((sum, row) => sum + Number(row[2]), 0)).toBeCloseTo(17, 8);
+    expect(exported.filter(row => row[0] === 'Trend').reduce((sum, row) => sum + Number(row[2]), 0)).toBe(17);
+    const datePicker = container.querySelector<HTMLSelectElement>('[aria-label="Inspect chart date"]')!;
+    await act(async () => { datePicker.value = '2'; datePicker.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(container.querySelector('.traffic-chart-tooltip')?.textContent).toContain('Daily visit trend');
+    expect(container.querySelector('.traffic-chart-tooltip b')?.textContent).toBe(Number(trend.at(-1)![2]).toLocaleString('en-US'));
+    await click('ChatGPT');
+    expect(container.querySelector('path[stroke="#252538"]')).toBeNull();
+    await click('ChatGPT');
+    expect(chatgptPath()).toEqual(curve);
+    await render(project);
+    const measured = chatgptPath();
+    expect(measured.at(-1)).toBeGreaterThan(measured[1]);
+    expect(container.querySelector('.traffic-trend .traffic-caption')?.textContent).toBe('Daily · UTC');
+  });
   it('sends independent traffic providers and countries to the API and resets filters', async () => {
     await render();
     await click('Providers');
