@@ -1,6 +1,7 @@
 import type { DemoConfig, TrafficDashboard } from '@citevia/core';
 
 const DAY = 86_400_000;
+const MIN_DEMO_TREND_RATIO = 2.5;
 
 /** Demo charts show the configured trend; the report retains its integer visit counts. */
 export function trafficChartSeries(report: TrafficDashboard, demo?: DemoConfig): TrafficDashboard['series'] {
@@ -18,7 +19,9 @@ export function trafficChartSeries(report: TrafficDashboard, demo?: DemoConfig):
   for (const { provider, visits } of report.providers) {
     const configured = report.growth?.basis === 'trend' ? report.growth.providers[provider] : undefined;
     const percent = typeof configured === 'number' && Number.isFinite(configured) && configured > 0 ? configured : fallback;
-    const growth = Math.log1p(percent / 100);
+    // Give demo curves a pronounced rise on the shared, zero-based visit axis.
+    // This controls the chart shape, separately from the period-growth badges.
+    const growth = Math.log(Math.max(MIN_DEMO_TREND_RATIO, 1 + percent / 100));
     const weights = points.map((_, index) => Math.exp(growth * index / (points.length - 1)));
     const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
     series.forEach((point, index) => { point.values[provider] = visits * weights[index] / totalWeight; });

@@ -234,6 +234,7 @@ describe('AI Traffic screen interactions', () => {
     await render(demo);
     const curve = chatgptPath();
     expect(curve.at(-1)).toBeLessThan(curve[1]);
+    expect(curve[1] - curve.at(-1)!).toBeGreaterThan(95);
     expect(container.querySelector('.traffic-trend .traffic-caption')?.textContent).toBe('Daily trend · UTC');
     await click('Export traffic CSV');
     const exported = mocks.downloadCsv.mock.calls[0][2] as (string | number)[][];

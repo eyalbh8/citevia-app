@@ -38,7 +38,7 @@ describe('demo traffic chart trends', () => {
           expect(values.reduce((sum, value) => sum + value, 0)).toBeCloseTo(visits, 8);
           if (visits && values.length > 1) {
             expect(values.every((value, index) => !index || value > values[index - 1])).toBe(true);
-            expect((values.at(-1)! / values[0] - 1) * 100).toBeCloseTo(report.growth!.providers[provider]!, 8);
+            expect(values.at(-1)! / values[0]).toBeGreaterThanOrEqual(2.5 - 1e-10);
           }
         }
         expect(report).toEqual(snapshot);
@@ -69,6 +69,13 @@ describe('demo traffic chart trends', () => {
     expect(report.growth).toBeUndefined();
     expect(series.at(-1)!.values.openai).toBeGreaterThan(series[0].values.openai!);
     expect(series.reduce((sum, point) => sum + point.values.openai!, 0)).toBeCloseTo(report.providers[0].visits, 8);
+  });
+
+  it('keeps the same steep curve when the public account profile omits internal numeric settings', () => {
+    const demo = config(), report = dashboard(demo);
+    const publicDemo = { source: demo.source, startDate: demo.startDate, endDate: demo.endDate, anchorDate: demo.anchorDate } as DemoConfig;
+    expect(trafficChartSeries(report, publicDemo)).toEqual(trafficChartSeries(report, demo));
+    expect(report.growth!.providers.openai).toBeLessThan(15);
   });
 
   it('leaves measured accounts, reporting-only demos, explicit zero growth and empty ranges untouched', () => {
