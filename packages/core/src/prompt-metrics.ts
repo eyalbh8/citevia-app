@@ -6,6 +6,7 @@ import type {
   ScanRun,
 } from './types.js';
 import { isReportableRun, sameTargetMethod } from './metrics.js';
+import { promptLimitFor } from './onboarding.js';
 import { brandRank, brandSentimentScore, usesCompanyAppearanceRank } from './scoring.js';
 import { projectProviders, snapshotProvider } from './providers.js';
 import { investingComparisonPeriod, investingTrend, usesModeledReporting } from './demo-growth.js';
@@ -456,7 +457,7 @@ export function promptPeriodMetrics(
     provider: provider || null,
     usage: {
       active: project.prompts.filter((prompt) => prompt.active).length,
-      limit: 50,
+      limit: promptLimitFor(project.accountType),
     },
   };
 }

@@ -7,6 +7,7 @@ import { ACTIVE_SOCIAL_PUBLICATION_STATUSES, socialOccurrenceLocalDate,
 import { createSocialRecords, socialOccurrenceId, socialPageBounds } from './social-records.js';
 import {
   allocateProjectScanSchedule,
+  previewScanSummary,
   WEEKLY_SCHEDULE,
   verifiedIdentitySchema,
   type VerifiedIdentity,
@@ -779,8 +780,11 @@ export class MemoryRepository implements Repository {
       const job = project.onboardingJobId
         ? await this.getOnboarding(project.id, project.onboardingJobId)
         : null;
+      const run = project.accountType === 'prospect' && job?.firstRunId
+        ? await this.getRun(project.id, job.firstRunId) : null;
       items.push({
         ...project,
+        ...(run ? { previewScan: previewScanSummary(run) } : {}),
         prompts: [],
         brandbook: undefined,
         competitorResearch: undefined,
@@ -825,7 +829,7 @@ export class MemoryRepository implements Repository {
   ensureProjectScanSchedule(id: string, options: { migrateCustom?: boolean } = {}) {
     return this.operation(() => {
       const project = this.state.projects[id];
-      if (!project || project.scanSchedule || (!options.migrateCustom && project.scanRunsPerWeek === undefined && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project || null;
+      if (!project || project.accountType === 'prospect' || project.scanSchedule || (!options.migrateCustom && project.scanRunsPerWeek === undefined && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project || null;
       const next = { ...project, scanSchedule: allocateProjectScanSchedule(project, Object.values(this.state.projects).map(item => item.scanSchedule)),
         scheduleStatus: 'pending' as const, version: project.version + 1, updatedAt: new Date().toISOString() };
       this.state.projects[id] = copy(next);

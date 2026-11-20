@@ -161,6 +161,26 @@ describe('stable twice-weekly fleet scheduling', () => {
 });
 
 describe('automatic schedule repair', () => {
+  it('keeps enabled prospect previews outside provisioning, repair, and next-scan predictions', async () => {
+    const project: Project = { ...newProject(), accountType: 'prospect', scheduleStatus: 'pending' };
+    const repository = new MemoryRepository();
+    await repository.saveProject(project, null);
+    const allocate = vi.spyOn(repository, 'ensureProjectScanSchedule');
+    const cloud = vi.spyOn(SchedulerClient.prototype, 'send');
+    const sync = vi.fn();
+    await syncProjectSchedule(project, { mode: 'aws' });
+    expect(cloud).not.toHaveBeenCalled();
+    expect(await repairProjectSchedules(repository, [project], { sync })).toEqual([{ projectId: project.id, status: 'skipped' }]);
+    for (const apply of [true, false]) {
+      const { changes } = await configureSchedules(repository, [project], { apply }, sync);
+      expect(changes).toEqual([{ projectId: project.id, status: 'one-time', nextScanAt: null }]);
+    }
+    expect(allocate).not.toHaveBeenCalled();
+    expect(sync).not.toHaveBeenCalled();
+    expect(projectScanRunsPerWeek(project)).toBe(0);
+    expect(nextProjectScan(project)).toBeNull();
+    expect(isCurrentScheduledOccurrence(project, { scheduledAt: '2026-10-26T04:00:00Z' })).toBe(false);
+  });
   it('repairs at most five accounts, isolates a cloud failure and reapplies a concurrent edit with CAS', async () => {
     const repository = new MemoryRepository();
     const projects = Array.from({ length: 7 }, (_, index) => ({ ...newProject({ id: `repair-${index}` }), scheduleStatus: 'pending' as const }));

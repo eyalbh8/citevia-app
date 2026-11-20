@@ -18,6 +18,10 @@ export async function configureSchedules(
   const changes: { projectId: string; status: string; slotsUtcMinutes?: number[]; nextScanAt?: string | null }[] = [];
   for (const project of projects) {
     if (options.project && project.id !== options.project) continue;
+    if (project.accountType === 'prospect') {
+      changes.push({ projectId: project.id, status: 'one-time', nextScanAt: null });
+      continue;
+    }
     if (!project.scanSchedule && project.scanRunsPerWeek === undefined && project.scheduleExpression !== WEEKLY_SCHEDULE && !options.migrateCustom) {
       changes.push({ projectId: project.id, status: 'custom-preserved' });
       continue;

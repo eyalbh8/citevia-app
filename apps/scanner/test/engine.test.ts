@@ -4,7 +4,9 @@ import { MemoryArtifacts, MemoryQueue, MemoryRepository, type AnswerProvider, ty
 import { Scanner, captureKeyFor, MAX_ATTEMPTS, MAX_MANUAL_RETRIES, runIdFor } from '../src/engine.js';
 import { ProviderError } from '../src/provider.js';
 import { ExtractionError } from '../src/openai.js';
+import { reanalyzeCapturedRun } from '../src/reanalysis.js';
 import { analysis, captured, instant, project } from './fixtures.js';
+import { policyJob } from '../../../tests/fixtures/onboarding-job.js';
 
 const kickoff: Extract<ScanMessage, { kind: 'kickoff' }> = { kind: 'kickoff', projectId: project.id, scheduledAt: instant };
 async function setup(options: { repository?: MemoryRepository; artifacts?: MemoryArtifacts; provider?: AnswerProvider; promptCount?: number; parserVersion?: string; analysisBatch?: AnalysisBatchPort } = {}) {
@@ -21,6 +23,17 @@ async function setup(options: { repository?: MemoryRepository; artifacts?: Memor
   return { scanner, repository, artifacts, queue, provider, advance: (ms: number) => { time = new Date(time.getTime() + ms); } };
 }
 const promptMessages = (messages: ScanMessage[]) => messages.filter((message): message is Extract<ScanMessage, { kind: 'prompt' }> => message.kind === 'prompt');
+
+async function prospectSetup(promptCount = 10) {
+  const env = await setup({ promptCount });
+  const saved = (await env.repository.getProject(project.id))!;
+  const job = { ...policyJob(), projectId: saved.id, status: 'completed' as const, step: 'completed' as const };
+  const first = { ...kickoff, trigger: 'manual' as const, requestId: `onboarding-${job.id}` };
+  vi.spyOn(env.repository, 'getOnboarding').mockResolvedValue({ ...job, firstRunId: runIdFor(first) });
+  await env.repository.saveProject({ ...saved, accountType: 'prospect', onboardingJobId: job.id,
+    onboardingAppliedJobId: job.id, version: saved.version + 1 }, saved.version);
+  return { ...env, first };
+}
 
 describe('scanner engine lifecycle', () => {
   it('runs the minute social clock without invoking unrelated scan or maintenance work', async () => {
@@ -114,6 +127,39 @@ describe('scanner engine lifecycle', () => {
     const env = await setup({ promptCount: 51 });
     await expect(env.scanner.handle(kickoff)).rejects.toMatchObject({ code: 'invalid_prompt_count' });
     expect(await env.repository.listRuns(project.id)).toHaveLength(0);
+  });
+  it('starts only the original prospect scan, deduplicates replays, and retries only its failed answer', async () => {
+    const env = await prospectSetup();
+    vi.mocked(env.provider.collect).mockResolvedValueOnce(captured(''));
+    await env.scanner.handle(kickoff);
+    await env.scanner.handle({ ...env.first, requestId: 'another-manual-scan' });
+    expect(await env.repository.listRuns(project.id)).toEqual([]);
+    await env.scanner.handle(env.first);
+    const jobs = promptMessages(env.queue.messages.splice(0));
+    expect(jobs).toHaveLength(10);
+    for (const message of jobs) await env.scanner.handle(message);
+    await env.scanner.handle(env.first);
+    expect(promptMessages(env.queue.messages)).toEqual([]);
+    expect(await env.repository.listRuns(project.id)).toMatchObject([{
+      id: runIdFor(env.first), totalCount: 10, succeededCount: 9, snapshot: { provider: 'openai' },
+    }]);
+    await expect(reanalyzeCapturedRun(env, project.id, runIdFor(env.first), 'new-analysis')).rejects.toThrow('original scan');
+    await env.scanner.handle({ kind: 'retry', projectId: project.id, runId: runIdFor(env.first), requestId: 'retry-preview' });
+    expect(promptMessages(env.queue.messages)).toEqual([jobs[0]]);
+    await env.scanner.handle(jobs[0]);
+    expect(await env.repository.listRuns(project.id)).toMatchObject([{ status: 'completed', succeededCount: 10 }]);
+    expect(env.provider.collect).toHaveBeenCalledTimes(11);
+  });
+  it('refuses to create a prospect run with a changed provider or prompt count', async () => {
+    const env = await prospectSetup(11);
+    await expect(env.scanner.handle(env.first)).rejects.toMatchObject({ code: 'invalid_prompt_count' });
+    const saved = (await env.repository.getProject(project.id))!;
+    await env.repository.saveProject({ ...saved, prompts: saved.prompts.slice(0, 10),
+      scanProviders: [{ provider: 'openai', model: 'test-openai' }, { provider: 'gemini', model: 'test-gemini' }],
+      version: saved.version + 1 }, saved.version);
+    await expect(env.scanner.handle(env.first)).rejects.toMatchObject({ code: 'invalid_scan_providers' });
+    expect(await env.repository.listRuns(project.id)).toEqual([]);
+    expect(env.provider.collect).not.toHaveBeenCalled();
   });
   it('runs capture then extraction, finalizes metrics and ignores duplicate deliveries', async () => {
     const env = await setup();

@@ -46,6 +46,7 @@ import type {
   ScanProvider,
 } from '@citevia/core';
 import {
+  analysisProvider,
   projectProviders,
   PROVIDER_LABELS,
   SCAN_PROVIDERS,
@@ -77,6 +78,7 @@ import SettingsView from './SettingsView';
 import SocialAutomationSettings from './SocialAutomationSettings';
 import CompetitorsView from './CompetitorsView';
 import PromptsView from './PromptsView';
+import { previewProgress } from './prospect-preview';
 import ResponseDrawer from './ResponseDrawer';
 import AccountsView from './AccountsView';
 import BrandbookView from './BrandbookView';
@@ -349,18 +351,24 @@ function Workspace() {
   const projects = useApi<{ items: Project[]; mode: 'live' }>(
     '/projects',
   );
+  const selectedId = projectId || projects.data?.items[0]?.id;
   const selectedProject = useApi<Project>(
-    projectId ? `/projects/${encodeURIComponent(projectId)}/settings` : null,
+    selectedId ? `/projects/${encodeURIComponent(selectedId)}/settings` : null,
   );
-  const currentProject =
+  const listedProject =
     projects.data?.items.find((project) => project.id === projectId) ||
     selectedProject.data ||
     projects.data?.items[0];
+  const currentProject = listedProject?.accountType === 'prospect' && selectedProject.data?.id === listedProject.id
+    ? { ...listedProject, ...selectedProject.data, previewScan: selectedProject.data.previewScan ?? listedProject.previewScan,
+        onboardingSummary: selectedProject.data.onboardingSummary ?? listedProject.onboardingSummary }
+    : listedProject;
+  const prospect = currentProject?.accountType === 'prospect';
   const path = currentProject
     ? `/projects/${encodeURIComponent(currentProject.id)}`
     : null;
   const dashboard = useApi<Dashboard>(
-    path && !['agents', 'geo-backlinks', 'integrations', 'mcp', 'website-health'].includes(view) ? `${path}/dashboard${query({ runId, provider })}` : null,
+    path && !['agents', 'geo-backlinks', 'integrations', 'mcp', 'website-health'].includes(view) ? `${path}/dashboard${query({ runId: prospect ? currentProject.previewScan?.id : runId, provider: prospect ? 'openai' : provider })}` : null,
   );
   const runs = useApi<Page<ScanRun>>(path ? `${path}/runs` : null);
   const setup = useApi<{ job: OnboardingJob | null }>(
@@ -369,7 +377,7 @@ function Workspace() {
   const settingUp = Boolean(
     setup.data?.job && ['queued', 'running'].includes(setup.data.job.status),
   );
-  const project = view === 'dashboard'
+  const project = prospect || view === 'dashboard'
     ? currentProject
     : dashboard.data?.project || currentProject;
   const run = dashboard.data?.run;
@@ -382,26 +390,25 @@ function Workspace() {
       !runs.data?.items.some((run) => run.id === setup.data?.job?.firstRunId),
   );
   const hasActiveRun = Boolean(
-    activeRun || pendingRunId || settingUp || waitingForFirstRun,
+    activeRun || pendingRunId || settingUp || waitingForFirstRun || (prospect && previewProgress(currentProject).pending),
   );
   const runtime = useApi<{
     providerConfigured: boolean;
     providers: Record<ScanProvider, boolean>;
+    onboardingReady?: { standard: boolean; prospect: boolean };
   }>('/runtime');
   const enabledProviders = project
     ? projectProviders(project)
     : SCAN_PROVIDERS.map((provider) => ({ provider, model: '' }));
+  const requiredProviders = project ? new Set([...enabledProviders.map(item => item.provider), analysisProvider(project.extractionModel)]) : undefined;
   const providerReady =
     runtime.data?.providerConfigured === true &&
     runtime.data.providers.openai &&
-    enabledProviders.every(
-      (config) => runtime.data!.providers[config.provider],
-    );
-  const onboardingReady =
-    runtime.data?.providerConfigured === true &&
-    SCAN_PROVIDERS.every((provider) => runtime.data!.providers[provider]);
-  const missingProviders = runtime.data
-    ? SCAN_PROVIDERS.filter((provider) => !runtime.data!.providers[provider])
+    (requiredProviders ? [...requiredProviders].every(provider => runtime.data!.providers[provider]) : false);
+  const standardReady = runtime.data?.providerConfigured === true && SCAN_PROVIDERS.every(provider => runtime.data!.providers[provider]);
+  const onboardingReady = runtime.data?.onboardingReady ?? { standard: standardReady, prospect: standardReady };
+  const missingProviders = runtime.data && requiredProviders
+    ? [...requiredProviders].filter(provider => !runtime.data!.providers[provider])
     : [];
   const activePrompts =
     project?.activePromptCount ?? project?.prompts.filter((prompt) => prompt.active).length ?? 0;
@@ -477,7 +484,7 @@ function Workspace() {
     refresh();
   }
   async function startScan() {
-    if (!path || starting || project?.demo || !project?.enabled) return;
+    if (!path || starting || prospect || project?.demo || !project?.enabled) return;
     setStarting(true);
     setActionError(undefined);
     try {
@@ -505,7 +512,7 @@ function Workspace() {
       clearInterval(timer);
     };
   }, []);
-  const scanAction = owner ? (
+  const scanAction = owner && !prospect ? (
     <button
       className="button button-primary"
       onClick={() => void startScan()}
@@ -721,7 +728,7 @@ function Workspace() {
             <strong>{views[view].title}</strong>
           </div>
           <div className="topbar-right">
-            {view === 'sources' && (
+            {view === 'sources' && !prospect && (
               <FilterDropdown
                 label="AI provider"
                 value={provider}
@@ -774,10 +781,10 @@ function Workspace() {
               <div>
                 <div className="eyebrow">AI VISIBILITY INTELLIGENCE</div>
                 <h1>{views[view].title}</h1>
-                <p>{views[view].description}</p>
+                <p>{prospect && view === 'settings' ? 'Manage this prospect’s brand details and view its ChatGPT scan.' : views[view].description}</p>
               </div>
               <div className="heading-actions">
-                {view === 'sources' && (
+                {view === 'sources' && !prospect && (
                   <FilterDropdown
                     label="Select scan"
                     value={runId}
@@ -805,7 +812,7 @@ function Workspace() {
               </div>
             </div>
           )}
-          {!project?.demo && !['mcp', 'agents', 'integrations', 'website-health'].includes(view) && missingProviders.length > 0 && (
+          {!prospect && !project?.demo && !['accounts', 'mcp', 'agents', 'integrations', 'website-health'].includes(view) && missingProviders.length > 0 && (
             <div className="provider-banner" role="status">
               <Info size={16} />
               <span>
@@ -861,7 +868,7 @@ function Workspace() {
           ) : view === 'accounts' ? (
             <AccountsView
               canCreate={systemAdmin}
-              providerReady={onboardingReady}
+              onboardingReady={onboardingReady}
               onOpen={(id) => {
                 changeProject(id);
                 navigate('dashboard');
@@ -931,7 +938,7 @@ function Workspace() {
                       </span>
                       <span className="status-right">
                         <Clock3 size={11} />
-                        {project.demo
+                        {prospect ? 'One-time ChatGPT scan' : project.demo
                           ? '2 scans per week'
                           : project.enabled
                           ? `Next scan ${formatDate(dashboard.data?.nextScanAt)}`
@@ -990,6 +997,7 @@ function Workspace() {
                     project={project}
                     path={path}
                     actions={scanAction}
+                    onResponse={setSelectedResponse}
                   />
                 ) : (
                   dashboard.data && (
@@ -1004,11 +1012,11 @@ function Workspace() {
                 {!['agents', 'website-health'].includes(view) && <footer className="page-footer">
                   <span>
                     <Cloud size={11} />
-                    {project.demo ? 'ChatGPT, Perplexity and Gemini results' : 'Native ChatGPT, Perplexity and Gemini API answers'}
+                    {prospect ? 'ChatGPT preview' : project.demo ? 'ChatGPT, Perplexity and Gemini results' : 'Native ChatGPT, Perplexity and Gemini API answers'}
                   </span>
                   <span>
                     <ShieldCheck size={11} />
-                    {project.demo ? 'Answer history · UTC' : 'Weekly snapshots · Original answers preserved'}
+                    {prospect ? 'One-time scan · Original answers preserved' : project.demo ? 'Answer history · UTC' : 'Weekly snapshots · Original answers preserved'}
                   </span>
                 </footer>}
               </>

@@ -7,6 +7,7 @@ import * as social from './social-postgres.js';
 import * as websiteHealth from './website-health-postgres.js';
 import {
   allocateProjectScanSchedule,
+  promptLimitFor,
   WEEKLY_SCHEDULE,
   isTerminal,
   projectProviders,
@@ -233,18 +234,25 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         .rows[0].count,
     );
     // Select a small metadata page before reading the larger JSON workflow documents.
+    const typed = await this.supportsTypedState();
     const { rows } = await this.db.query(
       `WITH selected AS (SELECT p.id,CASE WHEN ${admin} THEN ARRAY['OWNER'] ELSE ua.roles END AS roles ${from} ORDER BY a.created_at DESC,p.id LIMIT $3 OFFSET $4)
       SELECT (p.data-'prompts'-'brandbook'-'competitorResearch') #- '{demo,trackedUrls}' #- '{demo,samples}' AS data,s.roles,
         (SELECT count(*)::int FROM prompts WHERE account_id=p.account_id AND is_active=true) AS prompt_count,
-        CASE WHEN j.id IS NOT NULL THEN jsonb_build_object('status',j.status,'step',j.data->>'step','error',j.data->'error','firstRunId',j.data->'firstRunId') ELSE NULL END AS job
+        CASE WHEN j.id IS NOT NULL THEN jsonb_build_object('status',j.status,'step',j.data->>'step','error',j.data->'error','firstRunId',j.data->'firstRunId') ELSE NULL END AS job,
+        CASE WHEN r.id IS NOT NULL THEN jsonb_strip_nulls(jsonb_build_object('id',r.id,'status',r.status,
+          'terminalCount',r.terminal_count,'totalCount',r.total_count,'scheduledAt',r.data->'scheduledAt','createdAt',r.data->'createdAt',
+          'succeededCount',${typed ? 'r.succeeded_count' : "r.data->'succeededCount'"},
+          'completedAt',${typed ? `to_char(r.completed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : "r.data->'completedAt'"})) END AS preview
       FROM selected s JOIN citevia_projects p ON p.id=s.id LEFT JOIN citevia_onboarding_jobs j ON j.project_id=p.id AND j.id=p.data->>'onboardingJobId'
+      LEFT JOIN citevia_runs r ON p.data->>'accountType'='prospect' AND r.project_id=p.id AND r.id=j.data->>'firstRunId'
       JOIN accounts a ON a.id=p.account_id ORDER BY a.created_at DESC,p.id`,
       [...args, options.limit, options.offset],
     );
     return {
       items: rows.map((row) => ({
         ...(row.data as Project),
+        ...(row.preview ? { previewScan: row.preview as Project['previewScan'] } : {}),
         prompts: [],
         role: (row.roles as string[]).includes('OWNER')
           ? ('owner' as const)
@@ -321,8 +329,8 @@ export class PostgresRepository extends PostgresUsers implements Repository {
     );
     await tx.query(
       `INSERT INTO account_settings(id,account_id,scan_period,ai_engines,regions,competitors_names,prompt_limit,region_limit,scan_interval_limit,scan_schedule_time,updated_at)
-      VALUES($1,$2,7,ARRAY(SELECT value FROM jsonb_array_elements($3::jsonb)),$4,$5::jsonb,50,1,7,$6,$7)
-      ON CONFLICT(account_id) DO UPDATE SET ai_engines=excluded.ai_engines,regions=excluded.regions,competitors_names=excluded.competitors_names,scan_schedule_time=excluded.scan_schedule_time,updated_at=excluded.updated_at`,
+      VALUES($1,$2,7,ARRAY(SELECT value FROM jsonb_array_elements($3::jsonb)),$4,$5::jsonb,$8,1,7,$6,$7)
+      ON CONFLICT(account_id) DO UPDATE SET ai_engines=excluded.ai_engines,regions=excluded.regions,competitors_names=excluded.competitors_names,prompt_limit=excluded.prompt_limit,scan_schedule_time=excluded.scan_schedule_time,updated_at=excluded.updated_at`,
       [
         uuidFor(`${p.id}:settings`),
         id,
@@ -331,6 +339,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         JSON.stringify(p.competitors.map((c) => c.name)),
         p.timezone,
         p.updatedAt,
+        promptLimitFor(p.accountType),
       ],
     );
     await tx.query(
@@ -423,7 +432,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       // Lock the fleet before the account row: concurrent onboardings cannot select the same slot.
       await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['citevia:scan-schedule-allocation:v1']);
       const project = data<Project>((await tx.query('SELECT data FROM citevia_projects WHERE id=$1 FOR UPDATE', [id])).rows);
-      if (!project || project.scanSchedule || (!options.migrateCustom && project.scanRunsPerWeek === undefined && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project;
+      if (!project || project.accountType === 'prospect' || project.scanSchedule || (!options.migrateCustom && project.scanRunsPerWeek === undefined && project.scheduleExpression !== WEEKLY_SCHEDULE)) return project;
       const existing = await tx.query<{ schedule: Project['scanSchedule'] }>(
         `SELECT data->'scanSchedule' AS schedule FROM citevia_projects WHERE data ? 'scanSchedule'`,
       );

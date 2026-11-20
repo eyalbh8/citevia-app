@@ -11,7 +11,7 @@ const hash = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const contextHash = (project: Project) =>
   hash([project.brandbook, project.brand, project.country, project.language,
-    project.competitors, project.promptFocus]);
+    project.competitors, project.promptFocus, ...(project.accountType === 'prospect' ? ['prospect'] : [])]);
 export function replacePortfolio(
   project: Project,
   prompts: Prompt[],
@@ -79,6 +79,7 @@ export async function refreshPortfolio(
     inputHash: hash(project.brandbook),
     retryRequestIds: [],
     input: {
+      accountType: project.accountType,
       name: project.brand.name,
       website: `https://${project.brand.domains[0]}`,
       country: project.country,

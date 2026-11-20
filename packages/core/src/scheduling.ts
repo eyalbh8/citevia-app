@@ -20,7 +20,8 @@ function validScanFrequency(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= MAX_SCAN_RUNS_PER_WEEK;
 }
 
-export function projectScanRunsPerWeek(project: Pick<Project, 'scanSchedule' | 'scanRunsPerWeek'>): number {
+export function projectScanRunsPerWeek(project: Pick<Project, 'accountType' | 'scanSchedule' | 'scanRunsPerWeek'>): number {
+  if (project.accountType === 'prospect') return 0;
   if (validScanSchedule(project.scanSchedule)) return project.scanSchedule.slotsUtcMinutes.length;
   return validScanFrequency(project.scanRunsPerWeek!) ? project.scanRunsPerWeek! : DEFAULT_SCAN_RUNS_PER_WEEK;
 }
@@ -79,9 +80,10 @@ export function scanSlotCron(slot: number): string {
 }
 
 export function isCurrentScheduledOccurrence(
-  project: Pick<Project, 'scanSchedule' | 'scheduleStatus'>,
+  project: Pick<Project, 'accountType' | 'scanSchedule' | 'scheduleStatus'>,
   occurrence: { scheduledAt: string; scheduleVersion?: number; scheduleSlotUtcMinute?: number },
 ): boolean {
+  if (project.accountType === 'prospect') return false;
   if (!project.scanSchedule) return occurrence.scheduleVersion === undefined;
   // Until the initial replacements synchronize, the legacy schedule is the effective source.
   // activatedAt survives later settings edits, when the legacy schedule is already disabled.
@@ -104,10 +106,10 @@ export function markScheduleSynced(project: Project, at = new Date().toISOString
 
 /** Unknown legacy expressions return no prediction instead of a misleading Monday date. */
 export function nextProjectScan(
-  project: Pick<Project, 'scanSchedule' | 'scheduleExpression' | 'timezone' | 'enabled' | 'scheduleStatus'>,
+  project: Pick<Project, 'accountType' | 'scanSchedule' | 'scheduleExpression' | 'timezone' | 'enabled' | 'scheduleStatus'>,
   from = new Date(),
 ): string | null {
-  if (!project.enabled) return null;
+  if (!project.enabled || project.accountType === 'prospect') return null;
   if (project.scanSchedule && (project.scanSchedule.activatedAt || !['pending', 'error'].includes(project.scheduleStatus || ''))) {
     if (!validScanSchedule(project.scanSchedule)) return null;
     const weekStart = mondayEpoch + Math.floor((from.getTime() - mondayEpoch) / (SCAN_WEEK_MINUTES * 60000)) * SCAN_WEEK_MINUTES * 60000;

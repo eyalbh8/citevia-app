@@ -1,6 +1,7 @@
 import { publicSourceUrl } from '@citevia/core';
 import { reportExcerpt } from './report-excerpt';
 import { axisTickIndices, timeBuckets } from './chart-time';
+import { previewReportPeriod } from './prospect-preview';
 import {
   useEffect,
   useRef,
@@ -79,7 +80,10 @@ export function useMonitoringSelection(project: Project) {
     setSelection(next);
     try { window.sessionStorage.setItem(key, JSON.stringify(next)); } catch { /* Storage can be disabled. */ }
   };
-  return [selection, update] as const;
+  const effective: MonitorSelection = project.accountType === 'prospect'
+    ? { ...selection, ...previewReportPeriod(project), providers: ['openai'] }
+    : selection;
+  return [effective, update] as const;
 }
 export function selectionQuery(
   s: MonitorSelection,
@@ -139,7 +143,9 @@ export function MonitoringHeader({
           placeholder="Prompt Types"
           options={promptTypeOptions}
         />
-        <ProviderFilter
+        {project.accountType === 'prospect' ? (
+          <span className="scan-options"><ProviderMark provider="openai" /> ChatGPT · One-time scan</span>
+        ) : <><ProviderFilter
           project={project}
           value={value.providers}
           onChange={(providers) => onChange({ ...value, providers })}
@@ -149,7 +155,7 @@ export function MonitoringHeader({
           value={value}
           onChange={(range) => onChange({ ...value, ...range })}
           demo={project.demo}
-        />
+        /></>}
         {children}
       </div>
     </div>

@@ -5,12 +5,14 @@ import {
   isTerminal,
   RETENTION_DAYS,
   projectProviders,
+  promptLimitFor,
   analysisProvider,
   scanProvidersSchema,
   isCurrentScheduledOccurrence,
   type ScanProvider,
   type CapturedAnswer,
   type Analysis,
+  type Project,
   type PromptResult,
   type ScanRun,
   type ScanMessage,
@@ -39,6 +41,15 @@ const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex').slice(0, 24);
 export const runIdFor = (message: Extract<ScanMessage, { kind: 'kickoff' }>) =>
   `run_${hash(`${message.projectId}:${message.trigger ?? 'scheduled'}:${message.requestId ?? message.scheduledAt}`)}`;
+export function onboardingKickoff(projectId: string, jobId: string, scheduledAt: string): Extract<ScanMessage, { kind: 'kickoff' }> {
+  return { kind: 'kickoff', projectId, scheduledAt, requestId: `onboarding-${jobId}`, trigger: 'manual' };
+}
+function allowsScan(project: Project, runId: string): boolean {
+  if (!project.enabled || project.demo) return false;
+  if (project.accountType !== 'prospect') return true;
+  return Boolean(project.onboardingJobId &&
+    runId === runIdFor(onboardingKickoff(project.id, project.onboardingJobId, project.createdAt)));
+}
 export const providerRunIdFor = (
   baseId: string,
   provider: ScanProvider,
@@ -97,16 +108,15 @@ export class Scanner {
     return this.dependencies.now?.() ?? new Date();
   }
 
-  private async scanningEnabled(projectId: string): Promise<boolean> {
+  private async scanningEnabled(projectId: string, runId: string): Promise<boolean> {
     const project = await this.dependencies.repository.getProject(projectId);
-    return Boolean(project?.enabled && !project.demo);
+    return project !== null && allowsScan(project, runId);
   }
 
   async handle(message: ScanMessage): Promise<void> {
-    if (['kickoff', 'prompt', 'retry', 'reconcile-run'].includes(message.kind) &&
-        'projectId' in message && !await this.scanningEnabled(message.projectId)) {
-      if ('runId' in message)
-        await this.dependencies.dispatch?.discardRun(message.projectId, message.runId);
+    if ((message.kind === 'prompt' || message.kind === 'retry' || message.kind === 'reconcile-run') &&
+        !await this.scanningEnabled(message.projectId, message.runId)) {
+      await this.dependencies.dispatch?.discardRun(message.projectId, message.runId);
       return this.dispatch();
     }
     switch (message.kind) {
@@ -249,12 +259,12 @@ export class Scanner {
       console.warn(JSON.stringify({ event: 'scan_stale_schedule_skipped', projectId: message.projectId, scheduledAt: message.scheduledAt }));
       return;
     }
+    const project = await repository.getProject(message.projectId);
+    if (!project || !allowsScan(project, id)) return;
+    const prospect = project.accountType === 'prospect';
     let primary = await repository.getRun(message.projectId, id);
     if (primary?.cancelledAt) return;
     if (!primary) {
-      const project = await repository.getProject(message.projectId);
-      if (!project || project.demo || !project.enabled)
-        return;
       if (message.trigger !== 'manual' && !isCurrentScheduledOccurrence(project, message)) return;
       if (project.onboardingJobId) {
         const setup = await repository.getOnboarding(
@@ -270,10 +280,11 @@ export class Scanner {
           );
       }
       const prompts = project.prompts.filter((prompt) => prompt.active);
-      if (!prompts.length || prompts.length > 50)
+      const limit = promptLimitFor(project.accountType);
+      if (!prompts.length || prompts.length > limit || (prospect && prompts.length !== limit))
         throw new ProviderError(
           'invalid_prompt_count',
-          'A project needs 1 to 50 active prompts.',
+          prospect ? `A prospect preview needs exactly ${limit} active prompts.` : `A project needs 1 to ${limit} active prompts.`,
           false,
         );
       if (!Number.isFinite(Date.parse(message.scheduledAt)))
@@ -287,6 +298,8 @@ export class Scanner {
       const expiresAt =
         Math.floor(now.getTime() / 1000) + RETENTION_DAYS * 86400;
       const configs = scanProvidersSchema.parse(projectProviders(project));
+      if (prospect && (configs.length !== 1 || configs[0].provider !== 'openai'))
+        throw new ProviderError('invalid_scan_providers', 'A prospect preview can scan ChatGPT only.', false);
       const fallbackModel = (process.env.ANALYSIS_FALLBACK_MODEL ?? process.env.OPENAI_EXTRACTION_FALLBACK_MODEL)?.trim();
       const snapshot = structuredClone({
         projectId: project.id,
@@ -542,7 +555,7 @@ export class Scanner {
     let stage: 'collection' | 'analysis' = existing.captureKey ? 'analysis' : 'collection';
     const beginCall = async (nextStage: 'collection' | 'analysis'): Promise<boolean> => {
       // Pausing during a provider call keeps its saved capture, but starts no next call.
-      if (!await this.scanningEnabled(message.projectId)) {
+      if (!await this.scanningEnabled(message.projectId, message.runId)) {
         await repository.commitResult({ ...withoutLease(current), version: current.version + 1,
           status: current.captureKey ? 'captured' : 'queued' }, current);
         await this.dependencies.dispatch?.discardRun(message.projectId, message.runId);
@@ -769,7 +782,7 @@ export class Scanner {
   private async processAnalysisBatch(run: ScanRun): Promise<void> {
     const { repository, analysisBatch } = this.dependencies;
     if (run.cancelledAt || !analysisBatch || run.snapshot.analysisMode !== 'batch') return;
-    if (!await this.scanningEnabled(run.projectId)) return;
+    if (!await this.scanningEnabled(run.projectId, run.id)) return;
     const results = await repository.listResults(run.projectId, run.id);
     if (results.some((result) => !isTerminal(result.status) && result.status !== 'analysis_pending')) return;
     const { batchId, updates, deadlineAt } = await analysisBatch.process(run, results);
@@ -960,7 +973,7 @@ export class Scanner {
 
   private async reconcileRun(run: ScanRun): Promise<void> {
       const { repository, queue } = this.dependencies;
-      if (run.cancelledAt || !await this.scanningEnabled(run.projectId)) {
+      if (run.cancelledAt || !await this.scanningEnabled(run.projectId, run.id)) {
         await this.dependencies.dispatch?.discardRun(run.projectId, run.id);
         return;
       }

@@ -6,6 +6,7 @@ import {
   isBrandedPrompt,
   isShortBuyerPrompt,
   JOURNEY_PROMPT_COUNTS,
+  JOURNEY_STAGES,
 } from '@citevia/core';
 import { FixtureOnboardingProvider } from './fixtures/onboarding.js';
 import {
@@ -14,6 +15,7 @@ import {
 } from '../apps/scanner/src/onboarding-provider.js';
 
 import { policyJob } from './fixtures/onboarding-job.js';
+import { validateSavedPortfolio } from '../apps/scanner/src/saved-portfolio.js';
 async function portfolio() {
   const job = policyJob(),
     provider = new FixtureOnboardingProvider();
@@ -31,6 +33,49 @@ async function portfolio() {
   return { job, book, prompts };
 }
 describe('natural prompt portfolio policy', () => {
+  it('requests exactly ten prospect prompts and revalidates that same portfolio on recovery', async () => {
+    const job = policyJob();
+    job.input.accountType = 'prospect';
+    const fixture = new FixtureOnboardingProvider();
+    const { brandbook } = await fixture.brandbook(job);
+    const { prompts } = await fixture.prompts(job, brandbook);
+    const sections = Object.fromEntries(JOURNEY_STAGES.map(stage => [
+      stage,
+      Object.fromEntries((['branded', 'unbranded'] as const).map(group => [
+        group,
+        prompts.filter(p => p.stage === stage && p.branded === (group === 'branded'))
+          .map(({ text, topic, intent }) => ({ text, topic, intent })),
+      ])),
+    ]));
+    const extract = vi.fn(async (_request: unknown) => ({
+      response: { status: 'completed', output: [
+        { type: 'message', content: [{ type: 'output_text', text: JSON.stringify(sections) }] },
+      ] },
+      requestId: 'prospect-prompts', receivedAt: new Date().toISOString(),
+    }));
+    const generated = await new OpenAIOnboardingProvider({ answer: vi.fn(), extract }).prompts(job, brandbook);
+    expect(extract).toHaveBeenCalledOnce();
+    expect(extract.mock.calls[0][0]).toMatchObject({ input: {
+      remaining_count: 10,
+      required_generated_branded_count: 2,
+      prompt_slots: {
+        understand: { branded: 1, unbranded: 2 }, prefer: { branded: 1, unbranded: 2 },
+        trust: { branded: 0, unbranded: 2 }, convert: { branded: 0, unbranded: 2 },
+      },
+    } });
+    const saved = generated.prompts;
+    expect(saved).toHaveLength(10);
+    expect(saved.filter(p => !p.branded)).toHaveLength(8);
+    expect(validateSavedPortfolio(job, brandbook, saved, []).map(p => p.id)).toEqual(saved.map(p => p.id));
+    for (const invalid of [saved.slice(1), [...saved, saved[0]], [saved[1], ...saved.slice(1)]]) {
+      expect(() => validateSavedPortfolio(job, brandbook, invalid, [])).toThrowError(
+        expect.objectContaining({ code: 'onboarding_portfolio_policy_changed' }),
+      );
+    }
+    expect(() => validateSavedPortfolio(policyJob(), brandbook, saved, [])).toThrowError(
+      expect.objectContaining({ code: 'onboarding_portfolio_policy_changed' }),
+    );
+  });
   it('requires exactly ten named questions and forty discovery questions using the actual text', async () => {
     const { job, book, prompts } = await portfolio();
     const misleadingFlags = prompts.map((p) => ({ ...p, branded: !p.branded }));

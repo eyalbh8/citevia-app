@@ -25,6 +25,8 @@ export async function reanalyzeCapturedRun(
   const source = await repository.getRun(projectId, sourceRunId);
   const project = await repository.getProject(projectId);
   if (!source || !project) throw new Error('Account or source run not found');
+  if (project.accountType === 'prospect')
+    throw new Error('Prospect previews support failed-answer retries within the original scan only.');
   const parserVersion = project.parserVersion === IDENTITY_PARSER_VERSION ? IDENTITY_PARSER_VERSION : PARSER_VERSION;
   const id = `run_${createHash('sha256').update(`${projectId}:${sourceRunId}:${requestId}:${parserVersion}`).digest('hex').slice(0, 24)}`;
   let run = await repository.getRun(projectId, id);

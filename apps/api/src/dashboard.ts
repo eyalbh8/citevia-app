@@ -17,6 +17,7 @@ import { AccessError, type Runtime } from '@citevia/storage';
 import { filtersFor, monitoringPeriod } from './monitoring.js';
 import { promptAnswers } from './prompt-answers.js';
 import { historicalCompetitorMentions } from './competitors.js';
+import { getProspectPreview } from './onboarding.js';
 
 /** This period projection is separate from the retained single-scan dashboard API. */
 export async function dashboardOverviewRoute(
@@ -28,16 +29,24 @@ export async function dashboardOverviewRoute(
   if (request.method !== 'GET')
     throw new AccessError(405, 'DASHBOARD_REQUEST', 'Method not allowed.');
   const query = new URL(request.url).searchParams;
+  const previewRun = (await getProspectPreview(runtime.repository, project))?.run;
+  if (previewRun) {
+    const { prompts, brand, competitors, country, language, scanProviders } = previewRun.snapshot;
+    project = { ...project, prompts, brand, competitors, country, language, scanProviders };
+    if (!query.has('days')) {
+      query.set('days', 'custom');
+      query.set('start', previewRun.createdAt.slice(0, 10));
+      query.set('end', (previewRun.completedAt || now.toISOString()).slice(0, 10));
+    }
+  }
   const period = monitoringPeriod(query, now);
   const filters = {
     ...filtersFor(query, project),
     topic: query.get('topic') || '',
   };
-  const history = await runtime.repository.listPromptHistory(
-    project.id,
-    period.start,
-    period.end,
-  );
+  const history = previewRun
+    ? { runs: [previewRun], results: await runtime.repository.listResults(project.id, previewRun.id) }
+    : await runtime.repository.listPromptHistory(project.id, period.start, period.end);
   const scanInProgress = history.runs.some(
     (run) =>
       !run.cancelledAt && !run.reportingExcludedAt &&

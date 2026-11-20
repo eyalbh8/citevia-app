@@ -6,6 +6,7 @@ export type Sentiment =
   | 'unknown'
   | 'not_applicable';
 export type ScanProvider = 'openai' | 'perplexity' | 'gemini';
+export type AccountType = 'standard' | 'prospect';
 export interface ScanProviderConfig {
   provider: ScanProvider;
   model: string;
@@ -33,6 +34,10 @@ export interface Prompt {
   tags?: string[];
 }
 export interface Project {
+  /** Missing on accounts created before prospect previews. Defaults to standard. */
+  accountType?: AccountType;
+  /** Read projection of the one-time preview run. */
+  previewScan?: PreviewScan;
   promptFocus?: string;
   /** Explicit synthetic scenario; never dispatches paid scans or records real visits. */
   demo?: DemoConfig;
@@ -227,6 +232,12 @@ export interface ScanRun {
   summaryVersion?: number;
   deadlineAt: string;
   expiresAt: number;
+}
+export type PreviewScan = Pick<ScanRun, 'id' | 'status' | 'succeededCount' | 'terminalCount' | 'totalCount' | 'scheduledAt' | 'createdAt' | 'completedAt'>;
+
+export function previewScanSummary(run: ScanRun): PreviewScan {
+  const { id, status, succeededCount, terminalCount, totalCount, scheduledAt, createdAt, completedAt } = run;
+  return { id, status, succeededCount, terminalCount, totalCount, scheduledAt, createdAt, completedAt };
 }
 export type ResultStatus =
   | 'queued'
@@ -576,6 +587,7 @@ export interface Brandbook {
   generationId: string;
 }
 export interface AccountOnboardingInput {
+  accountType?: AccountType;
   promptFocus?: string;
   name: string;
   region: string;
@@ -584,6 +596,7 @@ export interface AccountOnboardingInput {
 }
 /** Persisted worker context. Older jobs may retain manual prompts and company notes. */
 export interface OnboardingInput {
+  accountType?: AccountType;
   promptFocus?: string;
   name: string;
   website: string;

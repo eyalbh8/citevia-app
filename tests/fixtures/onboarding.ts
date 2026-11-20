@@ -72,7 +72,7 @@ export class FixtureOnboardingProvider implements OnboardingProvider {
     book: Brandbook,
     peers: readonly PortfolioPeer[] = [],
   ) {
-    const allocation = journeyAllocation(job.input.manualPrompts);
+    const allocation = journeyAllocation(job.input.manualPrompts, job.input.accountType);
     const brand = {
       name: job.input.name,
       domains: book.domains,
@@ -82,6 +82,7 @@ export class FixtureOnboardingProvider implements OnboardingProvider {
       allocation,
       job.input.manualPrompts.filter((p) => isBrandedPrompt(p.text, brand))
         .length,
+      job.input.accountType,
     );
     const compare = comparisonAllocation(
       allocation.prefer,

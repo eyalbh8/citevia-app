@@ -1,4 +1,5 @@
 import type { Brand, Brandbook, OnboardingJob, Prompt } from '@citevia/core';
+import { promptLimitFor } from '@citevia/core';
 import { validatePortfolio } from './onboarding-provider.js';
 import { ProviderError } from './provider.js';
 
@@ -12,11 +13,12 @@ export function validateSavedPortfolio(
 ): Prompt[] {
   try {
     const manual = job.input.manualPrompts;
-    if (!Array.isArray(prompts) || prompts.length !== 50 ||
+    const limit = promptLimitFor(job.input.accountType);
+    if (!Array.isArray(prompts) || prompts.length !== limit ||
         prompts.some(prompt => !prompt?.active) ||
         manual.some((prompt, index) =>
           prompt.text !== prompts[index]?.text || prompt.stage !== prompts[index]?.stage)) {
-      throw new Error('The saved portfolio does not contain the expected 50 active prompts.');
+      throw new Error(`The saved portfolio does not contain the expected ${limit} active prompts.`);
     }
     return validatePortfolio(job, book, {
       prompts: prompts.slice(manual.length).map(({ text, stage, topic, branded, intent }) => ({

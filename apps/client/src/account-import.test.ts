@@ -62,3 +62,13 @@ it('rejects incomplete, obsolete or misleading imports instead of inventing regi
     ),
   ).toThrow();
 });
+
+it('imports a mixed batch and treats an empty CSV account type as the standard default', () => {
+  const headers = 'name,region,language,website,accountType';
+  const csv = [headers, 'Acme,US,en,https://acme.com,prospect', 'Example,GB,en,https://example.org,'].join('\n');
+  const [preview, standard] = parseAccountImport(csv);
+  expect(preview.accountType).toBe('prospect');
+  expect(standard).not.toHaveProperty('accountType');
+  expect(parseAccountImport(JSON.stringify([preview, standard]))).toEqual([preview, standard]);
+  expect(() => parseAccountImport(csv.replace('prospect', 'unknown'))).toThrow('accountType');
+});

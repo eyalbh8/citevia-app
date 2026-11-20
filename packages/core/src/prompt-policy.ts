@@ -1,4 +1,4 @@
-import type { Brand, JourneyStage } from './types.js';
+import type { AccountType, Brand, JourneyStage } from './types.js';
 import { JOURNEY_STAGES, promptFingerprint } from './onboarding.js';
 
 export const MAX_BRANDED_PROMPTS = 15;
@@ -109,9 +109,11 @@ export function containsPromptName(text: string, name: string): boolean {
 export function brandedAllocation(
   allocation: Record<JourneyStage, number>,
   manualBranded = 0,
+  accountType?: AccountType,
 ): Record<JourneyStage, number> {
   const slots = { understand: 0, prefer: 0, trust: 0, convert: 0 };
-  let remaining = Math.max(0, ONBOARDING_BRANDED_PROMPTS - manualBranded);
+  const target = accountType === 'prospect' ? 2 : ONBOARDING_BRANDED_PROMPTS;
+  let remaining = Math.max(0, target - manualBranded);
   while (remaining > 0) {
     let assigned = false;
     for (const stage of JOURNEY_STAGES) {

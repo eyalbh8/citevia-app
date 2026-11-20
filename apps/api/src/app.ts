@@ -26,6 +26,8 @@ import {
   promptCreateSchema,
   promptUpdateSchema,
   promptFingerprint,
+  promptLimitFor,
+  previewScanSummary,
   normalizeDomain,
   sameCohort,
   sameMethod,
@@ -33,7 +35,6 @@ import {
   projectProviders,
   usesModeledReporting,
   analysisProvider,
-  DEFAULT_ANALYSIS_MODEL,
   snapshotProvider,
   scanProviderSchema,
   SCAN_PROVIDERS,
@@ -65,7 +66,7 @@ import { resolveReportInput, resolveReportUrl, restoreReportFields } from './pub
 import { actorFingerprint, auditRoute, enforceApiLimit } from './api-security.js';
 import { runIdFor, providerRunIdFor } from '../../scanner/src/engine.js';
 import { brandbookUpdateSchema } from '@citevia/core';
-import { createAccounts, correctedOnboardingInput } from './onboarding.js';
+import { createAccounts, correctedOnboardingInput, defaultAnalysisModel, getProspectPreview, onboardingScanProviders } from './onboarding.js';
 import {
   ANSWER_SORTS,
   promptAnswers,
@@ -261,7 +262,10 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           'FORBIDDEN',
           'Only system administrators can create accounts.',
         );
-      if (path === '/v1/runtime' && method === 'GET')
+      const providerAvailable = (provider: ScanProvider) =>
+        options.providerAvailability?.[provider] !== false && (provider !== 'openai' || options.providerConfigured !== false);
+      if (path === '/v1/runtime' && method === 'GET') {
+        const analyzerReady = providerAvailable(analysisProvider(defaultAnalysisModel()));
         return response({
           providerConfigured: options.providerConfigured !== false,
           providers:
@@ -273,8 +277,13 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
               ]),
             ),
           mode: 'live',
+          onboardingReady: {
+            standard: analyzerReady && onboardingScanProviders('standard').every(providerAvailable),
+            prospect: analyzerReady && onboardingScanProviders('prospect').every(providerAvailable),
+          },
         });
-      const requireProvider = (providers: ScanProvider[] = ['openai'], model = process.env.ANALYSIS_MODEL || process.env.OPENAI_EXTRACTION_MODEL || DEFAULT_ANALYSIS_MODEL) => {
+      }
+      const requireProvider = (providers: ScanProvider[] = ['openai'], model = defaultAnalysisModel()) => {
         const required = [...new Set([analysisProvider(model), ...providers])];
         if (required.includes('openai') && options.providerConfigured === false)
           throw new HttpError(
@@ -283,7 +292,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             'Configure OPENAI_API_KEY or OPENAI_SECRET_ARN and restart the server to enable generation and scans.',
           );
         const missing = required.filter(
-          (provider) => options.providerAvailability?.[provider] === false,
+          (provider) => !providerAvailable(provider),
         );
         if (missing.length)
           throw new HttpError(
@@ -309,7 +318,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         });
       }
       if (path === '/v1/onboarding/accounts' && method === 'POST') {
-        requireProvider([...SCAN_PROVIDERS]);
+        // Research and scoring are required for both account types.
+        requireProvider(['openai']);
         const key = request.headers.get('idempotency-key');
         if (!key || !/^[A-Za-z0-9_-]{8,100}$/.test(key))
           throw new HttpError(
@@ -325,6 +335,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             await body(request),
             now(),
             Number(process.env.MAX_ACCOUNTS_PER_OWNER || 100),
+            requireProvider,
           );
           return response(result, result.limitReached ? 207 : 202);
         } catch (error) {
@@ -348,6 +359,8 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       const stored = await repository.getProject(projectId);
       if (!stored) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
       const project = { ...stored, role: stored.demo ? 'viewer' as const : member.role };
+      const prospect = stored.accountType === 'prospect';
+      const promptLimit = promptLimitFor(stored.accountType);
       const editingCompetitors = tail === 'competitors' && method === 'PATCH';
       if (stored.demo && !['GET', 'HEAD'].includes(method) && !editingCompetitors)
         throw new HttpError(403, 'ACCOUNT_READ_ONLY', 'This account is read-only. Scans and edits are unavailable.');
@@ -422,10 +435,17 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           tail === 'onboarding/retry' ||
           /^runs\/[^/]+\/retry-failed$/.test(tail))
       ) {
+        if (prospect && tail === 'runs')
+          throw new HttpError(409, 'PREVIEW_SCAN_LIMIT', 'Prospect previews include one scan, started during onboarding.');
         if (tail !== 'onboarding/retry' && !stored.enabled)
           throw new HttpError(409, 'SCANNING_PAUSED', 'Scanning is paused. Enable scanning in project settings to run or retry a scan.');
         const retryRun = /^runs\/[^/]+\/retry-failed$/.test(tail)
           ? await selectedRun(tail.split('/')[1]) : undefined;
+        if (prospect && retryRun) {
+          const job = stored.onboardingJobId && await repository.getOnboarding(projectId, stored.onboardingJobId);
+          if (!job || retryRun.id !== job.firstRunId)
+            throw new HttpError(409, 'PREVIEW_SCAN_LIMIT', 'Only the original preview scan can be retried.');
+        }
         requireProvider(
           tail === 'onboarding/retry' || tail === 'runs'
             ? [...projectProviders(stored).map((config) => config.provider), ...(tail === 'onboarding/retry' ? ['openai' as const] : [])]
@@ -433,7 +453,14 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           retryRun?.snapshot.extractionModel ?? stored.extractionModel,
         );
       }
-      if (tail === 'settings' && method === 'GET') return response({ ...project, nextScanAt: nextProjectScan(project, now()) });
+      if (tail === 'settings' && method === 'GET') {
+        const preview = await getProspectPreview(repository, stored);
+        if (preview) {
+          project.onboardingSummary = preview.onboardingSummary;
+          if (preview.run) project.previewScan = previewScanSummary(preview.run);
+        }
+        return response({ ...project, nextScanAt: nextProjectScan(project, now()) });
+      }
       if (tail === 'competitors/suggestions' && method === 'GET')
         return response(await competitorSuggestions(runtime, project, now()));
       if (tail === 'onboarding' && method === 'GET')
@@ -476,12 +503,12 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           const paused = {
             ...latest,
             enabled: false,
-            scheduleStatus: 'pending' as const,
+            scheduleStatus: prospect ? 'synced' as const : 'pending' as const,
             version: latest.version + 1,
           };
           if (!(await repository.saveProject(paused, latest.version))) continue;
           try {
-            await options.syncSchedule?.(paused);
+            if (!prospect) await options.syncSchedule?.(paused);
           } catch {
             /* The persisted stop also gates scanner admission. */
           }
@@ -626,6 +653,9 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       }
       if (tail === 'settings' && method === 'PATCH') {
         const input = settingsSchema.parse(restoreReportFields(await body(request), { ...stored }));
+        if (prospect && (input.scanRunsPerWeek !== undefined || (input.enabled !== undefined && input.enabled !== stored.enabled) ||
+          input.scanProviders?.some(config => config.provider !== 'openai')))
+          throw new HttpError(400, 'PREVIEW_SETTINGS', 'Prospect previews use ChatGPT for one scan.');
         if (input.geoBacklinks !== undefined && !user.isSystemAdmin)
           throw new HttpError(403, 'FORBIDDEN', 'Only system administrators can configure GEO Backlink Strategy.');
         if (
@@ -659,10 +689,11 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             : {}),
           version: stored.version + 1,
           updatedAt: now().toISOString(),
-          scheduleStatus: 'pending' as const,
+          scheduleStatus: prospect ? 'synced' as const : 'pending' as const,
         };
         if (input.competitors || input.brand) next.competitors = validateCompetitors(next);
         await persistProject(next, stored.version);
+        if (prospect) return response({ ...next, role: member.role, nextScanAt: null });
         try {
           for (let attempt = 0; attempt < 3; attempt++) {
             const latest = await repository.ensureProjectScanSchedule(projectId);
@@ -692,17 +723,17 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           );
         }
       }
-      if (
-        /^prompts(?:\/[^/]+)?$/.test(tail) &&
-        ['POST', 'PATCH', 'DELETE'].includes(method) &&
-        stored.onboardingJobId &&
-        !stored.onboardingAppliedJobId
-      )
-        throw new HttpError(
-          409,
-          'ONBOARDING_PENDING',
-          'Finish account setup in Accounts before changing prompts.',
-        );
+      if (/^prompts(?:\/[^/]+)?$/.test(tail) && ['POST', 'PATCH', 'DELETE'].includes(method) && stored.onboardingJobId) {
+        if (!stored.onboardingAppliedJobId)
+          throw new HttpError(409, 'ONBOARDING_PENDING', 'Finish account setup in Accounts before changing prompts.');
+        if (prospect) {
+          // Keep all ten original questions intact until kickoff freezes its snapshot.
+          const job = await repository.getOnboarding(projectId, stored.onboardingJobId);
+          if (job?.status !== 'failed' && job?.status !== 'stopped' &&
+            (!job?.firstRunId || !await repository.getRun(projectId, job.firstRunId)))
+            throw new HttpError(409, 'ONBOARDING_PENDING', 'Wait for the preview scan to start before changing prompts.');
+        }
+      }
       if (tail === 'prompts' && method === 'GET')
         return response({ items: stored.prompts, version: stored.version });
       if (tail === 'prompt-metrics' && method === 'GET') {
@@ -758,11 +789,11 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         const input = promptCreateSchema.parse(await body(request));
         const texts = 'texts' in input ? input.texts : [input.text];
         const active = stored.prompts.filter((p) => p.active);
-        if (active.length + texts.length > 50)
+        if (active.length + texts.length > promptLimit)
           throw new HttpError(
             400,
             'PROMPT_LIMIT',
-            'A project can have at most 50 active prompts',
+            `This account can have at most ${promptLimit} active prompts`,
           );
         const known = new Set(active.map((p) => promptFingerprint(p.text)));
         for (const text of texts) {
@@ -848,11 +879,11 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             'BRANDED_PROMPT_LIMIT',
             'At most 15 active questions may name the company or an alias.',
           );
-        if (prompts.filter((p) => p.active).length > 50)
+        if (prompts.filter((p) => p.active).length > promptLimit)
           throw new HttpError(
             400,
             'PROMPT_LIMIT',
-            'A project can have at most 50 active prompts',
+            `This account can have at most ${promptLimit} active prompts`,
           );
         if (
           updated.active &&
@@ -1111,7 +1142,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
           }
         }
         const data: Dashboard = {
-          project,
+          project: prospect && current ? { ...project, previewScan: previewScanSummary(current) } : project,
           run: current,
           metrics: currentSummary?.metrics || emptyMetrics(),
           trend,

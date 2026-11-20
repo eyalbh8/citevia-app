@@ -6,6 +6,7 @@ import {
   journeyAllocation,
   JOURNEY_STAGES,
   journeyGoal,
+  promptLimitFor,
   promptFingerprint,
   brandedAllocation,
   comparisonAllocation,
@@ -233,16 +234,18 @@ export function validatePortfolio(
   competitors: readonly PortfolioPeer[] = [],
 ): Prompt[] {
   const target = portfolioBrand(job, book);
+  const { accountType, manualPrompts } = job.input;
+  const limit = promptLimitFor(accountType);
   const generated = z
-    .object({ prompts: z.array(generatedPromptSchema).max(50) })
+    .object({ prompts: z.array(generatedPromptSchema).max(limit) })
     .strict()
     .parse(raw).prompts.map(prompt => ({
       ...prompt,
       branded: isBrandedPrompt(prompt.text, target),
     }));
-  const allocation = journeyAllocation(job.input.manualPrompts);
+  const allocation = journeyAllocation(manualPrompts, accountType);
   if (
-    generated.length !== 50 - job.input.manualPrompts.length ||
+    generated.length !== limit - manualPrompts.length ||
     JOURNEY_STAGES.some(
       (stage) =>
         generated.filter((p) => p.stage === stage).length !== allocation[stage],
@@ -254,7 +257,7 @@ export function validatePortfolio(
       true,
     );
   const all = [
-    ...job.input.manualPrompts.map((p) => ({
+    ...manualPrompts.map((p) => ({
       ...p,
       topic: 'Custom prompts',
       branded: isBrandedPrompt(p.text, target),
@@ -273,7 +276,7 @@ export function validatePortfolio(
       'Generated prompts repeated an internal measurement goal instead of a buyer question.',
       true,
     );
-  if (new Set(all.map((p) => canonical(p.text))).size !== 50)
+  if (new Set(all.map((p) => canonical(p.text))).size !== limit)
     throw new ProviderError(
       'onboarding_duplicate_prompts',
       'Generated prompts contained duplicates.',
@@ -285,7 +288,7 @@ export function validatePortfolio(
       'Generated questions must be one short search phrase, at most 20 words and 160 characters.',
       false,
     );
-  const slots = brandedAllocation(allocation, manualBrandedCount(job, book));
+  const slots = brandedAllocation(allocation, manualBrandedCount(job, book), accountType);
   if (JOURNEY_STAGES.some(stage => generated.filter(p => p.stage === stage && p.branded).length !== slots[stage]))
     throw new ProviderError(
       'onboarding_branded_limit',
@@ -536,7 +539,9 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
     competitors: readonly PortfolioPeer[] = [],
     previousDraft?: DraftSearch[],
   ) {
-    if (job.input.manualPrompts.length === 50)
+    const { accountType, manualPrompts } = job.input;
+    const limit = promptLimitFor(accountType);
+    if (manualPrompts.length >= limit)
       return {
         prompts: validatePortfolio(job, brandbook, { prompts: [] }),
         receipt: {
@@ -544,10 +549,11 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
           instructionsVersion: ONBOARDING_INSTRUCTIONS_VERSION,
         },
       };
-    const allocation = journeyAllocation(job.input.manualPrompts);
+    const allocation = journeyAllocation(manualPrompts, accountType);
     const branded = brandedAllocation(
       allocation,
       manualBrandedCount(job, brandbook),
+      accountType,
     );
     const receipt = await this.provider.extract({
       costContext: { projectId:job.projectId, stage:`onboarding_${job.step}`, attempt:job.attempts },
@@ -562,8 +568,8 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
         ...(job.input.promptFocus ? { prompt_focus: job.input.promptFocus } : {}),
         ...(job.portfolioFeedback ? { revision_feedback: job.portfolioFeedback } : {}),
         ...(previousDraft?.length ? { previous_draft: previousDraft } : {}),
-        manual_prompts: job.input.manualPrompts,
-        remaining_count: 50 - job.input.manualPrompts.length,
+        manual_prompts: manualPrompts,
+        remaining_count: limit - manualPrompts.length,
         section_allocation: allocation,
         required_generated_branded_count: Object.values(branded).reduce((sum, count) => sum + count, 0),
         slot_plan: promptSlotPlan(allocation, branded, competitors, job.input.name),
@@ -589,7 +595,7 @@ export class OpenAIOnboardingProvider implements OnboardingProvider {
     try {
       const items = z
         .array(generatedPromptSchema.omit({ stage: true, branded: true }))
-        .max(50);
+        .max(limit);
       const section = z.object({ branded: items, unbranded: items }).strict();
       const sections = z
         .object({

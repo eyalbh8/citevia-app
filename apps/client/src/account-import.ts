@@ -62,13 +62,14 @@ export function parseAccountImport(source: string): AccountOnboardingInput[] {
     if (!headers) throw new Error('The import is empty.');
     const keys = headers.map((value) => value.trim());
     const required = ['name', 'region', 'language', 'website'];
+    const allowed = [...required, 'promptFocus', 'accountType'];
     if (
       required.some((key) => !keys.includes(key)) ||
-      keys.some((key) => !required.includes(key) && key !== 'promptFocus') ||
+      keys.some((key) => !allowed.includes(key)) ||
       new Set(keys).size !== keys.length
     )
       throw new Error(
-        'Include name, region, language and website. You can also include promptFocus.',
+        'Include name, region, language and website. You can also include promptFocus and accountType.',
       );
     values = rows.map((row) => {
       if (row.length > keys.length)
@@ -76,7 +77,8 @@ export function parseAccountImport(source: string): AccountOnboardingInput[] {
           'A CSV row has too many columns. Quote values containing commas.',
         );
       return Object.fromEntries(
-        keys.map((key, index) => [key, (row[index] || '').trim()]),
+        keys.map((key, index) => [key, (row[index] || '').trim()])
+          .filter(([key, value]) => key !== 'accountType' || value),
       );
     });
   }

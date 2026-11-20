@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { AccountType } from '@citevia/core';
 import {
   MemoryArtifacts,
   MemoryQueue,
@@ -9,7 +10,7 @@ import { FixtureOnboardingProvider } from './fixtures/onboarding.js';
 import { policyJob } from './fixtures/onboarding-job.js';
 import { refreshPortfolio } from '../apps/scanner/src/portfolio-refresh.js';
 
-async function setup() {
+async function setup(accountType?: AccountType) {
   const runtime = {
     repository: new MemoryRepository(),
     artifacts: new MemoryArtifacts(),
@@ -22,10 +23,20 @@ async function setup() {
       domain: 'acme.com',
     });
   project.brandbook = (await fixture.brandbook(policyJob())).brandbook;
+  project.accountType = accountType;
   await runtime.repository.saveProject(project, null);
   return { ...runtime, runtime, project, fixture };
 }
 describe('saved-brandbook portfolio refresh', () => {
+  it('regenerates ten prompts using a prospect account’s saved policy', async () => {
+    const f = await setup('prospect');
+    await refreshPortfolio(f.runtime, f.fixture, f.project.id, 'prospect-refresh');
+    const updated = await f.repository.getProject(f.project.id);
+    const active = updated!.prompts.filter(prompt => prompt.active);
+    expect(active).toHaveLength(10);
+    expect(active.filter(prompt => prompt.branded)).toHaveLength(2);
+    expect(f.queue.messages).toHaveLength(0);
+  });
   it('replaces only prompt versions on the same account, preserves frozen reports and never scans', async () => {
     const f = await setup(),
       original = structuredClone(f.project);

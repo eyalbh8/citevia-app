@@ -37,11 +37,13 @@ export default function PromptAnswersDrawer({
   path,
   prompt,
   initialProvider,
+  prospect = false,
   onClose,
 }: {
   path: string;
   prompt: Prompt;
   initialProvider: string;
+  prospect?: boolean;
   onClose: () => void;
 }) {
   const [provider, setProvider] = useState(initialProvider),
@@ -120,8 +122,7 @@ export default function PromptAnswersDrawer({
               {reportExcerpt(prompt.text)}
             </p>
             <p className="answer-history-note">
-              Every saved answer across scans and providers. Open a row to read
-              the answer and its sources.
+              {prospect ? 'Open the saved ChatGPT answer to read its sources.' : 'Every saved answer across scans and providers. Open a row to read the answer and its sources.'}
             </p>
             {!prompt.active && (
               <p className="answer-history-note">
@@ -142,7 +143,7 @@ export default function PromptAnswersDrawer({
         </>
       ) : (
         <>
-          <div className="answer-history-filters">
+          {!prospect && <div className="answer-history-filters">
             <div className="answer-history-filter">
               <span>Provider</span>
               <FilterDropdown
@@ -189,7 +190,7 @@ export default function PromptAnswersDrawer({
                 {history.data.total === 1 ? 'answer' : 'answers'}
               </span>
             )}
-          </div>
+          </div>}
           <ErrorNotice error={history.error} />
           {history.loading && !history.data ? (
             <Skeleton variant="table" label="Loading answer history…" />

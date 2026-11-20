@@ -155,7 +155,7 @@ function awsScanner(): Scanner {
         catch { console.error(JSON.stringify({ event: 'social_schedule_repair_failed', projectId: row.id })); }
       }
       const pending = await productionDatabase().query<{ data: Project }>(`SELECT data FROM citevia_projects
-        WHERE data->>'scheduleStatus' IN ('pending','error')
+        WHERE data->>'scheduleStatus' IN ('pending','error') AND data->>'accountType' IS DISTINCT FROM 'prospect'
         ORDER BY data->>'updatedAt',id LIMIT 5`);
       const repairs = await repairProjectSchedules(runtime.repository, pending.rows.map(row => row.data));
       for (const repair of repairs) if (repair.status === 'error')

@@ -19,7 +19,7 @@ import {
   type OnboardingProvider,
 } from './onboarding-provider.js';
 import { ProviderError, type ProviderReceipt } from './provider.js';
-import { runIdFor } from './engine.js';
+import { onboardingKickoff, runIdFor } from './engine.js';
 import { validateSavedPortfolio } from './saved-portfolio.js';
 import { verifiedBrandNames } from './onboarding-evidence.js';
 import { withCompetitorResearch } from './onboarding-research-retry.js';
@@ -41,6 +41,7 @@ function portfolioContext(project: Project, job: OnboardingJob, research: Resear
   if (project.brand.name !== job.input.name ||
       project.brand.domains[0]?.toLowerCase() !== submittedHost ||
       project.country !== job.input.country || project.language !== job.input.language ||
+      (project.accountType ?? 'standard') !== (job.input.accountType ?? 'standard') ||
       project.promptFocus !== job.input.promptFocus) {
     throw new ProviderError('onboarding_account_changed',
       'The brand, website, market, language or focus changed during setup. Retry setup to research the corrected details before activation.', false);
@@ -223,7 +224,7 @@ export class OnboardingEngine {
             prompts,
             enabled: true,
             onboardingAppliedJobId: jobId,
-            scheduleStatus: 'pending' as const,
+            scheduleStatus: project.accountType === 'prospect' ? 'synced' as const : 'pending' as const,
             version: project.version + 1,
             updatedAt: this.now().toISOString(),
           };
@@ -239,7 +240,8 @@ export class OnboardingEngine {
         let synced = false;
         for (let i = 0; i < 3; i++) {
           await assertActive();
-          const latest = await repository.ensureProjectScanSchedule(projectId);
+          const latest = project.accountType === 'prospect' ? await repository.getProject(projectId)
+            : await repository.ensureProjectScanSchedule(projectId);
           if (!latest) throw new Error('Account missing');
           const context = portfolioContext(latest, current, book);
           try {
@@ -252,7 +254,7 @@ export class OnboardingEngine {
           // Retrying a stopped/failed activation resumes its previously paused schedule.
           const resumed = current.retryRequestIds.length > 0 && !latest.enabled
             ? { ...latest, enabled: true } : latest;
-          await this.syncSchedule(resumed);
+          if (resumed.accountType !== 'prospect') await this.syncSchedule(resumed);
           if (
             await repository.saveProject(
               markScheduleSynced(resumed, this.now().toISOString()),
@@ -265,13 +267,7 @@ export class OnboardingEngine {
         }
         if (!synced) throw new Error('Concurrent schedule updates');
         await assertActive();
-        const message = {
-          kind: 'kickoff' as const,
-          projectId,
-          scheduledAt: job.createdAt,
-          requestId: `onboarding-${job.id}`,
-          trigger: 'manual' as const,
-        };
+        const message = onboardingKickoff(projectId, job.id, job.createdAt);
         await queue.send([message]);
         current = {
           ...current,
@@ -438,14 +434,14 @@ export class OnboardingEngine {
         const paused = {
           ...project,
           enabled: false,
-          scheduleStatus: 'pending' as const,
+          scheduleStatus: project.accountType === 'prospect' ? 'synced' as const : 'pending' as const,
           version: project.version + 1,
         };
         if (
           !(await this.runtime.repository.saveProject(paused, project.version))
         )
           continue;
-        await this.syncSchedule(paused);
+        if (paused.accountType !== 'prospect') await this.syncSchedule(paused);
         return;
       }
     } catch {

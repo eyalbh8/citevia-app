@@ -16,7 +16,7 @@ import type {
 } from '@citevia/core';
 import {
   JOURNEY_STAGES,
-  JOURNEY_PROMPT_COUNTS,
+  journeyAllocation, brandedAllocation, promptLimitFor,
   journeyGoal,
 } from '@citevia/core';
 import {
@@ -27,6 +27,7 @@ import {
   onboardAccounts,
   request,
 } from './api';
+import { previewProgress } from './prospect-preview';
 import { parseAccountImport } from './account-import';
 import LanguageSelect from './LanguageSelect';
 import { Badge, Empty, ErrorNotice } from './components';
@@ -39,13 +40,13 @@ type Account = Project & {
 };
 export default function AccountsView({
   onOpen,
-  providerReady,
+  onboardingReady,
   canCreate,
   onChanged,
   notify,
 }: {
   canCreate: boolean;
-  providerReady: boolean;
+  onboardingReady: { standard: boolean; prospect: boolean };
   onOpen: (id: string) => void;
   onChanged: () => void;
   notify: (text: string) => void;
@@ -63,6 +64,7 @@ export default function AccountsView({
   const [revision, setRevision] = useState(0),
     [showForm, setShowForm] = useState(false),
     [bulk, setBulk] = useState(false),
+    [accountType, setAccountType] = useState<'standard' | 'prospect'>('standard'),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<Error>();
   const {
@@ -80,9 +82,8 @@ export default function AccountsView({
   );
   const filtered = data?.items || [];
   const pending = data?.items.some(
-    (p) =>
-      p.onboardingSummary &&
-      ['queued', 'running'].includes(p.onboardingSummary.status),
+    (p) => p.accountType === 'prospect' ? previewProgress(p).pending :
+      p.onboardingSummary && ['queued', 'running'].includes(p.onboardingSummary.status),
   );
   useEffect(() => {
     if (!pending) return;
@@ -97,6 +98,14 @@ export default function AccountsView({
     [bulkText, setBulkText] = useState('');
   const [correctedNames, setCorrectedNames] = useState<Record<string, string>>({});
   const [retrying, setRetrying] = useState<string>();
+  const prospect = !bulk && accountType === 'prospect';
+  const allocation = journeyAllocation([], accountType);
+  const brandedCount = Object.values(brandedAllocation(allocation, 0, accountType)).reduce((sum, count) => sum + count, 0);
+  let providerReady = onboardingReady[prospect ? 'prospect' : 'standard'];
+  if (bulk && !onboardingReady.standard && onboardingReady.prospect) {
+    try { providerReady = parseAccountImport(bulkText).every(item => item.accountType === 'prospect'); }
+    catch { /* Keep the standard requirement until a valid batch is entered. */ }
+  }
   async function submit(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -104,7 +113,7 @@ export default function AccountsView({
     try {
       const accounts: AccountOnboardingInput[] = bulk
         ? parseAccountImport(bulkText)
-        : [{ name, website, region, language, ...(promptFocus.trim() ? { promptFocus: promptFocus.trim() } : {}) }];
+        : [{ name, website, region, language, ...(prospect ? { accountType: 'prospect' as const } : {}), ...(promptFocus.trim() ? { promptFocus: promptFocus.trim() } : {}) }];
       const result = await onboardAccounts(accounts);
       if (result.limitReached) {
         if (bulk)
@@ -121,11 +130,14 @@ export default function AccountsView({
         return;
       }
       notify(
-        `${result.items.length} account${result.items.length === 1 ? '' : 's'} queued. Citevia will create the brandbook, generate all 50 prompts, start a scan and schedule two scans each week.`,
+        bulk ? `${result.items.length} accounts queued for onboarding.`
+          : prospect ? 'Prospect preview queued. Citevia will scan 10 prompts once on ChatGPT.'
+          : 'Account queued. Citevia will create the brandbook, generate 50 prompts and start twice-weekly tracking.',
       );
       setRevision((value) => value + 1);
       onChanged();
       setShowForm(false);
+      setAccountType('standard');
       setSearch('');
       setCursors([undefined]);
       setName('');
@@ -182,7 +194,7 @@ export default function AccountsView({
           <h2>Your accounts</h2>
           <p>
             One setup for each brand. Citevia researches the company, builds its
-            brandbook, prepares 50 prompts and starts tracking.
+            brandbook and measures its visibility in AI answers.
           </p>
         </div>
         {canCreate && (
@@ -203,8 +215,7 @@ export default function AccountsView({
               <h2 className="card-title">Set up accounts</h2>
               <p className="card-description">
                 Enter the brand name, region, language and URL. Citevia
-                researches the website and generates the brandbook and all 50
-                prompts.
+                researches the website and generates the brandbook and prompts.
               </p>
             </div>
             <div className="tab-buttons">
@@ -229,6 +240,13 @@ export default function AccountsView({
             <fieldset disabled={busy} className="onboarding-fieldset">
               {!bulk ? (
                 <>
+                  <label className="field">
+                    Account type
+                    <select value={accountType} onChange={event => setAccountType(event.target.value === 'prospect' ? 'prospect' : 'standard')}>
+                      <option value="standard">Standard account</option>
+                      <option value="prospect">Prospect preview</option>
+                    </select>
+                  </label>
                   <div className="field-row">
                     <label className="field">
                       Brand name
@@ -266,7 +284,7 @@ export default function AccountsView({
                   <small>
                     1–25 accounts per batch. Each CSV row or JSON object needs
                     name, region, language and website. Add promptFocus to
-                    prioritize a product or service for an account.
+                    prioritize a product or service. Use accountType “prospect” for a one-time ChatGPT preview. Empty or omitted accountType uses standard onboarding.
                   </small>
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                     <button
@@ -275,7 +293,7 @@ export default function AccountsView({
                       onClick={() =>
                         downloadCsv(
                           'citevia-accounts-template.csv',
-                          ['name', 'region', 'language', 'website', 'promptFocus'],
+                          ['name', 'region', 'language', 'website', 'promptFocus', 'accountType'],
                           [],
                         )
                       }
@@ -340,14 +358,14 @@ export default function AccountsView({
                   <small>Leave blank to cover the business’s main offerings.</small>
                 </label>
               )}
-              <div className="generated-portfolio">
-                <h3>40 unbranded prompts and 10 branded prompts</h3>
+              {!bulk && <div className="generated-portfolio">
+                <h3>{promptLimitFor(accountType) - brandedCount} unbranded prompts and {brandedCount} branded prompts</h3>
                 <div className="journey-grid">
                   {JOURNEY_STAGES.map((stage) => (
                     <div className="journey-tactic" key={stage}>
                       <strong className="journey-label">
                         {stage}
-                        <span>{JOURNEY_PROMPT_COUNTS[stage]} prompts</span>
+                        <span>{allocation[stage]} prompts</span>
                       </strong>
                       <p>
                         {journeyGoal(
@@ -359,14 +377,13 @@ export default function AccountsView({
                   ))}
                 </div>
                 <p className="card-description">
-                  Two scans each week are assigned automatically, 3½ days apart.
-                  Start times are spread between accounts. View your times in Settings after setup.
+                  {prospect ? 'One ChatGPT scan. The results stay available for your presentation.' : 'Two scans each week are assigned automatically, 3½ days apart. View your times in Settings after setup.'}
                 </p>
-              </div>
+              </div>}
               <div className="setting-note">
                 {providerReady
-                  ? 'Submitting starts OpenAI research and generation calls. After validation, the first scans start on all three providers and twice-weekly tracking is enabled automatically.'
-                  : 'Configure OpenAI, Perplexity and Gemini in .env and restart the server before creating accounts.'}
+                  ? bulk ? 'Each account uses its selected onboarding type. Standard accounts start twice-weekly tracking.' : prospect ? 'Submitting starts brand research, prompt generation and a single ChatGPT scan.' : 'Submitting starts OpenAI research and generation calls. After validation, the first scans start on all three providers and twice-weekly tracking is enabled automatically.'
+                  : 'The credentials required for this onboarding type must be configured before setup can start.'}
               </div>
               <div className="form-actions">
                 <button
@@ -379,7 +396,7 @@ export default function AccountsView({
                   ) : (
                     <Plus size={14} />
                   )}
-                  Create {bulk ? 'accounts' : 'account'}
+                  Create {bulk ? 'accounts' : prospect ? 'preview' : 'account'}
                 </button>
               </div>
             </fieldset>
@@ -436,6 +453,7 @@ export default function AccountsView({
         <div className="account-grid">
           {filtered.map((account) => {
             const job = account.onboardingSummary;
+            const preview = account.accountType === 'prospect' ? previewProgress(account) : undefined;
             return (
               <section className="card account-card" key={account.id}>
                 <div className="account-card-heading">
@@ -444,7 +462,7 @@ export default function AccountsView({
                   </span>
                   <div>
                     <h3>{account.name}</h3>
-                    <p>{account.brand.domains[0]}</p>
+                    <p>{account.brand.domains[0]}{preview && ' · Prospect preview'}</p>
                   </div>
                 </div>
                 <div className="account-metadata">
@@ -454,7 +472,7 @@ export default function AccountsView({
                   <span>
                     {account.activePromptCount ??
                       account.prompts.filter((p) => p.active).length}
-                    /50 active prompts
+                    /{promptLimitFor(account.accountType)} active prompts
                   </span>
                 </div>
                 {job ? (
@@ -462,14 +480,14 @@ export default function AccountsView({
                     <div>
                       <Badge
                         value={
-                          ['failed', 'stopped'].includes(job.status)
+                          preview ? preview.tone : ['failed', 'stopped'].includes(job.status)
                             ? 'failed'
                             : job.status === 'completed'
                               ? 'completed'
                               : 'running'
                         }
                         label={
-                          job.status === 'completed'
+                          preview ? preview.label : job.status === 'completed'
                             ? 'Ready'
                             : ['failed', 'stopped'].includes(job.status)
                               ? 'Setup stopped'
@@ -494,7 +512,7 @@ export default function AccountsView({
                             }
                             key={step}
                           >
-                            {step === 'activate' ? 'Start tracking' : step}
+                            {step === 'activate' ? preview ? 'Start scan' : 'Start tracking' : step}
                           </span>
                         ),
                       )}
@@ -524,7 +542,7 @@ export default function AccountsView({
                   </div>
                 ) : (
                   <p className="card-description">
-                    {account.enabled
+                    {preview ? preview.label : account.enabled
                       ? 'Scheduled tracking enabled'
                       : 'Scheduled tracking paused'}
                   </p>
@@ -556,10 +574,10 @@ export default function AccountsView({
                     className="button button-outline"
                     onClick={() => onOpen(account.id)}
                   >
-                    {job?.status === 'completed' ? (
+                    {(preview ? preview.tone === 'completed' : job?.status === 'completed') ? (
                       <CheckCircle2 size={12} />
                     ) : null}
-                    Open account
+                    {preview && account.previewScan ? 'View preview' : 'Open account'}
                     <ArrowRight size={12} />
                   </button>
                 </div>

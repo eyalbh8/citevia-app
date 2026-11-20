@@ -631,3 +631,9 @@
     justify-content: flex-start;
   }
 }
+
+.preview-answers { margin: 16px 0; padding: 16px 20px; }
+.preview-answers summary { cursor: pointer; font-weight: 600; }
+.preview-answers ol { padding-inline-start: 20px; }
+.preview-answers button { white-space: normal; text-align: start; justify-content: space-between; width: 100%; }
+.preview-answers button span:last-child { flex-shrink: 0; color: var(--muted); }

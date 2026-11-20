@@ -20,6 +20,7 @@ import {
   JOURNEY_STAGES,
   journeyGoal,
   MAX_BRANDED_PROMPTS,
+  promptLimitFor,
   PROMPT_INTENTS,
   usesModeledReporting,
   type ScanProvider,
@@ -41,6 +42,7 @@ import {
   labelize,
   Pagination,
 } from './components';
+import { previewReportPeriod } from './prospect-preview';
 import PromptAnswersDrawer from './PromptAnswersDrawer';
 import './prompts.css';
 import ProviderFilter from './ProviderFilter';
@@ -156,8 +158,8 @@ export default function PromptsView({
   notify,
   demo,
 }: Props) {
-  const [dateRange, setDateRange] = useState<DateRangeSelection>(() => initialDateRange()),
-    [provider, setProvider] = useState<ScanProvider | ''>('');
+  const [selectedRange, setDateRange] = useState<DateRangeSelection>(() => initialDateRange()),
+    [selectedProvider, setProvider] = useState<ScanProvider | ''>('');
   const [search, setSearch] = useState(''),
     [region, setRegion] = useState('');
   const [branded, setBranded] = useState(''),
@@ -173,10 +175,14 @@ export default function PromptsView({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<Error>();
   const account = useApi<Project>(`${path}/settings`);
+  const project = account.data;
+  const prospect = project?.accountType === 'prospect';
+  const dateRange = (project && previewReportPeriod(project)) ?? selectedRange;
+  const provider = prospect ? 'openai' : selectedProvider;
+  const limit = promptLimitFor(project?.accountType);
   const scores = useApi<PromptMetricsResponse>(
     `${path}/prompt-metrics${query({ days: dateRange.days, provider, start: dateRange.days === 'custom' ? dateRange.start : undefined, end: dateRange.days === 'custom' ? dateRange.end : undefined })}`,
   );
-  const project = account.data;
   if (!project)
     return (
       <div className="prompts-screen">
@@ -191,8 +197,10 @@ export default function PromptsView({
     );
   const active = project.prompts.filter((prompt) => prompt.active).length;
   const modeledGrowth = usesModeledReporting(project.demo) && !project.demo.presentation;
+  const waitingForSnapshot = prospect && !project.previewScan &&
+    !['failed', 'stopped'].includes(project.onboardingSummary?.status ?? '');
   const pendingSetup = Boolean(
-    project.onboardingJobId && !project.onboardingAppliedJobId,
+    project.onboardingJobId && (!project.onboardingAppliedJobId || waitingForSnapshot),
   );
   const owner = project.role === 'owner' && !project.demo,
     editable = owner && !pendingSetup;
@@ -435,7 +443,7 @@ export default function PromptsView({
             placeholder="Prompt Types"
             options={promptTypeOptions}
           />
-          <ProviderFilter
+          {prospect ? <span className="scan-options">ChatGPT · One-time scan</span> : <><ProviderFilter
             project={project}
             value={provider ? [provider] : []}
             onChange={(providers) =>
@@ -447,7 +455,7 @@ export default function PromptsView({
             onChange={(range) => filter(() => setDateRange(range))}
             includeLast24Hours={false}
             demo={project.demo}
-          />
+          /></>}
         </div>
       </div>
       <ErrorNotice error={account.error || error} />
@@ -466,7 +474,7 @@ export default function PromptsView({
           </label>
           <span className="prompts-usage">
             {scores.data?.usage.active ?? active} out of{' '}
-            {scores.data?.usage.limit ?? 50} Prompts Used
+            {scores.data?.usage.limit ?? limit} Prompts Used
           </span>
           <div className="prompts-status-filter">
             <FilterDropdown
@@ -516,7 +524,7 @@ export default function PromptsView({
                   busy ||
                   !mutationTargets.length ||
                   (status === 'archived' &&
-                    active + mutationTargets.length > 50)
+                    active + mutationTargets.length > limit)
                 }
                 onClick={() => {
                   if (status === 'archived')
@@ -756,7 +764,7 @@ export default function PromptsView({
                                 disabled={
                                   !editable ||
                                   busy ||
-                                  (!prompt.active && active >= 50)
+                                  (!prompt.active && active >= limit)
                                 }
                                 onClick={() =>
                                   prompt.active
@@ -802,6 +810,7 @@ export default function PromptsView({
           path={path}
           prompt={answerPrompt}
           initialProvider={provider}
+          prospect={prospect}
           onClose={() => setAnswerPrompt(undefined)}
         />
       )}
@@ -853,7 +862,8 @@ export default function PromptsView({
           key={editing.id}
           path={path}
           prompt={editing}
-          slots={50 - active}
+          slots={limit - active}
+          prospect={prospect}
           onClose={() => {
             setEditing(undefined);
           }}
@@ -872,6 +882,7 @@ function PromptEditor({
   path,
   prompt,
   slots,
+  prospect,
   onClose,
   onSaved,
   notify,
@@ -879,6 +890,7 @@ function PromptEditor({
   path: string;
   prompt?: Prompt;
   slots: number;
+  prospect: boolean;
   onClose: () => void;
   onSaved: () => void;
   notify: (text: string) => void;
@@ -1004,9 +1016,7 @@ function PromptEditor({
             <small>Separate up to 10 tags with commas.</small>
           </label>
           <p className="scan-options">
-            Brand names are detected automatically. Up to {MAX_BRANDED_PROMPTS}{' '}
-            active prompts may be branded. Edited prompts receive new
-            measurements on the next scan.
+            {prospect ? 'Your preview shows the original question and its saved ChatGPT answer after you edit a prompt.' : `Brand names are detected automatically. Up to ${MAX_BRANDED_PROMPTS} active prompts may be branded. Edited prompts receive new measurements on the next scan.`}
           </p>
           <div className="form-actions">
             <button

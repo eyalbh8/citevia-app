@@ -7,6 +7,9 @@ import {
   DEFAULT_PERPLEXITY_PRESET,
   DEFAULT_GEMINI_MODEL,
   DEFAULT_ANALYSIS_MODEL,
+  SCAN_PROVIDERS,
+  type AccountType,
+  type ScanProvider,
   type OnboardingJob,
   type OnboardingInput,
   type Project,
@@ -14,6 +17,22 @@ import {
 import type { Runtime } from '@citevia/storage';
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
+
+export function onboardingScanProviders(accountType?: AccountType): readonly ScanProvider[] {
+  return accountType === 'prospect' ? ['openai'] : SCAN_PROVIDERS;
+}
+
+export const defaultAnalysisModel = () =>
+  process.env.ANALYSIS_MODEL || process.env.OPENAI_EXTRACTION_MODEL || DEFAULT_ANALYSIS_MODEL;
+
+export async function getProspectPreview(repository: Runtime['repository'], project: Project) {
+  if (project.accountType !== 'prospect' || !project.onboardingJobId) return null;
+  const job = await repository.getOnboarding(project.id, project.onboardingJobId);
+  if (!job) return null;
+  const { status, step, error, firstRunId } = job;
+  const run = firstRunId ? await repository.getRun(project.id, firstRunId) : null;
+  return { onboardingSummary: { status, step, error, firstRunId }, run };
+}
 
 /** An explicit retry before activation may use owner-corrected account details.
  * All dependent checkpoints get new keys; the original receipts stay intact. */
@@ -43,12 +62,21 @@ export async function createAccounts(
   raw: unknown,
   now: Date,
   maxAccounts: number,
+  checkProviders?: (providers: ScanProvider[]) => void,
 ) {
   const input = onboardingRequestSchema.parse(raw),
     items: { project: Project; job: OnboardingJob }[] = [];
+  checkProviders?.([...new Set(input.accounts.flatMap(item => onboardingScanProviders(item.accountType)))]);
+  const models = {
+    openai: process.env.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14',
+    perplexity: process.env.PERPLEXITY_PRESET || DEFAULT_PERPLEXITY_PRESET,
+    gemini: process.env.GEMINI_GENERATION_MODEL || DEFAULT_GEMINI_MODEL,
+  };
   // Independent per-item keys make a retry repair a partially accepted bulk request.
   for (const [index, submitted] of input.accounts.entries()) {
     const account: OnboardingInput = {
+      // Preserve request hashes for existing standard-account idempotency keys.
+      ...(submitted.accountType === 'prospect' ? { accountType: submitted.accountType } : {}),
       name: submitted.name,
       website: submitted.website,
       country: submitted.region,
@@ -65,6 +93,7 @@ export async function createAccounts(
       inputHash = hash(JSON.stringify(account));
     const project: Project = {
       id: projectId,
+      ...(account.accountType ? { accountType: account.accountType } : {}),
       name: account.name,
       ...(account.promptFocus ? { promptFocus: account.promptFocus } : {}),
       brand: {
@@ -79,30 +108,15 @@ export async function createAccounts(
       timezone: account.timezone,
       scheduleExpression: WEEKLY_SCHEDULE,
       enabled: false,
-      generationModel:
-        process.env.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14',
-      extractionModel:
-        process.env.ANALYSIS_MODEL || process.env.OPENAI_EXTRACTION_MODEL || DEFAULT_ANALYSIS_MODEL,
-      scanProviders: [
-        {
-          provider: 'openai',
-          model: process.env.OPENAI_GENERATION_MODEL || 'gpt-4.1-2025-04-14',
-        },
-        {
-          provider: 'perplexity',
-          model: process.env.PERPLEXITY_PRESET || DEFAULT_PERPLEXITY_PRESET,
-        },
-        {
-          provider: 'gemini',
-          model: process.env.GEMINI_GENERATION_MODEL || DEFAULT_GEMINI_MODEL,
-        },
-      ],
+      generationModel: models.openai,
+      extractionModel: defaultAnalysisModel(),
+      scanProviders: onboardingScanProviders(account.accountType).map(provider => ({ provider, model: models[provider] })),
       parserVersion: PARSER_VERSION,
       version: 1,
       prompts: [],
       createdAt: at,
       updatedAt: at,
-      scheduleStatus: 'pending',
+      scheduleStatus: account.accountType === 'prospect' ? 'synced' : 'pending',
       onboardingJobId: jobId,
     };
     const job: OnboardingJob = {
@@ -127,7 +141,6 @@ export async function createAccounts(
       maxAccounts,
     );
     if (outcome === 'limit') return { items, limitReached: true };
-    await runtime.repository.ensureProjectScanSchedule(projectId);
     const saved = await runtime.repository.getOnboarding(projectId, jobId);
     if (!saved || saved.inputHash !== inputHash)
       throw Object.assign(
@@ -136,7 +149,8 @@ export async function createAccounts(
         ),
         { status: 409 },
       );
-    if (!['failed', 'completed'].includes(saved.status))
+    if (account.accountType !== 'prospect') await runtime.repository.ensureProjectScanSchedule(projectId);
+    if (saved.status === 'queued' || saved.status === 'running')
       await runtime.queue.send([{ kind: 'onboard', projectId, jobId }]);
     items.push({
       project: (await runtime.repository.getProject(projectId))!,

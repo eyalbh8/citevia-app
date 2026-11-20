@@ -48,6 +48,7 @@ export default function SettingsView({
     loading,
   } = useApi<Project>(`${path}/settings`);
   const runs = useApi<Page<ScanRun>>(`${path}/runs`);
+  const prospect = project?.accountType === 'prospect';
   const [section, setSection] = useState(() => new URLSearchParams(window.location.hash.split('?')[1]).get('section') === 'publishing' ? 'publishing' : 'general');
   return (
     <>
@@ -78,15 +79,15 @@ export default function SettingsView({
               <aside className="settings-sidebar"><section className="card">
                 <div className="card-header">
                   <div>
-                    <h2 className="card-title">Your scan schedule</h2>
+                    <h2 className="card-title">{prospect ? "Preview scan" : "Your scan schedule"}</h2>
                     <p className="card-description">
-                      {project.scanSchedule
+                      {prospect ? '10 prompts measured once on ChatGPT.' : project.scanSchedule
                         ? `${projectScanRunsPerWeek(project)} ${projectScanRunsPerWeek(project) === 1 ? 'snapshot' : 'snapshots'} each week, evenly spaced.`
                         : 'Automatic snapshots on your saved schedule.'}
                     </p>
                   </div>
                 </div>
-                <div className="card-content">
+                {!prospect && <div className="card-content">
                   <ScanningToggle
                     key={`${project.id}-${project.version}`}
                     project={project}
@@ -133,7 +134,7 @@ export default function SettingsView({
                       />
                     </div>
                   )}
-                </div>
+                </div>}
               </section>
               <section className="card">
                 <div className="card-header"><div><h2 className="card-title">Recent scans</h2>
@@ -153,7 +154,7 @@ export default function SettingsView({
                         key={run.id}
                         run={run}
                         path={path}
-                        owner={project.role === 'owner' && !project.demo && project.enabled}
+                        owner={project.role === 'owner' && !project.demo && (prospect ? project.previewScan?.id === run.id : project.enabled)}
                         onSaved={onSaved}
                         notify={notify}
                       />
@@ -372,7 +373,7 @@ function ProjectForm({
           country: country.toUpperCase(),
           language,
           timezone,
-          scanProviders,
+          ...(project.accountType === 'prospect' ? {} : { scanProviders }),
         }),
       });
       notify('Project settings saved.');
@@ -509,7 +510,7 @@ function ProjectForm({
                 {project.scanSchedule ? 'Used to display scan times. Changing the timezone keeps your scheduled start times unchanged.' : 'A valid IANA timezone for your saved schedule.'}
               </small>
             </label>
-            <div className="settings-group-heading"><h3>AI coverage</h3><p>Choose where to measure your brand visibility.</p></div>
+            {project.accountType === 'prospect' ? <p className="setting-note">AI coverage · ChatGPT</p> : <><div className="settings-group-heading"><h3>AI coverage</h3><p>Choose where to measure your brand visibility.</p></div>
             <div className="settings-provider-list">
               <p className="card-description">
                 Each selected provider checks the same active prompts during a scan.
@@ -553,7 +554,7 @@ function ProjectForm({
               {!scanProviders.length && (
                 <p role="alert">Select at least one provider.</p>
               )}
-            </div>
+            </div></>}
             {owner && (
               <div className="form-actions">
                 <button

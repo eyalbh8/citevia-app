@@ -11,6 +11,7 @@ import {
   type SqlDatabase,
 } from '@citevia/storage';
 import { createAccounts } from '../apps/api/src/onboarding.js';
+import { createApi } from '../apps/api/src/app.js';
 import { OnboardingEngine } from '../apps/scanner/src/onboarding-engine.js';
 import { Scanner } from '../apps/scanner/src/engine.js';
 import { FixtureProvider, newProject } from './fixtures/scanner.js';
@@ -27,6 +28,43 @@ afterAll(async () => {
   await db?.close();
 });
 describe('iGEO-compatible PostgreSQL persistence', () => {
+  it('persists a one-time preview and reports its original evidence weeks later', async () => {
+    const owner = testIdentity('postgres-owner');
+    const runtime = { repository, queue: new MemoryQueue(), artifacts: new MemoryArtifacts() };
+    const date = new Date('2026-10-21T10:00:00.000Z');
+    const { items: [{ project: created }] } = await createAccounts(runtime, owner.subject, 'postgres-preview', {
+      accounts: [{ name: 'Preview Acme', website: 'https://acme.com', region: 'US', language: 'en', accountType: 'prospect' }],
+    }, date, 100);
+    const clock = () => date;
+    const scanner = new Scanner({ ...runtime, now: clock, provider: new FixtureProvider(clock),
+      onboarding: new OnboardingEngine(runtime, new FixtureOnboardingProvider(), async () => {
+        throw new Error('A prospect should never synchronize a recurring schedule');
+      }, clock) });
+    while (runtime.queue.messages.length) await scanner.handle(runtime.queue.messages.shift()!);
+
+    const project = (await repository.getProject(created.id))!;
+    const [run] = await repository.listRuns(project.id);
+    expect(run).toMatchObject({ status: 'completed', succeededCount: 10, snapshot: { provider: 'openai' } });
+    expect((await repository.ensureProjectScanSchedule(project.id, { migrateCustom: true }))?.scanSchedule).toBeUndefined();
+    const { rows: [settings] } = await db.query('SELECT prompt_limit,ai_engines FROM account_settings WHERE account_id=$1', [uuidFor(project.id)]);
+    expect(settings).toMatchObject({ prompt_limit: 10, ai_engines: [{ provider: 'openai' }] });
+    const summary = (await repository.listProjectSummaries(owner.subject, { offset: 0, limit: 1, query: 'Preview Acme' })).items[0];
+    expect(summary).toMatchObject({ accountType: 'prospect', prompts: [], activePromptCount: 10,
+      previewScan: { id: run.id, status: 'completed', succeededCount: 10, completedAt: run.completedAt } });
+
+    // Editing the live portfolio must leave the original report and answers available.
+    await repository.saveProject({ ...project, version: project.version + 1,
+      prompts: project.prompts.map(prompt => ({ ...prompt, active: false })) }, project.version);
+    const api = createApi(runtime, { mode: 'live', now: () => new Date('2026-11-20T10:00:00Z') });
+    const report = await api(new Request(`https://test/v1/projects/${project.id}/dashboard/overview`), owner);
+    expect(report.status).toBe(200);
+    const data = await report.json();
+    expect(data.period.start).toBe('2026-10-21T00:00:00.000Z');
+    expect(data.providers).toEqual([expect.objectContaining({ provider: 'openai' })]);
+    expect(data.stages.map((stage: { measuredPromptCount: number }) => stage.measuredPromptCount).sort()).toEqual([2, 2, 3, 3]);
+    const responses = await api(new Request(`https://test/v1/projects/${project.id}/responses?runId=${run.id}`), owner);
+    expect((await responses.json()).items).toHaveLength(10);
+  });
   it('searches and pages lightweight summaries within the authenticated membership', async () => {
     const demo = {
       version: 1 as const,

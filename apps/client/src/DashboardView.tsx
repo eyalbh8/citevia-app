@@ -1,3 +1,4 @@
+import { previewProgress } from './prospect-preview';
 import { reportExcerpt } from './report-excerpt';
 import { axisTickIndices, timeBuckets } from './chart-time';
 import {
@@ -19,10 +20,12 @@ import {
   PROVIDER_LABELS,
   projectProviders,
   type DashboardOverview,
+  type Page,
+  type PromptResult,
   type Project,
 } from '@citevia/core';
-import { downloadCsv, useApi } from './api';
-import { Empty, ErrorNotice, formatNumber, labelize } from './components';
+import { downloadCsv, query, useApi } from './api';
+import { Badge, Empty, ErrorNotice, formatNumber, labelize } from './components';
 import { Skeleton } from './Loading';
 import DomainLogo from './DomainLogo';
 import {
@@ -87,7 +90,7 @@ function Change({
   );
 }
 
-function exportOverview(data: DashboardOverview, name: string) {
+function exportOverview(data: DashboardOverview, name: string, prospect = false) {
   const rows: (string | number | null)[][] = [];
   const add = (
     section: string,
@@ -113,21 +116,21 @@ function exportOverview(data: DashboardOverview, name: string) {
       );
   for (const p of data.providers) {
     add('Providers', PROVIDER_LABELS[p.provider], 'Mentions', p.count);
-    add('Providers', PROVIDER_LABELS[p.provider], 'Change (%)', p.change);
+    if (!prospect) add('Providers', PROVIDER_LABELS[p.provider], 'Change (%)', p.change);
   }
   for (const s of data.stages) {
     add('Stages', labelize(s.key), 'Visibility (%)', s.visibility);
-    add('Stages', labelize(s.key), 'Visibility change (%)', s.visibilityChange ?? null);
+    if (!prospect) add('Stages', labelize(s.key), 'Visibility change (%)', s.visibilityChange ?? null);
     add('Stages', labelize(s.key), 'Active prompts', s.promptCount);
     add('Stages', labelize(s.key), 'Measured prompts', s.measuredPromptCount);
   }
   for (const b of data.ranking) {
     add('Industry ranking', b.name, 'Average daily rank', b.rank);
-    add('Industry ranking', b.name, 'Rank improvement', b.rankChange);
+    if (!prospect) add('Industry ranking', b.name, 'Rank improvement', b.rankChange);
     add('Industry ranking', b.name, 'Mentions', b.mentions);
-    add('Industry ranking', b.name, 'Mention change (%)', b.mentionChange);
+    if (!prospect) add('Industry ranking', b.name, 'Mention change (%)', b.mentionChange);
     add('Industry ranking', b.name, 'Sentiment (0–100)', b.sentiment);
-    add(
+    if (!prospect) add(
       'Industry ranking',
       b.name,
       'Sentiment change (points)',
@@ -135,7 +138,7 @@ function exportOverview(data: DashboardOverview, name: string) {
     );
   }
   const trendSection = data.trendGranularity === 'hourly' ? 'Hourly mentions' : 'Daily mentions';
-  for (const d of data.trend)
+  for (const d of prospect ? [] : data.trend)
     for (const b of data.ranking)
       rows.push([trendSection, b.name, d.date, d.mentions[b.brandId] ?? 0]);
   for (const s of data.sources) {
@@ -153,15 +156,19 @@ export function DashboardView({
   project,
   path,
   actions,
+  onResponse,
 }: {
   project: Project;
   path: string;
   actions?: ReactNode;
+  onResponse?: (id: string) => void;
 }) {
+  const prospect = project.accountType === 'prospect';
+  const progress = prospect ? previewProgress(project) : undefined;
   const [selection, setSelection] = useMonitoringSelection(project);
   const [retry, setRetry] = useState(0);
   const overview = useApi<DashboardOverview>(
-    `${path}/dashboard/overview${selectionQuery(selection)}`,
+    prospect && !project.previewScan ? null : `${path}/dashboard/overview${selectionQuery(selection)}`,
     retry,
   );
   const data = overview.data;
@@ -172,7 +179,7 @@ export function DashboardView({
   const rankingPeriod = data?.rankingComparison === 'modeled_period' ? 'over the selected period'
     : data?.comparison === 'scenario_baseline' ? 'since the first scan' : 'from first to last observed day';
   const periodCaption =
-    selection.days === 'custom'
+    prospect ? 'Brand mentions in this scan' : selection.days === 'custom'
       ? 'Mentions in the selected period'
       : selection.days === '1'
         ? 'Mentions in the last 24 hours'
@@ -185,7 +192,7 @@ export function DashboardView({
   return (
     <div className="monitor-screen dashboard-screen">
       <MonitoringHeader
-        title="Dashboard"
+        title={prospect ? "Prospect preview" : "Dashboard"}
         project={project}
         value={selection}
         onChange={setSelection}
@@ -193,7 +200,7 @@ export function DashboardView({
           <>
             <button
               className="button button-outline"
-              onClick={() => data && exportOverview(data, project.brand.name)}
+              onClick={() => data && exportOverview(data, project.brand.name, prospect)}
               disabled={!data || overview.loading || !!overview.error}
             >
               <ArrowDownToLine size={14} />
@@ -203,10 +210,13 @@ export function DashboardView({
           </>
         }
       />
+      {prospect && project.onboardingSummary?.error && <ErrorNotice error={project.onboardingSummary.error.message} />}
+      {progress && <div className="overview-empty-note" role="status"><strong>{project.brand.name}</strong><Badge value={progress.tone} label={progress.label} /></div>}
       <ErrorNotice
         error={overview.error}
         retry={() => setRetry((value) => value + 1)}
       />
+      {prospect && project.previewScan && onResponse && <PreviewAnswers path={path} runId={project.previewScan.id} onResponse={onResponse} />}
       {overview.loading && !data ? (
         <OverviewSkeleton
           providers={
@@ -243,7 +253,7 @@ export function DashboardView({
                     ? data.analyzed
                       ? 'Scan in progress. Results update as each answer finishes analysis.'
                       : 'Scan in progress. Results will appear as soon as the first answer finishes analysis.'
-                    : 'No analyzed answers in this period. Adjust the filters or run a scan to collect results.'}
+                    : prospect ? 'No analyzed answers match these filters.' : 'No analyzed answers in this period. Adjust the filters or run a scan to collect results.'}
                 </span>
               </div>
             )}
@@ -256,10 +266,10 @@ export function DashboardView({
                   </h2>
                   <div className="overview-provider-value">
                     <strong>{formatNumber(p.count)}</strong>
-                    <Change
+                    {!prospect && <Change
                       value={p.change}
                       label={growthLabel}
-                    />
+                    />}
                   </div>
                   <p>{periodCaption}</p>
                 </article>
@@ -305,10 +315,10 @@ export function DashboardView({
                         </span>
                         <div className="overview-stage-metrics">
                           <strong>{formatNumber(s.visibility)}%</strong>
-                          <Change
+                          {!prospect && <Change
                             value={s.visibilityChange ?? null}
                             label={`${s.key === 'unassigned' ? 'No stage' : labelize(s.key)} visibility ${growthLabel.toLowerCase()} (relative percentage)`}
-                          />
+                          />}
                         </div>
                       </div>
                       <div
@@ -342,7 +352,7 @@ export function DashboardView({
                 </p>
               )}
             </section>
-            <div className="overview-comparison-grid">
+            <div className={prospect ? undefined : "overview-comparison-grid"}>
               <section
                 className="card overview-ranking"
                 aria-labelledby="ranking-title"
@@ -360,7 +370,7 @@ export function DashboardView({
                           : 'Top brands by visibility across all prompts'}
                     </p>
                   </div>
-                  {project.role === 'owner' && !project.demo && (
+                  {project.role === 'owner' && !project.demo && !prospect && (
                     <a
                       className="button button-quiet overview-manage-competitors"
                       href="#settings"
@@ -427,21 +437,21 @@ export function DashboardView({
                             <td>
                               <div className="overview-measurement">
                                 <strong>{formatNumber(b.rank, 1)}</strong>
-                                <Change
+                                {!prospect && <Change
                                   value={b.rankChange}
                                   unit=""
                                   label={data.rankingComparison ? `Estimated rank improvement in positions ${rankingPeriod}` : `Rank improvement ${rankingPeriod}`}
-                                />
+                                />}
                               </div>
                             </td>
                             <td>
                               <div className="overview-measurement">
                                 <strong>{formatNumber(b.mentions)}</strong>
-                                <Change
+                                {!prospect && <Change
                                   value={b.mentionChange}
                                   label={data.rankingComparison ? `Estimated mention growth ${rankingPeriod}`
                                     : b.isTarget || data.comparison === 'scenario_baseline' ? `Mentions: ${growthLabel}` : `Mention change ${rankingPeriod}`}
-                                />
+                                />}
                               </div>
                             </td>
                             <td>
@@ -456,11 +466,11 @@ export function DashboardView({
                                 >
                                   {formatNumber(b.sentiment)}
                                 </span>
-                                <Change
+                                {!prospect && <Change
                                   value={b.sentimentChange}
                                   unit=" pts"
                                   label={`${data.rankingComparison ? 'Estimated sentiment change' : 'Sentiment change'} ${rankingPeriod}`}
-                                />
+                                />}
                               </div>
                             </td>
                           </tr>
@@ -474,7 +484,7 @@ export function DashboardView({
                     description="Brands will be ranked when your brand or a tracked competitor appears in an analyzed answer."
                   />
                 )}
-                {data.ranking.length > 0 && (
+                {!prospect && data.ranking.length > 0 && (
                   <div className="overview-card-footer">
                     <span>
                       {project.competitors.length
@@ -484,7 +494,7 @@ export function DashboardView({
                   </div>
                 )}
               </section>
-              <section
+              {!prospect && <section
                 className="card overview-trend"
                 aria-labelledby="visibility-title"
               >
@@ -506,7 +516,7 @@ export function DashboardView({
                     description={`${hourlyTrend ? 'Hourly' : 'Daily'} mentions will appear after a completed scan includes your brand or a competitor.`}
                   />
                 )}
-              </section>
+              </section>}
             </div>
             <section
               className="card overview-sources"
@@ -573,6 +583,21 @@ export function DashboardView({
       )}
     </div>
   );
+}
+
+function PreviewAnswers({ path, runId, onResponse }: { path: string; runId: string; onResponse: (id: string) => void }) {
+  const answers = useApi<Page<PromptResult>>(`${path}/responses${query({ runId, limit: 10 })}`);
+  return <details className="card preview-answers">
+    <summary>Original prompts and ChatGPT answers</summary>
+    <ErrorNotice error={answers.error} />
+    {answers.loading && !answers.data && <Skeleton variant="table" label="Loading preview answers…" />}
+    <ol>{answers.data?.items.map(result => <li key={result.promptId}>
+      <button type="button" className="button button-quiet" onClick={() => onResponse(result.responseId)}>
+        <span dir="auto">{reportExcerpt(result.prompt.text)}</span>
+        <span>{result.status === 'succeeded' ? 'View answer' : labelize(result.status)}</span>
+      </button>
+    </li>)}</ol>
+  </details>;
 }
 
 function OverviewSkeleton({ providers }: { providers: number }) {

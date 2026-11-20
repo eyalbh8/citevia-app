@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getDomain } from 'tldts';
-import type { JourneyStage, OnboardingInput } from './types.js';
+import type { AccountType, JourneyStage, OnboardingInput } from './types.js';
 import { PROMPT_INTENTS } from './prompt-policy.js';
 export const JOURNEY_STAGES = [
   'understand',
@@ -9,6 +9,9 @@ export const JOURNEY_STAGES = [
   'convert',
 ] as const;
 export const journeyStageSchema = z.enum(JOURNEY_STAGES);
+export function promptLimitFor(accountType?: AccountType): number {
+  return accountType === 'prospect' ? 10 : 50;
+}
 export const JOURNEY_PROMPT_COUNTS = {
   understand: 13,
   prefer: 13,
@@ -50,6 +53,7 @@ const publicUrl = z
 export const onboardingInputSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
+    accountType: z.enum(['standard', 'prospect']).optional(),
     website: publicUrl,
     promptFocus: z.string().trim().max(300).optional(),
     region: z
@@ -106,6 +110,7 @@ export const generatedPromptSchema = z
   .strict();
 export function journeyAllocation(
   manual: OnboardingInput['manualPrompts'],
+  accountType?: AccountType,
 ): Record<JourneyStage, number> {
   const counts = Object.fromEntries(
     JOURNEY_STAGES.map((stage) => [
@@ -114,7 +119,8 @@ export function journeyAllocation(
     ]),
   ) as Record<JourneyStage, number>;
   const add = { understand: 0, prefer: 0, trust: 0, convert: 0 };
-  for (let i = manual.length; i < 50; i++) {
+  const limit = promptLimitFor(accountType);
+  for (let i = manual.length; i < limit; i++) {
     const stage = [...JOURNEY_STAGES].sort((a, b) => counts[a] - counts[b])[0];
     counts[stage]++;
     add[stage]++;
