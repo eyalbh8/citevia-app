@@ -6,7 +6,7 @@ import type {
   ScanRun,
 } from './types.js';
 import { isReportableRun, sameTargetMethod } from './metrics.js';
-import { promptLimitFor } from './onboarding.js';
+import { trackedPromptLimitFor } from './onboarding.js';
 import { brandRank, brandSentimentScore, usesCompanyAppearanceRank } from './scoring.js';
 import { projectProviders, snapshotProvider } from './providers.js';
 import { investingComparisonPeriod, investingTrend, usesModeledReporting } from './demo-growth.js';
@@ -50,7 +50,7 @@ export interface PromptMetricsResponse {
     previousEnd: string;
   };
   provider: ScanProvider | null;
-  usage: { active: number; limit: number };
+  usage: { active: number; limit: number | null };
 }
 
 export function matchesPromptMethod(project: Project, run: ScanRun) {
@@ -457,7 +457,7 @@ export function promptPeriodMetrics(
     provider: provider || null,
     usage: {
       active: project.prompts.filter((prompt) => prompt.active).length,
-      limit: promptLimitFor(project.accountType),
+      limit: trackedPromptLimitFor(project.accountType),
     },
   };
 }

@@ -26,7 +26,7 @@ import {
   promptCreateSchema,
   promptUpdateSchema,
   promptFingerprint,
-  promptLimitFor,
+  trackedPromptLimitFor,
   previewScanSummary,
   normalizeDomain,
   sameCohort,
@@ -360,7 +360,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
       if (!stored) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
       const project = { ...stored, role: stored.demo ? 'viewer' as const : member.role };
       const prospect = stored.accountType === 'prospect';
-      const promptLimit = promptLimitFor(stored.accountType);
+      const promptLimit = trackedPromptLimitFor(stored.accountType);
       const editingCompetitors = tail === 'competitors' && method === 'PATCH';
       if (stored.demo && !['GET', 'HEAD'].includes(method) && !editingCompetitors)
         throw new HttpError(403, 'ACCOUNT_READ_ONLY', 'This account is read-only. Scans and edits are unavailable.');
@@ -789,7 +789,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
         const input = promptCreateSchema.parse(await body(request));
         const texts = 'texts' in input ? input.texts : [input.text];
         const active = stored.prompts.filter((p) => p.active);
-        if (active.length + texts.length > promptLimit)
+        if (promptLimit !== null && active.length + texts.length > promptLimit)
           throw new HttpError(
             400,
             'PROMPT_LIMIT',
@@ -879,7 +879,7 @@ export function createApi(runtime: Runtime, options: ApiOptions) {
             'BRANDED_PROMPT_LIMIT',
             'At most 15 active questions may name the company or an alias.',
           );
-        if (prompts.filter((p) => p.active).length > promptLimit)
+        if (promptLimit !== null && prompts.filter((p) => p.active).length > promptLimit)
           throw new HttpError(
             400,
             'PROMPT_LIMIT',

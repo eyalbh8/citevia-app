@@ -7,7 +7,7 @@ import * as social from './social-postgres.js';
 import * as websiteHealth from './website-health-postgres.js';
 import {
   allocateProjectScanSchedule,
-  promptLimitFor,
+  trackedPromptLimitFor,
   WEEKLY_SCHEDULE,
   isTerminal,
   projectProviders,
@@ -339,7 +339,7 @@ export class PostgresRepository extends PostgresUsers implements Repository {
         JSON.stringify(p.competitors.map((c) => c.name)),
         p.timezone,
         p.updatedAt,
-        promptLimitFor(p.accountType),
+        trackedPromptLimitFor(p.accountType),
       ],
     );
     await tx.query(
@@ -570,7 +570,6 @@ export class PostgresRepository extends PostgresUsers implements Repository {
       if (
         results.length !== run.totalCount ||
         !results.length ||
-        results.length > 50 ||
         new Set(results.map((r) => r.promptId)).size !== results.length
       )
         throw new Error('Invalid run manifest');

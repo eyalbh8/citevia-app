@@ -860,7 +860,6 @@ export class MemoryRepository implements Repository {
       if (this.state.runs[key(run.projectId, run.id)]) return false;
       if (
         results.length !== run.totalCount ||
-        results.length > 50 ||
         results.length === 0 ||
         new Set(results.map((r) => r.promptId)).size !== results.length
       )

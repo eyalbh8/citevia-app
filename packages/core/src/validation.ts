@@ -63,6 +63,19 @@ export const settingsSchema = z
   })
   .strict();
 export const promptTextSchema = z.string().trim().min(3).max(2000);
+// Report the first invalid entry without building an error for every item in a large batch.
+const promptTextsSchema = z.array(z.unknown()).min(1).transform((values, ctx) => {
+  const texts: string[] = [];
+  for (const [index, value] of values.entries()) {
+    const result = promptTextSchema.safeParse(value);
+    if (!result.success) {
+      ctx.addIssue({ code: 'custom', path: [index], message: result.error.issues[0].message });
+      return z.NEVER;
+    }
+    texts.push(result.data);
+  }
+  return texts;
+});
 const promptMetadata = {
   intent: z.enum(PROMPT_INTENTS).optional(),
   seoKeyword: z.string().trim().max(160).optional(),
@@ -84,7 +97,7 @@ export const promptCreateSchema = z.union([
     .strict(),
   z
     .object({
-      texts: z.array(promptTextSchema).min(1).max(50),
+      texts: promptTextsSchema,
       branded: z.boolean().optional(),
       stage: journeyStageSchema.optional(),
       topic: z.string().trim().max(120).optional(),

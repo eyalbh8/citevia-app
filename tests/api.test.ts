@@ -554,8 +554,15 @@ describe('real-provider readiness and prompt catalog', () => {
 });
 
 describe('API prompt configuration and frozen history', () => {
-  it('enforces the 50 active prompt limit, including racing additions', async () => {
-    const f = await fixture(fixturePrompts().slice(0, 49));
+  it('creates 70 prompts at once and avoids lost updates on racing additions', async () => {
+    const f = await fixture([]);
+    const texts = Array.from({ length: 70 }, (_, index) => `Compare investing platforms for use case ${index + 1}.`);
+    const imported = await f.call(`${BASE}/prompts`, jsonRequest('POST', { texts }));
+    expect(imported.status).toBe(201);
+    expect((await read<{ items: Project['prompts'] }>(imported)).items.map(prompt => prompt.text)).toEqual(texts);
+    const metrics = await f.call(`${BASE}/prompt-metrics`);
+    expect(await metrics.json()).toMatchObject({ usage: { active: 70, limit: null } });
+
     const additions = await Promise.all([
       f.call(
         `${BASE}/prompts`,
@@ -577,20 +584,10 @@ describe('API prompt configuration and frozen history', () => {
       (await f.repository.getProject(f.project.id))?.prompts.filter(
         (prompt) => prompt.active,
       ),
-    ).toHaveLength(50);
-    const tooMany = await f.call(
-      `${BASE}/prompts`,
-      jsonRequest('POST', {
-        text: 'One more prompt beyond the permitted customer limit.',
-      }),
-    );
-    expect(tooMany.status).toBe(400);
-    expect(await tooMany.json()).toMatchObject({
-      error: { code: 'PROMPT_LIMIT' },
-    });
+    ).toHaveLength(71);
   });
 
-  it('rejects duplicate prompt text and does not allow reactivation above the cap', async () => {
+  it('reactivates prompts past 50 and still rejects duplicate active text', async () => {
     const f = await fixture(fixturePrompts());
     const archived = {
       ...f.project.prompts[0],
@@ -606,13 +603,9 @@ describe('API prompt configuration and frozen history', () => {
       `${BASE}/prompts/archived-prompt`,
       jsonRequest('PATCH', { active: true }),
     );
-    expect(reactivation.status).toBe(400);
-    expect(await reactivation.json()).toMatchObject({
-      error: { code: 'PROMPT_LIMIT' },
-    });
-    await f.call(`${BASE}/prompts/${f.project.prompts[1].id}`, {
-      method: 'DELETE',
-    });
+    expect(reactivation.status).toBe(200);
+    expect(await reactivation.json()).toMatchObject({ id: archived.id, active: true });
+    expect((await f.repository.getProject(f.project.id))?.prompts.filter(prompt => prompt.active)).toHaveLength(51);
     const duplicate = await f.call(
       `${BASE}/prompts`,
       jsonRequest('POST', { text: f.project.prompts[0].text.toUpperCase() }),

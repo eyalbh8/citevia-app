@@ -49,7 +49,7 @@ describe('scanner engine lifecycle', () => {
     expect(provider.collect).not.toHaveBeenCalled();
     expect(queue.messages).toEqual([]);
   });
-  it('atomically freezes up to 50 prompts and deduplicates the scheduled run', async () => {
+  it('atomically freezes active prompts and deduplicates the scheduled run', async () => {
     const env = await setup({ promptCount: 50 });
     await env.scanner.handle(kickoff);
     await env.scanner.handle(kickoff);
@@ -123,10 +123,24 @@ describe('scanner engine lifecycle', () => {
     expect(saved.leaseOwner).toBeUndefined();
     expect(await env.artifacts.get(saved.captureKey!)).toBeTruthy();
   });
-  it('rejects more than 50 active prompts before creating a run', async () => {
-    const env = await setup({ promptCount: 51 });
-    await expect(env.scanner.handle(kickoff)).rejects.toMatchObject({ code: 'invalid_prompt_count' });
-    expect(await env.repository.listRuns(project.id)).toHaveLength(0);
+  it('scans all 70 active prompts and excludes archived prompts', async () => {
+    const env = await setup({ promptCount: 72 });
+    const saved = (await env.repository.getProject(project.id))!;
+    saved.prompts[0].active = false;
+    saved.prompts[51].active = false;
+    await env.repository.saveProject({ ...saved, version: saved.version + 1 }, saved.version);
+
+    await env.scanner.handle(kickoff);
+
+    const activeIds = saved.prompts.filter(prompt => prompt.active).map(prompt => prompt.id);
+    const jobs = promptMessages(env.queue.messages);
+    expect(jobs.map(job => job.promptId).sort()).toEqual(activeIds.sort());
+    for (const job of jobs) await env.scanner.handle(job);
+
+    const [run] = await env.repository.listRuns(project.id);
+    expect(run).toMatchObject({ status: 'completed', totalCount: 70, succeededCount: 70 });
+    expect(run.snapshot.prompts.map(prompt => prompt.id).sort()).toEqual(activeIds);
+    expect(env.provider.collect).toHaveBeenCalledTimes(70);
   });
   it('starts only the original prospect scan, deduplicates replays, and retries only its failed answer', async () => {
     const env = await prospectSetup();
