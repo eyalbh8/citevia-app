@@ -472,7 +472,7 @@ export default function AccountsView({
                   <span>
                     {account.activePromptCount ??
                       account.prompts.filter((p) => p.active).length}
-                    /{promptLimitFor(account.accountType)} active prompts
+                    {preview && `/${promptLimitFor('prospect')}`} active prompts
                   </span>
                 </div>
                 {job ? (

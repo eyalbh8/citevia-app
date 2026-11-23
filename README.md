@@ -1,6 +1,6 @@
 # Citevia app
 
-A small AI visibility reporting application: **50 prompts per standard account, scanned twice weekly by default through the ChatGPT, Perplexity and Gemini APIs**, with separate scanner and API Lambda deployments. Accounts onboarding creates a researched brandbook and prompts under Understand, Prefer, Trust and Convert, then starts tracking automatically. The client includes Dashboard, Prompts, Mentions, Sources, Brandbook and Settings. PostgreSQL uses iGEO's checked-in data model.
+A small AI visibility reporting application that scans active prompts twice weekly by default through the ChatGPT, Perplexity and Gemini APIs, with separate scanner and API Lambda deployments. Standard account onboarding creates a researched brandbook and 50 starting prompts under Understand, Prefer, Trust and Convert, then starts tracking automatically. Standard accounts can add more prompts after setup. The client includes Dashboard, Prompts, Mentions, Sources, Brandbook and Settings. PostgreSQL uses iGEO's checked-in data model.
 
 ## Run locally
 
@@ -170,7 +170,7 @@ PostgreSQL records and current evidence objects have no automatic deletion polic
 
 ## Three-provider scans
 
-Standard accounts enable ChatGPT, Perplexity and Gemini. The same 50 prompts yield up to 150 answers per scan cycle, plus analysis calls. Existing accounts keep their current OpenAI workload until an owner enables additional providers in **System admin → Settings → AI coverage**. Change the **AI provider** selector to view Dashboard, Mentions and Sources for that provider. Prompts has its own **Providers** and date filters and defaults to all providers. **Run scan** scans all enabled providers. See [provider configuration, API behavior and native evidence](docs/PROVIDERS.md).
+Standard accounts enable ChatGPT, Perplexity and Gemini. Each enabled provider receives the active prompts at scan kickoff. With the 50 starting prompts, three providers yield up to 150 answers per scan cycle, plus analysis calls. Existing accounts keep their current OpenAI workload until an owner enables additional providers in **System admin → Settings → AI coverage**. Change the **AI provider** selector to view Dashboard, Mentions and Sources for that provider. Prompts has its own **Providers** and date filters and defaults to all providers. **Run scan** scans all enabled providers. See [provider configuration, API behavior and native evidence](docs/PROVIDERS.md).
 
 ## Project configuration and demo links
 

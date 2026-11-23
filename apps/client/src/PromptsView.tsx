@@ -10,6 +10,7 @@ import {
   Hexagon,
   ListFilter,
   Pencil,
+  Plus,
   RotateCcw,
   Search,
   TerminalSquare,
@@ -20,8 +21,8 @@ import {
   JOURNEY_STAGES,
   journeyGoal,
   MAX_BRANDED_PROMPTS,
-  promptLimitFor,
   PROMPT_INTENTS,
+  trackedPromptLimitFor,
   usesModeledReporting,
   type ScanProvider,
   type JourneyStage,
@@ -171,7 +172,7 @@ export default function PromptsView({
     [selection, setSelection] = useState<string[]>([]);
   const [answerPrompt, setAnswerPrompt] = useState<Prompt>();
   const [pendingArchive, setPendingArchive] = useState<Prompt[]>();
-  const [editing, setEditing] = useState<Prompt>();
+  const [editing, setEditing] = useState<Prompt | 'new'>();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<Error>();
   const account = useApi<Project>(`${path}/settings`);
@@ -179,7 +180,6 @@ export default function PromptsView({
   const prospect = project?.accountType === 'prospect';
   const dateRange = (project && previewReportPeriod(project)) ?? selectedRange;
   const provider = prospect ? 'openai' : selectedProvider;
-  const limit = promptLimitFor(project?.accountType);
   const scores = useApi<PromptMetricsResponse>(
     `${path}/prompt-metrics${query({ days: dateRange.days, provider, start: dateRange.days === 'custom' ? dateRange.start : undefined, end: dateRange.days === 'custom' ? dateRange.end : undefined })}`,
   );
@@ -196,6 +196,8 @@ export default function PromptsView({
       </div>
     );
   const active = project.prompts.filter((prompt) => prompt.active).length;
+  const limit = scores.data?.usage.limit ?? trackedPromptLimitFor(project.accountType);
+  const activeCount = scores.data?.usage.active ?? active;
   const modeledGrowth = usesModeledReporting(project.demo) && !project.demo.presentation;
   const waitingForSnapshot = prospect && !project.previewScan &&
     !['failed', 'stopped'].includes(project.onboardingSummary?.status ?? '');
@@ -473,8 +475,9 @@ export default function PromptsView({
             />
           </label>
           <span className="prompts-usage">
-            {scores.data?.usage.active ?? active} out of{' '}
-            {scores.data?.usage.limit ?? limit} Prompts Used
+            {limit === null
+              ? `${activeCount} active ${activeCount === 1 ? 'prompt' : 'prompts'}`
+              : `${activeCount} out of ${limit} Prompts Used`}
           </span>
           <div className="prompts-status-filter">
             <FilterDropdown
@@ -489,6 +492,16 @@ export default function PromptsView({
               ]}
             />
           </div>
+          {editable && !prospect && (
+            <button
+              className="button button-primary"
+              type="button"
+              disabled={busy}
+              onClick={() => setEditing('new')}
+            >
+              <Plus size={16} /> Add prompts
+            </button>
+          )}
         </div>
         <p className="prompt-comparison-note">
           {filtered.filter((prompt) => prompt.measurementCount > 0).length} of {filtered.length} matching prompts have answers.
@@ -523,7 +536,7 @@ export default function PromptsView({
                   !editable ||
                   busy ||
                   !mutationTargets.length ||
-                  (status === 'archived' &&
+                  (status === 'archived' && limit !== null &&
                     active + mutationTargets.length > limit)
                 }
                 onClick={() => {
@@ -551,9 +564,11 @@ export default function PromptsView({
             description={
               rows.length
                 ? 'Change your search or filters to see more prompts.'
-                : pendingSetup
-                  ? 'Your prompts will appear when account setup finishes.'
-                  : 'Your prompts will appear after account setup.'
+                : editable && !prospect
+                  ? 'Add prompts to include them in the next scan.'
+                  : pendingSetup
+                    ? 'Your prompts will appear when account setup finishes.'
+                    : 'Your prompts will appear after account setup.'
             }
           />
         ) : (
@@ -764,7 +779,7 @@ export default function PromptsView({
                                 disabled={
                                   !editable ||
                                   busy ||
-                                  (!prompt.active && active >= limit)
+                                  (!prompt.active && limit !== null && active >= limit)
                                 }
                                 onClick={() =>
                                   prompt.active
@@ -859,10 +874,9 @@ export default function PromptsView({
       )}
       {editing && (
         <PromptEditor
-          key={editing.id}
+          key={editing === 'new' ? 'new-prompt' : editing.id}
           path={path}
-          prompt={editing}
-          slots={limit - active}
+          prompt={editing === 'new' ? undefined : editing}
           prospect={prospect}
           onClose={() => {
             setEditing(undefined);
@@ -881,7 +895,6 @@ export default function PromptsView({
 function PromptEditor({
   path,
   prompt,
-  slots,
   prospect,
   onClose,
   onSaved,
@@ -889,7 +902,6 @@ function PromptEditor({
 }: {
   path: string;
   prompt?: Prompt;
-  slots: number;
   prospect: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -956,14 +968,12 @@ function PromptEditor({
             <textarea
               rows={6}
               required
-              maxLength={prompt ? 2000 : 102000}
+              maxLength={prompt ? 2000 : undefined}
               value={text}
               onChange={(event) => setText(event.target.value)}
             />
             {!prompt && (
-              <small>
-                {texts.length} prompts · {slots} available slots
-              </small>
+              <small>{texts.length} {texts.length === 1 ? 'prompt' : 'prompts'}</small>
             )}
           </label>
           <label className="field">
@@ -1034,7 +1044,6 @@ function PromptEditor({
                 (prompt
                   ? text.trim().length < 3
                   : !texts.length ||
-                    texts.length > slots ||
                     texts.some(
                       (value) => value.length < 3 || value.length > 2000,
                     ))

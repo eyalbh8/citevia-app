@@ -117,7 +117,7 @@ export default function SettingsView({
                     </span>
                   </div>
                   <div className="scan-options">
-                    Up to 50 active prompts per project. Changing a prompt or
+                    Scans include active prompts only. Changing a prompt or
                     your brand settings creates a new comparison baseline.
                   </div>
                   {project.scheduleStatus && (

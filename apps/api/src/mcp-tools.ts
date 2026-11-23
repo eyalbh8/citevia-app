@@ -29,7 +29,7 @@ const definitions: Tool[] = [
   { name: 'tracking_summary', description: 'Read tracked-content coverage and trends.', method: 'GET', path: 'tracked-urls/summary' },
   { name: 'tracked_url_answers', description: 'Read answers citing a tracked URL.', method: 'GET', path: 'tracked-urls/{trackedUrlId}/answers', id: 'trackedUrlId' },
   { name: 'onboarding_status', description: 'Read account setup progress.', method: 'GET', path: 'onboarding' },
-  { name: 'create_prompt', description: 'Create a tracked prompt. body: text or texts (required), topic, stage (understand/prefer/trust/convert), intent, seoKeyword, tags. Branded classification is computed automatically. Existing prompt quotas apply.', method: 'POST', path: 'prompts', body: true },
+  { name: 'create_prompt', description: 'Create tracked prompts. body: text or texts (required), topic, stage (understand/prefer/trust/convert), intent, seoKeyword, tags. Branded classification is computed automatically. Standard accounts have no active prompt count cap. Prospect and branded prompt limits apply.', method: 'POST', path: 'prompts', body: true },
   { name: 'update_prompt', description: 'Edit or archive a prompt. body: version (current prompt version), text, active, topic, stage (understand/prefer/trust/convert), intent, seoKeyword, tags. Set active=false to archive and preserve historical answers.', method: 'PATCH', path: 'prompts/{promptId}', id: 'promptId', body: true },
   { name: 'update_brandbook', description: 'Update brand identity. Read brandbook first; body must include its current account version and permitted brandbook fields.', method: 'PATCH', path: 'brandbook', body: true },
   { name: 'update_settings', description: 'Update account settings, competitors or scanning schedule. Read settings first; body must include current version. Existing schema and permission checks apply.', method: 'PATCH', path: 'settings', body: true },
@@ -65,7 +65,7 @@ const brandbookFields = {
   unknowns: stringList(),
 };
 const writeBodies: Record<string, unknown> = {
-  create_prompt: { ...objectSchema({ ...promptFields, texts: { type: 'array', items: textField(2000, 3), minItems: 1, maxItems: 50 } }), oneOf: [{ required: ['text'] }, { required: ['texts'] }] },
+  create_prompt: { ...objectSchema({ ...promptFields, texts: { type: 'array', items: textField(2000, 3), minItems: 1 } }), oneOf: [{ required: ['text'] }, { required: ['texts'] }] },
   update_prompt: objectSchema({ ...promptFields, version: positiveVersion, active: { type: 'boolean' } }),
   update_brandbook: objectSchema(brandbookFields, Object.keys(brandbookFields)),
   update_settings: objectSchema({

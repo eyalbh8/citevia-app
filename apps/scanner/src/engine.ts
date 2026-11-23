@@ -5,7 +5,7 @@ import {
   isTerminal,
   RETENTION_DAYS,
   projectProviders,
-  promptLimitFor,
+  trackedPromptLimitFor,
   analysisProvider,
   scanProvidersSchema,
   isCurrentScheduledOccurrence,
@@ -280,11 +280,11 @@ export class Scanner {
           );
       }
       const prompts = project.prompts.filter((prompt) => prompt.active);
-      const limit = promptLimitFor(project.accountType);
-      if (!prompts.length || prompts.length > limit || (prospect && prompts.length !== limit))
+      const limit = trackedPromptLimitFor(project.accountType);
+      if (!prompts.length || (limit !== null && prompts.length !== limit))
         throw new ProviderError(
           'invalid_prompt_count',
-          prospect ? `A prospect preview needs exactly ${limit} active prompts.` : `A project needs 1 to ${limit} active prompts.`,
+          limit === null ? 'A project needs at least one active prompt.' : `A prospect preview needs exactly ${limit} active prompts.`,
           false,
         );
       if (!Number.isFinite(Date.parse(message.scheduledAt)))

@@ -5,8 +5,8 @@ import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import type { Project } from '@citevia/core';
-const { useApi, downloadCsv } = vi.hoisted(() => ({ useApi: vi.fn(), downloadCsv: vi.fn() }));
-vi.mock('./api', async original => ({ ...await original<object>(), useApi, downloadCsv }));
+const { useApi, downloadCsv, request } = vi.hoisted(() => ({ useApi: vi.fn(), downloadCsv: vi.fn(), request: vi.fn() }));
+vi.mock('./api', async original => ({ ...await original<object>(), useApi, downloadCsv, request }));
 import PromptsView from './PromptsView';
 
 it.each([undefined, 'uk_investing', 'merchant_payments', 'residential_roofing', 'unattended_payments', 'home_bedding', 'yacht_chartering', 'hair_restoration',
@@ -53,6 +53,47 @@ it('exports a stable public reference for a selected account prompt', async () =
     expect(resolveReportId(rows[0][0])).toBe(id);
     expect(JSON.stringify(rows)).not.toContain(id);
     expect(rows[0][1]).toBe(project.prompts[0].text);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it('lets a standard account with 50 active prompts add a larger batch', async () => {
+  const project = {
+    id: 'standard', name: 'Example', country: 'GB', language: 'en', role: 'owner',
+    brand: { id: 'target', name: 'Example', aliases: [], domains: ['example.com'] },
+    prompts: Array.from({ length: 50 }, (_, index) => ({
+      id: `p${index}`, text: `Existing prompt ${index}?`, version: 1, active: true,
+      createdAt: '2026-05-05T00:00:00.000Z', updatedAt: '2026-05-05T00:00:00.000Z', tags: [],
+    })),
+  };
+  useApi.mockImplementation((path: string) => ({
+    loading: false,
+    data: path.endsWith('/settings') ? project : { items: [], usage: { active: 50, limit: null } },
+  }));
+  request.mockResolvedValueOnce({});
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  try {
+    await act(async () => root.render(<PromptsView path="/projects/standard" onSaved={() => {}} notify={() => {}} />));
+    expect(container.querySelector('.prompts-usage')?.textContent).toBe('50 active prompts');
+    const add = container.querySelector<HTMLButtonElement>('.prompts-toolbar .button-primary')!;
+    await act(async () => add.click());
+    const texts = Array.from({ length: 70 }, (_, index) => `New prompt ${index}?`);
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    await act(async () => {
+      setValue.call(textarea, texts.join('\n'));
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click());
+    expect(request).toHaveBeenCalledWith('/projects/standard/prompts', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ texts, stage: 'understand', seoKeyword: '', tags: [] }),
+    }));
   } finally {
     await act(async () => root.unmount());
     container.remove();

@@ -281,6 +281,35 @@ describe('iGEO-compatible PostgreSQL persistence', () => {
     expect(await repository.getMembership(project.id, 'other-user')).toBeNull();
     expect(await repository.listProjects('other-user')).toHaveLength(0);
   }, 30000);
+  it('persists a scan with seventy active prompts and skips archived prompts', async () => {
+    const project = newProject({
+      id: 'postgres-large-portfolio',
+      prompts: Array.from({ length: 71 }, (_, index) => `Which provider offers option ${index + 1}?`),
+    });
+    project.prompts[0].active = false;
+    await repository.saveProject(project, null);
+    const { rows: [settings] } = await db.query(
+      'SELECT prompt_limit FROM account_settings WHERE account_id=$1',
+      [uuidFor(project.id)],
+    );
+    expect(settings.prompt_limit).toBeNull();
+
+    const queue = new MemoryQueue();
+    const scanner = new Scanner({ repository, queue, artifacts: new MemoryArtifacts(), provider: new FixtureProvider() });
+    await scanner.handle({
+      kind: 'kickoff',
+      projectId: project.id,
+      scheduledAt: new Date().toISOString(),
+      trigger: 'manual',
+    });
+
+    const expectedIds = project.prompts.slice(1).map(prompt => prompt.id).sort();
+    const [run] = await repository.listRuns(project.id);
+    expect(run.totalCount).toBe(70);
+    expect(run.snapshot.prompts.map(prompt => prompt.id).sort()).toEqual(expectedIds);
+    expect((await repository.listResults(project.id, run.id)).map(result => result.promptId).sort()).toEqual(expectedIds);
+    expect(queue.messages.flatMap(message => message.kind === 'prompt' ? [message.promptId] : []).sort()).toEqual(expectedIds);
+  });
   it('persists failed measurements as gaps and keeps transactional counters correct under duplicate delivery', async () => {
     const p = newProject({
       id: 'postgres-failure',

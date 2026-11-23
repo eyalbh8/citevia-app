@@ -9,8 +9,12 @@ export const JOURNEY_STAGES = [
   'convert',
 ] as const;
 export const journeyStageSchema = z.enum(JOURNEY_STAGES);
+/** The default portfolio size used during onboarding. */
 export function promptLimitFor(accountType?: AccountType): number {
   return accountType === 'prospect' ? 10 : 50;
+}
+export function trackedPromptLimitFor(accountType?: AccountType): number | null {
+  return accountType === 'prospect' ? promptLimitFor(accountType) : null;
 }
 export const JOURNEY_PROMPT_COUNTS = {
   understand: 13,
