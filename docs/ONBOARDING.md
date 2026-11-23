@@ -61,6 +61,12 @@ Creation requires an idempotency key. Repeating a request after an ambiguous fai
 
 AWS gives scans a 24-hour deadline to tolerate bulk onboarding and weekly queue bursts. Local development retains the original three-hour default. The queue and 15-minute recovery tick use the same scanner Lambda. Onboarding does not add a third application Lambda.
 
+## Recover setup with an approved portfolio
+
+An operator with scanner Lambda invoke access can recover a paused standard account whose failed or stopped setup has never applied a portfolio. Invoke `onboarding:recover-approved` with `projectId`, a unique `requestId`, the `officialName` displayed on the company website, and `prompts` as ordered `{ text, stage }` entries. Recovery verifies the official identity through the usual research steps, saves the approved prompts, and leaves both the workspace display name and paused schedule in place. Check for completed setup and verify the active list before starting a scan.
+
+Invoke `scan:approved-recovery` with `projectId` and a separate unique `requestId` to queue a single run group across configured providers while recurring scans stay paused. Admission requires an exact match to the approved active portfolio. Reuse a request ID to repair an uncertain enqueue or partial provider fan-out. Scheduled kickoffs and unrelated run groups remain paused. These operator commands are available through IAM invocation of the scanner Lambda and are excluded from queued input and public MCP tools.
+
 ## API and local validation
 
 - `POST /v1/onboarding/accounts`: system administrator only; `{ accounts: [...] }`, at most 25; `Idempotency-Key` required. Returns accepted project/job records. A 207 response reports an owner limit reached after some items were accepted.

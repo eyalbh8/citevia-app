@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ScanMessage, PromptResult, RunSummary, CapturedAnswer, Analysis, ScanRun } from '@citevia/core';
 import { MemoryArtifacts, MemoryQueue, MemoryRepository, type AnswerProvider, type AnalysisBatchPort } from '@citevia/storage';
-import { Scanner, captureKeyFor, MAX_ATTEMPTS, MAX_MANUAL_RETRIES, runIdFor } from '../src/engine.js';
+import { Scanner, captureKeyFor, MAX_ATTEMPTS, MAX_MANUAL_RETRIES, oneTimeScanDigest, providerRunIdFor, runIdFor } from '../src/engine.js';
 import { ProviderError } from '../src/provider.js';
 import { ExtractionError } from '../src/openai.js';
 import { reanalyzeCapturedRun } from '../src/reanalysis.js';
@@ -33,6 +33,40 @@ async function prospectSetup(promptCount = 10) {
   await env.repository.saveProject({ ...saved, accountType: 'prospect', onboardingJobId: job.id,
     onboardingAppliedJobId: job.id, version: saved.version + 1 }, saved.version);
   return { ...env, first };
+}
+
+async function pausedOneTimeSetup(expiresIn = 25 * 60 * 60_000) {
+  const env = await setup({ promptCount: 3 });
+  const saved = (await env.repository.getProject(project.id))!;
+  const job = { ...policyJob(), projectId: saved.id, status: 'completed' as const, step: 'completed' as const };
+  vi.spyOn(env.repository, 'getOnboarding').mockResolvedValue(job);
+  const paused = {
+    ...saved,
+    enabled: false,
+    version: saved.version + 1,
+    onboardingJobId: job.id,
+    onboardingAppliedJobId: job.id,
+    scanProviders: [
+      { provider: 'openai' as const, model: 'answer-snapshot' },
+      { provider: 'gemini' as const, model: 'gemini-answer-snapshot' },
+    ],
+  };
+  paused.prompts[1].active = false;
+  const manual = { ...kickoff, trigger: 'manual' as const, requestId: 'one-time-approved-scan' };
+  const runId = runIdFor(manual);
+  const runIds = [runId, providerRunIdFor(runId, 'gemini', 'openai')];
+  await env.repository.saveProject({
+    ...paused,
+    lastManualRequest: {
+      runId, requestId: manual.requestId, requestedAt: instant,
+      whilePaused: {
+        runIds,
+        expiresAt: new Date(Date.parse(instant) + expiresIn).toISOString(),
+        promptDigest: oneTimeScanDigest(paused),
+      },
+    },
+  }, saved.version);
+  return { ...env, manual, runIds };
 }
 
 describe('scanner engine lifecycle', () => {
@@ -81,6 +115,50 @@ describe('scanner engine lifecycle', () => {
     expect(env.queue.messages).toHaveLength(1);
     const run = (await env.repository.listRuns(project.id))[0];
     expect(Date.parse(run.deadlineAt) - Date.parse(run.createdAt)).toBe(3 * 60 * 60_000);
+  });
+  it('completes only the permitted manual group while recurring scanning is paused', async () => {
+    const env = await pausedOneTimeSetup();
+    await env.scanner.handle(kickoff);
+    await env.scanner.handle({ ...env.manual, requestId: 'unapproved-scan' });
+    expect(await env.repository.listRuns(project.id)).toHaveLength(0);
+
+    await env.scanner.handle(env.manual);
+    const paused = (await env.repository.getProject(project.id))!;
+    const activeIds = paused.prompts.filter(prompt => prompt.active).map(prompt => prompt.id);
+    // An edit after kickoff never changes the frozen prompts on replay.
+    paused.prompts[0].active = false;
+    await env.repository.saveProject({ ...paused, version: paused.version + 1 }, paused.version);
+    await env.scanner.handle(env.manual);
+    for (const job of promptMessages(env.queue.messages)) await env.scanner.handle(job);
+
+    const runs = await env.repository.listRuns(project.id);
+    expect(runs.map(run => run.id).sort()).toEqual([...env.runIds].sort());
+    for (const run of runs) {
+      expect(run).toMatchObject({ status: 'completed', totalCount: 2, succeededCount: 2, trigger: 'manual' });
+      expect(run.snapshot.prompts.map(prompt => prompt.id)).toEqual(activeIds);
+    }
+    expect(env.provider.collect).toHaveBeenCalledTimes(4);
+    expect((await env.repository.getProject(project.id))?.enabled).toBe(false);
+  });
+  it('fences a changed active set and refuses an expired one-time kickoff', async () => {
+    const env = await pausedOneTimeSetup(60_000);
+    const saved = (await env.repository.getProject(project.id))!;
+    saved.prompts[0].active = false;
+    await env.repository.saveProject({ ...saved, version: saved.version + 1 }, saved.version);
+    await expect(env.scanner.handle(env.manual)).rejects.toMatchObject({ code: 'one_time_scan_configuration_changed' });
+    env.advance(60_001);
+    await env.scanner.handle(env.manual);
+    expect(await env.repository.listRuns(project.id)).toHaveLength(0);
+    expect(env.provider.collect).not.toHaveBeenCalled();
+  });
+  it('finalizes expired one-time results without starting provider calls', async () => {
+    const env = await pausedOneTimeSetup(60_000);
+    await env.scanner.handle(env.manual);
+    env.advance(60_001);
+    await env.scanner.handle({ kind: 'reconcile' });
+    for (const run of await env.repository.listRuns(project.id))
+      expect(run).toMatchObject({ status: 'failed', terminalCount: 2, succeededCount: 0 });
+    expect(env.provider.collect).not.toHaveBeenCalled();
   });
   it('keeps queued work and saved results unchanged while paused, including retries and reconciliation', async () => {
     const env = await setup({ promptCount: 1 });

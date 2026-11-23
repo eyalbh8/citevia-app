@@ -25,6 +25,7 @@ import { repairProjectSchedules, syncProjectSchedule } from '../../api/src/sched
 import { ProviderError } from './provider.js';
 import { reanalyzeCapturedRun } from './reanalysis.js';
 import { refreshPortfolio } from './portfolio-refresh.js';
+import { approvedRecoverySchema, approvedScanSchema, recoverApprovedOnboarding, startApprovedRecoveryScan } from './approved-recovery.js';
 import { AnalysisBatchCoordinator } from './analysis-batch.js';
 import { OpenAIBatchClient, type BatchClient } from './openai-batch.js';
 import { providerApiKey } from './provider-http.js';
@@ -210,6 +211,8 @@ export const handler = async (
     | { kind: 'analysis:configure'; projectId?: string; model?: string; apply?: boolean }
     | {kind:'analysis:identity-pilot';projectId:string;mode:'arm'|'disable'|'promote'|'rollback'|'inspect'|'resume';runId?:string;apply?:boolean;expectedVersion?:number;reviewedDigests?:Record<string,string>}
     | { kind: 'prompts:refresh'; projectId: string; requestId: string }
+    | z.input<typeof approvedRecoverySchema>
+    | z.input<typeof approvedScanSchema>
     | {
         kind: 'scan:reanalyze';
         projectId: string;
@@ -255,6 +258,11 @@ export const handler = async (
       model: input.model, project: input.projectId, apply: input.apply,
     });
   }
+  // IAM-only operator commands are deliberately excluded from the queue schema.
+  if ('kind' in event && event.kind === 'onboarding:recover-approved')
+    return recoverApprovedOnboarding(createAwsRuntime(), approvedRecoverySchema.parse(event));
+  if ('kind' in event && event.kind === 'scan:approved-recovery')
+    return startApprovedRecoveryScan(createAwsRuntime(), approvedScanSchema.parse(event));
   if ('kind' in event && event.kind === 'prompts:refresh') {
     const input = z
       .object({
