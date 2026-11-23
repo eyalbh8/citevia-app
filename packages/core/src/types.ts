@@ -79,7 +79,13 @@ export interface Project {
   scheduleStatus?: 'pending' | 'synced' | 'error';
   nextScanAt?: string;
   role?: 'owner' | 'viewer';
-  lastManualRequest?: { runId: string; requestId: string; requestedAt: string };
+  lastManualRequest?: {
+    runId: string;
+    requestId: string;
+    requestedAt: string;
+    /** Server-owned permit for one run group on a paused account. */
+    whilePaused?: { runIds: string[]; expiresAt: string; promptDigest: string };
+  };
   brandbook?: Brandbook;
   onboardingJobId?: string;
   onboardingAppliedJobId?: string;
@@ -619,6 +625,8 @@ export interface OnboardingJob {
   requestId: string;
   inputHash: string;
   input: OnboardingInput;
+  /** Operator-approved recovery input, independent of the generated portfolio. */
+  approvedPortfolio?: { requestId: string; baseBrandName: string; prompts: OnboardingInput['manualPrompts'] };
   step: OnboardingStep;
   status: 'queued' | 'running' | 'failed' | 'stopped' | 'completed';
   version: number;

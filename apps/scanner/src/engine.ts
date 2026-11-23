@@ -44,8 +44,24 @@ export const runIdFor = (message: Extract<ScanMessage, { kind: 'kickoff' }>) =>
 export function onboardingKickoff(projectId: string, jobId: string, scheduledAt: string): Extract<ScanMessage, { kind: 'kickoff' }> {
   return { kind: 'kickoff', projectId, scheduledAt, requestId: `onboarding-${jobId}`, trigger: 'manual' };
 }
-function allowsScan(project: Project, runId: string): boolean {
-  if (!project.enabled || project.demo) return false;
+export function oneTimeScanDigest(project: Project): string {
+  const prompts = project.prompts.filter(prompt => prompt.active)
+    .map(({ id, version, text }) => ({ id, version, text }));
+  return createHash('sha256').update(JSON.stringify({ prompts, providers: projectProviders(project) })).digest('hex');
+}
+
+function pausedScanExpiry(project: Project, runId: string): number | undefined {
+  const permit = project.lastManualRequest?.whilePaused;
+  if (!project.enabled && !project.demo && project.accountType !== 'prospect' && permit?.runIds.includes(runId))
+    return Date.parse(permit.expiresAt);
+}
+
+function allowsScan(project: Project, runId: string, now: Date): boolean {
+  if (project.demo) return false;
+  if (!project.enabled) {
+    const expiresAt = pausedScanExpiry(project, runId);
+    return expiresAt !== undefined && expiresAt > now.getTime();
+  }
   if (project.accountType !== 'prospect') return true;
   return Boolean(project.onboardingJobId &&
     runId === runIdFor(onboardingKickoff(project.id, project.onboardingJobId, project.createdAt)));
@@ -110,11 +126,11 @@ export class Scanner {
 
   private async scanningEnabled(projectId: string, runId: string): Promise<boolean> {
     const project = await this.dependencies.repository.getProject(projectId);
-    return project !== null && allowsScan(project, runId);
+    return project !== null && allowsScan(project, runId, this.now());
   }
 
   async handle(message: ScanMessage): Promise<void> {
-    if ((message.kind === 'prompt' || message.kind === 'retry' || message.kind === 'reconcile-run') &&
+    if ((message.kind === 'prompt' || message.kind === 'retry') &&
         !await this.scanningEnabled(message.projectId, message.runId)) {
       await this.dependencies.dispatch?.discardRun(message.projectId, message.runId);
       return this.dispatch();
@@ -260,7 +276,8 @@ export class Scanner {
       return;
     }
     const project = await repository.getProject(message.projectId);
-    if (!project || !allowsScan(project, id)) return;
+    if (!project || !allowsScan(project, id, this.now())) return;
+    if (!project.enabled && (message.trigger !== 'manual' || project.lastManualRequest?.runId !== id)) return;
     const prospect = project.accountType === 'prospect';
     let primary = await repository.getRun(message.projectId, id);
     if (primary?.cancelledAt) return;
@@ -279,6 +296,8 @@ export class Scanner {
             true,
           );
       }
+      if (!project.enabled && project.lastManualRequest?.whilePaused?.promptDigest !== oneTimeScanDigest(project))
+        throw new ProviderError('one_time_scan_configuration_changed', 'Active prompts or scan providers changed after this one-time scan was approved.', false);
       const prompts = project.prompts.filter((prompt) => prompt.active);
       const limit = trackedPromptLimitFor(project.accountType);
       if (!prompts.length || (limit !== null && prompts.length !== limit))
@@ -366,6 +385,7 @@ export class Scanner {
         config.provider,
         configs[0].provider,
       );
+      if (!allowsScan(project, providerId, this.now())) continue;
       let run = await repository.getRun(message.projectId, providerId);
       if (run?.cancelledAt) continue;
       if (!run) {
@@ -973,8 +993,20 @@ export class Scanner {
 
   private async reconcileRun(run: ScanRun): Promise<void> {
       const { repository, queue } = this.dependencies;
-      if (run.cancelledAt || !await this.scanningEnabled(run.projectId, run.id)) {
+      const project = await repository.getProject(run.projectId);
+      const now = this.now();
+      if (!project || run.cancelledAt || !allowsScan(project, run.id, now)) {
         await this.dependencies.dispatch?.discardRun(run.projectId, run.id);
+        // An expired one-time run may be finalized without starting another provider call.
+        const expiry = project && !run.cancelledAt && run.trigger === 'manual'
+          ? pausedScanExpiry(project, run.id) : undefined;
+        if (expiry !== undefined && expiry <= now.getTime()) {
+          for (const result of await repository.listResults(run.projectId, run.id)) {
+            if (!this.hasLiveLease(result))
+              await this.exhaust(result, 'retry_exhausted', 'The one-time scan exceeded its processing window.');
+          }
+          await this.finalize(run.projectId, run.id);
+        }
         return;
       }
       await this.processAnalysisBatch(run);

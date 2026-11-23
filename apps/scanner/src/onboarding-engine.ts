@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  Brand,
   Brandbook,
   CapturedAnswer,
   DiscoveredCompetitor,
@@ -8,7 +9,9 @@ import type {
   Prompt,
 } from '@citevia/core';
 import {
+  isBrandedPrompt,
   markScheduleSynced,
+  MAX_BRANDED_PROMPTS,
   competitorBrands,
   promptFingerprint,
 } from '@citevia/core';
@@ -38,7 +41,10 @@ type ResearchCheckpoint = {
 
 function portfolioContext(project: Project, job: OnboardingJob, research: ResearchCheckpoint) {
   const submittedHost = new URL(job.input.website).hostname.toLowerCase();
-  if (project.brand.name !== job.input.name ||
+  const name = job.input.name;
+  const expectedName = job.approvedPortfolio && project.onboardingAppliedJobId !== job.id
+    ? job.approvedPortfolio.baseBrandName : name;
+  if (project.brand.name !== expectedName ||
       project.brand.domains[0]?.toLowerCase() !== submittedHost ||
       project.country !== job.input.country || project.language !== job.input.language ||
       (project.accountType ?? 'standard') !== (job.input.accountType ?? 'standard') ||
@@ -51,15 +57,39 @@ function portfolioContext(project: Project, job: OnboardingJob, research: Resear
     throw new ProviderError('onboarding_research_policy_changed', 'Recheck the company profile and direct rivals against current official sources.', false);
   }
   // Recheck aliases from older saved research using current identity rules.
-  const verified = verifiedBrandNames(project.brand.name, job.input.website, research.brandbook);
-  const names = [...new Set([project.brand.name, ...project.brand.aliases, ...verified])].slice(0, 20);
+  const verified = verifiedBrandNames(name, job.input.website, research.brandbook);
+  const names = [...new Set([name, ...project.brand.aliases, ...verified])].slice(0, 20);
   const brandbook = { ...research.brandbook, names, domains: project.brand.domains };
-  const brand = { ...project.brand, aliases: names.filter(name => name !== project.brand.name) };
+  const brand = { ...project.brand, name, aliases: names.filter(alias => alias !== name) };
   // The owner can select (or clear) competitors while research is running.
   const competitors = project.competitorsConfiguredAt || project.competitors.length
     ? project.competitors
     : competitorBrands({ id: project.id, brand }, research.competitors ?? []);
   return { brandbook, brand, competitors };
+}
+
+function buildApprovedPrompts(
+  approved: NonNullable<OnboardingJob['approvedPortfolio']>,
+  brand: Brand,
+  at: string,
+): Prompt[] {
+  const fingerprints = approved.prompts.map(({ text }) => promptFingerprint(text));
+  if (!fingerprints.length || fingerprints.some(key => !key) || new Set(fingerprints).size !== fingerprints.length)
+    throw new ProviderError('onboarding_approved_prompts_invalid', 'Approved prompts must be nonempty and distinct.', false);
+  const prompts = approved.prompts.map(({ text, stage }) => ({
+    id: `p_${randomUUID().replaceAll('-', '')}`,
+    text,
+    stage,
+    version: 1,
+    active: true,
+    branded: isBrandedPrompt(text, brand),
+    tags: [],
+    createdAt: at,
+    updatedAt: at,
+  }));
+  if (prompts.filter(prompt => prompt.branded).length > MAX_BRANDED_PROMPTS)
+    throw new ProviderError('onboarding_branded_limit', `Approved prompts include more than ${MAX_BRANDED_PROMPTS} branded questions.`, false);
+  return prompts;
 }
 
 export class OnboardingEngine {
@@ -178,20 +208,23 @@ export class OnboardingEngine {
         const project = await repository.getProject(projectId);
         if (!project || project.onboardingJobId !== jobId)
           throw new ProviderError('onboarding_superseded', 'A newer onboarding job replaced this one.', false);
-        const key = current.portfolioRevision
-          ? `${root}/prompts-revision-${current.portfolioRevision}.json`
-          : `${root}/prompts.json`;
         const context = portfolioContext(project, current, book);
-        const rejected = current.rejectedPortfolioKey
-          ? await artifacts.get<ProviderReceipt>(current.rejectedPortfolioKey) : null;
-        await generateOnce(key, () => this.provider.prompts(current, context.brandbook, context.competitors,
-          rejected ? previousPortfolioDraft(rejected) : undefined));
-        current = { ...current, promptsKey: key, step: 'activate' };
+        if (current.approvedPortfolio) {
+          current = { ...current, promptsKey: undefined, step: 'activate' };
+        } else {
+          const key = current.portfolioRevision
+            ? `${root}/prompts-revision-${current.portfolioRevision}.json`
+            : `${root}/prompts.json`;
+          const rejected = current.rejectedPortfolioKey
+            ? await artifacts.get<ProviderReceipt>(current.rejectedPortfolioKey) : null;
+          await generateOnce(key, () => this.provider.prompts(current, context.brandbook, context.competitors,
+            rejected ? previousPortfolioDraft(rejected) : undefined));
+          current = { ...current, promptsKey: key, step: 'activate' };
+        }
       } else if (current.step === 'activate') {
-        const book = await artifacts.get<ResearchCheckpoint>(current.brandbookKey!),
-          portfolio = await artifacts.get<{ prompts: Prompt[] }>(
-            current.promptsKey!,
-          );
+        const approved = current.approvedPortfolio;
+        const book = await artifacts.get<ResearchCheckpoint>(current.brandbookKey!);
+        const portfolio = approved ? null : await artifacts.get<{ prompts: Prompt[] }>(current.promptsKey!);
         if (!book) throw new Error('Missing brandbook checkpoint');
         const assertActive = async () => {
           const latest = await repository.getOnboarding(projectId, jobId);
@@ -209,12 +242,18 @@ export class OnboardingEngine {
             'A newer onboarding job replaced this one.',
             false,
           );
+        if (approved && (project.accountType === 'prospect' || project.enabled))
+          throw new ProviderError('onboarding_approved_portfolio_unavailable', 'Approved-portfolio recovery requires a paused standard account.', false);
         if (project.onboardingAppliedJobId !== jobId) {
-          if (!portfolio)
+          if (approved && project.prompts.length)
+            throw new ProviderError('onboarding_approved_portfolio_changed', 'The account already contains prompts. Recovery will not replace them.', false);
+          if (!approved && !portfolio)
             throw new ProviderError('onboarding_portfolio_checkpoint_missing',
               'The saved portfolio could not be found. Retry setup to generate a replacement.', false);
           const context = portfolioContext(project, current, book);
-          const prompts = validateSavedPortfolio(current, context.brandbook, portfolio.prompts, context.competitors);
+          const prompts = approved
+            ? buildApprovedPrompts(approved, context.brand, this.now().toISOString())
+            : validateSavedPortfolio(current, context.brandbook, portfolio?.prompts, context.competitors);
           const next = {
             ...project,
             ...context,
@@ -222,9 +261,9 @@ export class OnboardingEngine {
               context.competitors.some(peer => peer.domains.includes(candidate.domain) && peer.name === candidate.name))
               .map(({name, domain, relevance}) => ({name, domain, relevance})),
             prompts,
-            enabled: true,
+            enabled: !approved,
             onboardingAppliedJobId: jobId,
-            scheduleStatus: project.accountType === 'prospect' ? 'synced' as const : 'pending' as const,
+            scheduleStatus: approved ? project.scheduleStatus : project.accountType === 'prospect' ? 'synced' as const : 'pending' as const,
             version: project.version + 1,
             updatedAt: this.now().toISOString(),
           };
@@ -236,44 +275,56 @@ export class OnboardingEngine {
             );
           project = next;
         }
-        // Synchronize the latest saved settings, with CAS to prevent an old job overwriting a newer schedule.
-        let synced = false;
-        for (let i = 0; i < 3; i++) {
+        if (approved) {
           await assertActive();
-          const latest = project.accountType === 'prospect' ? await repository.getProject(projectId)
-            : await repository.ensureProjectScanSchedule(projectId);
-          if (!latest) throw new Error('Account missing');
-          const context = portfolioContext(latest, current, book);
-          try {
-            validateSavedPortfolio(current, context.brandbook, latest.prompts.filter(p => p.active), context.competitors);
-          } catch (error) {
-            throw new ProviderError('onboarding_active_prompts_changed',
-              `The account's active prompts no longer meet onboarding requirements. Correct them on the Prompts screen and retry setup. ${error instanceof ProviderError ? error.message : ''}`.trim(),
-              false);
+          const latest = await repository.getProject(projectId);
+          if (!latest || latest.onboardingJobId !== jobId || latest.onboardingAppliedJobId !== jobId || latest.enabled)
+            throw new ProviderError('onboarding_approved_portfolio_changed', 'The paused account changed while applying the approved prompts.', false);
+          portfolioContext(latest, current, book);
+          if (latest.prompts.length !== approved.prompts.length || latest.prompts.some((prompt, index) =>
+            !prompt.active || prompt.text !== approved.prompts[index]?.text || prompt.stage !== approved.prompts[index]?.stage))
+            throw new ProviderError('onboarding_approved_portfolio_changed', 'The saved prompts no longer match the approved portfolio.', false);
+          current = { ...current, firstRunId: undefined, step: 'completed' };
+        } else {
+          // Synchronize the latest saved settings, with CAS to prevent an old job overwriting a newer schedule.
+          let synced = false;
+          for (let i = 0; i < 3; i++) {
+            await assertActive();
+            const latest = project.accountType === 'prospect' ? await repository.getProject(projectId)
+              : await repository.ensureProjectScanSchedule(projectId);
+            if (!latest) throw new Error('Account missing');
+            const context = portfolioContext(latest, current, book);
+            try {
+              validateSavedPortfolio(current, context.brandbook, latest.prompts.filter(p => p.active), context.competitors);
+            } catch (error) {
+              throw new ProviderError('onboarding_active_prompts_changed',
+                `The account's active prompts no longer meet onboarding requirements. Correct them on the Prompts screen and retry setup. ${error instanceof ProviderError ? error.message : ''}`.trim(),
+                false);
+            }
+            // Retrying a stopped/failed activation resumes its previously paused schedule.
+            const resumed = current.retryRequestIds.length > 0 && !latest.enabled
+              ? { ...latest, enabled: true } : latest;
+            if (resumed.accountType !== 'prospect') await this.syncSchedule(resumed);
+            if (
+              await repository.saveProject(
+                markScheduleSynced(resumed, this.now().toISOString()),
+                latest.version,
+              )
+            ) {
+              synced = true;
+              break;
+            }
           }
-          // Retrying a stopped/failed activation resumes its previously paused schedule.
-          const resumed = current.retryRequestIds.length > 0 && !latest.enabled
-            ? { ...latest, enabled: true } : latest;
-          if (resumed.accountType !== 'prospect') await this.syncSchedule(resumed);
-          if (
-            await repository.saveProject(
-              markScheduleSynced(resumed, this.now().toISOString()),
-              latest.version,
-            )
-          ) {
-            synced = true;
-            break;
-          }
+          if (!synced) throw new Error('Concurrent schedule updates');
+          await assertActive();
+          const message = onboardingKickoff(projectId, job.id, job.createdAt);
+          await queue.send([message]);
+          current = {
+            ...current,
+            firstRunId: runIdFor(message),
+            step: 'completed',
+          };
         }
-        if (!synced) throw new Error('Concurrent schedule updates');
-        await assertActive();
-        const message = onboardingKickoff(projectId, job.id, job.createdAt);
-        await queue.send([message]);
-        current = {
-          ...current,
-          firstRunId: runIdFor(message),
-          step: 'completed',
-        };
       }
       const next = {
         ...current,
