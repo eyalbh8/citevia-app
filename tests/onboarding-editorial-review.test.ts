@@ -34,6 +34,9 @@ it.each(['standard', 'prospect'] as const)('passes the full %s set and saves the
   }]}, requestId: 'review', receivedAt: new Date().toISOString()});
   const provider = new OpenAIOnboardingProvider({ answer: vi.fn(), extract });
   const error = await provider.review(job, brandbook, [], prompts).catch(err => err);
+  expect(extract.mock.calls[0][0].model).toBe(accountType === 'standard'
+    ? (process.env.OPENAI_STANDARD_PORTFOLIO_MODEL || 'gpt-6-astra')
+    : (process.env.OPENAI_ONBOARDING_MODEL || 'gpt-4.1-2025-04-14'));
   expect(error.code).toBe('onboarding_editorial_revision');
   const draft = previousPortfolioDraft(error.receipt);
   expect(draft.filter(row => row.rewrite).map(row => row.text)).toEqual([prompts[1].text, prompts[3].text]);
