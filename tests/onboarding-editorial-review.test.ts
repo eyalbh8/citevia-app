@@ -46,6 +46,12 @@ it.each(['standard', 'prospect'] as const)('passes the full %s set and saves the
     content: [{ type: 'output_text', text: JSON.stringify({rows: acceptedRows}) }] }] }, requestId: 'repaired' });
   await provider.review(job, brandbook, [], prompts, error.receipt);
   expect(extract).toHaveBeenLastCalledWith(expect.objectContaining({ input: expect.objectContaining({assess: [1, 3]}) }));
+  acceptedRows.row_1 = {offering: 0, verdict: 'rewrite', issue: 'Use a more natural opening'};
+  extract.mockResolvedValue({ response: { status: 'completed', output: [{type: 'message',
+    content: [{type: 'output_text', text: JSON.stringify({rows: acceptedRows})}]}]}, requestId: 'wording' });
+  const second = await provider.review(job, brandbook, [], prompts, error.receipt).catch(err => err);
+  expect(previousPortfolioDraft(second.receipt)[1].reason).toContain('Earlier rejection: Unrelated service');
+
 
 });
 
