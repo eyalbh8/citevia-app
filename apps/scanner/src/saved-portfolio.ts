@@ -1,6 +1,6 @@
 import type { Brand, Brandbook, OnboardingJob, Prompt } from '@citevia/core';
 import { promptLimitFor } from '@citevia/core';
-import { validatePortfolio } from './onboarding-provider.js';
+import { portfolioCorrection, portfolioDraftFromPrompts, validatePortfolio } from './onboarding-provider.js';
 import { ProviderError } from './provider.js';
 
 /** A checkpoint can outlive the policy that generated it. Revalidate its actual
@@ -27,6 +27,10 @@ export function validateSavedPortfolio(
     }, competitors);
   } catch (error) {
     const detail = error instanceof ProviderError ? error.message : 'The saved prompt data is invalid.';
-    throw new ProviderError('onboarding_portfolio_policy_changed', detail, false);
+    const draft = Array.isArray(prompts) && prompts.every(p => p && typeof p === 'object')
+      ? portfolioDraftFromPrompts(job, prompts) : undefined;
+    const correction = portfolioCorrection(error, draft);
+    throw Object.assign(new ProviderError('onboarding_portfolio_policy_changed', detail, false),
+      correction ? { portfolioCorrection: correction } : {});
   }
 }

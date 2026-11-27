@@ -17,6 +17,7 @@ import type {
 } from '../../apps/scanner/src/onboarding-provider.js';
 import { validatePortfolio } from '../../apps/scanner/src/onboarding-provider.js';
 export class FixtureOnboardingProvider implements OnboardingProvider {
+  async review() { return { approved: true }; }
   async research(job: OnboardingJob) {
     const text = `Synthetic demonstration research for ${job.input.name}. ${job.input.description || 'This fictional brief demonstrates the onboarding workflow.'}`;
     return {
