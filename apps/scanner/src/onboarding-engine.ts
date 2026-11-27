@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type {
   Brand,
   Brandbook,
@@ -21,12 +21,12 @@ import {
   previousPortfolioDraft,
   type OnboardingProvider,
 } from './onboarding-provider.js';
-import { ProviderError, type ProviderReceipt } from './provider.js';
+import { object, ProviderError, type ProviderReceipt } from './provider.js';
 import { onboardingKickoff, runIdFor } from './engine.js';
 import { validateSavedPortfolio } from './saved-portfolio.js';
 import { verifiedBrandNames } from './onboarding-evidence.js';
 import { withCompetitorResearch } from './onboarding-research-retry.js';
-import { ONBOARDING_INSTRUCTIONS_VERSION } from './onboarding-prompts.js';
+import { ONBOARDING_INSTRUCTIONS_VERSION, PORTFOLIO_INSTRUCTIONS_VERSION } from './onboarding-prompts.js';
 const leaseMs = 12 * 60_000;
 const maxAutomaticPortfolioCorrections = 2;
 class LostLease extends Error {}
@@ -148,7 +148,7 @@ export class OnboardingEngine {
         ...current,
         paidCall: {
           id: randomUUID(),
-          step: job.step as 'research' | 'brandbook' | 'prompts',
+          step: job.step === 'activate' ? 'prompts' : job.step as 'research' | 'brandbook' | 'prompts',
           startedAt: this.now().toISOString(),
         },
         version: current.version + 1,
@@ -254,6 +254,24 @@ export class OnboardingEngine {
           const prompts = approved
             ? buildApprovedPrompts(approved, context.brand, this.now().toISOString())
             : validateSavedPortfolio(current, context.brandbook, portfolio?.prompts, context.competitors);
+          if (!approved && prompts.length > current.input.manualPrompts.length) {
+            // Each revision and material input has its own review checkpoint. A
+            // lost activation or duplicate delivery reuses an accepted review.
+            const digest = createHash('sha256').update(JSON.stringify([PORTFOLIO_INSTRUCTIONS_VERSION,
+              current.input, context.brandbook, context.competitors, prompts.map(p => [p.text, p.stage, p.intent])])).digest('hex');
+            const reviewKey = `${current.promptsKey}.review-${digest}.json`;
+            await generateOnce(reviewKey, async () => {
+              const prior = current.rejectedPortfolioKey && current.portfolioFeedback?.code === 'onboarding_editorial_revision'
+                ? await artifacts.get<ProviderReceipt>(current.rejectedPortfolioKey) : undefined;
+              return this.provider.review(current, context.brandbook, context.competitors, prompts, prior ?? undefined);
+            });
+            if (current.paidCall) {
+              const reviewed = { ...current, paidCall: undefined, version: current.version + 1 };
+              if (!(await repository.saveOnboarding(reviewed, current.version))) throw new LostLease();
+              current = reviewed;
+            }
+            await assertActive();
+          }
           const next = {
             ...project,
             ...context,
@@ -366,7 +384,8 @@ export class OnboardingEngine {
         try {
           rejectedPortfolioKey = `${root}/attempts/${current.paidCall?.id ?? randomUUID()}/${job.step}.json`;
           await artifacts.put(rejectedPortfolioKey, error.receipt);
-          rejectedPortfolioSaved = job.step === 'prompts' && error.canRevise;
+          rejectedPortfolioSaved = error.canRevise && (job.step === 'prompts' ||
+            (job.step === 'activate' && error.code === 'onboarding_editorial_revision'));
           rejectedResearchSaved = error.receipt.response.status === 'completed' &&
             ['brandbook_evidence_invalid', 'onboarding_official_research_missing', 'competitor_research_evidence_missing'].includes(error.code);
         } catch {
@@ -403,6 +422,13 @@ export class OnboardingEngine {
       }
       const stalePortfolio = job.step === 'activate' && error instanceof ProviderError &&
         error.code === 'onboarding_portfolio_policy_changed';
+      // Preserve row-specific rejections from a saved checkpoint, including the last attempt.
+      const rejectedRows = object(error)?.portfolioCorrection;
+      if (stalePortfolio && Array.isArray(rejectedRows)) {
+        const key = `${root}/attempts/${randomUUID()}/saved-portfolio.json`;
+        await artifacts.put(key, { portfolioCorrection: rejectedRows });
+        rejectedPortfolioKey = key;
+      }
       if ((rejectedPortfolioSaved || stalePortfolio) && error instanceof ProviderError &&
           (current.automaticPortfolioCorrections ?? 0) < maxAutomaticPortfolioCorrections) {
         // Only a known, saved rejection can start another generation. Each revision
@@ -434,6 +460,9 @@ export class OnboardingEngine {
         (!(error instanceof ProviderError) || error.retryable);
       const next = {
         ...current,
+        ...((rejectedPortfolioSaved || stalePortfolio) && error instanceof ProviderError ? {
+          rejectedPortfolioKey, portfolioFeedback: {code: error.code, message: error.message},
+        } : {}),
         status:
           retryable && current.attempts < 4
             ? ('queued' as const)
@@ -449,8 +478,15 @@ export class OnboardingEngine {
               : 'Account setup failed. Check the saved details and retry.',
         },
       };
-      // Persist the original step on failure, so a retry does not skip an unfinished operation.
-      next.step = job.step;
+      // An exhausted editorial review is a known rejection of a completed generation.
+      // The existing owner retry can resume at a new revision without reusing that draft.
+      if (rejectedPortfolioSaved && job.step === 'activate') {
+        next.step = 'prompts';
+        next.portfolioRevision = (current.portfolioRevision ?? 0) + 1;
+        next.promptsKey = undefined;
+      } else {
+        next.step = job.step;
+      }
       delete next.leaseOwner;
       delete next.leaseExpiresAt;
       if (await repository.saveOnboarding(next, current.version)) {
